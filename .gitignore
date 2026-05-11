@@ -1,1 +1,22 @@
-/target
+# Build artifacts
+/target/
+**/target/
+
+# Cargo.lock is tracked (workspace contains a binary)
+
+# direnv / Nix
+/.direnv/
+
+# Editor / IDE
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (commitlint, semantic-release)
+/node_modules/

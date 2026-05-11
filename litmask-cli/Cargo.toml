@@ -1,0 +1,15 @@
+[package]
+name = "litmask-cli"
+description = "Command-line companion to the litmask crate; provides bind and inspect subcommands."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "litmask-cli"
+path = "src/main.rs"
+
+[lints]
+workspace = true
