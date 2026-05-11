@@ -1,0 +1,8 @@
+# Pinned tool versions — single source of truth for shell.nix and CI.
+# Run `just check-tool-versions` to verify the active environment matches.
+rust 1.88.0
+just 1.49.0
+cargo-deny 0.19.1
+cargo-nextest 0.9.133
+typos-cli 1.45.0
+taplo-cli 0.10.0
