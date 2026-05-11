@@ -53,6 +53,12 @@ test-examples:
 build:
     cargo build --workspace --all-targets
 
+# Verify the runtime crate compiles with `--no-default-features --features alloc`
+# (the no_std + alloc configuration). Feature-matrix expansion lands in Task 27;
+# this single combo guards against feature-gate regressions today.
+check-no-default:
+    cargo check -p litmask --no-default-features --features alloc
+
 # ── Documentation ───────────────────────────────────────────
 
 doc:
@@ -103,7 +109,7 @@ pre-push:
 
 # ── CI ──────────────────────────────────────────────────────
 
-ci: fmt-check lint test test-examples build doc
+ci: fmt-check lint test test-examples build check-no-default doc
 
 # Stable-channel best-effort sanity check; runs in a continue-on-error
 # CI job so toolchain regressions surface without blocking PR merge.

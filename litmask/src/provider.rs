@@ -47,7 +47,9 @@ impl EnvVarProvider {
         Self { name }
     }
 
-    /// Convenience accessor for the env-var name this provider reads.
+    /// The environment variable this provider reads. Useful for
+    /// error messages and operational tooling that wants to print
+    /// the expected variable name.
     #[must_use]
     pub const fn var_name(&self) -> &'static str {
         self.name
@@ -65,10 +67,73 @@ impl Default for EnvVarProvider {
 #[cfg(feature = "std")]
 impl KeyProvider for EnvVarProvider {
     fn unlock_key(&self) -> Result<UnlockKey, KeyError> {
-        match std::env::var(self.name) {
-            Ok(value) => UnlockKey::from_base64url(&value),
-            Err(std::env::VarError::NotPresent) => Err(KeyError::NotFound),
-            Err(std::env::VarError::NotUnicode(_)) => Err(KeyError::InvalidFormat),
-        }
+        parse_env_value(std::env::var(self.name).as_deref().ok())
+    }
+}
+
+/// Pure parser for an environment-variable value: maps `Option<&str>`
+/// to the canonical [`KeyError`] surface. `None` represents
+/// "env var unset" and produces [`KeyError::NotFound`]; `Some(value)`
+/// is delegated to [`UnlockKey::from_base64url`].
+///
+/// Extracted as a free fn so tests cover the error-mapping paths
+/// without mutating process-wide environment state (workspace lint
+/// `forbid(unsafe_code)` blocks the `unsafe { std::env::set_var(...) }`
+/// pattern that env-mutation tests would otherwise require).
+#[cfg(feature = "std")]
+fn parse_env_value(value: Option<&str>) -> Result<UnlockKey, KeyError> {
+    match value {
+        None => Err(KeyError::NotFound),
+        Some(s) => UnlockKey::from_base64url(s),
+    }
+}
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use super::*;
+
+    const VALID_B64URL_32B: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    #[test]
+    fn default_reads_litmask_unlock_key() {
+        let p = EnvVarProvider::default();
+        assert_eq!(p.var_name(), "LITMASK_UNLOCK_KEY");
+    }
+
+    #[test]
+    fn parse_env_value_unset_yields_not_found() {
+        assert!(matches!(parse_env_value(None), Err(KeyError::NotFound)));
+    }
+
+    #[test]
+    fn parse_env_value_bad_base64_yields_invalid_format() {
+        let err = parse_env_value(Some("not valid base64!")).unwrap_err();
+        assert!(matches!(err, KeyError::InvalidFormat));
+    }
+
+    #[test]
+    fn parse_env_value_wrong_length_yields_invalid_format() {
+        // 32-char base64url decodes to 24 bytes, not 32.
+        let err = parse_env_value(Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")).unwrap_err();
+        assert!(matches!(err, KeyError::InvalidFormat));
+    }
+
+    #[test]
+    fn parse_env_value_padded_yields_invalid_format() {
+        let err =
+            parse_env_value(Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")).unwrap_err();
+        assert!(matches!(err, KeyError::InvalidFormat));
+    }
+
+    #[test]
+    fn parse_env_value_valid_32_byte_key_succeeds() {
+        let key = parse_env_value(Some(VALID_B64URL_32B)).expect("valid 32-byte key");
+        assert_eq!(key.0, [0u8; crate::format::KEY_LEN]);
+    }
+
+    #[test]
+    fn key_provider_is_object_safe() {
+        let _: alloc::boxed::Box<dyn KeyProvider> =
+            alloc::boxed::Box::new(EnvVarProvider::default());
     }
 }

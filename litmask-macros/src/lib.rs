@@ -26,9 +26,8 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{LitStr, parse_macro_input};
 
-const KEY_LEN: usize = 32;
-const NONCE_LEN: usize = 12;
-const NONCE_TAG: &[u8] = b"litmask-nonce";
+// Canonical layout constants live in `litmask-internal-format`.
+use litmask_internal_format::{KEY_LEN, NONCE_LEN, NONCE_TAG_CALL_SITE};
 
 static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -80,10 +79,10 @@ pub fn mask(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         {
             const __LITMASK_BLOB: &[u8; #blob_len] = &#blob_lit;
-            const __LITMASK_WRAPPER: &[u8; 62] = ::core::include_bytes!(
-                ::core::concat!(::core::env!("OUT_DIR"), "/litmask_wrapper.bin")
-            );
-            ::litmask::__internal::__decrypt_str(__LITMASK_BLOB, __LITMASK_WRAPPER)
+            ::litmask::__internal::__decrypt_str(
+                __LITMASK_BLOB,
+                ::litmask::__wrapper_bytes!(),
+            )
         }
     };
 
@@ -111,8 +110,14 @@ fn derive_nonce(
     idx: u64,
     literal: &[u8],
 ) -> [u8; NONCE_LEN] {
+    // Walking-skeleton deviation: spec §1.5.2 keys per-call-site
+    // nonces on (file, line, column), but stable `proc_macro::Span`
+    // does not expose those accessors. We share the same BLAKE3
+    // domain separator as the canonical algorithm
+    // (`NONCE_TAG_CALL_SITE` in format.rs) so the cipher state stays
+    // identifiable; only the keyed message changes.
     let mut hasher = blake3::Hasher::new_keyed(seed);
-    hasher.update(NONCE_TAG);
+    hasher.update(NONCE_TAG_CALL_SITE);
     hasher.update(crate_name.as_bytes());
     hasher.update(b":");
     hasher.update(&idx.to_le_bytes());

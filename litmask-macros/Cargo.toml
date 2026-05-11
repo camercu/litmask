@@ -11,6 +11,7 @@ repository.workspace = true
 proc-macro = true
 
 [dependencies]
+litmask-internal-format = { path = "../litmask-internal-format", version = "=0.1.0" }
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }

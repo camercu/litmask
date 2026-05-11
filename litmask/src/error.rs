@@ -57,3 +57,45 @@ impl From<KeyError> for InitError {
         Self::KeyProvider(e)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::format;
+
+    #[test]
+    fn key_error_display_tags() {
+        assert_eq!(format!("{}", KeyError::NotFound), "not_found");
+        assert_eq!(format!("{}", KeyError::InvalidFormat), "invalid_format");
+    }
+
+    #[test]
+    fn init_error_display_tags() {
+        assert_eq!(
+            format!("{}", InitError::KeyProvider(KeyError::NotFound)),
+            "key_provider:not_found",
+        );
+        assert_eq!(
+            format!("{}", InitError::KeyProvider(KeyError::InvalidFormat)),
+            "key_provider:invalid_format",
+        );
+    }
+
+    #[test]
+    fn from_key_error_for_init_error() {
+        let init: InitError = KeyError::NotFound.into();
+        match init {
+            InitError::KeyProvider(KeyError::NotFound) => {}
+            _ => panic!("unexpected variant"),
+        }
+    }
+
+    #[test]
+    fn init_error_chains_source() {
+        use core::error::Error;
+        let err = InitError::KeyProvider(KeyError::NotFound);
+        let src = err.source().expect("InitError::KeyProvider has a source");
+        // The source must Display as the inner KeyError tag.
+        assert_eq!(format!("{src}"), "not_found");
+    }
+}

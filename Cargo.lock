@@ -199,9 +199,9 @@ name = "litmask"
 version = "0.1.0"
 dependencies = [
  "base64ct",
- "blake3",
  "chacha20poly1305",
  "litmask-build",
+ "litmask-internal-format",
  "litmask-macros",
  "once_cell",
  "zeroize",
@@ -212,12 +212,13 @@ name = "litmask-build"
 version = "0.1.0"
 dependencies = [
  "base64ct",
- "blake3",
  "chacha20poly1305",
  "getrandom",
+ "litmask-internal-format",
  "rand_chacha",
  "rand_core",
  "toml",
+ "zeroize",
 ]
 
 [[package]]
@@ -225,11 +226,19 @@ name = "litmask-cli"
 version = "0.1.0"
 
 [[package]]
+name = "litmask-internal-format"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+]
+
+[[package]]
 name = "litmask-macros"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
+ "litmask-internal-format",
  "proc-macro2",
  "quote",
  "syn",

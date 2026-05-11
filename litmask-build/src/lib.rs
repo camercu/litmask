@@ -40,15 +40,14 @@ use chacha20poly1305::{
 };
 use rand_chacha::ChaCha20Rng;
 use rand_core::{RngCore, SeedableRng};
+use zeroize::Zeroize;
 
-const KEY_LEN: usize = 32;
-const NONCE_LEN: usize = 12;
-const TAG_LEN: usize = 16;
-const WRAPPER_LEN: usize = 1 + 1 + NONCE_LEN + KEY_LEN + TAG_LEN; // 62
-
-const WRAPPER_VERSION: u8 = 0x01;
-const WRAPPER_CIPHER_CHACHA20: u8 = 0x01;
-const WRAPPER_TAG: &[u8] = b"litmask-mask-key-nonce";
+// Canonical layout constants and pure helpers live in
+// `litmask-internal-format` (a small internal crate shared by litmask,
+// litmask-build, and litmask-macros).
+use litmask_internal_format::{
+    KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, assemble_wrapper, nonce_for_wrapper,
+};
 
 const CONFIG_HEADER: &str = "\
 # litmask.config — build artifact.
@@ -105,8 +104,9 @@ pub fn emit() {
     rng.fill_bytes(&mut mask_key);
     rng.fill_bytes(&mut unlock_key);
 
-    // Derive the wrapper nonce per §1.7.3.
-    let wrapper_nonce = wrapper_nonce(&seed);
+    // Derive the wrapper nonce per §1.7.3 (canonical algorithm in
+    // litmask::format::nonce_for_wrapper).
+    let wrapper_nonce = nonce_for_wrapper(&seed);
 
     // Encrypt mask_key under unlock_key with ChaCha20-Poly1305.
     let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(&unlock_key));
@@ -120,14 +120,9 @@ pub fn emit() {
         KEY_LEN + TAG_LEN
     );
 
-    // Assemble the 62-byte wrapper.
-    let mut wrapper = [0u8; WRAPPER_LEN];
-    wrapper[0] = WRAPPER_VERSION;
-    wrapper[1] = WRAPPER_CIPHER_CHACHA20;
-    wrapper[2..2 + NONCE_LEN].copy_from_slice(&wrapper_nonce);
-    wrapper[2 + NONCE_LEN..].copy_from_slice(&ciphertext_with_tag);
-    // Best-effort zeroize of the local copy.
-    ciphertext_with_tag.fill(0);
+    let wrapper = assemble_wrapper(&wrapper_nonce, &ciphertext_with_tag);
+    // Best-effort zeroize of the encrypted-form local buffer.
+    ciphertext_with_tag.zeroize();
 
     // Write OUT_DIR artifacts. These are the per-build-unit copies the
     // proc-macro reads at expansion time via include_bytes!.
@@ -138,20 +133,12 @@ pub fn emit() {
     // Write the deployer-facing config at the profile root.
     write_config(&profile_dir.join("litmask.config"), &unlock_key, &wrapper);
 
-    // Best-effort zeroize of the in-memory keys.
-    drop_zeroed(seed);
-    drop_zeroed(mask_key);
-    drop_zeroed(unlock_key);
-}
-
-fn wrapper_nonce(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
-    let mut hasher = blake3::Hasher::new_keyed(seed);
-    hasher.update(WRAPPER_TAG);
-    let digest = hasher.finalize();
-    let bytes = digest.as_bytes();
-    bytes[..NONCE_LEN]
-        .try_into()
-        .expect("blake3 output ≥12 bytes")
+    // Zeroize in-memory keys via the zeroize crate. Earlier
+    // pass-by-value drop_zeroed helper was a no-op because [u8; 32]
+    // is Copy; zeroize::Zeroize mutates the original storage.
+    seed.zeroize();
+    mask_key.zeroize();
+    unlock_key.zeroize();
 }
 
 fn write_secret(path: &Path, contents: &[u8]) {
@@ -181,8 +168,4 @@ fn write_config(path: &Path, unlock_key: &[u8; KEY_LEN], wrapper: &[u8; WRAPPER_
     );
 
     fs::write(path, body).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
-}
-
-fn drop_zeroed(mut buf: [u8; KEY_LEN]) {
-    buf.fill(0);
 }

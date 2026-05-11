@@ -9,23 +9,19 @@ use zeroize::Zeroize;
 
 use crate::base64url;
 use crate::error::KeyError;
-
-/// Length of every symmetric key in bytes. ChaCha20-Poly1305 and
-/// AES-256-GCM both use 32-byte keys.
-pub const KEY_LEN: usize = 32;
+use crate::format::KEY_LEN;
 
 /// The runtime-supplied key that decrypts the embedded `mask_key` wrapper.
+///
+/// `Clone` is intentionally not implemented; duplicating a zeroize-on-drop
+/// secret should be opt-in and obvious at the call site. The internal
+/// field is `pub(crate)` so runtime helpers can borrow it without an
+/// accessor method.
 #[derive(Zeroize)]
 #[zeroize(drop)]
-pub struct UnlockKey([u8; KEY_LEN]);
+pub struct UnlockKey(pub(crate) [u8; KEY_LEN]);
 
 impl UnlockKey {
-    /// Wrap raw bytes as an [`UnlockKey`].
-    #[must_use]
-    pub fn from_bytes(bytes: [u8; KEY_LEN]) -> Self {
-        Self(bytes)
-    }
-
     /// Decode a base64url-encoded 32-byte key. Padded inputs and any
     /// length other than 32 are rejected with
     /// [`KeyError::InvalidFormat`].
@@ -42,19 +38,6 @@ impl UnlockKey {
             .map_err(|_| KeyError::InvalidFormat)?;
         Ok(Self(bytes))
     }
-
-    /// Borrow the underlying key bytes.
-    #[must_use]
-    #[doc(hidden)]
-    pub fn as_bytes(&self) -> &[u8; KEY_LEN] {
-        &self.0
-    }
-}
-
-impl Clone for UnlockKey {
-    fn clone(&self) -> Self {
-        Self(self.0)
-    }
 }
 
 impl core::fmt::Debug for UnlockKey {
@@ -65,20 +48,81 @@ impl core::fmt::Debug for UnlockKey {
 }
 
 /// The decrypted master key. Held in a process-global OnceLock for the
-/// program's lifetime; never re-decrypted.
+/// program's lifetime; never re-decrypted. Crate-internal only.
 #[derive(Zeroize)]
 #[zeroize(drop)]
 #[doc(hidden)]
 pub struct MaskKey(pub(crate) [u8; KEY_LEN]);
 
-impl MaskKey {
-    pub(crate) fn as_bytes(&self) -> &[u8; KEY_LEN] {
-        &self.0
-    }
-}
-
 impl core::fmt::Debug for MaskKey {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("MaskKey([REDACTED])")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::format;
+
+    /// Canonical 32-byte test key encoded as 43-char base64url (no padding).
+    const VALID_B64URL_32B: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    #[test]
+    fn from_base64url_accepts_valid_32_byte_key() {
+        let key = UnlockKey::from_base64url(VALID_B64URL_32B).expect("valid 32-byte key");
+        assert_eq!(key.0, [0u8; KEY_LEN]);
+    }
+
+    #[test]
+    fn from_base64url_rejects_padded_input() {
+        // 32 bytes encodes to 43 url-safe chars (no padding); the padded
+        // RFC 4648 form appends "=" — must be rejected.
+        let padded = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        let err = UnlockKey::from_base64url(padded).unwrap_err();
+        assert!(matches!(err, KeyError::InvalidFormat));
+    }
+
+    #[test]
+    fn from_base64url_rejects_wrong_length_short() {
+        // 24 bytes encodes to 32 url-safe chars; shorter than 32-byte key.
+        let short = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let err = UnlockKey::from_base64url(short).unwrap_err();
+        assert!(matches!(err, KeyError::InvalidFormat));
+    }
+
+    #[test]
+    fn from_base64url_rejects_wrong_length_long() {
+        // 48 bytes encodes to 64 url-safe chars; longer than 32-byte key.
+        let long = "A".repeat(64);
+        let err = UnlockKey::from_base64url(&long).unwrap_err();
+        assert!(matches!(err, KeyError::InvalidFormat));
+    }
+
+    #[test]
+    fn from_base64url_rejects_non_alphabet_chars() {
+        // '+' and '/' are standard base64 alphabet but NOT url-safe.
+        let bad = "++++/////+++++++++/////++++++++++/////++++++";
+        let err = UnlockKey::from_base64url(bad).unwrap_err();
+        assert!(matches!(err, KeyError::InvalidFormat));
+    }
+
+    #[test]
+    fn debug_does_not_print_key_material() {
+        let bytes = [0xCAu8; KEY_LEN];
+        let key = UnlockKey(bytes);
+        let dbg = format!("{key:?}");
+        assert!(dbg.contains("REDACTED"));
+        assert!(!dbg.contains("ca"));
+        assert!(!dbg.contains("CA"));
+    }
+
+    #[test]
+    fn debug_mask_key_does_not_print_key_material() {
+        let bytes = [0xCAu8; KEY_LEN];
+        let key = MaskKey(bytes);
+        let dbg = format!("{key:?}");
+        assert!(dbg.contains("REDACTED"));
+        assert!(!dbg.contains("ca"));
     }
 }

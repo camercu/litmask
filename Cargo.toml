@@ -4,6 +4,7 @@ members = [
     "litmask",
     "litmask-build",
     "litmask-cli",
+    "litmask-internal-format",
     "litmask-macros",
 ]
 

@@ -1,0 +1,14 @@
+[package]
+name = "litmask-internal-format"
+description = "INTERNAL — wire-format constants and pure helpers shared between litmask, litmask-build, and litmask-macros. Not a public API; do not depend on this crate directly."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+blake3 = { version = "1", default-features = false }
+
+[lints]
+workspace = true
