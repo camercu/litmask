@@ -43,6 +43,14 @@ readers can see what was superseded.
   crate, so the workspace MAY contain a hidden internal
   `litmask-macros` proc-macro crate that the user-facing `litmask`
   crate re-exports. Affects §1.2.
+- **2026-05-11 — Amendment 5:** `litmask::init` and
+  `litmask::init_with` are declarative macros (`init!` /
+  `init_with!`), not regular functions. The wrapper bytes must be
+  read from the downstream user's `OUT_DIR` via `include_bytes!`
+  evaluated in the user's crate compile context, which is only
+  reachable from a macro expansion at the call site — not from a
+  function body in the runtime crate. Affects §1.4.1, §1.8.2,
+  §2.6.1, §2.1.1.12.
 
 ---
 
@@ -254,6 +262,20 @@ Either form is optional — first `mask!()` call performs lazy init with the
 default provider. Explicit init is recommended so initialization failures
 surface at startup with structured errors rather than panics deep in program
 execution.
+
+> **Amendment 2026-05-11:** `init` and `init_with` are declarative
+> macros, not regular functions. User-facing call is `litmask::init!()?`
+> and `litmask::init_with!(provider)?`. The macros expand at the call
+> site so they can `include_bytes!(concat!(env!("OUT_DIR"),
+> "/litmask_wrapper.bin"))` against the **caller's** crate `OUT_DIR`
+> (where the user's `build.rs` ran `litmask_build::emit()`). A regular
+> function in the `litmask` runtime crate cannot reach a downstream
+> crate's `OUT_DIR`. The macros delegate to a private function
+> `litmask::__internal::__init_with_wrapper(provider, &wrapper_bytes)`
+> that contains the actual decryption logic. The lazy-init path used
+> by `mask!()` calls without prior `init!()` performs the same
+> sequence using `EnvVarProvider::default()` and the wrapper bytes
+> that `mask!()` itself embeds via `include_bytes!`.
 
 The `OnceLock` is initialized exactly once per process; key rotation at runtime
 is not supported in v1.
@@ -650,6 +672,15 @@ audit purposes.
 pub fn init() -> Result<(), InitError>;
 pub fn init_with<P: KeyProvider>(provider: P) -> Result<(), InitError>;
 ```
+
+> **Amendment 2026-05-11:** Per Amendment 5, `init` and `init_with`
+> are declarative macros, not functions. The signatures above describe
+> the expansion result, not the user-facing API. User-facing
+> invocations use the bang form: `litmask::init!()?` and
+> `litmask::init_with!(provider)?`. The macros delegate to a private
+> `litmask::__internal::__init_with_wrapper` function whose signature
+> resembles the one above, taking the wrapper bytes as an extra
+> argument supplied by the macro expansion.
 
 #### §1.8.3 Public types
 
@@ -1581,6 +1612,15 @@ runtime using `EnvVarProvider::default()`.
 
 §2.6.1.2 — `litmask::init_with<P: KeyProvider>(provider: P) -> Result<(), InitError>`
 SHALL initialize the runtime using the given provider.
+
+> **Amendment 2026-05-11:** Per Amendment 5, §2.6.1.1 and §2.6.1.2 are
+> implemented as declarative macros (`init!` / `init_with!`) that
+> expand at the call site to read wrapper bytes via `include_bytes!`
+> from the caller's `OUT_DIR`, then forward to a private
+> `__init_with_wrapper(provider, &wrapper_bytes)` function whose
+> behavior matches the requirements below verbatim. The user-facing
+> ergonomic contract is `litmask::init!()?` and
+> `litmask::init_with!(provider)?` returning `Result<(), InitError>`.
 
 §2.6.1.3 — Both init functions SHALL retrieve `unlock_key` via
 `provider.unlock_key()`, decrypt the embedded `mask_key` wrapper (format per
