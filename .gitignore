@@ -20,3 +20,6 @@ Thumbs.db
 
 # Node (commitlint, semantic-release)
 /node_modules/
+
+# Claude Code local config
+/.claude/
