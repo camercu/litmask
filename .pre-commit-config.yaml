@@ -1,0 +1,33 @@
+# Pre-commit configuration. Install via `just setup`.
+# Reference: https://pre-commit.com/
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: just-pre-commit
+        name: just pre-commit (fmt-check + lint-typos + cargo check)
+        entry: nix-shell --run 'just pre-commit'
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: just-pre-push
+        name: just pre-push (clippy + test + doc)
+        entry: nix-shell --run 'just pre-push'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: commitlint
+        name: commitlint
+        entry: npx --no-install commitlint --edit
+        language: system
+        stages: [commit-msg]

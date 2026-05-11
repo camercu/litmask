@@ -1,0 +1,56 @@
+# cargo-deny configuration. Run via `just lint-deny`.
+# Reference: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = true
+
+[output]
+feature-depth = 1
+
+# ── Advisories ──────────────────────────────────────────────
+# Reject crates with known security vulnerabilities.
+[advisories]
+version = 2
+yanked = "deny"
+ignore = []
+
+# ── Licenses ────────────────────────────────────────────────
+# Permissive-only allow list. Source-available, weak-copyleft (MPL-2.0)
+# permitted because it allows static linking without obligation on the
+# combined work.
+[licenses]
+version = 2
+confidence-threshold = 0.8
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+]
+exceptions = []
+
+# ── Bans ────────────────────────────────────────────────────
+# Block specific crates or duplicate versions.
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+allow = []
+deny = []
+skip = []
+skip-tree = []
+
+# ── Sources ─────────────────────────────────────────────────
+# Only crates from crates.io are allowed by default.
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

@@ -15,10 +15,16 @@ fmt-check:
 
 # ── Linting ─────────────────────────────────────────────────
 
-lint: fmt-check lint-clippy
+lint: fmt-check lint-clippy lint-typos lint-deny
 
 lint-clippy:
     cargo clippy --all-targets --workspace -- {{warnings}}
+
+lint-typos:
+    typos
+
+lint-deny:
+    cargo deny check advisories licenses bans sources
 
 # ── Testing ─────────────────────────────────────────────────
 
@@ -67,6 +73,16 @@ check-tool-versions:
 
 setup:
     ./scripts/setup-dev.sh
+
+# ── Hooks ───────────────────────────────────────────────────
+
+# Fast checks run on every git commit via pre-commit.
+pre-commit: fmt-check lint-typos
+    cargo check --all-targets --workspace --quiet
+
+# Slower checks run on every git push via pre-commit.
+pre-push:
+    RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just lint-clippy test doc
 
 # ── CI ──────────────────────────────────────────────────────
 

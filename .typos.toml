@@ -1,0 +1,15 @@
+# typos configuration. Run via `just lint-typos`.
+# Reference: https://github.com/crate-ci/typos
+
+[default]
+extend-ignore-re = []
+
+[default.extend-words]
+
+[files]
+extend-exclude = [
+    "target/",
+    "node_modules/",
+    "Cargo.lock",
+    "package-lock.json",
+]

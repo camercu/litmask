@@ -1,0 +1,13 @@
+{
+  "name": "litmask-tooling",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Node-based developer tooling for the litmask Rust workspace (commitlint and, later, semantic-release).",
+  "scripts": {
+    "commitlint": "commitlint --edit"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.5.0",
+    "@commitlint/config-conventional": "^19.5.0"
+  }
+}
