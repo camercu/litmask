@@ -1446,7 +1446,7 @@ explicitly marked with `unmasked!()`.
 
 #### §2.4.1 build.rs integration
 
-§2.4.1.1 — `litmask-build::emit()` SHALL be invokable as a one-line
+§2.4.1.1 — `litmask-build::emit()` SHALL be invocable as a one-line
 `build.rs`.
 
 §2.4.1.2 — `emit()` SHALL determine the build profile from the `PROFILE`
