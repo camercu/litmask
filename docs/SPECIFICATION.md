@@ -38,6 +38,11 @@ readers can see what was superseded.
   cipher-id byte; the "exactly one cipher per build" rule from §1.5.1
   is narrowed to the `litmask` runtime crate only. Affects §1.5.1,
   §1.7.3, §1.14, §2.9.1.
+- **2026-05-10 — Amendment 4:** The "single crate" goal in §1.2 is
+  clarified — Rust prohibits non-macro exports from a `proc-macro`
+  crate, so the workspace MAY contain a hidden internal
+  `litmask-macros` proc-macro crate that the user-facing `litmask`
+  crate re-exports. Affects §1.2.
 
 ---
 
@@ -154,6 +159,20 @@ The proc-macro and runtime ship in a single crate (`litmask`) rather than
 separate `litmask-macros` + `litmask-runtime` crates. This is unconventional
 but intentional: the proc-macro and runtime share a binary format that must
 evolve in lockstep, and splitting them adds version-skew risk without benefit.
+
+> **Amendment 2026-05-10:** Rust forbids exporting non-macro items from a
+> crate with `proc-macro = true`, so the "single crate" goal cannot be
+> taken literally. The user-facing surface remains a single `litmask`
+> crate; internally, the workspace MAY contain a hidden
+> `litmask-macros` proc-macro crate that the public `litmask` crate
+> re-exports via `pub use litmask_macros::*;`. The two MUST be pinned
+> as `=x.y.z` exact-version dependencies and released together so the
+> binary format never desyncs. `litmask-macros` SHALL be marked
+> `publish = true` (so users can resolve the transitive dependency)
+> but documented as "internal — do not depend on directly." The
+> three-crate workspace table above lists user-facing crates; the
+> internal `litmask-macros` is implementation detail. Add it to the
+> workspace `members` array when Task 5 lands.
 
 ### §1.3 Build Pipeline
 
