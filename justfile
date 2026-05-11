@@ -1,6 +1,7 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
 warnings := "-D warnings"
+stable_toolchain := "+stable"
 
 default:
     @just --list
@@ -20,6 +21,9 @@ lint: fmt-check lint-clippy lint-typos lint-deny
 lint-clippy:
     cargo clippy --all-targets --workspace -- {{warnings}}
 
+lint-clippy-stable:
+    cargo {{stable_toolchain}} clippy --all-targets --workspace
+
 lint-typos:
     typos
 
@@ -30,6 +34,9 @@ lint-deny:
 
 test:
     cargo test --workspace
+
+test-stable:
+    cargo {{stable_toolchain}} test --workspace
 
 # ── Building / checking ─────────────────────────────────────
 
@@ -87,3 +94,7 @@ pre-push:
 # ── CI ──────────────────────────────────────────────────────
 
 ci: fmt-check lint test build doc
+
+# Stable-channel best-effort sanity check; runs in a continue-on-error
+# CI job so toolchain regressions surface without blocking PR merge.
+ci-stable: lint-clippy-stable test-stable

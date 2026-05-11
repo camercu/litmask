@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  canonical-gate:
+    name: Canonical gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse .tool-versions
+        id: tools
+        run: |
+          while read -r name version; do
+            # GitHub output names use underscores; tool names use hyphens.
+            echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
+          done < <(grep -v '^#' .tool-versions | grep -v '^$')
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.tools.outputs.rust }}
+          components: clippy,rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }}
+
+      - name: just ci
+        run: just ci
+
+  stable-advisory:
+    name: Latest stable advisory
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-nextest
+
+      - name: just ci-stable
+        run: just ci-stable
+
+  commitlint:
+    name: Commitlint
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Lint PR commits against Conventional Commits
+        run: npx --no-install commitlint --from origin/${{ github.base_ref }} --to HEAD --verbose
