@@ -6,6 +6,28 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+build = "build.rs"
+
+[features]
+default = ["std"]
+std = []
+# Currently a no-op marker: the runtime crate is always #![no_std] + alloc.
+# Listed for forward compatibility and so the spec-mandated acceptance
+# command `cargo build -p litmask --no-default-features --features alloc`
+# is the natural invocation. Task 23 may attach real content to it
+# (e.g., once_cell::race::OnceBox under no_std).
+alloc = []
+
+[dependencies]
+litmask-macros = { path = "../litmask-macros", version = "=0.1.0" }
+base64ct = { version = "1", features = ["alloc"] }
+blake3 = { version = "1", default-features = false }
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+once_cell = { version = "1", default-features = false, features = ["race", "alloc"] }
+zeroize = { version = "1", features = ["derive"] }
+
+[build-dependencies]
+litmask-build = { path = "../litmask-build", version = "=0.1.0" }
 
 [lints]
 workspace = true

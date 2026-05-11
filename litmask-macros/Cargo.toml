@@ -1,0 +1,21 @@
+[package]
+name = "litmask-macros"
+description = "Internal proc-macro crate for litmask. Re-exported by the litmask runtime crate; not meant to be depended on directly."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
+blake3 = "1"
+chacha20poly1305 = "0.10"
+
+[lints]
+workspace = true

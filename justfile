@@ -38,6 +38,16 @@ test:
 test-stable:
     cargo {{stable_toolchain}} test --workspace
 
+# Build and run every in-repo example end-to-end. Sources LITMASK_UNLOCK_KEY
+# from the build's litmask.config. Wired into `just ci` to catch example
+# bitrot.
+test-examples:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo build --example hello_world
+    unlock_key=$(awk -F'"' '/^unlock_key/ {print $2}' target/debug/litmask.config)
+    LITMASK_UNLOCK_KEY="$unlock_key" cargo run --example hello_world
+
 # ── Building / checking ─────────────────────────────────────
 
 build:
@@ -93,7 +103,7 @@ pre-push:
 
 # ── CI ──────────────────────────────────────────────────────
 
-ci: fmt-check lint test build doc
+ci: fmt-check lint test test-examples build doc
 
 # Stable-channel best-effort sanity check; runs in a continue-on-error
 # CI job so toolchain regressions surface without blocking PR merge.
