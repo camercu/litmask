@@ -51,6 +51,10 @@ readers can see what was superseded.
   reachable from a macro expansion at the call site — not from a
   function body in the runtime crate. Affects §1.4.1, §1.8.2,
   §2.6.1, §2.1.1.12.
+- **2026-05-11 — Amendment 6:** Std-emitted panic-source-location
+  `&'static str` values in `.rodata` are accepted as
+  litmask-identifying plaintext that cannot be removed on stable
+  Rust 1.88. Affects §1.9.3, §1.9.5, §1.11.2.
 
 ---
 
@@ -866,6 +870,33 @@ default panic handler regardless of which form is used. Applications that
 want a more informative tampering panic may set a panic hook
 (`std::panic::set_hook`) that detects panics in `litmask`-affected locations
 and emits their own message.
+
+> **Amendment 2026-05-11 (B):** Even with the recommended deployment
+> profile (`strip = "symbols"`, `debug = false`, `panic = "abort"`,
+> `lto = true`), the `&'static str` produced by
+> `core::panic::Location::caller()` for every `panic!()` call site
+> remains in the binary's `.rodata`. The string has the shape
+> `<crate-name>/src/<path>.rs` and is recoverable via `strings(1)`.
+> For `litmask` panic sites this leaks the substring "litmask" into
+> user binaries, in addition to the std-emitted "panicked at"
+> message text mentioned above. This is unavoidable on stable Rust
+> 1.88: `strip` removes symbols and debug info but not `.rodata`
+> string literals; `panic = "abort"` swaps out the unwinder but still
+> references the `Location` value when aborting. Removal options:
+>
+> - Compile with `RUSTFLAGS="-Z location-detail=none"` on the
+>   nightly toolchain. This is the upstream-blessed way to strip
+>   panic location strings.
+> - Move every panicking call site into a workspace crate with a
+>   non-identifying name. The location string then references the
+>   helper crate's path instead of `litmask/...`.
+>
+> The dirty-word regression scrub at `litmask/tests/example_scrub.rs`
+> filters substrings matching the shape `<crate>/src/<path>.rs` before
+> looking for forbidden identifiers, so this leak does not flag a
+> CI failure on stable. `THREAT_MODEL.md` MUST surface this caveat to
+> users who require a zero-identifier binary; the operationally-correct
+> recommendation is to add the nightly `-Z` flag or accept the leak.
 
 #### §1.9.6 Compile-time error message requirements
 
