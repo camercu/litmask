@@ -5,7 +5,7 @@
 //! master key held in a process-global once-cell. Both zero their
 //! contents on drop.
 
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::base64url;
 use crate::error::KeyError;
@@ -16,8 +16,7 @@ use crate::format::KEY_LEN;
 ///
 /// `Clone` is intentionally not implemented; duplicating a
 /// zero-on-drop secret should be opt-in and obvious at the call site.
-#[derive(Zeroize)]
-#[zeroize(drop)]
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct UnlockKey(pub(crate) [u8; KEY_LEN]);
 
 impl UnlockKey {
@@ -48,8 +47,7 @@ impl core::fmt::Debug for UnlockKey {
 
 /// The decrypted master key. Held in a process-global once-cell for
 /// the program's lifetime; never re-decrypted. Crate-internal only.
-#[derive(Zeroize)]
-#[zeroize(drop)]
+#[derive(Zeroize, ZeroizeOnDrop)]
 #[doc(hidden)]
 pub struct MaskKey(pub(crate) [u8; KEY_LEN]);
 
