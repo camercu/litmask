@@ -49,17 +49,13 @@ pub(crate) use litmask_internal_format as format;
 
 pub use error::{InitError, KeyError};
 pub use key::UnlockKey;
+pub use litmask_internal_format::KEY_LEN;
 pub use provider::KeyProvider;
 
 #[cfg(feature = "std")]
 pub use provider::EnvVarProvider;
 
 pub use litmask_macros::{mask, weak_mask};
-
-/// Length of every symmetric key in bytes (32). Shared by
-/// ChaCha20-Poly1305 and AES-256-GCM. Provided for callers that
-/// allocate buffers sized to match the key.
-pub const KEY_LEN: usize = litmask_internal_format::KEY_LEN;
 
 /// Internal helper: expand to `include_bytes!(...)` for the embedded
 /// encrypted-`mask_key` wrapper at the caller's `OUT_DIR`. Shared by
