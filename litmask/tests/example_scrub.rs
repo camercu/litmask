@@ -22,7 +22,7 @@ use common::Profile;
 
 /// Every example binary the workspace ships. Add new names here when
 /// new examples land under `litmask/examples/`.
-const EXAMPLES: &[&str] = &["hello_world"];
+const EXAMPLES: &[&str] = &["hello_world", "weak_mask_demo"];
 
 #[test]
 fn no_forbidden_substrings_in_any_example_binary() {
@@ -32,4 +32,15 @@ fn no_forbidden_substrings_in_any_example_binary() {
         assert!(path.exists(), "example binary missing: {}", path.display());
         common::assert_no_dirty_words(&path);
     }
+}
+
+/// `weak_mask!` must obfuscate user-supplied literals so the plaintext
+/// is absent from the compiled binary. The fixture is deliberately a
+/// lexically unusual phrase so a false-positive against std /
+/// dependency strings is implausible.
+#[test]
+fn weak_mask_fixture_absent_from_binary() {
+    common::build_example("weak_mask_demo", Profile::Release);
+    let path = common::example_path("weak_mask_demo", Profile::Release);
+    common::assert_substring_absent(&path, "yellow-velvet-tortoise-9c4f1a");
 }

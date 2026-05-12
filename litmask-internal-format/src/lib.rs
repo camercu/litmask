@@ -206,6 +206,36 @@ pub fn parse_wrapper(bytes: &[u8; WRAPPER_LEN]) -> Result<ParsedWrapper<'_>, Wra
     })
 }
 
+// ── XOR-cycle obfuscation ───────────────────────────────────────────
+
+/// XOR every byte of `input` with the corresponding byte of `key`,
+/// cycling the key as needed. Writes the result into `out`.
+///
+/// The operation is its own inverse: applying it twice with the same
+/// key recovers the original input. Used by the `weak_mask!` macro to
+/// obfuscate string literals against the per-build wrapper bytes so
+/// litmask-supplied static strings do not contribute a fixed byte
+/// signature to user binaries.
+///
+/// # Panics
+///
+/// Panics if `input.len() != out.len()` or if `key.is_empty()` while
+/// `input` is non-empty.
+pub fn xor_cycle(input: &[u8], key: &[u8], out: &mut [u8]) {
+    assert_eq!(
+        input.len(),
+        out.len(),
+        "input and output lengths must match"
+    );
+    if input.is_empty() {
+        return;
+    }
+    assert!(!key.is_empty(), "key must be non-empty");
+    for (i, byte) in input.iter().enumerate() {
+        out[i] = byte ^ key[i % key.len()];
+    }
+}
+
 // ── Nonce derivation ────────────────────────────────────────────────
 
 /// Derive the wrapper nonce: first 12 bytes of the keyed BLAKE3 hash of
@@ -298,6 +328,65 @@ mod tests {
 
     const SEED_A: [u8; KEY_LEN] = [0xaa; KEY_LEN];
     const SEED_B: [u8; KEY_LEN] = [0xbb; KEY_LEN];
+
+    // ── xor_cycle ───────────────────────────────────────────────────
+
+    #[test]
+    fn xor_cycle_empty_input_is_noop() {
+        let key = [0xAAu8; 8];
+        let mut out = [];
+        xor_cycle(&[], &key, &mut out);
+    }
+
+    #[test]
+    fn xor_cycle_self_inverse_with_matching_lengths() {
+        let plaintext = b"hello world";
+        let key = b"0123456789ab";
+        let mut encoded = [0u8; 11];
+        xor_cycle(plaintext, key, &mut encoded);
+        let mut decoded = [0u8; 11];
+        xor_cycle(&encoded, key, &mut decoded);
+        assert_eq!(&decoded, plaintext);
+    }
+
+    #[test]
+    fn xor_cycle_handles_key_shorter_than_input() {
+        // Key cycles: input byte i is XOR'd with key[i % key.len()].
+        let plaintext = b"abcdef";
+        let key = b"\xff\x55"; // 2-byte key cycling across 6-byte input
+        let mut out = [0u8; 6];
+        xor_cycle(plaintext, key, &mut out);
+        assert_eq!(out[0], b'a' ^ 0xff);
+        assert_eq!(out[1], b'b' ^ 0x55);
+        assert_eq!(out[2], b'c' ^ 0xff);
+        assert_eq!(out[3], b'd' ^ 0x55);
+        assert_eq!(out[4], b'e' ^ 0xff);
+        assert_eq!(out[5], b'f' ^ 0x55);
+    }
+
+    #[test]
+    fn xor_cycle_handles_key_longer_than_input() {
+        let plaintext = b"hi";
+        let key = b"\x01\x02\x03\x04\x05";
+        let mut out = [0u8; 2];
+        xor_cycle(plaintext, key, &mut out);
+        assert_eq!(out[0], b'h' ^ 0x01);
+        assert_eq!(out[1], b'i' ^ 0x02);
+    }
+
+    #[test]
+    #[should_panic(expected = "input and output lengths must match")]
+    fn xor_cycle_panics_when_buffers_disagree() {
+        let mut out = [0u8; 5];
+        xor_cycle(b"hello world", &[0xAA], &mut out);
+    }
+
+    #[test]
+    #[should_panic(expected = "key must be non-empty")]
+    fn xor_cycle_panics_on_empty_key_with_nonempty_input() {
+        let mut out = [0u8; 1];
+        xor_cycle(b"x", &[], &mut out);
+    }
 
     #[test]
     fn format_version_round_trips_through_byte() {

@@ -25,6 +25,12 @@
 
 #![no_std]
 
+// Self-import: lets the public proc-macros emit absolute `::litmask::`
+// paths in their generated code, and have those paths resolve
+// correctly when the macros are invoked from inside this crate itself
+// (e.g., `EnvVarProvider::default()` calling `crate::weak_mask!(...)`).
+extern crate self as litmask;
+
 extern crate alloc;
 
 #[cfg(feature = "std")]
@@ -48,7 +54,7 @@ pub use provider::KeyProvider;
 #[cfg(feature = "std")]
 pub use provider::EnvVarProvider;
 
-pub use litmask_macros::mask;
+pub use litmask_macros::{mask, weak_mask};
 
 /// Length of every symmetric key in bytes (32). Shared by
 /// ChaCha20-Poly1305 and AES-256-GCM. Provided for callers that
@@ -104,4 +110,5 @@ macro_rules! init_with {
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.
     pub use crate::runtime::{__decrypt_str, __init_with_wrapper};
+    pub use litmask_internal_format::xor_cycle as __xor_cycle;
 }

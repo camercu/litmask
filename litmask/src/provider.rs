@@ -55,47 +55,13 @@ impl EnvVarProvider {
 
 #[cfg(feature = "std")]
 impl Default for EnvVarProvider {
-    /// Reads from `LITMASK_UNLOCK_KEY`.
+    /// Reads from `LITMASK_UNLOCK_KEY`. The variable name itself is
+    /// obfuscated against the per-build wrapper bytes via the public
+    /// [`crate::weak_mask!`] macro, so the literal does not appear in
+    /// `.rodata` of user binaries.
     fn default() -> Self {
-        Self::new(default_env_var_name())
+        Self::new(crate::weak_mask!("LITMASK_UNLOCK_KEY"))
     }
-}
-
-/// Decode the default environment variable name from an XOR-masked
-/// byte array at first call. The literal `"LITMASK_UNLOCK_KEY"` is
-/// never present contiguously in `.rodata`; only the masked bytes
-/// are, and they fall outside the printable-ASCII range so `strings(1)`
-/// does not surface them. Decoded once and leaked into a `'static`
-/// string via [`std::sync::OnceLock`].
-///
-/// The compromise this works around is that std-emitted panic
-/// source-location strings remain visible in `.rodata` on stable Rust;
-/// see the litmask spec amendment dated 2026-05-11 (B).
-#[cfg(feature = "std")]
-fn default_env_var_name() -> &'static str {
-    /// XOR mask applied to each byte of the encoded env-var name. Any
-    /// non-zero byte that pushes encoded bytes outside the
-    /// 0x20–0x7E printable-ASCII window suffices; 0xAA keeps every
-    /// resulting byte at 0xE0+ so `strings(1)` does not include them.
-    const MASK: u8 = 0xAA;
-    /// XOR-masked bytes for `"LITMASK_UNLOCK_KEY"`. Verified by the
-    /// test `default_provider_uses_litmask_unlock_key`.
-    const MASKED: [u8; 18] = [
-        0xE6, 0xE3, 0xFE, 0xE7, 0xEB, 0xF9, 0xE1, 0xF5, 0xFF, 0xE4, 0xE6, 0xE5, 0xE9, 0xE1, 0xF5,
-        0xE1, 0xEF, 0xF3,
-    ];
-    static NAME: std::sync::OnceLock<std::string::String> = std::sync::OnceLock::new();
-    NAME.get_or_init(|| {
-        // `core::hint::black_box` prevents LLVM from constant-folding
-        // the XOR loop into a precomputed string literal in .rodata.
-        // Without it, the optimizer materializes the first 16 bytes of
-        // the decoded name (SIMD-chunk size) as a literal, defeating
-        // the obfuscation.
-        let mask = core::hint::black_box(MASK);
-        let bytes: alloc::vec::Vec<u8> = MASKED.iter().map(|b| b ^ mask).collect();
-        std::string::String::from_utf8(bytes).expect("decoded env-var name is valid UTF-8")
-    })
-    .as_str()
 }
 
 #[cfg(feature = "std")]
@@ -132,13 +98,6 @@ mod tests {
     fn default_reads_litmask_unlock_key() {
         let p = EnvVarProvider::default();
         assert_eq!(p.var_name(), "LITMASK_UNLOCK_KEY");
-    }
-
-    #[test]
-    fn default_env_var_name_decodes_to_expected_string() {
-        // Sanity: the XOR-encoded byte table really decodes to the
-        // documented env-var name.
-        assert_eq!(default_env_var_name(), "LITMASK_UNLOCK_KEY");
     }
 
     #[test]
