@@ -10,7 +10,7 @@ use chacha20poly1305::{
     aead::{Aead, generic_array::GenericArray},
 };
 
-use crate::format::{self, CipherId, FormatVersion, KEY_LEN, NONCE_LEN, WRAPPER_LEN};
+use crate::format::{self, KEY_LEN, NONCE_LEN, WRAPPER_LEN};
 
 /// Errors surfaced by pure decryption helpers. Converted to panics by
 /// the runtime imperative shell; the typed form here lets unit tests
@@ -52,20 +52,14 @@ pub(crate) fn decrypt_wrapper(
     unlock_key: &[u8; KEY_LEN],
     wrapper: &[u8; WRAPPER_LEN],
 ) -> Result<[u8; KEY_LEN], DecryptError> {
+    // parse_wrapper rejects any byte that doesn't decode to a known
+    // FormatVersion / CipherId variant, so a successful parse already
+    // means the header is one this build supports. When additional
+    // cipher variants land, extend WrapperParseError + this mapping.
     let parsed = format::parse_wrapper(wrapper).map_err(|e| match e {
         format::WrapperParseError::UnknownFormatVersion(_) => DecryptError::UnsupportedFormat,
         format::WrapperParseError::UnknownCipherId(_) => DecryptError::UnsupportedCipher,
     })?;
-    // Even if parse succeeds, the parsed header must match the format
-    // and cipher this build was compiled to handle. When additional
-    // cipher variants land, this check is what rejects e.g. an
-    // AES-GCM wrapper on a ChaCha20-only build.
-    if parsed.version != FormatVersion::CURRENT {
-        return Err(DecryptError::UnsupportedFormat);
-    }
-    if parsed.cipher != CipherId::ChaCha20Poly1305 {
-        return Err(DecryptError::UnsupportedCipher);
-    }
     debug_assert_eq!(parsed.body.len(), KEY_LEN + format::TAG_LEN);
     let plaintext = decrypt_aead(unlock_key, parsed.nonce, parsed.body)?;
     plaintext
@@ -93,7 +87,7 @@ pub(crate) fn decrypt_blob(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::format::{self, TAG_LEN};
+    use crate::format::{self, CipherId, FormatVersion, TAG_LEN};
     use chacha20poly1305::{
         ChaCha20Poly1305, KeyInit, Nonce,
         aead::{Aead, generic_array::GenericArray},
