@@ -303,23 +303,21 @@ pub fn nonce_for_call_site(
 /// slice. Always writes at least `"0"`. Avoids the
 /// `alloc::string::ToString` dependency so this fn stays usable from
 /// `no_std` consumers.
+///
+/// Digits are written backwards into the tail of `buf` so no scratch
+/// buffer or reversal pass is needed.
 fn u32_to_decimal(mut n: u32, buf: &mut [u8; 10]) -> &[u8] {
     if n == 0 {
-        buf[0] = b'0';
-        return &buf[..1];
+        buf[9] = b'0';
+        return &buf[9..];
     }
-    let mut len = 0usize;
-    let mut tmp = [0u8; 10];
+    let mut i = buf.len();
     while n > 0 {
-        tmp[len] = b'0' + u8::try_from(n % 10).expect("digit 0-9 fits in u8");
+        i -= 1;
+        buf[i] = b'0' + u8::try_from(n % 10).expect("digit 0-9 fits in u8");
         n /= 10;
-        len += 1;
     }
-    // tmp holds digits in reverse order; flip into buf.
-    for (i, &b) in tmp[..len].iter().rev().enumerate() {
-        buf[i] = b;
-    }
-    &buf[..len]
+    &buf[i..]
 }
 
 #[cfg(test)]
