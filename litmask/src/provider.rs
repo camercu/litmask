@@ -128,7 +128,7 @@ mod tests {
     #[test]
     fn parse_env_value_valid_32_byte_key_succeeds() {
         let key = parse_env_value(Some(VALID_BASE64URL_32B)).expect("valid 32-byte key");
-        assert_eq!(key.0, [0u8; crate::format::KEY_LEN]);
+        assert_eq!(key.as_bytes(), &[0u8; crate::format::KEY_LEN]);
     }
 
     #[test]

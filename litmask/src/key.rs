@@ -17,7 +17,7 @@ use crate::format::KEY_LEN;
 /// `Clone` is intentionally not implemented; duplicating a
 /// zero-on-drop secret should be opt-in and obvious at the call site.
 #[derive(Zeroize, ZeroizeOnDrop)]
-pub struct UnlockKey(pub(crate) [u8; KEY_LEN]);
+pub struct UnlockKey([u8; KEY_LEN]);
 
 impl UnlockKey {
     /// Decode a base64url-encoded 32-byte key. Padded inputs and any
@@ -36,6 +36,10 @@ impl UnlockKey {
             .map_err(|_| KeyError::InvalidFormat)?;
         Ok(Self(bytes))
     }
+
+    pub(crate) fn as_bytes(&self) -> &[u8; KEY_LEN] {
+        &self.0
+    }
 }
 
 impl core::fmt::Debug for UnlockKey {
@@ -49,7 +53,17 @@ impl core::fmt::Debug for UnlockKey {
 /// the program's lifetime; never re-decrypted. Crate-internal only.
 #[derive(Zeroize, ZeroizeOnDrop)]
 #[doc(hidden)]
-pub struct MaskKey(pub(crate) [u8; KEY_LEN]);
+pub struct MaskKey([u8; KEY_LEN]);
+
+impl MaskKey {
+    pub(crate) fn new(bytes: [u8; KEY_LEN]) -> Self {
+        Self(bytes)
+    }
+
+    pub(crate) fn as_bytes(&self) -> &[u8; KEY_LEN] {
+        &self.0
+    }
+}
 
 impl core::fmt::Debug for MaskKey {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {

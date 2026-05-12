@@ -96,8 +96,8 @@ pub fn __init_with_wrapper<P: KeyProvider>(
         return Ok(());
     }
     let unlock_key = provider.unlock_key()?;
-    let mask_key_bytes = decrypt_wrapper_or_panic(&unlock_key.0, wrapper);
-    cell::try_set(MaskKey(mask_key_bytes));
+    let mask_key_bytes = decrypt_wrapper_or_panic(unlock_key.as_bytes(), wrapper);
+    cell::try_set(MaskKey::new(mask_key_bytes));
     Ok(())
 }
 
@@ -116,7 +116,7 @@ pub fn __init_with_wrapper<P: KeyProvider>(
 #[doc(hidden)]
 pub fn __decrypt_str(blob: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> String {
     let mask_key = mask_key_or_lazy_init(wrapper);
-    let plaintext = decrypt_blob_or_panic(&mask_key.0, blob);
+    let plaintext = decrypt_blob_or_panic(mask_key.as_bytes(), blob);
     // mask! generates UTF-8 ciphertext from UTF-8 string literals; the
     // AEAD tag check above already rejects any tampering that could
     // produce non-UTF-8 plaintext. unwrap is safe by construction.
@@ -137,8 +137,8 @@ fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {
                 Ok(k) => k,
                 Err(_) => panic!(),
             };
-            let bytes = decrypt_wrapper_or_panic(&unlock_key.0, wrapper);
-            MaskKey(bytes)
+            let bytes = decrypt_wrapper_or_panic(unlock_key.as_bytes(), wrapper);
+            MaskKey::new(bytes)
         }
         #[cfg(not(feature = "std"))]
         {
