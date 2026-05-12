@@ -55,6 +55,12 @@ readers can see what was superseded.
   `&'static str` values in `.rodata` are accepted as
   litmask-identifying plaintext that cannot be removed on stable
   Rust 1.88. Affects §1.9.3, §1.9.5, §1.11.2.
+- **2026-05-12 — Amendment 7:** New design principle: litmask MUST
+  NOT contribute fixed byte signatures to user binaries. Any
+  litmask-supplied static string (default env-var name, etc.) is
+  obfuscated against the per-build wrapper bytes via the public
+  `weak_mask!()` macro so its `.rodata` representation varies per
+  build. Affects §1.7.1, §1.8.1, §1.9.3.
 
 ---
 
@@ -484,6 +490,16 @@ ciphertext (uniformly random under the cipher), they constitute no fixed
 pattern across builds — every build has different locator bytes due to seed
 variation.
 
+> **Amendment 2026-05-12:** Generalizing this property to all
+> litmask-supplied static strings: litmask MUST NOT contribute fixed
+> byte signatures to user binaries. Any ancillary literal that the
+> library needs to embed (the default env-var name, future default
+> file paths for `FileProvider`, etc.) MUST be obfuscated against the
+> per-build wrapper bytes via the public `weak_mask!()` macro
+> (§1.8.1). The resulting `.rodata` representation varies per build
+> with the wrapper's random ciphertext, leaving no
+> grep-across-binaries fingerprint.
+
 #### §1.7.2 Per-string ciphertext blob format
 
 Each per-string encrypted blob is a contiguous byte sequence:
@@ -626,9 +642,21 @@ most consistent recoverable state:
 mask!(literal)              // dispatches on literal kind
 maskfmt!(literal_template, args...)
 unmasked!(literal)          // explicit opt-out, returns literal unchanged
+weak_mask!(literal)         // XOR-with-wrapper obfuscation; weaker than mask!
 #[mask_all]                 // module-level deep rewriting
 #[mask_all(strict)]         // upgrades skip warnings to errors
 ```
+
+`weak_mask!` is a complement to `mask!` for strings that must be
+readable before `init!()` has populated the runtime master key — env
+var names, default file paths, and other bootstrap configuration. The
+threat model is strictly weaker than `mask!`: the literal is XOR-ed
+against the per-build wrapper bytes (which themselves live in the user
+binary), so an attacker with both the obfuscated bytes and the wrapper
+recovers the plaintext trivially. `weak_mask!` defends against
+`strings(1)` and Level 1 inspection only. Real secrets always use
+`mask!`. Return type is `&'static str`; decode happens once per call
+site (cached in a `OnceLock`).
 
 `mask!` accepts:
 - String literal (`"text"`, raw, Unicode-escape) → returns `String`
