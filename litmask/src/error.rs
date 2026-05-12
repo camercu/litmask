@@ -1,8 +1,4 @@
 //! Error types surfaced by initialization.
-//!
-//! `Display` impls emit short ASCII `category:variant` tags only;
-//! Task 22 will tighten them per §1.9.3. `Decryption` variant lands in
-//! Task 8 along with the tampering panic policy (§1.9.5).
 
 use core::fmt;
 
@@ -34,7 +30,8 @@ impl core::error::Error for InitError {
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum KeyError {
-    /// The key source is unavailable (env var unset, file missing, etc.).
+    /// The key source is unavailable (env var unset, file missing,
+    /// etc.).
     NotFound,
     /// The key data is malformed (wrong length, bad encoding).
     InvalidFormat,

@@ -11,23 +11,18 @@
 //!
 //! `emit()` generates the per-build random seed, derives the
 //! `mask_key` / `unlock_key` pair, encrypts the `mask_key` into the
-//! 62-byte wrapper described in §1.7.3, and writes:
+//! wrapper, and writes:
 //!
-//! - `$OUT_DIR/litmask_seed.bin`      — 32-byte seed (consumed by the
+//! - `$OUT_DIR/litmask_seed.bin` — 32-byte seed (consumed by the
 //!   proc-macro for per-call-site nonce derivation).
-//! - `$OUT_DIR/litmask_key.bin`       — 32-byte plaintext `mask_key`
+//! - `$OUT_DIR/litmask_key.bin` — 32-byte plaintext `mask_key`
 //!   (consumed by the proc-macro to encrypt per-string blobs at
 //!   expansion time).
-//! - `$OUT_DIR/litmask_wrapper.bin`   — 62-byte encrypted-`mask_key`
-//!   wrapper (consumed by the runtime via `include_bytes!` inside the
+//! - `$OUT_DIR/litmask_wrapper.bin` — encrypted-`mask_key` wrapper
+//!   (consumed by the runtime via `include_bytes!` inside the
 //!   `init!` / `init_with!` / `mask!` macro expansions).
-//! - `target/<profile>/litmask.config` — TOML with `unlock_key`,
-//!   `locator`, and `length` per §1.7.4.
-//!
-//! Reproducible seed sourcing (`LITMASK_RNG_SEED`, `target/litmask-seed`,
-//! `cargo:warning=` for release builds) is deferred to Task 19. This
-//! initial implementation generates a fresh seed via `getrandom` on
-//! every build.
+//! - `target/<profile>/litmask.config` — TOML containing `unlock_key`,
+//!   `locator`, and `length`.
 
 use std::fs;
 use std::io::Write;
@@ -46,7 +41,8 @@ use zeroize::Zeroize;
 // `litmask-internal-format` (a small internal crate shared by litmask,
 // litmask-build, and litmask-macros).
 use litmask_internal_format::{
-    KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, assemble_wrapper, nonce_for_wrapper,
+    CipherId, FormatVersion, KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, assemble_wrapper,
+    nonce_for_wrapper,
 };
 
 const CONFIG_HEADER: &str = "\
@@ -66,7 +62,8 @@ const CONFIG_HEADER: &str = "\
 /// build-system bug, not a user error.
 pub fn emit() {
     // Re-run if the user changes the seed env var or edits their build
-    // script. Full LITMASK_RNG_SEED honoring lands in Task 19.
+    // script. Full `LITMASK_RNG_SEED` honoring is layered on in a
+    // later refactor.
     println!("cargo:rerun-if-env-changed=LITMASK_RNG_SEED");
     println!("cargo:rerun-if-changed=build.rs");
 
@@ -76,14 +73,10 @@ pub fn emit() {
     let profile_dir = profile_dir_of(&out_dir);
 
     // Source the per-build seed. Persistence is profile-scoped (not
-    // OUT_DIR-scoped) so that two cargo invocations with different
-    // feature flags (e.g., `cargo build` and `cargo build
-    // --no-default-features --features alloc`) share the same key
-    // material and produce a single coherent litmask.config. Spec
-    // §2.4.1.3 specifies this path explicitly ("target/litmask-seed");
-    // we use `target/<profile>/litmask-seed.bin` because cargo writes
-    // litmask.config alongside it. Task 19 layers `LITMASK_RNG_SEED`
-    // env var + release/debug split on top.
+    // OUT_DIR-scoped) so two cargo invocations with different feature
+    // flags (e.g., `cargo build` and `cargo build --no-default-features
+    // --features alloc`) share the same key material and produce a
+    // single coherent litmask.config.
     let seed_persist_path = profile_dir.join("litmask-seed.bin");
     let mut seed = [0u8; KEY_LEN];
     if let Ok(bytes) = fs::read(&seed_persist_path) {
@@ -104,8 +97,6 @@ pub fn emit() {
     rng.fill_bytes(&mut mask_key);
     rng.fill_bytes(&mut unlock_key);
 
-    // Derive the wrapper nonce per §1.7.3 (canonical algorithm in
-    // litmask::format::nonce_for_wrapper).
     let wrapper_nonce = nonce_for_wrapper(&seed);
 
     // Encrypt mask_key under unlock_key with ChaCha20-Poly1305.
@@ -120,22 +111,22 @@ pub fn emit() {
         KEY_LEN + TAG_LEN
     );
 
-    let wrapper = assemble_wrapper(&wrapper_nonce, &ciphertext_with_tag);
-    // Best-effort zeroize of the encrypted-form local buffer.
+    let wrapper = assemble_wrapper(
+        FormatVersion::CURRENT,
+        CipherId::ChaCha20Poly1305,
+        &wrapper_nonce,
+        &ciphertext_with_tag,
+    );
     ciphertext_with_tag.zeroize();
 
-    // Write OUT_DIR artifacts. These are the per-build-unit copies the
-    // proc-macro reads at expansion time via include_bytes!.
+    // Per-build-unit copies the proc-macro reads at expansion time via
+    // include_bytes!.
     write_secret(&out_dir.join("litmask_seed.bin"), &seed);
     write_secret(&out_dir.join("litmask_key.bin"), &mask_key);
     write_secret(&out_dir.join("litmask_wrapper.bin"), &wrapper);
 
-    // Write the deployer-facing config at the profile root.
     write_config(&profile_dir.join("litmask.config"), &unlock_key, &wrapper);
 
-    // Zeroize in-memory keys via the zeroize crate. Earlier
-    // pass-by-value drop_zeroed helper was a no-op because [u8; 32]
-    // is Copy; zeroize::Zeroize mutates the original storage.
     seed.zeroize();
     mask_key.zeroize();
     unlock_key.zeroize();
@@ -160,11 +151,11 @@ fn profile_dir_of(out_dir: &Path) -> PathBuf {
 }
 
 fn write_config(path: &Path, unlock_key: &[u8; KEY_LEN], wrapper: &[u8; WRAPPER_LEN]) {
-    let unlock_key_b64 = Base64UrlUnpadded::encode_string(unlock_key);
-    let locator_b64 = Base64UrlUnpadded::encode_string(&wrapper[..NONCE_LEN]);
+    let unlock_key_text = Base64UrlUnpadded::encode_string(unlock_key);
+    let locator_text = Base64UrlUnpadded::encode_string(&wrapper[..NONCE_LEN]);
 
     let body = format!(
-        "{CONFIG_HEADER}\nunlock_key = \"{unlock_key_b64}\"\nlocator = \"{locator_b64}\"\nlength = {WRAPPER_LEN}\n"
+        "{CONFIG_HEADER}\nunlock_key = \"{unlock_key_text}\"\nlocator = \"{locator_text}\"\nlength = {WRAPPER_LEN}\n"
     );
 
     fs::write(path, body).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));

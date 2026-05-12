@@ -1,32 +1,27 @@
-//! ChaCha20-Poly1305 AEAD wrappers (functional core).
+//! ChaCha20-Poly1305 AEAD decrypt path (functional core).
 //!
 //! Stateless decrypt operations plus higher-level pure helpers that
 //! validate the wrapper format. Encryption is performed only at build
-//! time (in `litmask-build`) and at proc-macro expansion time (in
-//! `litmask-macros`); the runtime crate decrypts only.
-//!
-//! The AES-256-GCM variant arrives in Task 18 under the `aes-gcm`
-//! feature flag. All call sites use the `chacha20poly1305` crate
-//! directly without further abstraction.
+//! time (in the build-script helper) and at proc-macro expansion time;
+//! the runtime crate decrypts only.
 
 use chacha20poly1305::{
     ChaCha20Poly1305, KeyInit, Nonce,
     aead::{Aead, generic_array::GenericArray},
 };
 
-use crate::format::{
-    self, CIPHER_ID_CHACHA20, HEADER_LEN, KEY_LEN, NONCE_LEN, WRAPPER_LEN, WRAPPER_VERSION,
-};
+use crate::format::{self, CipherId, FormatVersion, KEY_LEN, NONCE_LEN, WRAPPER_LEN};
 
-/// Errors surfaced by pure decryption helpers. These are converted to
-/// panics by the runtime imperative shell per §1.9.5; the typed form
-/// here lets unit tests assert specific failure modes without invoking
-/// `panic::catch_unwind`.
+/// Errors surfaced by pure decryption helpers. Converted to panics by
+/// the runtime imperative shell; the typed form here lets unit tests
+/// assert specific failure modes without `panic::catch_unwind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DecryptError {
-    /// Wrapper byte 0 is not [`WRAPPER_VERSION`].
+    /// Wrapper header carries a format version this build does not
+    /// support, or the byte does not match any known version.
     UnsupportedFormat,
-    /// Wrapper byte 1 is not a known cipher id.
+    /// Wrapper header carries a cipher id this build does not support,
+    /// or the byte does not match any known cipher.
     UnsupportedCipher,
     /// Per-string blob is shorter than `NONCE_LEN + TAG_LEN`.
     BlobTooShort,
@@ -36,9 +31,7 @@ pub(crate) enum DecryptError {
 
 /// Decrypt an AEAD blob with ChaCha20-Poly1305.
 ///
-/// `body` is the `ciphertext || tag` payload (no leading nonce). Returns
-/// the recovered plaintext on success, [`DecryptError::AuthenticationFailed`]
-/// on tag mismatch or malformed input.
+/// `body` is the `ciphertext || tag` payload (no leading nonce).
 pub(crate) fn decrypt_aead(
     key: &[u8; KEY_LEN],
     nonce: &[u8; NONCE_LEN],
@@ -52,23 +45,29 @@ pub(crate) fn decrypt_aead(
 
 /// Decrypt the embedded encrypted-`mask_key` wrapper.
 ///
-/// Validates the version and cipher-id bytes (per §1.7.3), then runs
-/// the AEAD decryption with the supplied `unlock_key`. The recovered
-/// `mask_key` is returned as a fixed-size byte array; callers wrap it
-/// in [`crate::key::MaskKey`].
+/// Parses the typed header, confirms the format and cipher are ones
+/// this build supports, and runs the AEAD decryption with the supplied
+/// `unlock_key`. Returns the recovered `mask_key` bytes on success.
 pub(crate) fn decrypt_wrapper(
     unlock_key: &[u8; KEY_LEN],
     wrapper: &[u8; WRAPPER_LEN],
 ) -> Result<[u8; KEY_LEN], DecryptError> {
-    let (version, cipher_id, nonce, body) = format::parse_wrapper(wrapper);
-    if version != WRAPPER_VERSION {
+    let parsed = format::parse_wrapper(wrapper).map_err(|e| match e {
+        format::WrapperParseError::UnknownFormatVersion(_) => DecryptError::UnsupportedFormat,
+        format::WrapperParseError::UnknownCipherId(_) => DecryptError::UnsupportedCipher,
+    })?;
+    // Even if parse succeeds, the parsed header must match the format
+    // and cipher this build was compiled to handle. When additional
+    // cipher variants land, this check is what rejects e.g. an
+    // AES-GCM wrapper on a ChaCha20-only build.
+    if parsed.version != FormatVersion::CURRENT {
         return Err(DecryptError::UnsupportedFormat);
     }
-    if cipher_id != CIPHER_ID_CHACHA20 {
+    if parsed.cipher != CipherId::ChaCha20Poly1305 {
         return Err(DecryptError::UnsupportedCipher);
     }
-    debug_assert_eq!(body.len(), KEY_LEN + format::TAG_LEN);
-    let plaintext = decrypt_aead(unlock_key, nonce, body)?;
+    debug_assert_eq!(parsed.body.len(), KEY_LEN + format::TAG_LEN);
+    let plaintext = decrypt_aead(unlock_key, parsed.nonce, parsed.body)?;
     plaintext
         .as_slice()
         .try_into()
@@ -77,8 +76,7 @@ pub(crate) fn decrypt_wrapper(
 
 /// Decrypt a per-string blob.
 ///
-/// `blob` is `nonce (12) || ciphertext (n) || tag (16)` per §1.7.2.
-/// Returns the recovered plaintext bytes.
+/// `blob` is `nonce (12) || ciphertext (n) || tag (16)`.
 pub(crate) fn decrypt_blob(
     mask_key: &[u8; KEY_LEN],
     blob: &[u8],
@@ -92,12 +90,6 @@ pub(crate) fn decrypt_blob(
     decrypt_aead(mask_key, &nonce_bytes, &blob[NONCE_LEN..])
 }
 
-// The HEADER_LEN re-export is to keep symbol-name churn low if other
-// modules want to reference the constant via this module. Format is the
-// canonical home.
-#[allow(dead_code)]
-pub(crate) const _HEADER_LEN: usize = HEADER_LEN;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,9 +99,9 @@ mod tests {
         aead::{Aead, generic_array::GenericArray},
     };
 
-    /// Helper: encrypt a `mask_key` under `unlock_key` and assemble the
-    /// 62-byte wrapper. Mirrors what `litmask-build::emit()` does, but
-    /// stays purely in-memory so tests run sub-millisecond.
+    /// Encrypt a `mask_key` under `unlock_key` and assemble the
+    /// wrapper. Mirrors what the build-script helper does, but stays
+    /// purely in-memory so tests run sub-millisecond.
     fn build_wrapper(
         unlock_key: &[u8; KEY_LEN],
         mask_key: &[u8; KEY_LEN],
@@ -120,7 +112,12 @@ mod tests {
         let body = cipher
             .encrypt(Nonce::from_slice(&nonce), mask_key.as_slice())
             .expect("encrypt");
-        format::assemble_wrapper(&nonce, &body)
+        format::assemble_wrapper(
+            FormatVersion::CURRENT,
+            CipherId::ChaCha20Poly1305,
+            &nonce,
+            &body,
+        )
     }
 
     fn build_blob(
@@ -242,7 +239,6 @@ mod tests {
     #[test]
     fn blob_decrypt_rejects_too_short_input() {
         let mask_key = [0x55u8; KEY_LEN];
-        // NONCE_LEN + TAG_LEN - 1 bytes; one short.
         let blob = alloc::vec![0u8; NONCE_LEN + TAG_LEN - 1];
         assert_eq!(
             decrypt_blob(&mask_key, &blob),
@@ -253,8 +249,8 @@ mod tests {
     #[test]
     fn blob_empty_plaintext_round_trips() {
         // mask!("") encrypts to a 0-byte ciphertext + 16-byte tag; the
-        // total blob is exactly NONCE_LEN + TAG_LEN bytes. This must
-        // be accepted.
+        // total blob is exactly NONCE_LEN + TAG_LEN bytes. Must be
+        // accepted.
         let mask_key = [0x55u8; KEY_LEN];
         let nonce = [0x66u8; NONCE_LEN];
         let blob = build_blob(&mask_key, &nonce, b"");

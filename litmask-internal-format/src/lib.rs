@@ -1,22 +1,24 @@
-//! Canonical layout constants and pure layout helpers for the litmask
-//! binary format.
+//! Wire-format constants, typed format/cipher identifiers, and pure
+//! layout helpers for the litmask binary format.
 //!
-//! **Internal crate.** Not part of the public litmask API. Versioned in
+//! Internal crate. Not part of the public litmask API. Versioned in
 //! lockstep with `litmask`; do not depend on this crate directly. The
 //! `litmask`, `litmask-build`, and `litmask-macros` crates all depend
 //! on this one for a single canonical definition of:
 //!
-//! - The wrapper format (§1.7.3): version byte, cipher-id byte, nonce,
-//!   ciphertext + tag layout, total length.
-//! - The per-string blob format (§1.7.2): nonce prefix + ciphertext +
-//!   tag layout.
-//! - BLAKE3 nonce domain separators and derivation algorithms
-//!   (§1.5.2 + §1.7.3).
+//! - The wrapper format: 1-byte format version, 1-byte cipher id,
+//!   12-byte nonce, ciphertext, authentication tag.
+//! - The per-string blob format: 12-byte nonce prefix, ciphertext,
+//!   authentication tag.
+//! - BLAKE3 nonce domain separators and derivation algorithms for the
+//!   wrapper nonce and per-call-site nonces.
 //!
-//! Functions here are pure (no I/O, no global state) and `no_std`-
-//! compatible.
+//! All functions here are pure (no I/O, no global state) and
+//! `no_std`-compatible.
 
 #![no_std]
+
+// ── Byte-length constants ───────────────────────────────────────────
 
 /// Length of every symmetric key in bytes. ChaCha20-Poly1305 and
 /// AES-256-GCM both use 32-byte keys.
@@ -34,28 +36,132 @@ pub const HEADER_LEN: usize = 2 + NONCE_LEN;
 /// Total wrapper byte count: header + 32-byte encrypted `mask_key` + tag.
 pub const WRAPPER_LEN: usize = HEADER_LEN + KEY_LEN + TAG_LEN;
 
-/// Current wrapper format version (§1.7.3).
-pub const WRAPPER_VERSION: u8 = 0x01;
-
-/// Cipher identifier for ChaCha20-Poly1305 (§1.7.3 + §2.7.9).
-pub const CIPHER_ID_CHACHA20: u8 = 0x01;
-
-/// BLAKE3 domain separator for per-call-site nonces (§1.5.2).
+/// BLAKE3 domain separator for per-call-site nonces.
 pub const NONCE_TAG_CALL_SITE: &[u8] = b"litmask-nonce";
 
-/// BLAKE3 domain separator for the wrapper nonce (§1.7.3).
+/// BLAKE3 domain separator for the wrapper nonce.
 pub const NONCE_TAG_WRAPPER: &[u8] = b"litmask-mask-key-nonce";
 
-/// Build a 62-byte wrapper from its 12-byte nonce and the 48-byte
-/// `ciphertext || tag` produced by ChaCha20-Poly1305.
+// ── Format version ──────────────────────────────────────────────────
+
+/// Wire-format version of the encrypted-`mask_key` wrapper. Encoded as
+/// a single byte at offset 0 of every wrapper.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FormatVersion {
+    /// Initial format. 62-byte wrapper layout described at the crate
+    /// docs.
+    V1 = 0x01,
+}
+
+impl FormatVersion {
+    /// The version produced by current builds. Older versions may still
+    /// be readable; newer versions are rejected.
+    pub const CURRENT: Self = Self::V1;
+
+    /// Encode as the on-the-wire byte.
+    #[must_use]
+    pub fn to_byte(self) -> u8 {
+        self as u8
+    }
+}
+
+/// Error returned by `FormatVersion::try_from(u8)` when the byte does
+/// not match any known wire-format version. The unrecognized byte is
+/// preserved for diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnknownFormatVersion(pub u8);
+
+impl TryFrom<u8> for FormatVersion {
+    type Error = UnknownFormatVersion;
+
+    fn try_from(byte: u8) -> Result<Self, Self::Error> {
+        match byte {
+            0x01 => Ok(Self::V1),
+            other => Err(UnknownFormatVersion(other)),
+        }
+    }
+}
+
+// ── Cipher identifier ───────────────────────────────────────────────
+
+/// AEAD cipher identifier. Encoded as a single byte at offset 1 of
+/// every wrapper. Used by runtime tooling to confirm the wrapper was
+/// produced with the cipher the current binary was compiled to handle.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CipherId {
+    /// ChaCha20-Poly1305 AEAD, RFC 8439.
+    ChaCha20Poly1305 = 0x01,
+    // AES-256-GCM will land here as a second variant when the `aes-gcm`
+    // feature ships.
+}
+
+impl CipherId {
+    /// Encode as the on-the-wire byte.
+    #[must_use]
+    pub fn to_byte(self) -> u8 {
+        self as u8
+    }
+}
+
+/// Error returned by `CipherId::try_from(u8)` when the byte does not
+/// match any known cipher. The unrecognized byte is preserved for
+/// diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnknownCipherId(pub u8);
+
+impl TryFrom<u8> for CipherId {
+    type Error = UnknownCipherId;
+
+    fn try_from(byte: u8) -> Result<Self, Self::Error> {
+        match byte {
+            0x01 => Ok(Self::ChaCha20Poly1305),
+            other => Err(UnknownCipherId(other)),
+        }
+    }
+}
+
+// ── Wrapper layout ──────────────────────────────────────────────────
+
+/// A parsed wrapper, decomposed into its typed header fields plus
+/// borrowed nonce and `ciphertext || tag` body.
+#[derive(Debug)]
+pub struct ParsedWrapper<'a> {
+    /// Format version recorded in the wrapper header.
+    pub version: FormatVersion,
+    /// Cipher identifier recorded in the wrapper header.
+    pub cipher: CipherId,
+    /// 12-byte AEAD nonce used to encrypt the body.
+    pub nonce: &'a [u8; NONCE_LEN],
+    /// `ciphertext || tag` — 32 bytes ciphertext followed by 16 bytes
+    /// of authentication tag for the current cipher.
+    pub body: &'a [u8],
+}
+
+/// Reasons `parse_wrapper` may reject a wrapper byte sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WrapperParseError {
+    /// Header byte 0 is not a recognized [`FormatVersion`] value.
+    UnknownFormatVersion(u8),
+    /// Header byte 1 is not a recognized [`CipherId`] value.
+    UnknownCipherId(u8),
+}
+
+/// Build a wrapper byte array from typed header fields and the
+/// AEAD-encrypted body.
 ///
 /// # Panics
 ///
-/// Panics if `ciphertext_and_tag` is not exactly `KEY_LEN + TAG_LEN`
-/// bytes. Callers within the litmask crates always supply the
-/// canonical length; this assertion catches future drift.
+/// Panics if `ciphertext_and_tag.len()` is not exactly
+/// `KEY_LEN + TAG_LEN` bytes.
 #[must_use]
-pub fn assemble_wrapper(nonce: &[u8; NONCE_LEN], ciphertext_and_tag: &[u8]) -> [u8; WRAPPER_LEN] {
+pub fn assemble_wrapper(
+    version: FormatVersion,
+    cipher: CipherId,
+    nonce: &[u8; NONCE_LEN],
+    ciphertext_and_tag: &[u8],
+) -> [u8; WRAPPER_LEN] {
     assert_eq!(
         ciphertext_and_tag.len(),
         KEY_LEN + TAG_LEN,
@@ -63,40 +169,54 @@ pub fn assemble_wrapper(nonce: &[u8; NONCE_LEN], ciphertext_and_tag: &[u8]) -> [
         KEY_LEN + TAG_LEN
     );
     let mut out = [0u8; WRAPPER_LEN];
-    out[0] = WRAPPER_VERSION;
-    out[1] = CIPHER_ID_CHACHA20;
+    out[0] = version.to_byte();
+    out[1] = cipher.to_byte();
     out[2..HEADER_LEN].copy_from_slice(nonce);
     out[HEADER_LEN..].copy_from_slice(ciphertext_and_tag);
     out
 }
 
-/// Decompose a wrapper into `(version, cipher_id, nonce, body)` where
-/// `body` is the `ciphertext || tag` slice.
+/// Parse a wrapper byte array into typed header fields and body slice.
+///
+/// # Errors
+///
+/// Returns [`WrapperParseError`] when the header version or cipher byte
+/// is not recognized. Subsequent AEAD decryption is the caller's
+/// responsibility.
 ///
 /// # Panics
 ///
 /// Never panics for valid `[u8; WRAPPER_LEN]` inputs. The internal
-/// slice-to-array conversion is statically sized at `NONCE_LEN`; the
+/// slice-to-array conversion is statically sized at [`NONCE_LEN`]; the
 /// `expect` exists only as a sanity guard against future drift in
-/// `HEADER_LEN`.
-#[must_use]
-pub fn parse_wrapper(bytes: &[u8; WRAPPER_LEN]) -> (u8, u8, &[u8; NONCE_LEN], &[u8]) {
-    // The slicing arithmetic is constant; const_eval guarantees the
-    // shapes match WRAPPER_LEN. `try_into` is OK at this size; failure
-    // would mean a constant mismatch caught at the call site.
-    let nonce_slice: &[u8; NONCE_LEN] = (&bytes[2..HEADER_LEN])
+/// [`HEADER_LEN`].
+pub fn parse_wrapper(bytes: &[u8; WRAPPER_LEN]) -> Result<ParsedWrapper<'_>, WrapperParseError> {
+    let version = FormatVersion::try_from(bytes[0])
+        .map_err(|e| WrapperParseError::UnknownFormatVersion(e.0))?;
+    let cipher =
+        CipherId::try_from(bytes[1]).map_err(|e| WrapperParseError::UnknownCipherId(e.0))?;
+    let nonce: &[u8; NONCE_LEN] = (&bytes[2..HEADER_LEN])
         .try_into()
         .expect("nonce slice is NONCE_LEN bytes by construction");
-    (bytes[0], bytes[1], nonce_slice, &bytes[HEADER_LEN..])
+    Ok(ParsedWrapper {
+        version,
+        cipher,
+        nonce,
+        body: &bytes[HEADER_LEN..],
+    })
 }
 
-/// Derive the wrapper nonce (§1.7.3): first 12 bytes of
-/// `BLAKE3-keyed-hash(seed, "litmask-mask-key-nonce")`.
+// ── Nonce derivation ────────────────────────────────────────────────
+
+/// Derive the wrapper nonce: first 12 bytes of the keyed BLAKE3 hash of
+/// the fixed domain-separator string [`NONCE_TAG_WRAPPER`] under
+/// `seed` as the BLAKE3 key.
 ///
 /// # Panics
 ///
-/// Never panics for any inputs; `BLAKE3`'s output is always ≥ `NONCE_LEN`
-/// bytes.
+/// Never panics for valid inputs; the `expect` exists only as a sanity
+/// guard against future drift in [`NONCE_LEN`] vs. the BLAKE3 output
+/// width.
 #[must_use]
 pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
     let mut hasher = blake3::Hasher::new_keyed(seed);
@@ -104,22 +224,24 @@ pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
     let digest = hasher.finalize();
     digest.as_bytes()[..NONCE_LEN]
         .try_into()
-        .expect("blake3 output ≥ NONCE_LEN bytes")
+        .expect("BLAKE3 output is at least NONCE_LEN bytes")
 }
 
-/// Spec-canonical per-call-site nonce (§1.5.2): first 12 bytes of
-/// `BLAKE3-keyed-hash(seed, "litmask-nonce" || file || ":" || line || ":" || column)`.
+/// Derive a per-call-site nonce: first 12 bytes of the keyed BLAKE3
+/// hash of `NONCE_TAG_CALL_SITE || file || ":" || line || ":" || column`
+/// under `seed` as the BLAKE3 key.
 ///
-/// Task 5's proc-macro uses a counter-based variant because stable Rust's
-/// `proc_macro::Span` does not expose file/line/column accessors as of
-/// 1.88. This function is the authoritative algorithm and the target
-/// for unit-test coverage; the proc-macro will adopt it once stable
-/// Span APIs ship or the implementation opts in to
-/// `procmacro2_semver_exempt`.
+/// This is the canonical (file, line, column)-keyed algorithm. The
+/// proc-macro currently uses a counter-based variant because stable
+/// Rust's `proc_macro::Span` does not expose those accessors; the
+/// canonical algorithm lives here so the runtime decrypt path and
+/// unit tests share one implementation.
 ///
 /// # Panics
 ///
-/// Never panics for any inputs.
+/// Never panics for valid inputs; the `expect` exists only as a sanity
+/// guard against future drift in [`NONCE_LEN`] vs. the BLAKE3 output
+/// width.
 #[must_use]
 pub fn nonce_for_call_site(
     seed: &[u8; KEY_LEN],
@@ -128,8 +250,7 @@ pub fn nonce_for_call_site(
     column: u32,
 ) -> [u8; NONCE_LEN] {
     // Render `line` and `column` as decimal text without allocating, so
-    // this fn stays usable from no_std + alloc and from build / proc-macro
-    // crates without additional deps. `u32::MAX` fits in 10 digits.
+    // this fn stays usable from no_std + alloc consumers.
     let mut line_buf = [0u8; 10];
     let mut col_buf = [0u8; 10];
     let line_bytes = u32_to_decimal(line, &mut line_buf);
@@ -145,12 +266,13 @@ pub fn nonce_for_call_site(
     let digest = hasher.finalize();
     digest.as_bytes()[..NONCE_LEN]
         .try_into()
-        .expect("blake3 output ≥ NONCE_LEN bytes")
+        .expect("BLAKE3 output is at least NONCE_LEN bytes")
 }
 
 /// Write `n` as decimal ASCII bytes into `buf`, returning the written
-/// slice. Always writes at least `"0"`. Avoids the `alloc::string::ToString`
-/// dependency so this fn stays usable from `no_std` consumers.
+/// slice. Always writes at least `"0"`. Avoids the
+/// `alloc::string::ToString` dependency so this fn stays usable from
+/// `no_std` consumers.
 fn u32_to_decimal(mut n: u32, buf: &mut [u8; 10]) -> &[u8] {
     if n == 0 {
         buf[0] = b'0';
@@ -163,7 +285,7 @@ fn u32_to_decimal(mut n: u32, buf: &mut [u8; 10]) -> &[u8] {
         n /= 10;
         len += 1;
     }
-    // tmp now has digits in reverse order; flip into buf.
+    // tmp holds digits in reverse order; flip into buf.
     for (i, &b) in tmp[..len].iter().rev().enumerate() {
         buf[i] = b;
     }
@@ -178,15 +300,81 @@ mod tests {
     const SEED_B: [u8; KEY_LEN] = [0xbb; KEY_LEN];
 
     #[test]
+    fn format_version_round_trips_through_byte() {
+        assert_eq!(FormatVersion::V1.to_byte(), 0x01);
+        assert_eq!(FormatVersion::try_from(0x01u8).unwrap(), FormatVersion::V1);
+    }
+
+    #[test]
+    fn format_version_rejects_unknown_byte() {
+        let err = FormatVersion::try_from(0x99u8).unwrap_err();
+        assert_eq!(err, UnknownFormatVersion(0x99));
+    }
+
+    #[test]
+    fn cipher_id_round_trips_through_byte() {
+        assert_eq!(CipherId::ChaCha20Poly1305.to_byte(), 0x01);
+        assert_eq!(
+            CipherId::try_from(0x01u8).unwrap(),
+            CipherId::ChaCha20Poly1305,
+        );
+    }
+
+    #[test]
+    fn cipher_id_rejects_unknown_byte() {
+        let err = CipherId::try_from(0xFFu8).unwrap_err();
+        assert_eq!(err, UnknownCipherId(0xFF));
+    }
+
+    #[test]
     fn wrapper_round_trip_layout() {
         let nonce = [0x55u8; NONCE_LEN];
         let body = [0x11u8; KEY_LEN + TAG_LEN];
-        let wrapper = assemble_wrapper(&nonce, &body);
-        let (version, cipher_id, n, b) = parse_wrapper(&wrapper);
-        assert_eq!(version, WRAPPER_VERSION);
-        assert_eq!(cipher_id, CIPHER_ID_CHACHA20);
-        assert_eq!(n, &nonce);
-        assert_eq!(b, body.as_slice());
+        let wrapper = assemble_wrapper(
+            FormatVersion::CURRENT,
+            CipherId::ChaCha20Poly1305,
+            &nonce,
+            &body,
+        );
+        let parsed = parse_wrapper(&wrapper).expect("round-trip parses");
+        assert_eq!(parsed.version, FormatVersion::V1);
+        assert_eq!(parsed.cipher, CipherId::ChaCha20Poly1305);
+        assert_eq!(parsed.nonce, &nonce);
+        assert_eq!(parsed.body, body.as_slice());
+    }
+
+    #[test]
+    fn parse_wrapper_rejects_unknown_version_byte() {
+        let nonce = [0u8; NONCE_LEN];
+        let body = [0u8; KEY_LEN + TAG_LEN];
+        let mut wrapper = assemble_wrapper(
+            FormatVersion::CURRENT,
+            CipherId::ChaCha20Poly1305,
+            &nonce,
+            &body,
+        );
+        wrapper[0] = 0x99;
+        assert_eq!(
+            parse_wrapper(&wrapper).unwrap_err(),
+            WrapperParseError::UnknownFormatVersion(0x99),
+        );
+    }
+
+    #[test]
+    fn parse_wrapper_rejects_unknown_cipher_byte() {
+        let nonce = [0u8; NONCE_LEN];
+        let body = [0u8; KEY_LEN + TAG_LEN];
+        let mut wrapper = assemble_wrapper(
+            FormatVersion::CURRENT,
+            CipherId::ChaCha20Poly1305,
+            &nonce,
+            &body,
+        );
+        wrapper[1] = 0x99;
+        assert_eq!(
+            parse_wrapper(&wrapper).unwrap_err(),
+            WrapperParseError::UnknownCipherId(0x99),
+        );
     }
 
     #[test]
@@ -194,7 +382,12 @@ mod tests {
     fn assemble_wrapper_rejects_short_body() {
         let nonce = [0u8; NONCE_LEN];
         let body = [0u8; KEY_LEN + TAG_LEN - 1];
-        let _ = assemble_wrapper(&nonce, &body);
+        let _ = assemble_wrapper(
+            FormatVersion::CURRENT,
+            CipherId::ChaCha20Poly1305,
+            &nonce,
+            &body,
+        );
     }
 
     #[test]
@@ -221,11 +414,10 @@ mod tests {
 
     #[test]
     fn call_site_nonce_independent_of_unrelated_sites() {
-        // Demonstrate that the (5, 0) site's nonce is unchanged
-        // regardless of how many other distinct sites the caller
-        // evaluates first or after — mirrors §1.5.2's "adding code
-        // elsewhere in the file does not change unaffected nonces"
-        // property.
+        // The (5, 0) site's nonce is invariant under derivation of
+        // nonces for unrelated locations — the spec property that
+        // "adding code elsewhere in the file does not change unaffected
+        // nonces."
         let pinned = nonce_for_call_site(&SEED_A, "src/lib.rs", 5, 0);
         for line in 11..100u32 {
             let _ignored = nonce_for_call_site(&SEED_A, "src/lib.rs", line, 0);

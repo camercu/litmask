@@ -1,10 +1,10 @@
-//! Base64url encoding helpers (RFC 4648 §5, url-safe alphabet, no padding).
+//! Base64url codec — RFC 4648 §5 url-safe alphabet, no padding.
 //!
-//! The single source of truth for base64 encoding across `litmask`. All
-//! providers, the build crate, and the CLI read and write keys, locators,
-//! and other 32- and 12-byte blobs through this module.
+//! Single source of truth for base64 encoding across the project. All
+//! providers, the build crate, and the CLI read and write keys,
+//! locators, and other 32- and 12-byte blobs through this module.
 //!
-//! Padding is rejected on decode to keep the wire format unambiguous —
+//! Padding is rejected on decode to keep the wire format unambiguous;
 //! padded and unpadded forms differ visibly, and accepting both would
 //! mask configuration errors in `litmask.config` and key files.
 
@@ -12,7 +12,7 @@ use base64ct::{Base64UrlUnpadded, Encoding};
 
 /// Encode raw bytes as RFC 4648 §5 url-safe base64 without padding.
 #[must_use]
-#[allow(dead_code)] // First consumer is `FileProvider::with_encoding` in Task 15.
+#[allow(dead_code)] // First consumer is the file-based provider.
 pub fn encode(bytes: &[u8]) -> alloc::string::String {
     Base64UrlUnpadded::encode_string(bytes)
 }
@@ -22,9 +22,9 @@ pub fn encode(bytes: &[u8]) -> alloc::string::String {
 ///
 /// # Errors
 ///
-/// Returns [`DecodeError`] if the input contains characters outside the
-/// url-safe alphabet, includes padding, or is not a multiple of the
-/// expected byte alignment.
+/// Returns [`DecodeError`] if the input contains characters outside
+/// the url-safe alphabet, includes padding, or is not a multiple of
+/// the expected byte alignment.
 pub fn decode(input: &str) -> Result<alloc::vec::Vec<u8>, DecodeError> {
     if input.contains('=') {
         return Err(DecodeError::Padded);

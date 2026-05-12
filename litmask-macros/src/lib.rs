@@ -1,18 +1,7 @@
 //! Internal proc-macro crate for `litmask`.
 //!
 //! Users add `litmask` as a dependency, never this crate directly. The
-//! public `litmask` crate re-exports the macros here via `pub use`.
-//!
-//! See `docs/SPECIFICATION.md` Amendments 4 and 5 for the rationale.
-//!
-//! Task 5 scope: string literals only via [`mask!`]. Byte literals and
-//! C-string literals are added in Task 6. Compile-error and position
-//! rejection cases land in Task 7. Spec §1.5.2 mandates per-call-site
-//! nonces keyed on (file, line, column); stable Rust's `proc_macro::Span`
-//! does not expose those accessors as of 1.88, so the walking skeleton
-//! derives nonces from (crate name, monotonic counter, literal value)
-//! instead. Spec deviation noted in Task 36's acceptance criteria
-//! commentary; tightening lands when stable Span APIs ship.
+//! public `litmask` crate re-exports the macros here.
 
 use std::fs;
 use std::path::PathBuf;
@@ -29,14 +18,21 @@ use syn::{LitStr, parse_macro_input};
 // Canonical layout constants live in `litmask-internal-format`.
 use litmask_internal_format::{KEY_LEN, NONCE_LEN, NONCE_TAG_CALL_SITE};
 
+/// Monotonic counter that distinguishes consecutive `mask!()` calls
+/// within a single proc-macro process. Combined with the build seed
+/// and the literal value, it produces a unique nonce per call site.
+///
+/// The canonical algorithm keys per-call-site nonces on (file, line,
+/// column), but stable Rust's `proc_macro::Span` does not expose
+/// file/line/column accessors. The counter-based form preserves
+/// uniqueness (the property that actually matters for AEAD security)
+/// at the cost of cross-build determinism. Reproducible builds and
+/// fully spec-canonical nonces wait on stable Span accessors or an
+/// opt-in to `procmacro2_semver_exempt`.
 static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Mask a string literal at compile time; expand to a runtime
 /// decryption call returning `String`.
-///
-/// Walking-skeleton scope: `mask!("text literal")` only. Subsequent
-/// tasks add byte / C-string literal support (Task 6) and the
-/// invalid-input compile-error pipeline (Task 7).
 ///
 /// # Panics
 ///
@@ -110,12 +106,10 @@ fn derive_nonce(
     idx: u64,
     literal: &[u8],
 ) -> [u8; NONCE_LEN] {
-    // Walking-skeleton deviation: spec §1.5.2 keys per-call-site
-    // nonces on (file, line, column), but stable `proc_macro::Span`
-    // does not expose those accessors. We share the same BLAKE3
-    // domain separator as the canonical algorithm
-    // (`NONCE_TAG_CALL_SITE` in format.rs) so the cipher state stays
-    // identifiable; only the keyed message changes.
+    // Shares the same BLAKE3 domain separator as the canonical
+    // (file, line, column)-keyed algorithm in
+    // `litmask_internal_format::nonce_for_call_site`; only the keyed
+    // message differs.
     let mut hasher = blake3::Hasher::new_keyed(seed);
     hasher.update(NONCE_TAG_CALL_SITE);
     hasher.update(crate_name.as_bytes());
@@ -126,7 +120,7 @@ fn derive_nonce(
     let digest = hasher.finalize();
     digest.as_bytes()[..NONCE_LEN]
         .try_into()
-        .expect("blake3 output ≥12 bytes")
+        .expect("BLAKE3 output is at least NONCE_LEN bytes")
 }
 
 fn byte_array_token(bytes: &[u8]) -> proc_macro2::TokenStream {

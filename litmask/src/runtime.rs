@@ -1,10 +1,9 @@
 //! Imperative shell over the pure decryption core in [`crate::cipher`].
 //!
-//! The process-global [`MaskKey`] lives in a `OnceLock` populated by
-//! [`__init_with_wrapper`] (the target of `init!` / `init_with!`) or
-//! lazily by [`__decrypt_str`] on the first `mask!()` call.
-//!
-//! ### Pedantic-lint exceptions
+//! The process-global decrypted master key lives in a `OnceLock`
+//! populated by [`__init_with_wrapper`] (the target of `init!` /
+//! `init_with!`) or lazily by [`__decrypt_str`] on the first `mask!()`
+//! call.
 //!
 //! Spec §1.9.5 prescribes the `match X { Ok(_) => …, Err(_) => panic!() }`
 //! form for panic hygiene. The `assert!` and `.expect(...)` alternatives
@@ -78,7 +77,7 @@ mod cell {
 // ── Public entry points called by macro expansion ───────────────────
 
 /// Decrypt the embedded `mask_key` wrapper and store the result in the
-/// process-global [`MaskKey`] cell.
+/// process-global master-key cell.
 ///
 /// Called by the `init!` and `init_with!` macros after they capture the
 /// wrapper bytes via `include_bytes!`.
@@ -86,8 +85,8 @@ mod cell {
 /// # Errors
 ///
 /// Forwards provider errors via [`InitError::KeyProvider`]. Decryption
-/// failures will surface as `InitError::Decryption` once Task 8 lands
-/// the variant; for now they panic per the §1.9.5 tampering-panic stub.
+/// failures panic with no litmask-specific message until the
+/// `InitError::Decryption` variant lands.
 #[doc(hidden)]
 pub fn __init_with_wrapper<P: KeyProvider>(
     provider: P,
@@ -104,16 +103,16 @@ pub fn __init_with_wrapper<P: KeyProvider>(
 
 /// Decrypt a per-string blob. Called by every expansion of `mask!()`.
 ///
-/// `blob` layout per §1.7.2. `wrapper` is the embedded encrypted-`mask_key`
-/// blob, passed by the macro so lazy init can fall back to
-/// [`crate::EnvVarProvider`] when no explicit `init!` was issued.
+/// `blob` is `nonce (12) || ciphertext (n) || tag (16)`. `wrapper` is
+/// the embedded encrypted-`mask_key` blob, passed by the macro so lazy
+/// init can fall back to [`crate::EnvVarProvider`] when no explicit
+/// `init!` was issued.
 ///
 /// # Panics
 ///
 /// Panics with no litmask-specific message on AEAD authentication
 /// failure, lazy-init provider failure, or wrapper format / cipher-id
-/// mismatch (per the §1.9.5 panic-hygiene stub; Task 8 will tighten
-/// the error surface).
+/// mismatch.
 #[doc(hidden)]
 pub fn __decrypt_str(blob: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> String {
     let mask_key = mask_key_or_lazy_init(wrapper);

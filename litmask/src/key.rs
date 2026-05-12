@@ -2,8 +2,8 @@
 //!
 //! [`UnlockKey`] is the public-facing key supplied by a
 //! [`crate::KeyProvider`]. [`MaskKey`] is the runtime-only decrypted
-//! master key held by the `OnceLock`. Both zero their contents on drop
-//! via the `zeroize` crate.
+//! master key held in a process-global once-cell. Both zero their
+//! contents on drop.
 
 use zeroize::Zeroize;
 
@@ -11,12 +11,11 @@ use crate::base64url;
 use crate::error::KeyError;
 use crate::format::KEY_LEN;
 
-/// The runtime-supplied key that decrypts the embedded `mask_key` wrapper.
+/// The runtime-supplied key that decrypts the embedded `mask_key`
+/// wrapper.
 ///
-/// `Clone` is intentionally not implemented; duplicating a zeroize-on-drop
-/// secret should be opt-in and obvious at the call site. The internal
-/// field is `pub(crate)` so runtime helpers can borrow it without an
-/// accessor method.
+/// `Clone` is intentionally not implemented; duplicating a
+/// zero-on-drop secret should be opt-in and obvious at the call site.
 #[derive(Zeroize)]
 #[zeroize(drop)]
 pub struct UnlockKey(pub(crate) [u8; KEY_LEN]);
@@ -47,8 +46,8 @@ impl core::fmt::Debug for UnlockKey {
     }
 }
 
-/// The decrypted master key. Held in a process-global OnceLock for the
-/// program's lifetime; never re-decrypted. Crate-internal only.
+/// The decrypted master key. Held in a process-global once-cell for
+/// the program's lifetime; never re-decrypted. Crate-internal only.
 #[derive(Zeroize)]
 #[zeroize(drop)]
 #[doc(hidden)]
@@ -66,18 +65,18 @@ mod tests {
     use alloc::format;
 
     /// Canonical 32-byte test key encoded as 43-char base64url (no padding).
-    const VALID_B64URL_32B: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    const VALID_BASE64URL_32B: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     #[test]
     fn from_base64url_accepts_valid_32_byte_key() {
-        let key = UnlockKey::from_base64url(VALID_B64URL_32B).expect("valid 32-byte key");
+        let key = UnlockKey::from_base64url(VALID_BASE64URL_32B).expect("valid 32-byte key");
         assert_eq!(key.0, [0u8; KEY_LEN]);
     }
 
     #[test]
     fn from_base64url_rejects_padded_input() {
-        // 32 bytes encodes to 43 url-safe chars (no padding); the padded
-        // RFC 4648 form appends "=" — must be rejected.
+        // 32 bytes encodes to 43 url-safe chars (no padding); the
+        // padded RFC 4648 form appends "=" — must be rejected.
         let padded = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
         let err = UnlockKey::from_base64url(padded).unwrap_err();
         assert!(matches!(err, KeyError::InvalidFormat));
