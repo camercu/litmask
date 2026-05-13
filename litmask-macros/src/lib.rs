@@ -114,15 +114,24 @@ fn read_out_dir_file(name: &str) -> Vec<u8> {
     })
 }
 
+/// Derive the 12-byte AEAD nonce embedded at the head of every blob.
+///
+/// Keys the BLAKE3 hash on the build seed and tags the message with
+/// `NONCE_TAG_CALL_SITE` so the nonce space is disjoint from the
+/// wrapper nonce. The keyed message uses crate + monotonic counter +
+/// literal value because stable `proc_macro::Span` does not expose
+/// file/line/column (would require the nightly `proc_macro_span`
+/// feature); `crate_name || idx` gives intra-build uniqueness, and
+/// the literal mixes in differing payloads at the same `(crate, idx)`
+/// (defensive — a single `mask!` site cannot fire the counter twice,
+/// but proc-macro re-expansion under cached builds has surprised us
+/// before).
 fn derive_nonce(
     seed: &[u8; KEY_LEN],
     crate_name: &str,
     idx: u64,
     literal: &[u8],
 ) -> [u8; NONCE_LEN] {
-    // Same BLAKE3 domain separator as
-    // `litmask_internal_format::nonce_for_call_site`; only the keyed
-    // message differs.
     let mut hasher = blake3::Hasher::new_keyed(seed);
     hasher.update(NONCE_TAG_CALL_SITE);
     hasher.update(crate_name.as_bytes());

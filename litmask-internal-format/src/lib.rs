@@ -331,68 +331,17 @@ pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
         .expect("BLAKE3 output is at least NONCE_LEN bytes")
 }
 
-/// Derive a per-call-site nonce: first 12 bytes of the keyed BLAKE3
-/// hash of `NONCE_TAG_CALL_SITE || file || ":" || line || ":" || column`
-/// under `seed` as the BLAKE3 key.
-///
-/// This is the canonical (file, line, column)-keyed algorithm. The
-/// proc-macro currently uses a counter-based variant because stable
-/// Rust's `proc_macro::Span` does not expose those accessors; the
-/// canonical algorithm lives here so the runtime decrypt path and
-/// unit tests share one implementation.
-///
-/// # Panics
-///
-/// Never panics for valid inputs; the `expect` exists only as a sanity
-/// guard against future drift in [`NONCE_LEN`] vs. the BLAKE3 output
-/// width.
-#[must_use]
-pub fn nonce_for_call_site(
-    seed: &[u8; KEY_LEN],
-    file: &str,
-    line: u32,
-    column: u32,
-) -> [u8; NONCE_LEN] {
-    // Render `line` and `column` as decimal text without allocating, so
-    // this fn stays usable from no_std + alloc consumers.
-    let mut line_buf = [0u8; 10];
-    let mut col_buf = [0u8; 10];
-    let line_bytes = u32_to_decimal(line, &mut line_buf);
-    let col_bytes = u32_to_decimal(column, &mut col_buf);
-
-    let mut hasher = blake3::Hasher::new_keyed(seed);
-    hasher.update(NONCE_TAG_CALL_SITE);
-    hasher.update(file.as_bytes());
-    hasher.update(b":");
-    hasher.update(line_bytes);
-    hasher.update(b":");
-    hasher.update(col_bytes);
-    let digest = hasher.finalize();
-    digest.as_bytes()[..NONCE_LEN]
-        .try_into()
-        .expect("BLAKE3 output is at least NONCE_LEN bytes")
-}
-
-/// Write `n` as decimal ASCII bytes into `buf`, returning the written
-/// slice. Always writes at least `"0"`. Avoids the
-/// `alloc::string::ToString` dependency so this fn stays usable from
-/// `no_std` consumers.
-///
-/// Digits are written backwards into the tail of `buf` so no scratch
-/// buffer or reversal pass is needed.
-fn u32_to_decimal(mut n: u32, buf: &mut [u8; 10]) -> &[u8] {
-    if n == 0 {
-        buf[9] = b'0';
-        return &buf[9..];
-    }
-    let mut i = buf.len();
-    while n > 0 {
-        i -= 1;
-        buf[i] = b'0' + u8::try_from(n % 10).expect("digit 0-9 fits in u8");
-        n /= 10;
-    }
-    &buf[i..]
-}
+// The per-call-site nonce is owned by the proc-macro crate
+// (`litmask-macros`). The macro derives it from
+// `(seed, NONCE_TAG_CALL_SITE, crate_name, counter, literal)` and
+// embeds the resulting 12-byte value in the leading bytes of every
+// per-string blob, so the runtime never re-derives it.
+//
+// The (file, line, column) scheme that `docs/SPECIFICATION.md §1.5.2`
+// describes is unreachable on stable Rust: `proc_macro::Span` does not
+// expose accessors for those fields without the nightly
+// `proc_macro_span` feature. When that stabilizes, the canonical
+// derivation can live here as a shared helper.
 
 #[cfg(test)]
 mod tests {
@@ -560,47 +509,4 @@ mod tests {
         assert_ne!(a, b);
     }
 
-    #[test]
-    fn call_site_nonce_determinism_and_independence() {
-        let a = nonce_for_call_site(&SEED_A, "src/lib.rs", 42, 7);
-        let aa = nonce_for_call_site(&SEED_A, "src/lib.rs", 42, 7);
-        let b = nonce_for_call_site(&SEED_A, "src/lib.rs", 42, 8);
-        let c = nonce_for_call_site(&SEED_A, "src/main.rs", 42, 7);
-        let d = nonce_for_call_site(&SEED_B, "src/lib.rs", 42, 7);
-        assert_eq!(a, aa);
-        assert_ne!(a, b);
-        assert_ne!(a, c);
-        assert_ne!(a, d);
-    }
-
-    #[test]
-    fn call_site_nonce_independent_of_unrelated_sites() {
-        // The (5, 0) site's nonce is invariant under derivation of
-        // nonces for unrelated locations — the spec property that
-        // "adding code elsewhere in the file does not change unaffected
-        // nonces."
-        let pinned = nonce_for_call_site(&SEED_A, "src/lib.rs", 5, 0);
-        for line in 11..100u32 {
-            let _ignored = nonce_for_call_site(&SEED_A, "src/lib.rs", line, 0);
-        }
-        let pinned_again = nonce_for_call_site(&SEED_A, "src/lib.rs", 5, 0);
-        assert_eq!(pinned, pinned_again);
-    }
-
-    #[test]
-    fn wrapper_and_call_site_nonces_differ_at_same_seed() {
-        let w = nonce_for_wrapper(&SEED_A);
-        let cs = nonce_for_call_site(&SEED_A, "src/lib.rs", 0, 0);
-        assert_ne!(w, cs, "domain separators must yield distinct nonces");
-    }
-
-    #[test]
-    fn u32_to_decimal_edges() {
-        let mut buf = [0u8; 10];
-        assert_eq!(u32_to_decimal(0, &mut buf), b"0");
-        assert_eq!(u32_to_decimal(1, &mut buf), b"1");
-        assert_eq!(u32_to_decimal(42, &mut buf), b"42");
-        assert_eq!(u32_to_decimal(1_000_000_000, &mut buf), b"1000000000");
-        assert_eq!(u32_to_decimal(u32::MAX, &mut buf), b"4294967295");
-    }
 }

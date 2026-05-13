@@ -353,31 +353,49 @@ supported.
 #### §1.5.2 Per-string nonce derivation
 
 Every encrypted blob in the binary uses a unique nonce. Nonces for per-string
-blobs are derived deterministically as:
+blobs are derived deterministically inside the `mask!` proc-macro as:
 
 ```
 nonce = first_12_bytes(BLAKE3-keyed-hash(
     seed,
-    "litmask-nonce" || file_path || ":" || line || ":" || column
+    "litmask-nonce" || crate_name || ":" || counter_le || ":" || literal
 ))
 ```
 
-Properties:
+where `crate_name` is `CARGO_PKG_NAME` at expansion time, `counter_le` is
+a 64-bit monotonic counter encoded little-endian and incremented once per
+`mask!` invocation in the proc-macro process, and `literal` is the
+plaintext bytes of the input string literal.
 
-- **Uniqueness across call sites**: distinct file/line/column combinations
-  produce distinct nonces with overwhelming probability.
-- **Determinism across builds**: same source layout + same seed → same nonces
-  → same ciphertext.
-- **Independence from compilation order**: parallel proc-macro expansion does
-  not affect derivation since each call site's nonce depends only on its own
-  location.
-- **Insensitivity to unrelated source changes**: adding code elsewhere in the
-  file changes line numbers only for code after the addition; nonces for
-  unaffected call sites remain stable.
+**Why a counter, not (file, line, column).** The (file, line, column)
+form is the *intended* derivation: it produces nonces that are
+order-independent and stable against unrelated source edits. It is not
+used in v1 because stable Rust's `proc_macro::Span` does not expose
+those accessors — `Span::source_file()`, `Span::start()`, and
+`Span::end()` all require the nightly `proc_macro_span` feature. The
+counter-based form preserves the uniqueness property at the cost of
+order-stability: re-shuffling `mask!` call sites within a crate
+permutes their nonces. When `proc_macro_span` stabilizes, the
+derivation switches to the (file, line, column) keyed message
+without a wire-format change (the nonce is still 12 bytes and still
+the leading prefix of every blob).
 
-Identical literals at different call sites receive different nonces (and
-therefore different ciphertext) because they have different file/line/column
-values.
+Properties of the v1 derivation:
+
+- **Uniqueness across call sites**: distinct `(crate_name, counter)`
+  pairs produce distinct nonces. Mixing the literal value in
+  defensively guards against any proc-macro re-expansion path that
+  re-fires the counter at the same index.
+- **Determinism across builds**: same source layout + same seed →
+  same nonces → same ciphertext, *if* the proc-macro expands the
+  same `mask!` call sites in the same order.
+- **Independence from the wrapper nonce**: the `"litmask-nonce"`
+  domain separator differs from the wrapper's `"litmask-mask-key-nonce"`,
+  so the nonce spaces are disjoint at the same seed.
+
+Identical literals at different call sites receive different nonces
+(and therefore different ciphertext) because they have different
+counter values.
 
 The wrapper around the encrypted `mask_key` uses a separate nonce derivation
 documented in §1.7.3.
@@ -738,7 +756,8 @@ and not subject to semver guarantees:
 
 - `MaskKey` — runtime container for the decrypted master key
 - `EncryptedBlob` and helper types used by macro-generated code
-- `nonce_for_call_site(...)` and other derivation helpers
+- Derivation helpers (e.g., the `derive_nonce` private function inside
+  `litmask-macros`)
 
 User code MUST NOT depend on these types.
 
