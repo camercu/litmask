@@ -9,6 +9,7 @@
 //! mask configuration errors in `litmask.config` and key files.
 
 use base64ct::{Base64UrlUnpadded, Encoding};
+use zeroize::Zeroizing;
 
 /// Encode raw bytes as RFC 4648 §5 url-safe base64 without padding.
 #[must_use]
@@ -20,16 +21,23 @@ pub fn encode(bytes: &[u8]) -> alloc::string::String {
 /// Decode RFC 4648 §5 url-safe base64. Padded inputs (`=` characters)
 /// are rejected as malformed.
 ///
+/// The decoded bytes are returned wrapped in [`Zeroizing`] because the
+/// primary caller is the unlock-key parse path; the wrapper wipes the
+/// heap buffer on drop so the plaintext key material does not linger
+/// after the `UnlockKey` array has been populated.
+///
 /// # Errors
 ///
 /// Returns [`DecodeError`] if the input contains characters outside
 /// the url-safe alphabet, includes padding, or is not a multiple of
 /// the expected byte alignment.
-pub fn decode(input: &str) -> Result<alloc::vec::Vec<u8>, DecodeError> {
+pub fn decode(input: &str) -> Result<Zeroizing<alloc::vec::Vec<u8>>, DecodeError> {
     if input.contains('=') {
         return Err(DecodeError::Padded);
     }
-    Base64UrlUnpadded::decode_vec(input).map_err(|_| DecodeError::Invalid)
+    Base64UrlUnpadded::decode_vec(input)
+        .map(Zeroizing::new)
+        .map_err(|_| DecodeError::Invalid)
 }
 
 /// Errors returned by [`decode`].
@@ -46,6 +54,12 @@ pub enum DecodeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decode_returns_zeroizing_vec_so_secret_bytes_wipe_on_drop() {
+        use zeroize::Zeroizing;
+        let _: Zeroizing<alloc::vec::Vec<u8>> = decode("AAAA").expect("valid base64url");
+    }
 
     #[test]
     fn round_trip_random_bytes() {
