@@ -358,14 +358,37 @@ blobs are derived deterministically inside the `mask!` proc-macro as:
 ```
 nonce = first_12_bytes(BLAKE3-keyed-hash(
     seed,
-    "litmask-nonce" || crate_name || ":" || counter_le || ":" || literal
+    "litmask-nonce" || counter_le
 ))
 ```
 
-where `crate_name` is `CARGO_PKG_NAME` at expansion time, `counter_le` is
-a 64-bit monotonic counter encoded little-endian and incremented once per
-`mask!` invocation in the proc-macro process, and `literal` is the
-plaintext bytes of the input string literal.
+where `counter_le` is a 64-bit monotonic counter encoded little-endian
+and incremented once per `mask!` invocation in the proc-macro process.
+
+**Correctness scope.** ChaCha20-Poly1305 (and AES-256-GCM) require the
+`(key, nonce)` pair to be unique across every encryption under a given
+key — nothing more. The nonce is not required to be secret or
+unpredictable; it ships in plaintext at the head of every per-string
+blob (§1.7.2). Therefore the only invariant the derivation must
+preserve is **nonce uniqueness within a single rustc invocation that
+encrypts under one `mask_key`**.
+
+That scope is narrower than it looks. Each crate that uses `mask!`
+must have its own `build.rs` calling `litmask_build::emit()` (§1.4),
+which writes a fresh `litmask_key.bin` into that crate's `OUT_DIR`.
+Two crates that both depend on `litmask` therefore encrypt under two
+*different* `mask_key` values, so a nonce collision across crates is
+harmless — collisions only matter inside the set of blobs sharing one
+`mask_key`, i.e., the blobs produced by one rustc process expanding
+one crate.
+
+A single `AtomicU64` in the proc-macro dylib gives that property:
+- rustc loads the proc-macro dylib once per crate compile, so
+  `CALL_COUNTER` starts at zero in every rustc process and is
+  monotonic for the lifetime of that process.
+- `fetch_add(1, Relaxed)` is atomic, so the counter remains correct
+  if rustc ever parallelizes macro expansion (currently single-
+  threaded; `-Z threads=N` is the relevant future).
 
 **Why a counter, not (file, line, column).** The (file, line, column)
 form is the *intended* derivation: it produces nonces that are
@@ -380,12 +403,29 @@ derivation switches to the (file, line, column) keyed message
 without a wire-format change (the nonce is still 12 bytes and still
 the leading prefix of every blob).
 
+**Why the seed-keyed BLAKE3 is kept.** The counter alone (encoded
+little-endian and zero-padded to 12 bytes) would satisfy the
+uniqueness invariant. Hashing it under the build seed serves a single
+purpose: nonces in the compiled binary then look like uniformly random
+bytes instead of `0, 1, 2, …` little-endian patterns, so a binary
+inspector cannot trivially count `mask!` invocations or order them by
+appearance. This is hardening, not a security boundary — the nonce is
+public.
+
+**Why `crate_name` and `literal` are not inputs.** Earlier revisions
+mixed `CARGO_PKG_NAME` and the literal plaintext into the keyed
+message as belt-and-suspenders against hypothetical cross-crate
+counter sharing and proc-macro re-expansion races. Both inputs are
+redundant: each crate's proc-macro server is a fresh process with a
+fresh counter (no cross-crate sharing path), and proc-macro expansion
+within a single crate compile is deterministic and sequential (no
+re-fire path that could collide on the same `idx`).
+
 Properties of the v1 derivation:
 
-- **Uniqueness across call sites**: distinct `(crate_name, counter)`
-  pairs produce distinct nonces. Mixing the literal value in
-  defensively guards against any proc-macro re-expansion path that
-  re-fires the counter at the same index.
+- **Uniqueness across call sites**: distinct `counter` values produce
+  distinct nonces (BLAKE3 collision resistance), so distinct `mask!`
+  invocations in one crate compile receive distinct nonces.
 - **Determinism across builds**: same source layout + same seed →
   same nonces → same ciphertext, *if* the proc-macro expands the
   same `mask!` call sites in the same order.

@@ -338,9 +338,9 @@ pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
 
 // The per-call-site nonce is owned by the proc-macro crate
 // (`litmask-macros`). The macro derives it from
-// `(seed, NONCE_TAG_CALL_SITE, crate_name, counter, literal)` and
-// embeds the resulting 12-byte value in the leading bytes of every
-// per-string blob, so the runtime never re-derives it.
+// `(seed, NONCE_TAG_CALL_SITE, counter)` and embeds the resulting
+// 12-byte value in the leading bytes of every per-string blob, so the
+// runtime never re-derives it.
 //
 // The (file, line, column) scheme that `docs/SPECIFICATION.md §1.5.2`
 // describes is unreachable on stable Rust: `proc_macro::Span` does not

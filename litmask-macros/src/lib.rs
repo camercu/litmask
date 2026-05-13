@@ -19,13 +19,16 @@ use litmask_internal::{
     CipherId, KEY_LEN, NONCE_LEN, NONCE_TAG_CALL_SITE, WRAPPER_LEN, aead_encrypt, xor_cycle,
 };
 
-/// Monotonic counter combined with the build seed, crate name, and
-/// literal value to produce a unique AEAD nonce per `mask!()` call.
+/// Monotonic counter combined with the build seed to produce a unique
+/// AEAD nonce per `mask!()` call. One counter per rustc process —
+/// resets per crate compile, which is the correctness scope (each
+/// crate that uses `mask!` has its own `mask_key`, so nonce uniqueness
+/// only needs to hold within a single crate's expansion).
 ///
 /// The spec-canonical derivation keys on (file, line, column), but
 /// stable Rust's `proc_macro::Span` does not expose those accessors;
 /// the counter preserves per-call-site uniqueness at the cost of
-/// cross-build determinism.
+/// order-stability.
 static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Mask a string literal at compile time; expand to a runtime
@@ -49,9 +52,8 @@ pub fn mask(input: TokenStream) -> TokenStream {
     let mask_key = load_out_dir_artifact::<KEY_LEN>("litmask_key.bin");
     let seed = load_out_dir_artifact::<KEY_LEN>("litmask_seed.bin");
 
-    let crate_name = std::env::var("CARGO_PKG_NAME").unwrap_or_default();
     let idx = CALL_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let nonce = derive_nonce(&seed, &crate_name, idx, value.as_bytes());
+    let nonce = derive_nonce(&seed, idx);
 
     let ciphertext_and_tag = aead_encrypt(
         CipherId::ChaCha20Poly1305,
@@ -117,28 +119,20 @@ fn read_out_dir_file(name: &str) -> Vec<u8> {
 /// Derive the 12-byte AEAD nonce embedded at the head of every blob.
 ///
 /// Keys the BLAKE3 hash on the build seed and tags the message with
-/// `NONCE_TAG_CALL_SITE` so the nonce space is disjoint from the
-/// wrapper nonce. The keyed message uses crate + monotonic counter +
-/// literal value because stable `proc_macro::Span` does not expose
-/// file/line/column (would require the nightly `proc_macro_span`
-/// feature); `crate_name || idx` gives intra-build uniqueness, and
-/// the literal mixes in differing payloads at the same `(crate, idx)`
-/// (defensive — a single `mask!` site cannot fire the counter twice,
-/// but proc-macro re-expansion under cached builds has surprised us
-/// before).
-fn derive_nonce(
-    seed: &[u8; KEY_LEN],
-    crate_name: &str,
-    idx: u64,
-    literal: &[u8],
-) -> [u8; NONCE_LEN] {
+/// [`NONCE_TAG_CALL_SITE`] so the call-site nonce space is disjoint
+/// from the wrapper nonce space at the same seed.
+///
+/// The counter alone is sufficient for AEAD nonce uniqueness within a
+/// crate compile: `mask_key` is per-crate (each consumer crate has its
+/// own `build.rs`/`OUT_DIR`), so the `(key, nonce)` pair only needs to
+/// stay unique inside one rustc invocation, and `CALL_COUNTER` is
+/// fresh per rustc process. The seed-keyed hash is kept solely so
+/// nonces don't appear as `0, 1, 2, …` little-endian patterns in the
+/// compiled binary.
+fn derive_nonce(seed: &[u8; KEY_LEN], idx: u64) -> [u8; NONCE_LEN] {
     let mut hasher = blake3::Hasher::new_keyed(seed);
     hasher.update(NONCE_TAG_CALL_SITE);
-    hasher.update(crate_name.as_bytes());
-    hasher.update(b":");
     hasher.update(&idx.to_le_bytes());
-    hasher.update(b":");
-    hasher.update(literal);
     let digest = hasher.finalize();
     digest.as_bytes()[..NONCE_LEN]
         .try_into()
