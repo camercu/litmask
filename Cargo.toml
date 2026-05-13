@@ -15,6 +15,17 @@ rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/camercu/litmask"
 
+# Centralized version + path for every inter-workspace dependency.
+# Member crates use `dep.workspace = true` to inherit both fields. A
+# single version requirement lives here (rather than per-crate `=X.Y.Z`
+# pins) so `cargo set-version --workspace` during a semantic-release
+# run has one place to update and inter-crate cargo resolution never
+# falls out of sync with `[workspace.package].version` after a bump.
+[workspace.dependencies]
+litmask-internal = { path = "litmask-internal", version = "0.1.0" }
+litmask-macros = { path = "litmask-macros", version = "0.1.0" }
+litmask-build = { path = "litmask-build", version = "0.1.0" }
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"

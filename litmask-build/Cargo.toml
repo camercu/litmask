@@ -9,7 +9,7 @@ repository.workspace = true
 include = ["src/**/*"]
 
 [dependencies]
-litmask-internal = { path = "../litmask-internal" }
+litmask-internal.workspace = true
 base64ct = { version = "1", features = ["alloc"] }
 rand_chacha = "0.3"
 rand_core = "0.6"

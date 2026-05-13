@@ -12,7 +12,7 @@ include = ["src/**/*"]
 proc-macro = true
 
 [dependencies]
-litmask-internal = { path = "../litmask-internal" }
+litmask-internal.workspace = true
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }
