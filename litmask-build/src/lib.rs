@@ -29,20 +29,17 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use base64ct::{Base64UrlUnpadded, Encoding};
-use chacha20poly1305::{
-    ChaCha20Poly1305, KeyInit, Nonce,
-    aead::{Aead, generic_array::GenericArray},
-};
 use rand_chacha::ChaCha20Rng;
 use rand_core::{RngCore, SeedableRng};
 use zeroize::Zeroize;
 
 // Canonical layout constants and pure helpers live in
 // `litmask-internal-format` (a small internal crate shared by litmask,
-// litmask-build, and litmask-macros).
+// litmask-build, and litmask-macros). Cipher dispatch is centralized
+// there so adding a second AEAD lands in one place.
 use litmask_internal_format::{
-    CipherId, FormatVersion, KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, assemble_wrapper,
-    nonce_for_wrapper,
+    CipherId, FormatVersion, KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, aead_encrypt,
+    assemble_wrapper, nonce_for_wrapper,
 };
 
 const CONFIG_HEADER: &str = "\
@@ -98,11 +95,13 @@ pub fn emit() {
 
     let wrapper_nonce = nonce_for_wrapper(&seed);
 
-    // Encrypt mask_key under unlock_key with ChaCha20-Poly1305.
-    let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(&unlock_key));
-    let mut ciphertext_with_tag = cipher
-        .encrypt(Nonce::from_slice(&wrapper_nonce), mask_key.as_slice())
-        .expect("ChaCha20-Poly1305 wrapper encryption failed");
+    let mut ciphertext_with_tag = aead_encrypt(
+        CipherId::ChaCha20Poly1305,
+        &unlock_key,
+        &wrapper_nonce,
+        mask_key.as_slice(),
+    )
+    .expect("wrapper encryption failed");
     assert_eq!(
         ciphertext_with_tag.len(),
         KEY_LEN + TAG_LEN,

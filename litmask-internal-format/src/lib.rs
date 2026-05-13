@@ -18,6 +18,8 @@
 
 #![no_std]
 
+extern crate alloc;
+
 // ── Byte-length constants ───────────────────────────────────────────
 
 /// Length of every symmetric key in bytes. ChaCha20-Poly1305 and
@@ -124,6 +126,10 @@ impl TryFrom<u8> for CipherId {
 
 // ── Wrapper layout ──────────────────────────────────────────────────
 
+/// Length of the AEAD body that follows the wrapper header: 32 bytes
+/// of `mask_key` ciphertext + 16 bytes of authentication tag.
+pub const WRAPPER_BODY_LEN: usize = KEY_LEN + TAG_LEN;
+
 /// A parsed wrapper, decomposed into its typed header fields plus
 /// borrowed nonce and `ciphertext || tag` body.
 #[derive(Debug)]
@@ -136,7 +142,7 @@ pub struct ParsedWrapper<'a> {
     pub nonce: &'a [u8; NONCE_LEN],
     /// `ciphertext || tag` — 32 bytes ciphertext followed by 16 bytes
     /// of authentication tag for the current cipher.
-    pub body: &'a [u8],
+    pub body: &'a [u8; WRAPPER_BODY_LEN],
 }
 
 /// Reasons `parse_wrapper` may reject a wrapper byte sequence.
@@ -198,12 +204,80 @@ pub fn parse_wrapper(bytes: &[u8; WRAPPER_LEN]) -> Result<ParsedWrapper<'_>, Wra
     let nonce: &[u8; NONCE_LEN] = (&bytes[2..HEADER_LEN])
         .try_into()
         .expect("nonce slice is NONCE_LEN bytes by construction");
+    let body: &[u8; WRAPPER_BODY_LEN] = (&bytes[HEADER_LEN..])
+        .try_into()
+        .expect("body slice is WRAPPER_BODY_LEN bytes by construction");
     Ok(ParsedWrapper {
         version,
         cipher,
         nonce,
-        body: &bytes[HEADER_LEN..],
+        body,
     })
+}
+
+// ── AEAD primitive ──────────────────────────────────────────────────
+
+/// Errors surfaced by [`aead_encrypt`] and [`aead_decrypt`]. Today the
+/// single variant covers AEAD authentication failure on decrypt; encrypt
+/// failures are not reachable for the cipher set this crate supports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AeadError {
+    /// AEAD authentication failed (wrong key, wrong nonce, or tampered
+    /// ciphertext + tag).
+    AuthenticationFailed,
+}
+
+/// Encrypt `plaintext` with the AEAD cipher identified by `cipher_id`.
+/// Returns `ciphertext || tag` (no leading nonce — the caller embeds the
+/// nonce at whatever offset the wrapper / blob layout dictates).
+///
+/// # Errors
+///
+/// Returns [`AeadError::AuthenticationFailed`] only if the cipher's
+/// encrypt step reports failure; for the ChaCha20-Poly1305 inputs litmask
+/// produces this is not reachable in practice, but the result type
+/// matches [`aead_decrypt`] so callers can share a control-flow path.
+pub fn aead_encrypt(
+    cipher_id: CipherId,
+    key: &[u8; KEY_LEN],
+    nonce: &[u8; NONCE_LEN],
+    plaintext: &[u8],
+) -> Result<alloc::vec::Vec<u8>, AeadError> {
+    use chacha20poly1305::aead::{Aead, generic_array::GenericArray};
+    use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
+    match cipher_id {
+        CipherId::ChaCha20Poly1305 => {
+            let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(key));
+            cipher
+                .encrypt(Nonce::from_slice(nonce), plaintext)
+                .map_err(|_| AeadError::AuthenticationFailed)
+        }
+    }
+}
+
+/// Decrypt `ciphertext || tag` with the AEAD cipher identified by
+/// `cipher_id`. Mirrors [`aead_encrypt`].
+///
+/// # Errors
+///
+/// Returns [`AeadError::AuthenticationFailed`] when the tag does not
+/// verify (wrong key, wrong nonce, or tampered bytes).
+pub fn aead_decrypt(
+    cipher_id: CipherId,
+    key: &[u8; KEY_LEN],
+    nonce: &[u8; NONCE_LEN],
+    body: &[u8],
+) -> Result<alloc::vec::Vec<u8>, AeadError> {
+    use chacha20poly1305::aead::{Aead, generic_array::GenericArray};
+    use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
+    match cipher_id {
+        CipherId::ChaCha20Poly1305 => {
+            let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(key));
+            cipher
+                .decrypt(Nonce::from_slice(nonce), body)
+                .map_err(|_| AeadError::AuthenticationFailed)
+        }
+    }
 }
 
 // ── XOR-cycle obfuscation ───────────────────────────────────────────

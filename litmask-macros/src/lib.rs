@@ -9,16 +9,15 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use chacha20poly1305::{
-    ChaCha20Poly1305, KeyInit, Nonce,
-    aead::{Aead, generic_array::GenericArray},
-};
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{LitStr, parse_macro_input};
 
-// Canonical layout constants live in `litmask-internal-format`.
-use litmask_internal_format::{KEY_LEN, NONCE_LEN, NONCE_TAG_CALL_SITE, WRAPPER_LEN, xor_cycle};
+// Canonical layout constants and AEAD dispatch live in
+// `litmask-internal-format`.
+use litmask_internal_format::{
+    CipherId, KEY_LEN, NONCE_LEN, NONCE_TAG_CALL_SITE, WRAPPER_LEN, aead_encrypt, xor_cycle,
+};
 
 /// Monotonic counter combined with the build seed, crate name, and
 /// literal value to produce a unique AEAD nonce per `mask!()` call.
@@ -54,10 +53,13 @@ pub fn mask(input: TokenStream) -> TokenStream {
     let idx = CALL_COUNTER.fetch_add(1, Ordering::Relaxed);
     let nonce = derive_nonce(&seed, &crate_name, idx, value.as_bytes());
 
-    let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(&mask_key));
-    let ciphertext_and_tag = cipher
-        .encrypt(Nonce::from_slice(&nonce), value.as_bytes())
-        .expect("ChaCha20-Poly1305 encryption failed at mask! expansion");
+    let ciphertext_and_tag = aead_encrypt(
+        CipherId::ChaCha20Poly1305,
+        &mask_key,
+        &nonce,
+        value.as_bytes(),
+    )
+    .expect("AEAD encryption failed at mask! expansion");
 
     let mut blob: Vec<u8> = Vec::with_capacity(NONCE_LEN + ciphertext_and_tag.len());
     blob.extend_from_slice(&nonce);
