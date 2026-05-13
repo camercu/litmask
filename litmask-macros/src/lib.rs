@@ -20,17 +20,13 @@ use syn::{LitStr, parse_macro_input};
 // Canonical layout constants live in `litmask-internal-format`.
 use litmask_internal_format::{KEY_LEN, NONCE_LEN, NONCE_TAG_CALL_SITE, WRAPPER_LEN, xor_cycle};
 
-/// Monotonic counter that distinguishes consecutive `mask!()` calls
-/// within a single proc-macro process. Combined with the build seed
-/// and the literal value, it produces a unique nonce per call site.
+/// Monotonic counter combined with the build seed, crate name, and
+/// literal value to produce a unique AEAD nonce per `mask!()` call.
 ///
-/// The canonical algorithm keys per-call-site nonces on (file, line,
-/// column), but stable Rust's `proc_macro::Span` does not expose
-/// file/line/column accessors. The counter-based form preserves
-/// uniqueness (the property that actually matters for AEAD security)
-/// at the cost of cross-build determinism. Reproducible builds and
-/// fully spec-canonical nonces wait on stable Span accessors or an
-/// opt-in to `procmacro2_semver_exempt`.
+/// The spec-canonical derivation keys on (file, line, column), but
+/// stable Rust's `proc_macro::Span` does not expose those accessors;
+/// the counter preserves per-call-site uniqueness at the cost of
+/// cross-build determinism.
 static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Mask a string literal at compile time; expand to a runtime
@@ -105,9 +101,8 @@ fn load_out_dir_artifact<const N: usize>(name: &'static str) -> [u8; N] {
 }
 
 fn read_out_dir_file(name: &str) -> Vec<u8> {
-    let out_dir = std::env::var_os("OUT_DIR").expect(
-        "litmask: OUT_DIR not set; did you add a build.rs running litmask_build::emit()?",
-    );
+    let out_dir = std::env::var_os("OUT_DIR")
+        .expect("litmask: OUT_DIR not set; did you add a build.rs running litmask_build::emit()?");
     let path = PathBuf::from(out_dir).join(name);
     fs::read(&path).unwrap_or_else(|e| {
         panic!(
@@ -123,8 +118,7 @@ fn derive_nonce(
     idx: u64,
     literal: &[u8],
 ) -> [u8; NONCE_LEN] {
-    // Shares the same BLAKE3 domain separator as the canonical
-    // (file, line, column)-keyed algorithm in
+    // Same BLAKE3 domain separator as
     // `litmask_internal_format::nonce_for_call_site`; only the keyed
     // message differs.
     let mut hasher = blake3::Hasher::new_keyed(seed);

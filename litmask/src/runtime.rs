@@ -26,12 +26,9 @@ use crate::format::WRAPPER_LEN;
 use crate::key::MaskKey;
 use crate::provider::KeyProvider;
 
-// ── Process-global decrypted-key cell ───────────────────────────────
-//
-// Under `std` we use `std::sync::OnceLock`; under `no_std` we use
-// `once_cell::race::OnceBox`. The thin wrapper module below normalizes
-// both into the same API shape so the rest of this file is feature-flag
-// free.
+// `std::sync::OnceLock` and `once_cell::race::OnceBox` have different
+// shapes; this wrapper normalizes them so the rest of the file is
+// feature-flag-free.
 
 #[cfg(feature = "std")]
 mod cell {

@@ -61,9 +61,8 @@ const CONFIG_HEADER: &str = "\
 /// `CARGO_MANIFEST_DIR`, `PROFILE`); a failure of any of these is a
 /// build-system bug, not a user error.
 pub fn emit() {
-    // Re-run if the user changes the seed env var or edits their build
-    // script. Full `LITMASK_RNG_SEED` honoring is layered on in a
-    // later refactor.
+    // Re-run when the user changes the seed env var or edits their
+    // build script.
     println!("cargo:rerun-if-env-changed=LITMASK_RNG_SEED");
     println!("cargo:rerun-if-changed=build.rs");
 
