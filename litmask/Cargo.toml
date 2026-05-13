@@ -7,6 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 build = "build.rs"
+# Explicit allowlist for `cargo publish`. `tests/` is dev-only (runs in
+# this workspace's CI, not for downstream consumers) and is excluded to
+# keep the published crate small; `examples/` ships so the rendered
+# docs.rs page can link to working samples.
+include = ["src/**/*", "build.rs", "examples/**/*"]
 
 [features]
 default = ["std"]
