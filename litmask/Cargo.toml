@@ -24,14 +24,14 @@ std = []
 alloc = []
 
 [dependencies]
-litmask-internal = { path = "../litmask-internal", version = "=0.1.0" }
-litmask-macros = { path = "../litmask-macros", version = "=0.1.0" }
+litmask-internal = { path = "../litmask-internal" }
+litmask-macros = { path = "../litmask-macros" }
 base64ct = { version = "1", features = ["alloc"] }
 once_cell = { version = "1", default-features = false, features = ["race", "alloc"] }
 zeroize = { version = "1", features = ["derive"] }
 
 [build-dependencies]
-litmask-build = { path = "../litmask-build", version = "=0.1.0" }
+litmask-build = { path = "../litmask-build" }
 
 [dev-dependencies]
 regex = "1"
