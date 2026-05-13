@@ -15,6 +15,6 @@ pkgs.mkShell {
     cargo-nextest
     typos
     taplo
-    nodejs
+    nodejs_22
   ];
 }
