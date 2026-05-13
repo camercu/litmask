@@ -8,8 +8,15 @@ default:
 
 # ── Formatting ──────────────────────────────────────────────
 
-fmt:
+fmt: fmt-rust fmt-taplo
+
+fmt-rust:
     cargo fmt --all
+
+# Format every TOML file in the workspace via taplo. Mirrors fmt-rust
+# so a single `just fmt` keeps both Rust and TOML aligned.
+fmt-taplo:
+    taplo format
 
 fmt-check:
     cargo fmt --all --check

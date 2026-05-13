@@ -48,12 +48,6 @@
         "message": "chore(release): ${nextRelease.version}"
       }
     ],
-    [
-      "@semantic-release/github",
-      {
-        "successComment": false,
-        "failComment": false
-      }
-    ]
+    "@semantic-release/github"
   ]
 }
