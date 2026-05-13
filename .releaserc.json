@@ -38,7 +38,7 @@
     ],
     [
       "semantic-release-cargo",
-      { "alwaysVerifyToken": false }
+      { "publish": false, "alwaysVerifyToken": false }
     ],
     "@semantic-release/changelog",
     [
@@ -49,6 +49,5 @@
       }
     ],
     "@semantic-release/github"
-  ],
-  "publish": ["@semantic-release/github"]
+  ]
 }

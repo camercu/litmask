@@ -23,13 +23,8 @@ jobs:
 
       - uses: cachix/install-nix-action@v27
 
-      # Cargo publish is intentionally disabled: .releaserc.json
-      # overrides the `publish` lifecycle to exclude
-      # `semantic-release-cargo`, and CARGO_REGISTRY_TOKEN is omitted
-      # from env as defense-in-depth. Re-enable by removing the
-      # top-level `publish` key in .releaserc.json and adding
-      # `CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_API_KEY }}` below.
       - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_API_KEY }}
         run: nix-shell shell.nix --run 'just release'

@@ -118,12 +118,13 @@ ci-stable: lint-clippy-stable test-stable
 # ── Release ─────────────────────────────────────────────────
 
 # Invoked by .github/workflows/release.yml after a successful CI run on
-# main. semantic-release reads .releaserc.json, which overrides the
-# `publish` lifecycle to only run `@semantic-release/github`; the
-# `semantic-release-cargo` plugin still runs `prepare` (version bump in
-# Cargo.toml + Cargo.lock) but its `publish` hook is excluded, so no
-# crates.io push happens. Re-enable by removing the top-level `publish`
-# key in .releaserc.json and exporting CARGO_REGISTRY_TOKEN.
+# main. semantic-release reads .releaserc.json; the
+# `semantic-release-cargo` plugin is configured with
+# `{ publish: false, alwaysVerifyToken: false }`, so its `prepare` hook
+# still runs (version bump in Cargo.toml + Cargo.lock) but the
+# crates.io push is skipped. The workflow already exports
+# CARGO_REGISTRY_TOKEN, so enabling crates.io publishes is a one-line
+# edit: flip `publish` to `true` in .releaserc.json.
 release:
     npm ci
     npx semantic-release
