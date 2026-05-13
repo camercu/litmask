@@ -1,4 +1,7 @@
-# Tool versions should match .tool-versions — run `just check-tool-versions` to verify.
+# The pinned nixpkgs revision below determines the versions of every
+# tool listed in `packages`. Pin a revision that ships versions
+# matching `.tool-versions` (the single source of truth for CI), and
+# run `just check-tool-versions` to verify the active shell matches.
 let
   pinned_nixpkgs = builtins.fetchTarball {
     url = "https://github.com/NixOS/nixpkgs/archive/566acc07c54dc807f91625bb286cb9b321b5f42a.tar.gz";

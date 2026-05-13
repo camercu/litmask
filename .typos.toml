@@ -7,9 +7,4 @@ extend-ignore-re = []
 [default.extend-words]
 
 [files]
-extend-exclude = [
-    "target/",
-    "node_modules/",
-    "Cargo.lock",
-    "package-lock.json",
-]
+extend-exclude = ["target/", "node_modules/", "Cargo.lock", "package-lock.json"]

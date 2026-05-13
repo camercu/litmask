@@ -5,6 +5,12 @@ on:
     workflows: ["CI"]
     types: [completed]
 
+# Prevent two release runs from racing. `cancel-in-progress: false`
+# protects an in-flight release from being killed mid tag-push.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -15,6 +21,7 @@ jobs:
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     environment: release
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4

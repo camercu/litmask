@@ -27,7 +27,10 @@ alloc = []
 litmask-internal.workspace = true
 litmask-macros.workspace = true
 base64ct = { version = "1", features = ["alloc"] }
-once_cell = { version = "1", default-features = false, features = ["race", "alloc"] }
+once_cell = { version = "1", default-features = false, features = [
+  "race",
+  "alloc",
+] }
 zeroize = { version = "1", features = ["derive"] }
 
 [build-dependencies]

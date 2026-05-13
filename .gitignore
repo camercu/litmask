@@ -6,6 +6,7 @@
 
 # direnv / Nix
 /.direnv/
+/.envrc.local
 
 # Editor / IDE
 *.swp

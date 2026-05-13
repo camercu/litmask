@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-    "litmask",
-    "litmask-build",
-    "litmask-cli",
-    "litmask-internal",
-    "litmask-macros",
+  "litmask",
+  "litmask-build",
+  "litmask-cli",
+  "litmask-internal",
+  "litmask-macros",
 ]
 
 [workspace.package]
