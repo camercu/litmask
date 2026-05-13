@@ -2,12 +2,18 @@
   "name": "litmask-tooling",
   "version": "0.0.0",
   "private": true,
-  "description": "Node-based developer tooling for the litmask Rust workspace (commitlint and, later, semantic-release).",
+  "description": "Node-based developer tooling for the litmask Rust workspace (commitlint and semantic-release).",
   "scripts": {
     "commitlint": "commitlint --edit"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.5.0",
-    "@commitlint/config-conventional": "^19.5.0"
+    "@commitlint/config-conventional": "^19.5.0",
+    "@semantic-release/changelog": "^6.0.0",
+    "@semantic-release/commit-analyzer": "^11.0.0",
+    "@semantic-release/git": "^10.0.0",
+    "@semantic-release/release-notes-generator": "^12.0.0",
+    "semantic-release": "^23.0.0",
+    "semantic-release-cargo": "^2.0.0"
   }
 }

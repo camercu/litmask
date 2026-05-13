@@ -114,3 +114,16 @@ ci: fmt-check lint test test-examples build check-no-default doc
 # Stable-channel best-effort sanity check; runs in a continue-on-error
 # CI job so toolchain regressions surface without blocking PR merge.
 ci-stable: lint-clippy-stable test-stable
+
+# ── Release ─────────────────────────────────────────────────
+
+# Invoked by .github/workflows/release.yml after a successful CI run on
+# main. semantic-release reads .releaserc.json, which overrides the
+# `publish` lifecycle to only run `@semantic-release/github`; the
+# `semantic-release-cargo` plugin still runs `prepare` (version bump in
+# Cargo.toml + Cargo.lock) but its `publish` hook is excluded, so no
+# crates.io push happens. Re-enable by removing the top-level `publish`
+# key in .releaserc.json and exporting CARGO_REGISTRY_TOKEN.
+release:
+    npm ci
+    npx semantic-release
