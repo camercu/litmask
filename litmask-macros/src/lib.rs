@@ -14,8 +14,8 @@ use quote::quote;
 use syn::{LitStr, parse_macro_input};
 
 // Canonical layout constants and AEAD dispatch live in
-// `litmask-internal-format`.
-use litmask_internal_format::{
+// `litmask-internal`.
+use litmask_internal::{
     CipherId, KEY_LEN, NONCE_LEN, NONCE_TAG_CALL_SITE, WRAPPER_LEN, aead_encrypt, xor_cycle,
 };
 

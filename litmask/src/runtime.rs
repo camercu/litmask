@@ -1,4 +1,5 @@
-//! Imperative shell over the pure decryption core in [`crate::cipher`].
+//! Imperative shell over the pure decryption core in
+//! [`litmask_internal::cipher`].
 //!
 //! The process-global mask key lives in a `OnceLock` populated by
 //! [`__init_with_wrapper`] (the target of `init!` / `init_with!`) or
@@ -19,9 +20,8 @@
 
 use alloc::string::String;
 
-use crate::cipher;
 use crate::error::InitError;
-use crate::format::WRAPPER_LEN;
+use crate::internal::{WRAPPER_LEN, cipher};
 use crate::key::MaskKey;
 use crate::provider::KeyProvider;
 
@@ -145,9 +145,9 @@ fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {
 }
 
 fn decrypt_wrapper_or_panic(
-    unlock_key: &[u8; crate::format::KEY_LEN],
+    unlock_key: &[u8; crate::internal::KEY_LEN],
     wrapper: &[u8; WRAPPER_LEN],
-) -> [u8; crate::format::KEY_LEN] {
+) -> [u8; crate::internal::KEY_LEN] {
     match cipher::decrypt_wrapper(unlock_key, wrapper) {
         Ok(bytes) => bytes,
         Err(_) => panic!(),
@@ -155,7 +155,7 @@ fn decrypt_wrapper_or_panic(
 }
 
 fn decrypt_blob_or_panic(
-    mask_key: &[u8; crate::format::KEY_LEN],
+    mask_key: &[u8; crate::internal::KEY_LEN],
     blob: &[u8],
 ) -> alloc::vec::Vec<u8> {
     match cipher::decrypt_blob(mask_key, blob) {

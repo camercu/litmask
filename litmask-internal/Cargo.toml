@@ -1,6 +1,6 @@
 [package]
-name = "litmask-internal-format"
-description = "INTERNAL — wire-format constants and pure helpers shared between litmask, litmask-build, and litmask-macros. Not a public API; do not depend on this crate directly."
+name = "litmask-internal"
+description = "INTERNAL — shared crypto primitives, wire-format constants, and pure helpers used by litmask, litmask-build, and litmask-macros. Not a public API; do not depend on this crate directly."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

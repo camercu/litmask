@@ -9,7 +9,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::base64url;
 use crate::error::KeyError;
-use crate::format::KEY_LEN;
+use crate::internal::KEY_LEN;
 
 /// The runtime-supplied key that decrypts the embedded `mask_key`
 /// wrapper.

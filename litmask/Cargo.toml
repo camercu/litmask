@@ -24,7 +24,7 @@ std = []
 alloc = []
 
 [dependencies]
-litmask-internal-format = { path = "../litmask-internal-format", version = "=0.1.0" }
+litmask-internal = { path = "../litmask-internal", version = "=0.1.0" }
 litmask-macros = { path = "../litmask-macros", version = "=0.1.0" }
 base64ct = { version = "1", features = ["alloc"] }
 once_cell = { version = "1", default-features = false, features = ["race", "alloc"] }

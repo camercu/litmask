@@ -208,7 +208,7 @@ version = "0.1.0"
 dependencies = [
  "base64ct",
  "litmask-build",
- "litmask-internal-format",
+ "litmask-internal",
  "litmask-macros",
  "once_cell",
  "regex",
@@ -221,7 +221,7 @@ version = "0.1.0"
 dependencies = [
  "base64ct",
  "getrandom",
- "litmask-internal-format",
+ "litmask-internal",
  "rand_chacha",
  "rand_core",
  "toml",
@@ -233,7 +233,7 @@ name = "litmask-cli"
 version = "0.1.0"
 
 [[package]]
-name = "litmask-internal-format"
+name = "litmask-internal"
 version = "0.1.0"
 dependencies = [
  "blake3",
@@ -245,7 +245,7 @@ name = "litmask-macros"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "litmask-internal-format",
+ "litmask-internal",
  "proc-macro2",
  "quote",
  "syn",

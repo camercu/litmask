@@ -1,5 +1,6 @@
-//! Wire-format constants, typed format/cipher identifiers, and pure
-//! layout helpers for the litmask binary format.
+//! Shared crypto primitives, wire-format constants, typed
+//! format/cipher identifiers, and pure layout helpers for the litmask
+//! binary format.
 //!
 //! Internal crate. Not part of the public litmask API. Versioned in
 //! lockstep with `litmask`; do not depend on this crate directly. The
@@ -12,6 +13,8 @@
 //!   authentication tag.
 //! - BLAKE3 nonce domain separators and derivation algorithms for the
 //!   wrapper nonce and per-call-site nonces.
+//! - The AEAD encrypt + decrypt primitives and the wrapper/blob
+//!   decrypt helpers (see [`cipher`]).
 //!
 //! All functions here are pure (no I/O, no global state) and
 //! `no_std`-compatible.
@@ -19,6 +22,8 @@
 #![no_std]
 
 extern crate alloc;
+
+pub mod cipher;
 
 // ── Byte-length constants ───────────────────────────────────────────
 
@@ -508,5 +513,4 @@ mod tests {
         assert_eq!(a, aa);
         assert_ne!(a, b);
     }
-
 }

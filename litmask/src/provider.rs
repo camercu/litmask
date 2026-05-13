@@ -96,9 +96,7 @@ fn read_env_value(name: &str) -> Option<Zeroizing<alloc::string::String>> {
 /// `forbid(unsafe_code)` blocks the `unsafe { std::env::set_var(...) }`
 /// pattern that env-mutation tests would otherwise require).
 #[cfg(feature = "std")]
-fn parse_env_value(
-    value: Option<Zeroizing<alloc::string::String>>,
-) -> Result<UnlockKey, KeyError> {
+fn parse_env_value(value: Option<Zeroizing<alloc::string::String>>) -> Result<UnlockKey, KeyError> {
     match value {
         None => Err(KeyError::NotFound),
         Some(s) => UnlockKey::from_base64url(s.as_str()),
@@ -150,15 +148,15 @@ mod tests {
 
     #[test]
     fn parse_env_value_padded_yields_invalid_format() {
-        let err = parse_env_value(Some(z("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")))
-            .unwrap_err();
+        let err =
+            parse_env_value(Some(z("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="))).unwrap_err();
         assert!(matches!(err, KeyError::InvalidFormat));
     }
 
     #[test]
     fn parse_env_value_valid_32_byte_key_succeeds() {
         let key = parse_env_value(Some(z(VALID_BASE64URL_32B))).expect("valid 32-byte key");
-        assert_eq!(key.as_bytes(), &[0u8; crate::format::KEY_LEN]);
+        assert_eq!(key.as_bytes(), &[0u8; crate::internal::KEY_LEN]);
     }
 
     #[test]

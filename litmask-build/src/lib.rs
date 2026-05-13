@@ -34,10 +34,10 @@ use rand_core::{RngCore, SeedableRng};
 use zeroize::Zeroize;
 
 // Canonical layout constants and pure helpers live in
-// `litmask-internal-format` (a small internal crate shared by litmask,
+// `litmask-internal` (a small internal crate shared by litmask,
 // litmask-build, and litmask-macros). Cipher dispatch is centralized
 // there so adding a second AEAD lands in one place.
-use litmask_internal_format::{
+use litmask_internal::{
     CipherId, FormatVersion, KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, aead_encrypt,
     assemble_wrapper, nonce_for_wrapper,
 };

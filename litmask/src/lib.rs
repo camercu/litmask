@@ -39,19 +39,18 @@ extern crate alloc;
 extern crate std;
 
 mod base64url;
-mod cipher;
 mod error;
 mod key;
 mod provider;
 mod runtime;
 
-/// Wire-format constants and pure helpers shared with the build-script
-/// helper and the proc-macro crate.
-pub(crate) use litmask_internal_format as format;
+/// Shared crypto primitives, wire-format constants, and pure helpers
+/// the build-script helper and proc-macro crate also consume.
+pub(crate) use litmask_internal as internal;
 
 pub use error::{InitError, KeyError};
 pub use key::UnlockKey;
-pub use litmask_internal_format::KEY_LEN;
+pub use litmask_internal::KEY_LEN;
 pub use provider::KeyProvider;
 
 #[cfg(feature = "std")]
@@ -108,5 +107,5 @@ macro_rules! init_with {
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.
     pub use crate::runtime::{__decrypt_str, __init_with_wrapper};
-    pub use litmask_internal_format::xor_cycle as __xor_cycle;
+    pub use litmask_internal::xor_cycle as __xor_cycle;
 }

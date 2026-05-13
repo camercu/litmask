@@ -5,13 +5,16 @@
 //! time (in the build-script helper) and at proc-macro expansion time;
 //! the runtime crate decrypts only.
 
-use crate::format::{self, AeadError, CipherId, KEY_LEN, NONCE_LEN, WRAPPER_LEN, aead_decrypt};
+use crate::{
+    AeadError, CipherId, KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, WrapperParseError, aead_decrypt,
+    parse_wrapper,
+};
 
 /// Errors surfaced by pure decryption helpers. Converted to panics by
 /// the runtime imperative shell; the typed form here lets unit tests
 /// assert specific failure modes without `panic::catch_unwind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DecryptError {
+pub enum DecryptError {
     /// Wrapper header carries a format version this build does not
     /// support, or the byte does not match any known version.
     UnsupportedFormat,
@@ -37,16 +40,23 @@ impl From<AeadError> for DecryptError {
 /// this build supports, and runs the AEAD decryption with the supplied
 /// `unlock_key` using the cipher recorded in the header. Returns the
 /// recovered `mask_key` bytes on success.
-pub(crate) fn decrypt_wrapper(
+///
+/// # Errors
+///
+/// Returns [`DecryptError::UnsupportedFormat`] or
+/// [`DecryptError::UnsupportedCipher`] when the wrapper header carries
+/// an unrecognized version or cipher byte, and
+/// [`DecryptError::AuthenticationFailed`] when the AEAD tag check fails.
+pub fn decrypt_wrapper(
     unlock_key: &[u8; KEY_LEN],
     wrapper: &[u8; WRAPPER_LEN],
 ) -> Result<[u8; KEY_LEN], DecryptError> {
     // parse_wrapper rejects any byte that doesn't decode to a known
     // FormatVersion / CipherId variant, so a successful parse already
     // means the header is one this build supports.
-    let parsed = format::parse_wrapper(wrapper).map_err(|e| match e {
-        format::WrapperParseError::UnknownFormatVersion(_) => DecryptError::UnsupportedFormat,
-        format::WrapperParseError::UnknownCipherId(_) => DecryptError::UnsupportedCipher,
+    let parsed = parse_wrapper(wrapper).map_err(|e| match e {
+        WrapperParseError::UnknownFormatVersion(_) => DecryptError::UnsupportedFormat,
+        WrapperParseError::UnknownCipherId(_) => DecryptError::UnsupportedCipher,
     })?;
     let plaintext = aead_decrypt(parsed.cipher, unlock_key, parsed.nonce, parsed.body)?;
     plaintext
@@ -62,11 +72,23 @@ pub(crate) fn decrypt_wrapper(
 /// per-string blob in a binary uses the same cipher as the wrapper.
 /// Until that cipher is threaded through from init time, the blob path
 /// hardcodes the default ChaCha20-Poly1305.
-pub(crate) fn decrypt_blob(
+///
+/// # Errors
+///
+/// Returns [`DecryptError::BlobTooShort`] when `blob` is shorter than
+/// `NONCE_LEN + TAG_LEN`, and [`DecryptError::AuthenticationFailed`]
+/// when the AEAD tag check fails.
+///
+/// # Panics
+///
+/// Never panics for valid inputs; the internal `expect` exists only as
+/// a sanity guard — the length check above already rejects any `blob`
+/// shorter than `NONCE_LEN`.
+pub fn decrypt_blob(
     mask_key: &[u8; KEY_LEN],
     blob: &[u8],
 ) -> Result<alloc::vec::Vec<u8>, DecryptError> {
-    if blob.len() < NONCE_LEN + format::TAG_LEN {
+    if blob.len() < NONCE_LEN + TAG_LEN {
         return Err(DecryptError::BlobTooShort);
     }
     let nonce_bytes: [u8; NONCE_LEN] = blob[..NONCE_LEN]
@@ -84,7 +106,7 @@ pub(crate) fn decrypt_blob(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::format::{self, CipherId, FormatVersion, TAG_LEN, aead_encrypt};
+    use crate::{FormatVersion, aead_encrypt, assemble_wrapper, nonce_for_wrapper};
 
     /// Encrypt a `mask_key` under `unlock_key` and assemble the
     /// wrapper. Mirrors what the build-script helper does, but stays
@@ -94,7 +116,7 @@ mod tests {
         mask_key: &[u8; KEY_LEN],
         seed: &[u8; KEY_LEN],
     ) -> [u8; WRAPPER_LEN] {
-        let nonce = format::nonce_for_wrapper(seed);
+        let nonce = nonce_for_wrapper(seed);
         let body = aead_encrypt(
             CipherId::ChaCha20Poly1305,
             unlock_key,
@@ -102,7 +124,7 @@ mod tests {
             mask_key.as_slice(),
         )
         .expect("encrypt");
-        format::assemble_wrapper(
+        assemble_wrapper(
             FormatVersion::CURRENT,
             CipherId::ChaCha20Poly1305,
             &nonce,
@@ -115,8 +137,8 @@ mod tests {
         nonce: &[u8; NONCE_LEN],
         plaintext: &[u8],
     ) -> alloc::vec::Vec<u8> {
-        let body = aead_encrypt(CipherId::ChaCha20Poly1305, mask_key, nonce, plaintext)
-            .expect("encrypt");
+        let body =
+            aead_encrypt(CipherId::ChaCha20Poly1305, mask_key, nonce, plaintext).expect("encrypt");
         let mut blob = alloc::vec::Vec::with_capacity(NONCE_LEN + body.len());
         blob.extend_from_slice(nonce);
         blob.extend_from_slice(&body);
