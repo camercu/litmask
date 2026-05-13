@@ -52,7 +52,7 @@ const CONFIG_HEADER: &str = "\
 # the litmask runtime (env var) and by `litmask-cli` (bind / inspect).
 ";
 
-/// Run the build-time key generation pipeline.
+/// Run the build-time mask-key + unlock-key generation pipeline.
 ///
 /// # Panics
 ///

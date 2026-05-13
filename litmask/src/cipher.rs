@@ -25,7 +25,8 @@ pub(crate) enum DecryptError {
     UnsupportedCipher,
     /// Per-string blob is shorter than `NONCE_LEN + TAG_LEN`.
     BlobTooShort,
-    /// AEAD authentication failed (wrong key or tampered ciphertext).
+    /// AEAD authentication failed (wrong unlock or mask key, or
+    /// tampered ciphertext).
     AuthenticationFailed,
 }
 

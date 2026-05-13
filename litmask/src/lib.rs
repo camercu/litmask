@@ -2,9 +2,11 @@
 //!
 //! Raise the cost of static binary analysis for string constants in
 //! Rust binaries. Each call to [`mask!`] encrypts its literal at
-//! compile time with an AEAD cipher; the runtime decrypts on first use
-//! using a master key supplied by a [`KeyProvider`] (the default
-//! [`EnvVarProvider`] reads `LITMASK_UNLOCK_KEY` from the environment).
+//! compile time with an AEAD cipher; the runtime decrypts on first
+//! use, after a process-global mask key is recovered from the
+//! embedded wrapper using an unlock key that a [`KeyProvider`] sources
+//! at runtime (the default [`EnvVarProvider`] reads
+//! `LITMASK_UNLOCK_KEY` from the environment).
 //!
 //! See `docs/SPECIFICATION.md` and `docs/THREAT_MODEL.md` in the
 //! source repository for the design rationale, threat model, and

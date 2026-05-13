@@ -30,10 +30,11 @@ impl core::error::Error for InitError {
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum KeyError {
-    /// The key source is unavailable (env var unset, file missing,
-    /// etc.).
+    /// The unlock-key source is unavailable (env var unset, file
+    /// missing, etc.).
     NotFound,
-    /// The key data is malformed (wrong length, bad encoding).
+    /// The unlock-key bytes are malformed (wrong length, bad
+    /// encoding).
     InvalidFormat,
 }
 

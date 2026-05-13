@@ -1,9 +1,8 @@
 //! Imperative shell over the pure decryption core in [`crate::cipher`].
 //!
-//! The process-global decrypted master key lives in a `OnceLock`
-//! populated by [`__init_with_wrapper`] (the target of `init!` /
-//! `init_with!`) or lazily by [`__decrypt_str`] on the first `mask!()`
-//! call.
+//! The process-global mask key lives in a `OnceLock` populated by
+//! [`__init_with_wrapper`] (the target of `init!` / `init_with!`) or
+//! lazily by [`__decrypt_str`] on the first `mask!()` call.
 //!
 //! Spec §1.9.5 prescribes the `match X { Ok(_) => …, Err(_) => panic!() }`
 //! form for panic hygiene. The `assert!` and `.expect(...)` alternatives
@@ -74,7 +73,7 @@ mod cell {
 // ── Public entry points called by macro expansion ───────────────────
 
 /// Decrypt the embedded `mask_key` wrapper and store the result in the
-/// process-global master-key cell.
+/// process-global mask key cell.
 ///
 /// Called by the `init!` and `init_with!` macros after they capture the
 /// wrapper bytes via `include_bytes!`.

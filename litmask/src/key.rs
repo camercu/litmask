@@ -1,8 +1,8 @@
-//! Symmetric key newtypes.
+//! Symmetric-key newtypes.
 //!
-//! [`UnlockKey`] is the public-facing key supplied by a
+//! [`UnlockKey`] is the public-facing unlock key supplied by a
 //! [`crate::KeyProvider`]. [`MaskKey`] is the runtime-only decrypted
-//! master key held in a process-global once-cell. Both zero their
+//! mask key held in a process-global once-cell. Both zero their
 //! contents on drop.
 
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -49,7 +49,7 @@ impl core::fmt::Debug for UnlockKey {
     }
 }
 
-/// The decrypted master key. Held in a process-global once-cell for
+/// The decrypted mask key. Held in a process-global once-cell for
 /// the program's lifetime; never re-decrypted. Crate-internal only.
 #[derive(Zeroize, ZeroizeOnDrop)]
 #[doc(hidden)]
