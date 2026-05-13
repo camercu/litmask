@@ -1,0 +1,74 @@
+# release-plz configuration.
+# Reference: https://release-plz.dev/docs/config
+
+[workspace]
+# Match the `v{version}` tag format established under semantic-release
+# (v0.1.0, v0.1.1) so the release lineage is continuous.
+git_tag_name = "v{{ version }}"
+git_release_name = "v{{ version }}"
+
+# Crates.io publish is intentionally disabled at the workspace level.
+# Flip per-package (or here) to `true` once a `CRATES_API_KEY` secret
+# is in place and you're ready to publish. The release workflow
+# already exports the secret unconditionally, so enabling publish is
+# a single-key edit here — no workflow change needed.
+publish = false
+
+# Update CHANGELOG.md alongside the version bump. release-plz uses
+# git-cliff under the hood, configured below.
+changelog_update = true
+
+# Update inter-crate version requirements in [workspace.dependencies]
+# when [workspace.package].version is bumped. This is the reason for
+# switching off semantic-release-cargo — it left those entries stale
+# and would have broken `cargo check` on the next minor bump.
+dependencies_update = true
+
+# Map Conventional Commit types to changelog sections + bump impact.
+# `skip = true` excludes the commit from BOTH the changelog and the
+# release decision, mirroring the `release: false` rules from the
+# previous .releaserc.json (e.g., `fix(ci):` should not trigger a
+# release).
+[changelog]
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix\\(ci\\)", skip = true },
+  { message = "^fix", group = "Bug Fixes" },
+  { message = "^perf", group = "Performance Improvements" },
+  { message = "^revert", group = "Reverts" },
+  { message = "^docs", skip = true },
+  { message = "^style", skip = true },
+  { message = "^chore", skip = true },
+  { message = "^refactor", skip = true },
+  { message = "^test", skip = true },
+  { message = "^build", skip = true },
+  { message = "^ci", skip = true },
+]
+
+# Per-package overrides. The public `litmask` crate carries the
+# canonical GitHub Release for each version; the other workspace
+# members are versioned in lockstep via `version.workspace = true`
+# but don't get their own tags or Release pages.
+[[package]]
+name = "litmask"
+git_release_enable = true
+
+[[package]]
+name = "litmask-build"
+git_release_enable = false
+git_tag_enable = false
+
+[[package]]
+name = "litmask-cli"
+git_release_enable = false
+git_tag_enable = false
+
+[[package]]
+name = "litmask-internal"
+git_release_enable = false
+git_tag_enable = false
+
+[[package]]
+name = "litmask-macros"
+git_release_enable = false
+git_tag_enable = false

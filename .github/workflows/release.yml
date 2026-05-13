@@ -1,35 +1,29 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
+  push:
+    branches: [main]
 
-# Prevent two release runs from racing. `cancel-in-progress: false`
-# protects an in-flight release from being killed mid tag-push.
-concurrency:
-  group: release
-  cancel-in-progress: false
+# `release-plz` operates in PR mode: a push to `main` opens or updates
+# a "Release v{version}" PR with the bump + CHANGELOG.md entry. The
+# PR's CI run (the canonical-gate job in ci.yml) gates the release.
+# When the PR is merged, the same workflow fires on the resulting
+# push, sees the release commit, tags it, and cuts a GitHub Release.
 
 permissions:
   contents: write
-  # `@semantic-release/github`'s `success` step posts comments on
-  # issues and PRs closed by the release. Without these scopes the
-  # call to the issues API returns "Resource not accessible by
-  # integration" and the entire step fails (the release itself has
-  # already published at that point).
-  issues: write
   pull-requests: write
 
-jobs:
-  release:
-    if: |
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main'
-    runs-on: ubuntu-latest
-    environment: release
-    timeout-minutes: 20
+concurrency:
+  group: release-plz-${{ github.ref }}
+  cancel-in-progress: false
 
+jobs:
+  release-plz:
+    name: release-plz
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,17 +43,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .tool-versions
-          cache: npm
-
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: just@${{ steps.tools.outputs.just }}
-
-      - name: Run semantic-release
+      # The action defaults to running `release-pr` followed by
+      # `release` in one step, which matches the two phases of the
+      # PR-based flow (open/update the PR, then release on merge).
+      # CARGO_REGISTRY_TOKEN is exported even though `publish = false`
+      # in release-plz.toml so enabling crates.io publish later is a
+      # single-key edit there.
+      - uses: MarcoIeni/release-plz-action@v0.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_API_KEY }}
-        run: just release
