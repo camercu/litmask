@@ -14,7 +14,7 @@
 //! The forbidden list lives in `tests/common/mod.rs`. Add an entry
 //! when a new identifiable term enters the codebase. The list is not a
 //! proof of leak-freedom; high-entropy-fixture strings checks (see
-//! `walking_skeleton.rs`) provide the positive security signal.
+//! `mask_round_trip.rs`) provide the positive security signal.
 
 mod common;
 
