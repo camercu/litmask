@@ -49,12 +49,8 @@ pub fn mask(input: TokenStream) -> TokenStream {
     let lit = parse_macro_input!(input as LitStr);
     let value = lit.value();
 
-    let out_dir = std::env::var_os("OUT_DIR")
-        .expect("litmask: OUT_DIR not set; did you add a build.rs running litmask_build::emit()?");
-    let out_dir = PathBuf::from(out_dir);
-
-    let mask_key = load_fixed::<KEY_LEN>(&out_dir.join("litmask_key.bin"), "litmask_key.bin");
-    let seed = load_fixed::<KEY_LEN>(&out_dir.join("litmask_seed.bin"), "litmask_seed.bin");
+    let mask_key = load_out_dir_artifact::<KEY_LEN>("litmask_key.bin");
+    let seed = load_out_dir_artifact::<KEY_LEN>("litmask_seed.bin");
 
     let crate_name = std::env::var("CARGO_PKG_NAME").unwrap_or_default();
     let idx = CALL_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -85,19 +81,27 @@ pub fn mask(input: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-fn load_fixed<const N: usize>(path: &std::path::Path, friendly: &str) -> [u8; N] {
-    let bytes = fs::read(path).unwrap_or_else(|e| {
+/// Load a fixed-size build artifact from the caller crate's `OUT_DIR`.
+/// Panics at proc-macro expansion time with a diagnostic message if
+/// `OUT_DIR` is unset, the file is missing or unreadable, or its
+/// length differs from `N` — each of which indicates a missing or
+/// out-of-date `litmask_build::emit()` invocation in the caller's
+/// `build.rs`.
+fn load_out_dir_artifact<const N: usize>(name: &str) -> [u8; N] {
+    let out_dir = std::env::var_os("OUT_DIR").expect(
+        "litmask: OUT_DIR not set; did you add a build.rs running litmask_build::emit()?",
+    );
+    let path = PathBuf::from(out_dir).join(name);
+    let bytes = fs::read(&path).unwrap_or_else(|e| {
         panic!(
-            "litmask: failed to read {friendly} from OUT_DIR ({}): {e}; did your build.rs run litmask_build::emit()?",
+            "litmask: failed to read {name} from OUT_DIR ({}): {e}; did your build.rs run litmask_build::emit()?",
             path.display(),
         )
     });
-    bytes.as_slice().try_into().unwrap_or_else(|_| {
-        panic!(
-            "litmask: {friendly} expected {N} bytes, found {}",
-            bytes.len()
-        )
-    })
+    bytes
+        .as_slice()
+        .try_into()
+        .unwrap_or_else(|_| panic!("litmask: {name} expected {N} bytes, found {}", bytes.len()))
 }
 
 fn derive_nonce(
@@ -151,15 +155,10 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
     let lit = parse_macro_input!(input as LitStr);
     let value = lit.value();
 
-    let out_dir = std::env::var_os("OUT_DIR")
-        .expect("litmask: OUT_DIR not set; did you add a build.rs running litmask_build::emit()?");
-    let out_dir = PathBuf::from(out_dir);
-
     // The wrapper is per-build random ciphertext; using it as the XOR
     // key removes any fixed litmask byte signature from the encoded
     // output.
-    let wrapper =
-        load_fixed::<WRAPPER_LEN>(&out_dir.join("litmask_wrapper.bin"), "litmask_wrapper.bin");
+    let wrapper = load_out_dir_artifact::<WRAPPER_LEN>("litmask_wrapper.bin");
 
     let plaintext = value.as_bytes();
     let mut encoded = vec![0u8; plaintext.len()];
