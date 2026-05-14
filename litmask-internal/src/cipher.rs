@@ -14,6 +14,7 @@ use crate::{
 /// the runtime imperative shell; the typed form here lets unit tests
 /// assert specific failure modes without `panic::catch_unwind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DecryptError {
     /// Wrapper header carries a format version this build does not
     /// support, or the byte does not match any known version.
@@ -92,7 +93,9 @@ pub fn decrypt_blob(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{FormatVersion, aead_encrypt, assemble_wrapper, nonce_for_wrapper};
+    use crate::{
+        FormatVersion, WRAPPER_BODY_LEN, aead_encrypt, assemble_wrapper, nonce_for_wrapper,
+    };
 
     /// Encrypt a `mask_key` under `unlock_key` and assemble the
     /// wrapper. Mirrors what the build-script helper does, but stays
@@ -110,11 +113,15 @@ mod tests {
             mask_key.as_slice(),
         )
         .expect("encrypt");
+        let body: &[u8; WRAPPER_BODY_LEN] = body
+            .as_slice()
+            .try_into()
+            .expect("AEAD output of 32-byte plaintext is WRAPPER_BODY_LEN bytes");
         assemble_wrapper(
             FormatVersion::CURRENT,
             CipherId::ChaCha20Poly1305,
             &nonce,
-            &body,
+            body,
         )
     }
 

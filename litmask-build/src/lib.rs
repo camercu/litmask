@@ -34,7 +34,7 @@ use rand_core::{RngCore, SeedableRng};
 use zeroize::Zeroize;
 
 use litmask_internal::{
-    CipherId, FormatVersion, KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, aead_encrypt,
+    CipherId, FormatVersion, KEY_LEN, NONCE_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN, aead_encrypt,
     assemble_wrapper, nonce_for_wrapper,
 };
 
@@ -97,18 +97,16 @@ pub fn emit() {
         mask_key.as_slice(),
     )
     .expect("wrapper encryption failed");
-    assert_eq!(
-        ciphertext_with_tag.len(),
-        KEY_LEN + TAG_LEN,
-        "encrypted mask_key length must be {} bytes",
-        KEY_LEN + TAG_LEN
-    );
+    let body: &[u8; WRAPPER_BODY_LEN] = ciphertext_with_tag
+        .as_slice()
+        .try_into()
+        .expect("AEAD output of 32-byte plaintext is WRAPPER_BODY_LEN bytes");
 
     let wrapper = assemble_wrapper(
         FormatVersion::CURRENT,
         CipherId::ChaCha20Poly1305,
         &wrapper_nonce,
-        &ciphertext_with_tag,
+        body,
     );
     ciphertext_with_tag.zeroize();
 

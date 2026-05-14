@@ -23,6 +23,9 @@
 
 extern crate alloc;
 
+use chacha20poly1305::aead::{Aead, generic_array::GenericArray};
+use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
+
 pub mod cipher;
 
 /// Length of every symmetric key in bytes. ChaCha20-Poly1305 and
@@ -144,6 +147,7 @@ pub struct ParsedWrapper<'a> {
 
 /// Reasons `parse_wrapper` may reject a wrapper byte sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum WrapperParseError {
     /// Header byte 0 is not a recognized [`FormatVersion`] value.
     UnknownFormatVersion(u8),
@@ -153,24 +157,13 @@ pub enum WrapperParseError {
 
 /// Build a wrapper byte array from typed header fields and the
 /// AEAD-encrypted body.
-///
-/// # Panics
-///
-/// Panics if `ciphertext_and_tag.len()` is not exactly
-/// `KEY_LEN + TAG_LEN` bytes.
 #[must_use]
 pub fn assemble_wrapper(
     version: FormatVersion,
     cipher: CipherId,
     nonce: &[u8; NONCE_LEN],
-    ciphertext_and_tag: &[u8],
+    ciphertext_and_tag: &[u8; WRAPPER_BODY_LEN],
 ) -> [u8; WRAPPER_LEN] {
-    assert_eq!(
-        ciphertext_and_tag.len(),
-        KEY_LEN + TAG_LEN,
-        "ciphertext_and_tag must be {} bytes",
-        KEY_LEN + TAG_LEN
-    );
     let mut out = [0u8; WRAPPER_LEN];
     out[0] = version.to_byte();
     out[1] = cipher.to_byte();
@@ -215,6 +208,7 @@ pub fn parse_wrapper(bytes: &[u8; WRAPPER_LEN]) -> Result<ParsedWrapper<'_>, Wra
 /// single variant covers AEAD authentication failure on decrypt; encrypt
 /// failures are not reachable for the cipher set this crate supports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AeadError {
     /// AEAD authentication failed (wrong key, wrong nonce, or tampered
     /// ciphertext + tag).
@@ -237,8 +231,6 @@ pub fn aead_encrypt(
     nonce: &[u8; NONCE_LEN],
     plaintext: &[u8],
 ) -> Result<alloc::vec::Vec<u8>, AeadError> {
-    use chacha20poly1305::aead::{Aead, generic_array::GenericArray};
-    use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
     match cipher_id {
         CipherId::ChaCha20Poly1305 => {
             let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(key));
@@ -262,8 +254,6 @@ pub fn aead_decrypt(
     nonce: &[u8; NONCE_LEN],
     body: &[u8],
 ) -> Result<alloc::vec::Vec<u8>, AeadError> {
-    use chacha20poly1305::aead::{Aead, generic_array::GenericArray};
-    use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
     match cipher_id {
         CipherId::ChaCha20Poly1305 => {
             let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(key));
@@ -405,7 +395,7 @@ mod tests {
     #[test]
     fn wrapper_round_trip_layout() {
         let nonce = [0x55u8; NONCE_LEN];
-        let body = [0x11u8; KEY_LEN + TAG_LEN];
+        let body = [0x11u8; WRAPPER_BODY_LEN];
         let wrapper = assemble_wrapper(
             FormatVersion::CURRENT,
             CipherId::ChaCha20Poly1305,
@@ -416,13 +406,13 @@ mod tests {
         assert_eq!(parsed.version, FormatVersion::V1);
         assert_eq!(parsed.cipher, CipherId::ChaCha20Poly1305);
         assert_eq!(parsed.nonce, &nonce);
-        assert_eq!(parsed.body, body.as_slice());
+        assert_eq!(parsed.body, &body);
     }
 
     #[test]
     fn parse_wrapper_rejects_unknown_version_byte() {
         let nonce = [0u8; NONCE_LEN];
-        let body = [0u8; KEY_LEN + TAG_LEN];
+        let body = [0u8; WRAPPER_BODY_LEN];
         let mut wrapper = assemble_wrapper(
             FormatVersion::CURRENT,
             CipherId::ChaCha20Poly1305,
@@ -439,7 +429,7 @@ mod tests {
     #[test]
     fn parse_wrapper_rejects_unknown_cipher_byte() {
         let nonce = [0u8; NONCE_LEN];
-        let body = [0u8; KEY_LEN + TAG_LEN];
+        let body = [0u8; WRAPPER_BODY_LEN];
         let mut wrapper = assemble_wrapper(
             FormatVersion::CURRENT,
             CipherId::ChaCha20Poly1305,
@@ -450,19 +440,6 @@ mod tests {
         assert_eq!(
             parse_wrapper(&wrapper).unwrap_err(),
             WrapperParseError::UnknownCipherId(0x99),
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "ciphertext_and_tag must be")]
-    fn assemble_wrapper_rejects_short_body() {
-        let nonce = [0u8; NONCE_LEN];
-        let body = [0u8; KEY_LEN + TAG_LEN - 1];
-        let _ = assemble_wrapper(
-            FormatVersion::CURRENT,
-            CipherId::ChaCha20Poly1305,
-            &nonce,
-            &body,
         );
     }
 
