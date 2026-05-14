@@ -44,8 +44,6 @@ mod key;
 mod provider;
 mod runtime;
 
-/// Shared crypto primitives, wire-format constants, and pure helpers
-/// the build-script helper and proc-macro crate also consume.
 pub(crate) use litmask_internal as internal;
 
 pub use error::{InitError, KeyError};

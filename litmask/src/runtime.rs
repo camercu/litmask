@@ -70,8 +70,6 @@ mod cell {
     }
 }
 
-// ── Public entry points called by macro expansion ───────────────────
-
 /// Decrypt the embedded `mask_key` wrapper and store the result in the
 /// process-global mask key cell.
 ///
@@ -118,8 +116,6 @@ pub fn __decrypt_str(blob: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> String {
     // produce non-UTF-8 plaintext. unwrap is safe by construction.
     String::from_utf8(plaintext).unwrap()
 }
-
-// ── Imperative-shell glue: panic at unrecoverable boundaries ────────
 
 fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {
     cell::get_or_init(|| {

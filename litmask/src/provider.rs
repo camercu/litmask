@@ -31,8 +31,6 @@ const _: fn() = || {
 };
 
 /// Reads `unlock_key` from a configurable environment variable.
-///
-/// Only available when the `std` feature is enabled (the default).
 #[cfg(feature = "std")]
 pub struct EnvVarProvider {
     name: &'static str,
@@ -46,9 +44,8 @@ impl EnvVarProvider {
         Self { name }
     }
 
-    /// The environment variable this provider reads. Useful for
-    /// error messages and operational tooling that wants to print the
-    /// expected variable name.
+    /// Expose the configured variable name so error messages and
+    /// operational tooling can surface it without hardcoding.
     #[must_use]
     pub const fn var_name(&self) -> &'static str {
         self.name

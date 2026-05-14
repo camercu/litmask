@@ -33,10 +33,6 @@ use rand_chacha::ChaCha20Rng;
 use rand_core::{RngCore, SeedableRng};
 use zeroize::Zeroize;
 
-// Canonical layout constants and pure helpers live in
-// `litmask-internal` (a small internal crate shared by litmask,
-// litmask-build, and litmask-macros). Cipher dispatch is centralized
-// there so adding a second AEAD lands in one place.
 use litmask_internal::{
     CipherId, FormatVersion, KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, aead_encrypt,
     assemble_wrapper, nonce_for_wrapper,
@@ -86,7 +82,6 @@ pub fn emit() {
         write_secret(&seed_persist_path, &seed);
     }
 
-    // Derive both keys deterministically from the seed.
     let mut rng = ChaCha20Rng::from_seed(seed);
     let mut mask_key = [0u8; KEY_LEN];
     let mut unlock_key = [0u8; KEY_LEN];
@@ -117,8 +112,9 @@ pub fn emit() {
     );
     ciphertext_with_tag.zeroize();
 
-    // Per-build-unit copies the proc-macro reads at expansion time via
-    // include_bytes!.
+    // OUT_DIR is the path the proc-macro and the runtime `include_bytes!`
+    // at macro-expansion time; profile_dir (below) holds the human-
+    // readable `litmask.config` consumed via env-var at runtime.
     write_secret(&out_dir.join("litmask_seed.bin"), &seed);
     write_secret(&out_dir.join("litmask_key.bin"), &mask_key);
     write_secret(&out_dir.join("litmask_wrapper.bin"), &wrapper);

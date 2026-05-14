@@ -25,8 +25,6 @@ extern crate alloc;
 
 pub mod cipher;
 
-// ── Byte-length constants ───────────────────────────────────────────
-
 /// Length of every symmetric key in bytes. ChaCha20-Poly1305 and
 /// AES-256-GCM both use 32-byte keys.
 pub const KEY_LEN: usize = 32;
@@ -48,8 +46,6 @@ pub const NONCE_TAG_CALL_SITE: &[u8] = b"litmask-nonce";
 
 /// BLAKE3 domain separator for the wrapper nonce.
 pub const NONCE_TAG_WRAPPER: &[u8] = b"litmask-mask-key-nonce";
-
-// ── Format version ──────────────────────────────────────────────────
 
 /// Wire-format version of the encrypted-`mask_key` wrapper. Encoded as
 /// a single byte at offset 0 of every wrapper.
@@ -90,8 +86,6 @@ impl TryFrom<u8> for FormatVersion {
     }
 }
 
-// ── Cipher identifier ───────────────────────────────────────────────
-
 /// AEAD cipher identifier. Encoded as a single byte at offset 1 of
 /// every wrapper. Used by runtime tooling to confirm the wrapper was
 /// produced with the cipher the current binary was compiled to handle.
@@ -128,8 +122,6 @@ impl TryFrom<u8> for CipherId {
         }
     }
 }
-
-// ── Wrapper layout ──────────────────────────────────────────────────
 
 /// Length of the AEAD body that follows the wrapper header: 32 bytes
 /// of `mask_key` ciphertext + 16 bytes of authentication tag.
@@ -220,8 +212,6 @@ pub fn parse_wrapper(bytes: &[u8; WRAPPER_LEN]) -> Result<ParsedWrapper<'_>, Wra
     })
 }
 
-// ── AEAD primitive ──────────────────────────────────────────────────
-
 /// Errors surfaced by [`aead_encrypt`] and [`aead_decrypt`]. Today the
 /// single variant covers AEAD authentication failure on decrypt; encrypt
 /// failures are not reachable for the cipher set this crate supports.
@@ -285,8 +275,6 @@ pub fn aead_decrypt(
     }
 }
 
-// ── XOR-cycle obfuscation ───────────────────────────────────────────
-
 /// XOR every byte of `input` with the corresponding byte of `key`,
 /// cycling the key as needed. Writes the result into `out`.
 ///
@@ -314,8 +302,6 @@ pub fn xor_cycle(input: &[u8], key: &[u8], out: &mut [u8]) {
         out[i] = byte ^ key[i % key.len()];
     }
 }
-
-// ── Nonce derivation ────────────────────────────────────────────────
 
 /// Derive the wrapper nonce: first 12 bytes of the keyed BLAKE3 hash of
 /// the fixed domain-separator string [`NONCE_TAG_WRAPPER`] under
@@ -355,8 +341,6 @@ mod tests {
     const SEED_A: [u8; KEY_LEN] = [0xaa; KEY_LEN];
     const SEED_B: [u8; KEY_LEN] = [0xbb; KEY_LEN];
 
-    // ── xor_cycle ───────────────────────────────────────────────────
-
     #[test]
     fn xor_cycle_empty_input_is_noop() {
         let key = [0xAAu8; 8];
@@ -377,9 +361,8 @@ mod tests {
 
     #[test]
     fn xor_cycle_handles_key_shorter_than_input() {
-        // Key cycles: input byte i is XOR'd with key[i % key.len()].
         let plaintext = b"abcdef";
-        let key = b"\xff\x55"; // 2-byte key cycling across 6-byte input
+        let key = b"\xff\x55";
         let mut out = [0u8; 6];
         xor_cycle(plaintext, key, &mut out);
         assert_eq!(out[0], b'a' ^ 0xff);

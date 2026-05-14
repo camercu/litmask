@@ -93,7 +93,6 @@ mod tests {
         use core::error::Error;
         let err = InitError::KeyProvider(KeyError::NotFound);
         let src = err.source().expect("InitError::KeyProvider has a source");
-        // The source must Display as the inner KeyError tag.
         assert_eq!(format!("{src}"), "not_found");
     }
 }
