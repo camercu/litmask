@@ -44,8 +44,7 @@ static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 ///   (cryptographically extraordinary; never observed in practice).
 #[proc_macro]
 pub fn mask(input: TokenStream) -> TokenStream {
-    let lit = parse_macro_input!(input as LitStr);
-    let value = lit.value();
+    let value = parse_macro_input!(input as LitStr).value();
 
     let mask_key = load_out_dir_artifact::<KEY_LEN>("litmask_key.bin");
     let seed = load_out_dir_artifact::<KEY_LEN>("litmask_seed.bin");
@@ -65,7 +64,7 @@ pub fn mask(input: TokenStream) -> TokenStream {
     let blob_lit = byte_array_token(&blob);
     let blob_len = blob.len();
 
-    let expanded = quote! {
+    quote! {
         {
             const __LITMASK_BLOB: &[u8; #blob_len] = &#blob_lit;
             ::litmask::__internal::__decrypt_str(
@@ -73,9 +72,53 @@ pub fn mask(input: TokenStream) -> TokenStream {
                 ::litmask::__wrapper_bytes!(),
             )
         }
-    };
+    }
+    .into()
+}
 
-    expanded.into()
+/// Obfuscate a string literal at compile time using XOR against the
+/// per-build encrypted-`mask_key` wrapper bytes. Expand to code that
+/// decodes back to `&'static str` on first runtime access and caches
+/// the result for the program's lifetime.
+///
+/// `weak_mask!()` is weaker than [`mask!`]: there is no AEAD
+/// authentication, and both ciphertext and key material live in the
+/// same compiled binary, so a Level-2 attacker (disassembler + manual
+/// decode) can recover the plaintext. Use `weak_mask!()` only for
+/// non-secret strings that need anti-`strings(1)` protection and
+/// cannot wait for `init!()` to run (env-var names, default file
+/// paths, etc.). Real secrets always go through [`mask!`].
+///
+/// # Panics
+///
+/// Panics at proc-macro expansion time if `OUT_DIR` is unset or
+/// `litmask_wrapper.bin` cannot be read; these indicate a missing
+/// `build.rs` invoking `litmask_build::emit()`.
+#[proc_macro]
+pub fn weak_mask(input: TokenStream) -> TokenStream {
+    let value = parse_macro_input!(input as LitStr).value();
+
+    // The wrapper is per-build random ciphertext; using it as the XOR
+    // key removes any fixed litmask byte signature from the encoded
+    // output.
+    let wrapper = load_out_dir_artifact::<WRAPPER_LEN>("litmask_wrapper.bin");
+    let encoded = xor_cycle(value.as_bytes(), &wrapper);
+    let encoded_lit = byte_array_token(&encoded);
+    let encoded_len = encoded.len();
+
+    quote! {
+        {
+            const __WEAK_OBF: &[u8; #encoded_len] = &#encoded_lit;
+            static __WEAK_CACHE: ::std::sync::OnceLock<::std::string::String> =
+                ::std::sync::OnceLock::new();
+            ::litmask::__internal::__weak_decode(
+                __WEAK_OBF,
+                ::litmask::__wrapper_bytes!(),
+                &__WEAK_CACHE,
+            )
+        }
+    }
+    .into()
 }
 
 /// Load a fixed-size build artifact from the caller crate's `OUT_DIR`.
@@ -135,56 +178,5 @@ fn derive_nonce(seed: &[u8; KEY_LEN], idx: u64) -> [u8; NONCE_LEN] {
 }
 
 fn byte_array_token(bytes: &[u8]) -> proc_macro2::TokenStream {
-    let elems = bytes.iter().map(|b| quote! { #b });
-    quote! { [ #(#elems),* ] }
-}
-
-/// Obfuscate a string literal at compile time using XOR against the
-/// per-build encrypted-`mask_key` wrapper bytes. Expand to code that
-/// decodes back to `&'static str` on first runtime access and caches
-/// the result for the program's lifetime.
-///
-/// `weak_mask!()` is weaker than [`mask!`]: there is no AEAD
-/// authentication, and both ciphertext and key material live in the
-/// same compiled binary, so a Level-2 attacker (disassembler + manual
-/// decode) can recover the plaintext. Use `weak_mask!()` only for
-/// non-secret strings that need anti-`strings(1)` protection and
-/// cannot wait for `init!()` to run (env-var names, default file
-/// paths, etc.). Real secrets always go through [`mask!`].
-///
-/// # Panics
-///
-/// Panics at proc-macro expansion time if `OUT_DIR` is unset or
-/// `litmask_wrapper.bin` cannot be read; these indicate a missing
-/// `build.rs` invoking `litmask_build::emit()`.
-#[proc_macro]
-pub fn weak_mask(input: TokenStream) -> TokenStream {
-    let lit = parse_macro_input!(input as LitStr);
-    let value = lit.value();
-
-    // The wrapper is per-build random ciphertext; using it as the XOR
-    // key removes any fixed litmask byte signature from the encoded
-    // output.
-    let wrapper = load_out_dir_artifact::<WRAPPER_LEN>("litmask_wrapper.bin");
-
-    let plaintext = value.as_bytes();
-    let encoded = xor_cycle(plaintext, &wrapper);
-
-    let encoded_lit = byte_array_token(&encoded);
-    let encoded_len = encoded.len();
-
-    let expanded = quote! {
-        {
-            const __WEAK_OBF: &[u8; #encoded_len] = &#encoded_lit;
-            static __WEAK_CACHE: ::std::sync::OnceLock<::std::string::String> =
-                ::std::sync::OnceLock::new();
-            ::litmask::__internal::__weak_decode(
-                __WEAK_OBF,
-                ::litmask::__wrapper_bytes!(),
-                &__WEAK_CACHE,
-            )
-        }
-    };
-
-    expanded.into()
+    quote! { [ #(#bytes),* ] }
 }
