@@ -25,7 +25,6 @@
 //!   `locator`, and `length`.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use base64ct::{Base64UrlUnpadded, Encoding};
@@ -64,59 +63,32 @@ pub fn emit() {
         .into();
     let profile_dir = profile_dir_of(&out_dir);
 
-    // Source the per-build seed. Persistence is profile-scoped (not
-    // OUT_DIR-scoped) so two cargo invocations with different feature
-    // flags (e.g., `cargo build` and `cargo build --no-default-features
-    // --features alloc`) share the same key material and produce a
-    // single coherent litmask.config.
-    let seed_persist_path = profile_dir.join("litmask-seed.bin");
-    let mut seed = [0u8; KEY_LEN];
-    if let Ok(bytes) = fs::read(&seed_persist_path) {
-        if bytes.len() == KEY_LEN {
-            seed.copy_from_slice(&bytes);
-        } else {
-            getrandom::getrandom(&mut seed).expect("OS RNG failure during litmask seed generation");
-        }
-    } else {
-        getrandom::getrandom(&mut seed).expect("OS RNG failure during litmask seed generation");
-        write_secret(&seed_persist_path, &seed);
-    }
-
+    let mut seed = source_seed(&profile_dir);
     let mut rng = ChaCha20Rng::from_seed(seed);
     let mut mask_key = [0u8; KEY_LEN];
     let mut unlock_key = [0u8; KEY_LEN];
     rng.fill_bytes(&mut mask_key);
     rng.fill_bytes(&mut unlock_key);
 
+    let cipher = CipherId::ChaCha20Poly1305;
     let wrapper_nonce = nonce_for_wrapper(&seed);
 
-    let mut ciphertext_with_tag = aead_encrypt(
-        CipherId::ChaCha20Poly1305,
-        &unlock_key,
-        &wrapper_nonce,
-        mask_key.as_slice(),
-    )
-    .expect("wrapper encryption failed");
+    let mut ciphertext_with_tag =
+        aead_encrypt(cipher, &unlock_key, &wrapper_nonce, mask_key.as_slice())
+            .expect("wrapper encryption failed");
     let body: &[u8; WRAPPER_BODY_LEN] = ciphertext_with_tag
         .as_slice()
         .try_into()
         .expect("AEAD output of 32-byte plaintext is WRAPPER_BODY_LEN bytes");
-
-    let wrapper = assemble_wrapper(
-        FormatVersion::CURRENT,
-        CipherId::ChaCha20Poly1305,
-        &wrapper_nonce,
-        body,
-    );
+    let wrapper = assemble_wrapper(FormatVersion::CURRENT, cipher, &wrapper_nonce, body);
     ciphertext_with_tag.zeroize();
 
-    // OUT_DIR is the path the proc-macro and the runtime `include_bytes!`
-    // at macro-expansion time; profile_dir (below) holds the human-
-    // readable `litmask.config` consumed via env-var at runtime.
+    // OUT_DIR receives the binary artifacts the proc-macro and runtime
+    // `include_bytes!` at macro-expansion time. profile_dir receives
+    // `litmask.config`, the TOML the runtime reads via env var.
     write_secret(&out_dir.join("litmask_seed.bin"), &seed);
     write_secret(&out_dir.join("litmask_key.bin"), &mask_key);
     write_secret(&out_dir.join("litmask_wrapper.bin"), &wrapper);
-
     write_config(&profile_dir.join("litmask.config"), &unlock_key, &wrapper);
 
     seed.zeroize();
@@ -124,20 +96,37 @@ pub fn emit() {
     unlock_key.zeroize();
 }
 
+/// Load the per-build seed from the profile-dir persist file, or
+/// generate + persist a fresh one if the file is missing or corrupt.
+///
+/// Persistence is profile-scoped (not OUT_DIR-scoped) so two cargo
+/// invocations with different feature flags (e.g., `cargo build` and
+/// `cargo build --no-default-features --features alloc`) share the
+/// same key material and produce a single coherent `litmask.config`.
+fn source_seed(profile_dir: &Path) -> [u8; KEY_LEN] {
+    let path = profile_dir.join("litmask_seed.bin");
+    if let Ok(bytes) = fs::read(&path) {
+        if let Ok(seed) = <[u8; KEY_LEN]>::try_from(bytes.as_slice()) {
+            return seed;
+        }
+    }
+    let mut seed = [0u8; KEY_LEN];
+    getrandom::getrandom(&mut seed).expect("OS RNG failure during litmask seed generation");
+    write_secret(&path, &seed);
+    seed
+}
+
 fn write_secret(path: &Path, contents: &[u8]) {
-    let mut f = fs::File::create(path).unwrap_or_else(|e| panic!("create {}: {e}", path.display()));
-    f.write_all(contents)
-        .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    fs::write(path, contents).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
 
 fn profile_dir_of(out_dir: &Path) -> PathBuf {
-    // OUT_DIR looks like target/<profile>/build/<pkg>-<hash>/out. Three
-    // parents up is target/<profile>/, where litmask.config and the
-    // persisted seed live.
+    // OUT_DIR looks like target/<profile>/build/<pkg>-<hash>/out.
+    // Three ancestors up is target/<profile>/, where litmask.config
+    // and the persisted seed live.
     out_dir
-        .parent()
-        .and_then(Path::parent)
-        .and_then(Path::parent)
+        .ancestors()
+        .nth(3)
         .expect("OUT_DIR has expected target/<profile>/build/<pkg>-<hash>/out shape")
         .to_path_buf()
 }
@@ -151,4 +140,84 @@ fn write_config(path: &Path, unlock_key: &[u8; KEY_LEN], wrapper: &[u8; WRAPPER_
     );
 
     fs::write(path, body).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn persist_path(dir: &TempDir) -> PathBuf {
+        dir.path().join("litmask_seed.bin")
+    }
+
+    #[test]
+    fn source_seed_generates_and_persists_when_file_is_missing() {
+        let dir = TempDir::new().expect("tempdir");
+        let seed = source_seed(dir.path());
+        let persisted = fs::read(persist_path(&dir)).expect("file persisted");
+        assert_eq!(persisted.len(), KEY_LEN);
+        assert_eq!(persisted.as_slice(), &seed);
+    }
+
+    #[test]
+    fn source_seed_reads_back_valid_persisted_file() {
+        let dir = TempDir::new().expect("tempdir");
+        let canned = [0x42u8; KEY_LEN];
+        fs::write(persist_path(&dir), canned).expect("seed file");
+        assert_eq!(source_seed(dir.path()), canned);
+    }
+
+    /// Prove-it: a wrong-length persist file is overwritten with a
+    /// fresh KEY_LEN-byte seed. The pre-fix code generated a fresh
+    /// seed but did not persist it, so the corrupt file stayed in
+    /// place and every subsequent build produced a different seed —
+    /// the `assert_eq!(after.len(), KEY_LEN)` line below failed
+    /// against that path.
+    #[test]
+    fn source_seed_overwrites_corrupt_short_file() {
+        let dir = TempDir::new().expect("tempdir");
+        let canned_short = vec![0xAAu8; KEY_LEN - 1];
+        fs::write(persist_path(&dir), &canned_short).expect("short seed file");
+
+        let seed = source_seed(dir.path());
+
+        let after = fs::read(persist_path(&dir)).expect("file still present");
+        assert_eq!(
+            after.len(),
+            KEY_LEN,
+            "corrupt persist file must be overwritten with KEY_LEN bytes",
+        );
+        assert_eq!(
+            after.as_slice(),
+            &seed,
+            "persisted bytes must match returned seed",
+        );
+        assert_ne!(
+            after.as_slice(),
+            canned_short.as_slice(),
+            "corrupt bytes must not survive the call",
+        );
+    }
+
+    #[test]
+    fn source_seed_overwrites_corrupt_long_file() {
+        let dir = TempDir::new().expect("tempdir");
+        let canned_long = vec![0xBBu8; KEY_LEN + 1];
+        fs::write(persist_path(&dir), &canned_long).expect("long seed file");
+
+        let seed = source_seed(dir.path());
+
+        let after = fs::read(persist_path(&dir)).expect("file still present");
+        assert_eq!(after.len(), KEY_LEN);
+        assert_eq!(after.as_slice(), &seed);
+    }
+
+    #[test]
+    fn source_seed_is_idempotent_when_file_is_valid() {
+        let dir = TempDir::new().expect("tempdir");
+        let first = source_seed(dir.path());
+        let second = source_seed(dir.path());
+        assert_eq!(first, second);
+    }
 }
