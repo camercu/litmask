@@ -178,24 +178,11 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
             const __WEAK_OBF: &[u8; #encoded_len] = &#encoded_lit;
             static __WEAK_CACHE: ::std::sync::OnceLock<::std::string::String> =
                 ::std::sync::OnceLock::new();
-            __WEAK_CACHE
-                .get_or_init(|| {
-                    // `core::hint::black_box` prevents LLVM from
-                    // constant-folding the XOR loop into a precomputed
-                    // string literal in `.rodata`. Both inputs are
-                    // const-known at compile time (`__WEAK_OBF` and the
-                    // `include_bytes!`-loaded wrapper), so without
-                    // black_box the optimizer materializes the decoded
-                    // plaintext directly.
-                    let wrapper: &[u8] = ::core::hint::black_box(
-                        &::litmask::__wrapper_bytes!()[..]
-                    );
-                    let obf: &[u8] = ::core::hint::black_box(&__WEAK_OBF[..]);
-                    let decoded = ::litmask::__internal::__xor_cycle(obf, wrapper);
-                    ::std::string::String::from_utf8(decoded)
-                        .expect("weak_mask! input was valid UTF-8")
-                })
-                .as_str()
+            ::litmask::__internal::__weak_decode(
+                __WEAK_OBF,
+                ::litmask::__wrapper_bytes!(),
+                &__WEAK_CACHE,
+            )
         }
     };
 

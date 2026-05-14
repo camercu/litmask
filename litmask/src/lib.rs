@@ -104,6 +104,7 @@ macro_rules! init_with {
 #[doc(hidden)]
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.
+    #[cfg(feature = "std")]
+    pub use crate::runtime::__weak_decode;
     pub use crate::runtime::{__decrypt_str, __init_with_wrapper};
-    pub use litmask_internal::xor_cycle as __xor_cycle;
 }

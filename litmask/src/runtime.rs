@@ -117,6 +117,40 @@ pub fn __decrypt_str(blob: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> String {
     String::from_utf8(plaintext).unwrap()
 }
 
+/// Decode a `weak_mask!()`-obfuscated literal on first call and cache
+/// the result for the program's lifetime, returning a stable
+/// `&'static str` borrowed from the cache.
+///
+/// The two `black_box` calls hide the const-folded inputs (the
+/// per-call-site `__WEAK_OBF` array and the per-build `include_bytes!`
+/// wrapper) from LLVM. Without them the optimizer can constant-fold
+/// the XOR-cycle and materialize the decoded plaintext directly in
+/// `.rodata`, defeating `weak_mask!()`'s anti-`strings(1)` purpose.
+///
+/// # Panics
+///
+/// Panics if the cached decode does not produce valid UTF-8. The
+/// macro only accepts string literals, so the AEAD-equivalent
+/// guarantee here is just that `weak_mask!()` callers don't feed it
+/// arbitrary bytes; UTF-8 failure indicates an in-process tamper of
+/// either the obfuscated bytes or the wrapper.
+#[cfg(feature = "std")]
+#[doc(hidden)]
+pub fn __weak_decode<const N: usize>(
+    obf: &'static [u8; N],
+    wrapper: &'static [u8; WRAPPER_LEN],
+    cache: &'static std::sync::OnceLock<String>,
+) -> &'static str {
+    cache
+        .get_or_init(|| {
+            let wrapper = core::hint::black_box(&wrapper[..]);
+            let obf = core::hint::black_box(&obf[..]);
+            let decoded = crate::internal::xor_cycle(obf, wrapper);
+            String::from_utf8(decoded).expect("weak_mask! input was valid UTF-8")
+        })
+        .as_str()
+}
+
 fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {
     cell::get_or_init(|| {
         // Under no_std there is no default provider — lazy init only
