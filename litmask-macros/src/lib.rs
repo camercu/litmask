@@ -61,10 +61,7 @@ pub fn mask(input: TokenStream) -> TokenStream {
     )
     .expect("AEAD encryption failed at mask! expansion");
 
-    let mut blob: Vec<u8> = Vec::with_capacity(NONCE_LEN + ciphertext_and_tag.len());
-    blob.extend_from_slice(&nonce);
-    blob.extend_from_slice(&ciphertext_and_tag);
-
+    let blob: Vec<u8> = [nonce.as_slice(), &ciphertext_and_tag].concat();
     let blob_lit = byte_array_token(&blob);
     let blob_len = blob.len();
 
@@ -132,9 +129,9 @@ fn derive_nonce(seed: &[u8; KEY_LEN], idx: u64) -> [u8; NONCE_LEN] {
     hasher.update(NONCE_TAG_CALL_SITE);
     hasher.update(&idx.to_le_bytes());
     let digest = hasher.finalize();
-    digest.as_bytes()[..NONCE_LEN]
-        .try_into()
-        .expect("BLAKE3 output is at least NONCE_LEN bytes")
+    let mut out = [0u8; NONCE_LEN];
+    out.copy_from_slice(&digest.as_bytes()[..NONCE_LEN]);
+    out
 }
 
 fn byte_array_token(bytes: &[u8]) -> proc_macro2::TokenStream {
