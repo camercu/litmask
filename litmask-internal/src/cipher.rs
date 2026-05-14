@@ -78,29 +78,15 @@ pub fn decrypt_wrapper(
 /// Returns [`DecryptError::BlobTooShort`] when `blob` is shorter than
 /// `NONCE_LEN + TAG_LEN`, and [`DecryptError::AuthenticationFailed`]
 /// when the AEAD tag check fails.
-///
-/// # Panics
-///
-/// Never panics for valid inputs; the internal `expect` exists only as
-/// a sanity guard — the length check above already rejects any `blob`
-/// shorter than `NONCE_LEN`.
 pub fn decrypt_blob(
     mask_key: &[u8; KEY_LEN],
     blob: &[u8],
 ) -> Result<alloc::vec::Vec<u8>, DecryptError> {
-    if blob.len() < NONCE_LEN + TAG_LEN {
-        return Err(DecryptError::BlobTooShort);
-    }
-    let nonce_bytes: [u8; NONCE_LEN] = blob[..NONCE_LEN]
-        .try_into()
-        .expect("blob.len() >= NONCE_LEN checked above");
-    aead_decrypt(
-        CipherId::ChaCha20Poly1305,
-        mask_key,
-        &nonce_bytes,
-        &blob[NONCE_LEN..],
-    )
-    .map_err(DecryptError::from)
+    let (nonce, body) = blob
+        .split_first_chunk::<NONCE_LEN>()
+        .filter(|(_, body)| body.len() >= TAG_LEN)
+        .ok_or(DecryptError::BlobTooShort)?;
+    aead_decrypt(CipherId::ChaCha20Poly1305, mask_key, nonce, body).map_err(DecryptError::from)
 }
 
 #[cfg(test)]

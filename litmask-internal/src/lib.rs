@@ -36,7 +36,7 @@ pub const NONCE_LEN: usize = 12;
 pub const TAG_LEN: usize = 16;
 
 /// 1-byte version + 1-byte cipher id + 12-byte nonce.
-pub const HEADER_LEN: usize = 2 + NONCE_LEN;
+const HEADER_LEN: usize = 2 + NONCE_LEN;
 
 /// Total wrapper byte count: header + 32-byte encrypted `mask_key` + tag.
 pub const WRAPPER_LEN: usize = HEADER_LEN + KEY_LEN + TAG_LEN;
@@ -45,7 +45,7 @@ pub const WRAPPER_LEN: usize = HEADER_LEN + KEY_LEN + TAG_LEN;
 pub const NONCE_TAG_CALL_SITE: &[u8] = b"litmask-nonce";
 
 /// BLAKE3 domain separator for the wrapper nonce.
-pub const NONCE_TAG_WRAPPER: &[u8] = b"litmask-mask-key-nonce";
+const NONCE_TAG_WRAPPER: &[u8] = b"litmask-mask-key-nonce";
 
 /// Wire-format version of the encrypted-`mask_key` wrapper. Encoded as
 /// a single byte at offset 0 of every wrapper.
@@ -190,9 +190,8 @@ pub fn assemble_wrapper(
 /// # Panics
 ///
 /// Never panics for valid `[u8; WRAPPER_LEN]` inputs. The internal
-/// slice-to-array conversion is statically sized at [`NONCE_LEN`]; the
-/// `expect` exists only as a sanity guard against future drift in
-/// [`HEADER_LEN`].
+/// slice-to-array conversions are sanity guards against future drift
+/// in the wrapper header layout.
 pub fn parse_wrapper(bytes: &[u8; WRAPPER_LEN]) -> Result<ParsedWrapper<'_>, WrapperParseError> {
     let version = FormatVersion::try_from(bytes[0])
         .map_err(|e| WrapperParseError::UnknownFormatVersion(e.0))?;
@@ -275,8 +274,8 @@ pub fn aead_decrypt(
     }
 }
 
-/// XOR every byte of `input` with the corresponding byte of `key`,
-/// cycling the key as needed. Writes the result into `out`.
+/// XOR every byte of `input` against the cyclically-repeated `key`,
+/// returning the result as a new `Vec`.
 ///
 /// The operation is its own inverse: applying it twice with the same
 /// key recovers the original input. Used by the `weak_mask!` macro to
@@ -286,40 +285,28 @@ pub fn aead_decrypt(
 ///
 /// # Panics
 ///
-/// Panics if `input.len() != out.len()` or if `key.is_empty()` while
-/// `input` is non-empty.
-pub fn xor_cycle(input: &[u8], key: &[u8], out: &mut [u8]) {
-    assert_eq!(
-        input.len(),
-        out.len(),
-        "input and output lengths must match"
-    );
+/// Panics if `key.is_empty()` while `input` is non-empty.
+#[must_use]
+pub fn xor_cycle(input: &[u8], key: &[u8]) -> alloc::vec::Vec<u8> {
     if input.is_empty() {
-        return;
+        return alloc::vec::Vec::new();
     }
     assert!(!key.is_empty(), "key must be non-empty");
-    for (i, byte) in input.iter().enumerate() {
-        out[i] = byte ^ key[i % key.len()];
-    }
+    input
+        .iter()
+        .enumerate()
+        .map(|(i, byte)| byte ^ key[i % key.len()])
+        .collect()
 }
 
-/// Derive the wrapper nonce: first 12 bytes of the keyed BLAKE3 hash of
-/// the fixed domain-separator string [`NONCE_TAG_WRAPPER`] under
-/// `seed` as the BLAKE3 key.
-///
-/// # Panics
-///
-/// Never panics for valid inputs; the `expect` exists only as a sanity
-/// guard against future drift in [`NONCE_LEN`] vs. the BLAKE3 output
-/// width.
+/// Derive the wrapper nonce: first [`NONCE_LEN`] bytes of the keyed
+/// BLAKE3 hash of a fixed domain-separator string under `seed`.
 #[must_use]
 pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
-    let mut hasher = blake3::Hasher::new_keyed(seed);
-    hasher.update(NONCE_TAG_WRAPPER);
-    let digest = hasher.finalize();
-    digest.as_bytes()[..NONCE_LEN]
-        .try_into()
-        .expect("BLAKE3 output is at least NONCE_LEN bytes")
+    let digest = blake3::keyed_hash(seed, NONCE_TAG_WRAPPER);
+    let mut out = [0u8; NONCE_LEN];
+    out.copy_from_slice(&digest.as_bytes()[..NONCE_LEN]);
+    out
 }
 
 // The per-call-site nonce is owned by the proc-macro crate
@@ -344,57 +331,48 @@ mod tests {
     #[test]
     fn xor_cycle_empty_input_is_noop() {
         let key = [0xAAu8; 8];
-        let mut out = [];
-        xor_cycle(&[], &key, &mut out);
+        assert!(xor_cycle(&[], &key).is_empty());
     }
 
     #[test]
     fn xor_cycle_self_inverse_with_matching_lengths() {
         let plaintext = b"hello world";
         let key = b"0123456789ab";
-        let mut encoded = [0u8; 11];
-        xor_cycle(plaintext, key, &mut encoded);
-        let mut decoded = [0u8; 11];
-        xor_cycle(&encoded, key, &mut decoded);
-        assert_eq!(&decoded, plaintext);
+        let encoded = xor_cycle(plaintext, key);
+        let decoded = xor_cycle(&encoded, key);
+        assert_eq!(decoded.as_slice(), plaintext);
     }
 
     #[test]
     fn xor_cycle_handles_key_shorter_than_input() {
         let plaintext = b"abcdef";
         let key = b"\xff\x55";
-        let mut out = [0u8; 6];
-        xor_cycle(plaintext, key, &mut out);
-        assert_eq!(out[0], b'a' ^ 0xff);
-        assert_eq!(out[1], b'b' ^ 0x55);
-        assert_eq!(out[2], b'c' ^ 0xff);
-        assert_eq!(out[3], b'd' ^ 0x55);
-        assert_eq!(out[4], b'e' ^ 0xff);
-        assert_eq!(out[5], b'f' ^ 0x55);
+        let out = xor_cycle(plaintext, key);
+        assert_eq!(
+            out.as_slice(),
+            &[
+                b'a' ^ 0xff,
+                b'b' ^ 0x55,
+                b'c' ^ 0xff,
+                b'd' ^ 0x55,
+                b'e' ^ 0xff,
+                b'f' ^ 0x55,
+            ]
+        );
     }
 
     #[test]
     fn xor_cycle_handles_key_longer_than_input() {
         let plaintext = b"hi";
         let key = b"\x01\x02\x03\x04\x05";
-        let mut out = [0u8; 2];
-        xor_cycle(plaintext, key, &mut out);
-        assert_eq!(out[0], b'h' ^ 0x01);
-        assert_eq!(out[1], b'i' ^ 0x02);
-    }
-
-    #[test]
-    #[should_panic(expected = "input and output lengths must match")]
-    fn xor_cycle_panics_when_buffers_disagree() {
-        let mut out = [0u8; 5];
-        xor_cycle(b"hello world", &[0xAA], &mut out);
+        let out = xor_cycle(plaintext, key);
+        assert_eq!(out.as_slice(), &[b'h' ^ 0x01, b'i' ^ 0x02]);
     }
 
     #[test]
     #[should_panic(expected = "key must be non-empty")]
     fn xor_cycle_panics_on_empty_key_with_nonempty_input() {
-        let mut out = [0u8; 1];
-        xor_cycle(b"x", &[], &mut out);
+        let _ = xor_cycle(b"x", &[]);
     }
 
     #[test]

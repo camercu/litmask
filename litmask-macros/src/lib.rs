@@ -171,8 +171,7 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
     let wrapper = load_out_dir_artifact::<WRAPPER_LEN>("litmask_wrapper.bin");
 
     let plaintext = value.as_bytes();
-    let mut encoded = vec![0u8; plaintext.len()];
-    xor_cycle(plaintext, &wrapper, &mut encoded);
+    let encoded = xor_cycle(plaintext, &wrapper);
 
     let encoded_lit = byte_array_token(&encoded);
     let encoded_len = encoded.len();
@@ -195,8 +194,7 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
                         &::litmask::__wrapper_bytes!()[..]
                     );
                     let obf: &[u8] = ::core::hint::black_box(&__WEAK_OBF[..]);
-                    let mut decoded = ::std::vec![0u8; #encoded_len];
-                    ::litmask::__internal::__xor_cycle(obf, wrapper, &mut decoded);
+                    let decoded = ::litmask::__internal::__xor_cycle(obf, wrapper);
                     ::std::string::String::from_utf8(decoded)
                         .expect("weak_mask! input was valid UTF-8")
                 })
