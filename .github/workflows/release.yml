@@ -43,7 +43,7 @@ jobs:
       # commit and release-plz seeing a newer main HEAD is bounded
       # by the concurrency group below, which serializes release runs
       # so a later push will trigger its own gated release.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: main
