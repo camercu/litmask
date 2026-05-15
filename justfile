@@ -45,8 +45,12 @@ lint-deny:
 
 # ── Testing ─────────────────────────────────────────────────
 
+# Two passes because nextest does not yet support doc-tests upstream;
+# `cargo test --doc` covers them, `nextest` covers unit + integration
+# tests with parallel execution + better output.
 test:
-    cargo test --workspace
+    cargo nextest run --workspace
+    cargo test --workspace --doc
 
 # Latest-stable sanity check. Skips the trybuild compile_fixtures
 # harness because rustc's diagnostic text drifts between minor
@@ -54,17 +58,31 @@ test:
 # `.tool-versions` toolchain (1.88.0 today). The canonical-gate job
 # runs everything, including the fixtures, on the pinned toolchain.
 test-stable:
-    cargo {{stable_toolchain}} test --workspace -- --skip compile_fixtures
+    cargo {{stable_toolchain}} nextest run --workspace -E 'not test(compile_fixtures)'
+    cargo {{stable_toolchain}} test --workspace --doc
 
-# Build and run every in-repo example end-to-end. Sources LITMASK_UNLOCK_KEY
-# from the build's litmask.config. Wired into `just ci` to catch example
-# bitrot.
+# Build and run every in-repo example end-to-end. Sources
+# LITMASK_UNLOCK_KEY from the build's litmask.config. Examples are
+# discovered by globbing `litmask/examples/*.rs` so adding a new
+# example file is the only step needed to wire it in.
 test-examples:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo build --example hello_world
+    # Build first so the canonical `litmask.config` exists before any
+    # example runs (the build script writes it).
+    cargo build --workspace --examples
     unlock_key=$(awk -F'"' '/^unlock_key/ {print $2}' target/debug/litmask.config)
-    LITMASK_UNLOCK_KEY="$unlock_key" cargo run --example hello_world
+    found=0
+    for src in litmask/examples/*.rs; do
+        name=$(basename "$src" .rs)
+        echo "litmask: test-examples — running $name"
+        LITMASK_UNLOCK_KEY="$unlock_key" cargo run --quiet --example "$name"
+        found=$((found + 1))
+    done
+    if [ "$found" -eq 0 ]; then
+        echo "litmask: test-examples — no examples discovered under litmask/examples/" >&2
+        exit 1
+    fi
 
 # ── Building / checking ─────────────────────────────────────
 
@@ -97,7 +115,13 @@ check-tool-versions:
             typos-cli)     actual=$(typos --version | awk '{print $2}') ;;
             taplo-cli)     actual=$(taplo --version | awk '{print $2}') ;;
             nodejs)        actual=$(node --version | sed 's/^v//') ;;
-            *)             continue ;;
+            *)
+                # Loud failure: a new entry in `.tool-versions` without
+                # a matching case here would otherwise drift silently.
+                printf '  %-14s unrecognized (add a case to check-tool-versions)\n' "$name"
+                drift=1
+                continue
+                ;;
         esac
         if [ "$actual" != "$version" ]; then
             printf '  %-14s pinned=%s  actual=%s\n' "$name" "$version" "$actual"
@@ -130,15 +154,19 @@ setup:
 
 # ── Hooks ───────────────────────────────────────────────────
 
-# Fast checks run on every git commit via pre-commit.
-pre-commit: fmt-check lint-typos
+# Fast checks run on every git commit via pre-commit. Mirrors the
+# fast tier of `just lint` (fmt + typos + taplo); the heavier checks
+# (clippy, deny, tests) live in `just pre-push`.
+pre-commit: fmt-check lint-typos lint-taplo
     cargo check --all-targets --workspace --quiet
 
-# Slower checks run on every git push via pre-commit. lint-deny and
-# lint-typos are cheap (sub-second) and surface advisory/typo drift
-# before it hits a remote runner.
+# Slower checks run on every git push via pre-commit. Mirrors `just
+# ci` so anything red in CI was already red locally; the gap that
+# previously skipped lint-taplo / check-no-default / test-examples
+# allowed taplo + no_std + example-bitrot regressions to land on
+# main.
 pre-push:
-    RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just lint-clippy lint-typos lint-deny test doc
+    RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just lint test test-examples check-no-default doc
 
 # ── CI ──────────────────────────────────────────────────────
 
