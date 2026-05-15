@@ -39,7 +39,8 @@ static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// - `mask!("...")` returns `String`.
 /// - `mask!(b"...")` returns `Vec<u8>`.
 /// - `mask!(c"...")` returns `CString` (NUL-terminator added by the
-///   runtime helper from the decrypted bytes).
+///   runtime helper from the decrypted bytes). Requires the `litmask`
+///   crate to be built with the `std` feature — `CString` is std-only.
 ///
 /// # Panics
 ///
@@ -69,15 +70,15 @@ pub fn mask(input: TokenStream) -> TokenStream {
     let blob: Vec<u8> = [nonce.as_slice(), &ciphertext_and_tag].concat();
     let blob_lit = byte_array_token(&blob);
     let blob_len = blob.len();
-    let decrypt_call = kind.decrypt_call();
+    let decrypt_expr = kind.decrypt_expr(
+        &quote! { __LITMASK_BLOB },
+        &quote! { ::litmask::__wrapper_bytes!() },
+    );
 
     quote! {
         {
             const __LITMASK_BLOB: &[u8; #blob_len] = &#blob_lit;
-            #decrypt_call(
-                __LITMASK_BLOB,
-                ::litmask::__wrapper_bytes!(),
-            )
+            #decrypt_expr
         }
     }
     .into()
@@ -106,11 +107,22 @@ impl MaskInput {
         }
     }
 
-    fn decrypt_call(&self) -> TokenStream2 {
+    /// Build the call expression that decrypts the blob to the
+    /// kind-appropriate type. The c-string arm routes through a
+    /// `macro_rules` dispatcher in `litmask` so a missing-`std`-feature
+    /// build surfaces a clear `compile_error!` at the user's
+    /// `mask!(c"...")` site instead of a "function not found" diagnostic.
+    fn decrypt_expr(&self, blob: &TokenStream2, wrapper: &TokenStream2) -> TokenStream2 {
         match self {
-            Self::Str(_) => quote! { ::litmask::__internal::__decrypt_str },
-            Self::ByteStr(_) => quote! { ::litmask::__internal::__decrypt_bytes },
-            Self::CStr(_) => quote! { ::litmask::__internal::__decrypt_cstring },
+            Self::Str(_) => quote! {
+                ::litmask::__internal::__decrypt_str(#blob, #wrapper)
+            },
+            Self::ByteStr(_) => quote! {
+                ::litmask::__internal::__decrypt_bytes(#blob, #wrapper)
+            },
+            Self::CStr(_) => quote! {
+                ::litmask::__decrypt_cstring_call!(#blob, #wrapper)
+            },
         }
     }
 }

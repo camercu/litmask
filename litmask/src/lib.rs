@@ -101,6 +101,36 @@ macro_rules! init_with {
     };
 }
 
+/// Internal dispatch for `mask!(c"...")` expansion. With the `std`
+/// feature, forwards to [`__internal::__decrypt_cstring`]; without
+/// it, emits a `compile_error!` pointing at the user's `mask!(c"...")`
+/// call site.
+///
+/// Lives at the crate root (not inside [`__internal`]) because the
+/// proc-macro can't read the consumer's feature flags — gating must
+/// happen here, in `litmask`'s own cfg context, before the call
+/// reaches the runtime helper.
+#[cfg(feature = "std")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __decrypt_cstring_call {
+    ($blob:expr, $wrapper:expr) => {
+        $crate::__internal::__decrypt_cstring($blob, $wrapper)
+    };
+}
+
+#[cfg(not(feature = "std"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __decrypt_cstring_call {
+    ($blob:expr, $wrapper:expr) => {
+        ::core::compile_error!(
+            "mask!(c\"...\") requires the `std` feature on the `litmask` crate; \
+             enable it via `litmask = { features = [\"std\"] }`"
+        )
+    };
+}
+
 #[doc(hidden)]
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.
