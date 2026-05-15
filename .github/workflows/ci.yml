@@ -89,15 +89,17 @@ jobs:
       - name: Lint commits against Conventional Commits
         env:
           # `github.event.before` is all-zeroes on the first push to a
-          # new branch; commitlint's `--last` flag falls back to
-          # linting the single most-recent commit in that case.
+          # new branch, and is orphaned (unreachable in the fetched
+          # history) after a force-push. In either case fall back to
+          # linting just the single most-recent commit via `--last`.
           PR_BASE: origin/${{ github.base_ref }}
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.event.after }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             npx --no-install commitlint --from "$PR_BASE" --to HEAD --verbose
-          elif [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+          elif [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ] \
+              || ! git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
             npx --no-install commitlint --last --verbose
           else
             npx --no-install commitlint --from "$PUSH_BEFORE" --to "$PUSH_AFTER" --verbose
