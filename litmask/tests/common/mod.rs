@@ -9,6 +9,9 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Once;
+
+use litmask::{KeyError, KeyProvider, UnlockKey, init_with};
 
 /// Substrings whose presence in any compiled example binary indicates
 /// that internal library identifiers or operational tooling vocabulary
@@ -187,4 +190,28 @@ pub fn read_unlock_key(config_path: &Path) -> String {
 
 fn env_var(key: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| panic!("{key} not set"))
+}
+
+/// Idempotently initialize the runtime against the debug-profile
+/// `litmask.config` so integration tests do not depend on
+/// `LITMASK_UNLOCK_KEY` being set in the test process's environment.
+/// Safe to call from every `#[test]` — only the first call performs
+/// initialization.
+pub fn init_once() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let key = read_unlock_key(&config_path(Profile::Debug));
+        let provider = StaticProvider { key_b64: key };
+        init_with!(provider).expect("init_with succeeded");
+    });
+}
+
+struct StaticProvider {
+    key_b64: String,
+}
+
+impl KeyProvider for StaticProvider {
+    fn unlock_key(&self) -> Result<UnlockKey, KeyError> {
+        UnlockKey::from_base64url(&self.key_b64)
+    }
 }

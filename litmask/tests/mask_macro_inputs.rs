@@ -7,89 +7,74 @@
 
 mod common;
 
-use litmask::{KeyError, KeyProvider, UnlockKey, init_with, mask};
-use std::sync::Once;
-
-struct StaticProvider {
-    key_b64: String,
-}
-
-impl KeyProvider for StaticProvider {
-    fn unlock_key(&self) -> Result<UnlockKey, KeyError> {
-        UnlockKey::from_base64url(&self.key_b64)
-    }
-}
-
-static INIT: Once = Once::new();
-
-fn setup() {
-    INIT.call_once(|| {
-        let key = common::read_unlock_key(&common::config_path(common::Profile::Debug));
-        let provider = StaticProvider { key_b64: key };
-        init_with!(provider).expect("init_with succeeded");
-    });
-}
+use litmask::mask;
 
 #[test]
 fn mask_concat_of_string_literals_round_trips() {
-    setup();
+    common::init_once();
     let s: String = mask!(concat!("a", "b", "c"));
     assert_eq!(s, "abc");
 }
 
 #[test]
 fn mask_concat_with_nested_concat_flattens() {
-    setup();
+    common::init_once();
     let s: String = mask!(concat!("foo-", concat!("bar-", "baz")));
     assert_eq!(s, "foo-bar-baz");
 }
 
 #[test]
 fn mask_concat_with_single_arg() {
-    setup();
+    common::init_once();
     let s: String = mask!(concat!("only"));
     assert_eq!(s, "only");
 }
 
 #[test]
 fn mask_include_str_round_trips_file_contents() {
-    setup();
-    // Path is resolved relative to CARGO_MANIFEST_DIR, not the source
-    // file containing the invocation.
+    common::init_once();
+    // Two paths to one file: mask!'s include_str! is
+    // CARGO_MANIFEST_DIR-relative ("examples/fixtures/...") whereas
+    // std's include_str! is source-file-relative ("../examples/..."
+    // from tests/). Both resolve to the same on-disk byte sequence,
+    // so the equality assertion locks "no mutation, no truncation"
+    // and the fixture only lives in one place.
     let s: String = mask!(include_str!("examples/fixtures/quote.txt"));
-    assert!(s.contains("vermillion-axolotl-7e2d4a"));
+    assert_eq!(s, include_str!("../examples/fixtures/quote.txt"));
 }
 
 #[test]
 fn mask_concat_empty_round_trips_to_empty_string() {
-    setup();
+    common::init_once();
     let s: String = mask!(concat!());
     assert!(s.is_empty());
 }
 
 #[test]
 fn mask_concat_mixes_include_str_with_literal() {
-    setup();
+    common::init_once();
     let s: String = mask!(concat!(
         "prefix-",
         include_str!("examples/fixtures/quote.txt")
     ));
-    assert!(s.starts_with("prefix-"));
-    assert!(s.contains("vermillion-axolotl-7e2d4a"));
+    assert_eq!(
+        s,
+        concat!("prefix-", include_str!("../examples/fixtures/quote.txt"))
+    );
 }
 
-/// Two `mask!(include_str!("same.txt"))` invocations must each get a
-/// unique nonce (per the per-call `CALL_COUNTER` derivation) and
-/// round-trip to the same plaintext. A regression that hoisted
-/// `include_str` resolution into a per-file cache without re-encrypting
-/// would still pass round-trip but lose nonce uniqueness — the
-/// existence of two distinct call sites here keeps the contract
-/// visible.
+/// Each `mask!(include_str!(...))` call site is its own AEAD blob —
+/// resolving the same file at two sites must still produce two
+/// independently-decryptable values that agree on plaintext. Nonce
+/// uniqueness across the two blobs is enforced by `CALL_COUNTER` in
+/// the proc-macro, not asserted here (the runtime values would be
+/// identical even on nonce reuse); see the macro-side invariant for
+/// that contract.
 #[test]
-fn mask_include_str_two_invocations_round_trip_independently() {
-    setup();
+fn mask_include_str_decrypts_at_every_call_site() {
+    common::init_once();
     let a: String = mask!(include_str!("examples/fixtures/quote.txt"));
     let b: String = mask!(include_str!("examples/fixtures/quote.txt"));
     assert_eq!(a, b);
-    assert!(a.contains("vermillion-axolotl-7e2d4a"));
+    assert_eq!(a, include_str!("../examples/fixtures/quote.txt"));
 }
