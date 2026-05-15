@@ -1,14 +1,22 @@
 name: Release
 
 on:
-  push:
+  # Gate on CI: fire only after the CI workflow finishes against
+  # `main`, and skip the job body if CI did not conclude with success
+  # (see the `if:` on the release-plz job below). Without this gate,
+  # a push to `main` triggered ci.yml and release.yml in parallel and
+  # release-plz could open the release PR even when canonical-gate
+  # was red.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
-# `release-plz` operates in PR mode: a push to `main` opens or updates
-# a "Release v{version}" PR with the bump + CHANGELOG.md entry. The
-# PR's CI run (the canonical-gate job in ci.yml) gates the release.
-# When the PR is merged, the same workflow fires on the resulting
-# push, sees the release commit, tags it, and cuts a GitHub Release.
+# `release-plz` operates in PR mode: a successful CI run on `main`
+# triggers this workflow, which opens or updates a "Release v{version}"
+# PR with the bump + CHANGELOG.md entry. When the PR is merged, the
+# resulting push fires CI again, and on success this workflow fires
+# again, sees the release commit, tags it, and cuts a GitHub Release.
 
 permissions:
   contents: write
@@ -21,13 +29,22 @@ concurrency:
 jobs:
   release-plz:
     name: release-plz
+    # Skip the job body entirely if CI failed/was cancelled. The
+    # workflow_run trigger fires regardless of upstream conclusion;
+    # the conclusion check is the actual gate.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: release
     steps:
+      # Pin to the exact commit CI greenlit. workflow_run-triggered
+      # workflows default to the default-branch HEAD at fire time,
+      # which can drift past the commit that triggered the upstream
+      # run; release-plz must operate on the actual gated commit.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Parse .tool-versions
         id: tools
