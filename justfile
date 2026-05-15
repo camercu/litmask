@@ -48,8 +48,13 @@ lint-deny:
 test:
     cargo test --workspace
 
+# Latest-stable sanity check. Skips the trybuild compile_fixtures
+# harness because rustc's diagnostic text drifts between minor
+# releases and the snapshots are byte-exact against the
+# `.tool-versions` toolchain (1.88.0 today). The canonical-gate job
+# runs everything, including the fixtures, on the pinned toolchain.
 test-stable:
-    cargo {{stable_toolchain}} test --workspace
+    cargo {{stable_toolchain}} test --workspace -- --skip compile_fixtures
 
 # Build and run every in-repo example end-to-end. Sources LITMASK_UNLOCK_KEY
 # from the build's litmask.config. Wired into `just ci` to catch example
