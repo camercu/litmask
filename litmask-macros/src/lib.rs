@@ -144,8 +144,7 @@ impl MaskInput {
 /// input other than the two whitelisted macro invocations. Single
 /// source of truth — change here and regenerate trybuild snapshots
 /// with `TRYBUILD=overwrite`.
-const INVALID_LITERAL_MSG: &str =
-    "mask! accepts string, byte string, or C string literals";
+const INVALID_LITERAL_MSG: &str = "mask! accepts string, byte string, or C string literals";
 
 /// §1.9.6 / §2.1.1.14: fired when a `concat!` argument inside `mask!`
 /// is neither a supported literal kind nor a further nested
