@@ -44,9 +44,13 @@ jobs:
         run: just ci
 
   stable-advisory:
+    # Latest-stable rustc / clippy run against the workspace. Failures
+    # block merges so toolchain drift surfaces immediately — there is
+    # no silent "this is OK because it's just an advisory" path. When
+    # stable rustc tightens diagnostics or lints, the bump becomes a
+    # forcing function for updating `.tool-versions` + snapshots.
     name: Latest stable advisory
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -65,8 +69,10 @@ jobs:
         run: just ci-stable
 
   commitlint:
+    # Runs on both pull_request and push so direct-to-main commits
+    # are linted too. Branch protection may permit direct pushes;
+    # this job ensures Conventional Commits regardless of merge path.
     name: Commitlint
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -80,5 +86,19 @@ jobs:
 
       - run: npm ci --no-audit --no-fund
 
-      - name: Lint PR commits against Conventional Commits
-        run: npx --no-install commitlint --from origin/${{ github.base_ref }} --to HEAD --verbose
+      - name: Lint commits against Conventional Commits
+        env:
+          # `github.event.before` is all-zeroes on the first push to a
+          # new branch; commitlint's `--last` flag falls back to
+          # linting the single most-recent commit in that case.
+          PR_BASE: origin/${{ github.base_ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            npx --no-install commitlint --from "$PR_BASE" --to HEAD --verbose
+          elif [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            npx --no-install commitlint --last --verbose
+          else
+            npx --no-install commitlint --from "$PUSH_BEFORE" --to "$PUSH_AFTER" --verbose
+          fi
