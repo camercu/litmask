@@ -12,7 +12,10 @@ use std::sync::{Mutex, OnceLock};
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
+use syn::Token;
 use syn::parse::{Parse, ParseStream};
+use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::{LitByteStr, LitCStr, LitStr, parse_macro_input};
 
 use litmask_internal::{
@@ -33,14 +36,24 @@ static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Mask a string literal, byte string literal, or C string literal at
 /// compile time. The expansion is a runtime decryption call whose
-/// return type depends on the literal kind (per spec §2.1.1.2,
-/// §2.1.1.3, §2.1.1.4):
+/// return type depends on the literal kind:
 ///
 /// - `mask!("...")` returns `String`.
 /// - `mask!(b"...")` returns `Vec<u8>`.
-/// - `mask!(c"...")` returns `CString` (NUL-terminator added by the
-///   runtime helper from the decrypted bytes). Requires the `litmask`
-///   crate to be built with the `std` feature — `CString` is std-only.
+/// - `mask!(c"...")` returns `CString`. Requires the `litmask` crate's
+///   `std` feature — `CString` is std-only.
+///
+/// `mask!` additionally accepts two built-in macro invocations as
+/// inputs, resolved at proc-macro time:
+///
+/// - `mask!(include_str!("path"))` reads the file at proc-macro time
+///   and masks its contents. Paths are resolved relative to
+///   `CARGO_MANIFEST_DIR`. Edits to the file do not currently trigger
+///   automatic rebuilds; touch a source file or `cargo clean` to pick
+///   them up.
+/// - `mask!(concat!(args...))` flattens each argument at proc-macro
+///   time. All arguments must be string literals; mixed literal kinds
+///   are rejected at compile time.
 ///
 /// # Panics
 ///
@@ -84,10 +97,10 @@ pub fn mask(input: TokenStream) -> TokenStream {
     .into()
 }
 
-/// Parsed `mask!` input — exactly one of the three accepted literal
-/// kinds. The variants are exhaustive against the v1 grammar (§2.1.1.1);
-/// the `include_str!` / `concat!` extensions land in Task 7 along with
-/// the rejection-substring contract for invalid types.
+/// Parsed `mask!` input. After §2.1.1.14 resolution the input always
+/// reduces to one of three literal kinds — `include_str!`/`concat!`
+/// expand to synthetic `LitStr` values during parsing, so the runtime
+/// path is uniform across all accepted input forms.
 enum MaskInput {
     Str(LitStr),
     ByteStr(LitByteStr),
@@ -127,19 +140,129 @@ impl MaskInput {
     }
 }
 
+/// §1.9.6 mandates this exact substring for any rejection of `mask!`
+/// input other than the two whitelisted macro invocations. Single
+/// source of truth — change here and regenerate trybuild snapshots
+/// with `TRYBUILD=overwrite`.
+const INVALID_LITERAL_MSG: &str =
+    "mask! accepts string, byte string, or C string literals";
+
+/// §1.9.6 / §2.1.1.14: fired when a `concat!` argument inside `mask!`
+/// is neither a supported literal kind nor a further nested
+/// `concat!`/`include_str!`, or when the args mix literal kinds.
+const CONCAT_ARG_MSG: &str =
+    "concat! arguments inside mask! must be string, byte string, or C string literals";
+
 impl Parse for MaskInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let lookahead = input.lookahead1();
-        if lookahead.peek(LitStr) {
-            input.parse().map(Self::Str)
-        } else if lookahead.peek(LitByteStr) {
-            input.parse().map(Self::ByteStr)
-        } else if lookahead.peek(LitCStr) {
-            input.parse().map(Self::CStr)
-        } else {
-            Err(lookahead.error())
+        if input.peek(LitStr) {
+            return input.parse().map(Self::Str);
+        }
+        if input.peek(LitByteStr) {
+            return input.parse().map(Self::ByteStr);
+        }
+        if input.peek(LitCStr) {
+            return input.parse().map(Self::CStr);
+        }
+        if input.peek(syn::Ident) && input.peek2(Token![!]) {
+            return parse_macro_input_arg(input);
+        }
+        Err(syn::Error::new(input.span(), INVALID_LITERAL_MSG))
+    }
+}
+
+/// Resolve the `include_str!(...)` / `concat!(...)` whitelist
+/// (spec §2.1.1.14). Any other macro invocation falls back to the
+/// standard rejection so `mask!(println!(...))` and friends still
+/// produce the §1.9.6 message.
+fn parse_macro_input_arg(input: ParseStream) -> syn::Result<MaskInput> {
+    let mac: syn::Macro = input.parse()?;
+    let name = mac.path.get_ident().map(syn::Ident::to_string);
+    match name.as_deref() {
+        Some("include_str") => resolve_include_str(&mac),
+        Some("concat") => resolve_concat(&mac),
+        _ => Err(syn::Error::new(mac.path.span(), INVALID_LITERAL_MSG)),
+    }
+}
+
+/// `mask!(include_str!("path"))` — read the file at proc-macro time
+/// and treat its contents as if the user had written a string literal
+/// at the call site. Path is resolved relative to the consumer crate's
+/// `CARGO_MANIFEST_DIR`.
+///
+/// Note: spec §2.1.1.14 specifies `proc_macro::tracked_path::path` for
+/// build-dependency tracking, but that API is unstable as of Rust
+/// 1.88. On stable, edits to the file do NOT trigger an automatic
+/// rebuild — users must `cargo clean` or touch a tracked source file.
+fn resolve_include_str(mac: &syn::Macro) -> syn::Result<MaskInput> {
+    let path_lit: LitStr = mac.parse_body()?;
+    let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR").ok_or_else(|| {
+        syn::Error::new(
+            path_lit.span(),
+            "mask!(include_str!(...)): CARGO_MANIFEST_DIR is not set",
+        )
+    })?;
+    let user_path = path_lit.value();
+    let resolved = PathBuf::from(manifest_dir).join(&user_path);
+    // Error message echoes the user's literal path, not the resolved
+    // absolute path. Resolved paths embed the user's home directory
+    // and the consumer crate's checkout location, both of which break
+    // trybuild snapshot portability and leak local FS layout into
+    // diagnostics.
+    let content = fs::read_to_string(&resolved).map_err(|e| {
+        syn::Error::new(
+            path_lit.span(),
+            format!("mask!(include_str!(\"{user_path}\")): {e}"),
+        )
+    })?;
+    Ok(MaskInput::Str(LitStr::new(&content, path_lit.span())))
+}
+
+/// `mask!(concat!(args...))` — recursively resolve each argument as a
+/// `MaskInput`, reject mixed literal kinds, and emit a synthetic
+/// literal of the unified kind. Currently only string-literal concat is
+/// reachable from the documented acceptance criteria; byte/c-string
+/// concat is rejected with [`CONCAT_ARG_MSG`] until a user need lands
+/// (spec §2.1.1.14 permits them but std `concat!` does not).
+fn resolve_concat(mac: &syn::Macro) -> syn::Result<MaskInput> {
+    let span = mac.path.span();
+    let args: Punctuated<MaskInput, Token![,]> = mac.parse_body_with(|input: ParseStream| {
+        Punctuated::parse_terminated_with(input, |arg_input| {
+            // The "argument is neither a supported literal nor a
+            // whitelisted macro" case surfaces from inner parsing as
+            // INVALID_LITERAL_MSG. Inside `concat!` the spec mandates
+            // CONCAT_ARG_MSG for that case — but downstream errors
+            // (file-not-found from include_str!, nested concat
+            // failures with their own context) must reach the user
+            // unchanged, otherwise diagnostics like "failed to read
+            // /path/to/missing.txt" get masked behind the generic
+            // concat substring.
+            //
+            // Equality (not `contains`) is intentional: it locks the
+            // rewrite to the one well-defined catch-all branch of
+            // MaskInput::parse and avoids false-firing on downstream
+            // errors whose messages happen to embed the substring.
+            // If MaskInput::parse ever decorates this error with
+            // span hints or extra notes, this comparison flips
+            // silently to false — update both sites in lockstep.
+            MaskInput::parse(arg_input).map_err(|e| {
+                if e.to_string() == INVALID_LITERAL_MSG {
+                    syn::Error::new(e.span(), CONCAT_ARG_MSG)
+                } else {
+                    e
+                }
+            })
+        })
+    })?;
+
+    let mut acc = String::new();
+    for arg in &args {
+        match arg {
+            MaskInput::Str(s) => acc.push_str(&s.value()),
+            _ => return Err(syn::Error::new(span, CONCAT_ARG_MSG)),
         }
     }
+    Ok(MaskInput::Str(LitStr::new(&acc, span)))
 }
 
 /// Obfuscate a string literal at compile time using XOR against the

@@ -38,6 +38,7 @@ litmask-build.workspace = true
 
 [dev-dependencies]
 regex = "1"
+trybuild = "1"
 
 [lints]
 workspace = true

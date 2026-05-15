@@ -1,0 +1,9 @@
+error[E0015]: cannot call non-const function `__decrypt_str` in statics
+ --> tests/compile/mask_static_context.rs:7:20
+  |
+7 | static X: String = mask!("x");
+  |                    ^^^^^^^^^^
+  |
+  = note: calls in statics are limited to constant functions, tuple structs and tuple variants
+  = note: consider wrapping this expression in `std::sync::LazyLock::new(|| ...)`
+  = note: this error originates in the macro `mask` (in Nightly builds, run with -Z macro-backtrace for more info)

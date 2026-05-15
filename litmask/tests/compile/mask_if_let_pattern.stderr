@@ -1,0 +1,20 @@
+error: expected pattern, found `{`
+ --> tests/compile/mask_if_let_pattern.rs:9:12
+  |
+9 |     if let mask!("foo") = s.as_str() {
+  |            ^^^^^^^^^^^^
+  |            |
+  |            expected pattern
+  |            this macro call doesn't expand to a pattern
+  |
+  = note: this error originates in the macro `mask` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: irrefutable `if let` pattern
+ --> tests/compile/mask_if_let_pattern.rs:9:8
+  |
+9 |     if let mask!("foo") = s.as_str() {
+  |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this pattern will always match, so the `if let` is useless
+  = help: consider replacing the `if let` with a `let`
+  = note: `#[warn(irrefutable_let_patterns)]` on by default

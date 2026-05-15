@@ -22,7 +22,12 @@ use common::Profile;
 
 /// Every example binary the workspace ships. Add new names here when
 /// new examples land under `litmask/examples/`.
-const EXAMPLES: &[&str] = &["hello_world", "weak_mask_demo", "byte_cstr_demo"];
+const EXAMPLES: &[&str] = &[
+    "hello_world",
+    "weak_mask_demo",
+    "byte_cstr_demo",
+    "include_str_demo",
+];
 
 #[test]
 fn no_forbidden_substrings_in_any_example_binary() {
@@ -56,4 +61,14 @@ fn byte_and_cstr_fixtures_absent_from_binary() {
     let path = common::example_path("byte_cstr_demo", Profile::Release);
     common::assert_substring_absent(&path, "scarlet-onyx-narwhal-c8d7e9");
     common::assert_substring_absent(&path, "navy-velvet-quokka-3f1a7b");
+}
+
+/// `mask!(include_str!(...))` must mask the file contents at
+/// proc-macro time so the plaintext from the fixture file is absent
+/// from the compiled binary (§2.1.1.14).
+#[test]
+fn include_str_fixture_absent_from_binary() {
+    common::build_example("include_str_demo", Profile::Release);
+    let path = common::example_path("include_str_demo", Profile::Release);
+    common::assert_substring_absent(&path, "vermillion-axolotl-7e2d4a");
 }

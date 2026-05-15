@@ -1,0 +1,20 @@
+error: expected pattern, found `{`
+  --> tests/compile/mask_pattern_position.rs:11:9
+   |
+11 |         mask!("foo") => println!("match"),
+   |         ^^^^^^^^^^^^
+   |         |
+   |         expected pattern
+   |         this macro call doesn't expand to a pattern
+   |
+   = note: this error originates in the macro `mask` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unreachable pattern
+  --> tests/compile/mask_pattern_position.rs:12:9
+   |
+11 |         mask!("foo") => println!("match"),
+   |         ------------ matches any value
+12 |         _ => println!("no"),
+   |         ^ no value can reach this
+   |
+   = note: `#[warn(unreachable_patterns)]` on by default

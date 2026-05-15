@@ -1,0 +1,8 @@
+error[E0015]: cannot call non-const function `__decrypt_str` in constants
+  --> tests/compile/mask_const_context.rs:10:19
+   |
+10 | const X: String = mask!("x");
+   |                   ^^^^^^^^^^
+   |
+   = note: calls in constants are limited to constant functions, tuple structs and tuple variants
+   = note: this error originates in the macro `mask` (in Nightly builds, run with -Z macro-backtrace for more info)

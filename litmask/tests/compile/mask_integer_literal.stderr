@@ -1,0 +1,5 @@
+error: mask! accepts string, byte string, or C string literals
+ --> tests/compile/mask_integer_literal.rs:8:19
+  |
+8 |     let _ = mask!(42);
+  |                   ^^

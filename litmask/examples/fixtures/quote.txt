@@ -1,0 +1,1 @@
+vermillion-axolotl-7e2d4a — task-7 include_str fixture

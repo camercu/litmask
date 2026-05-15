@@ -1,0 +1,5 @@
+error: mask! accepts string, byte string, or C string literals
+ --> tests/compile/mask_non_whitelisted_macro.rs:8:19
+  |
+8 |     let _ = mask!(vec![1, 2, 3]);
+  |                   ^^^
