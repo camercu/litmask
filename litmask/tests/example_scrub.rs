@@ -70,5 +70,5 @@ fn byte_and_cstr_fixtures_absent_from_binary() {
 fn include_str_fixture_absent_from_binary() {
     common::build_example("include_str_demo", Profile::Release);
     let path = common::example_path("include_str_demo", Profile::Release);
-    common::assert_substring_absent(&path, "vermillion-axolotl-7e2d4a");
+    common::assert_substring_absent(&path, "vermilion-axolotl-7e2d4a");
 }
