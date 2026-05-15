@@ -29,7 +29,10 @@ use std::path::{Path, PathBuf};
 
 use base64ct::{Base64UrlUnpadded, Encoding};
 use rand_chacha::ChaCha20Rng;
-use rand_core::{RngCore, SeedableRng};
+// `Rng` is the rand_core 0.10 renaming of the former `RngCore`; it
+// provides `fill_bytes` for any seedable RNG. `getrandom::fill` is the
+// 0.4+ replacement for the standalone `getrandom::getrandom` function.
+use rand_core::{Rng, SeedableRng};
 use zeroize::Zeroize;
 
 use litmask_internal::{
@@ -111,7 +114,7 @@ fn source_seed(profile_dir: &Path) -> [u8; KEY_LEN] {
         }
     }
     let mut seed = [0u8; KEY_LEN];
-    getrandom::getrandom(&mut seed).expect("OS RNG failure during litmask seed generation");
+    getrandom::fill(&mut seed).expect("OS RNG failure during litmask seed generation");
     write_secret(&path, &seed);
     seed
 }

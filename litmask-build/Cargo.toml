@@ -11,10 +11,10 @@ include = ["src/**/*"]
 [dependencies]
 litmask-internal.workspace = true
 base64ct = { version = "1", features = ["alloc"] }
-rand_chacha = "0.3"
-rand_core = "0.6"
-getrandom = "0.2"
-toml = "0.8"
+rand_chacha = "0.10"
+rand_core = "0.10"
+getrandom = "0.4"
+toml = "1.1"
 zeroize = "1"
 
 [dev-dependencies]
