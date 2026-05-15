@@ -37,14 +37,16 @@ jobs:
     timeout-minutes: 20
     environment: release
     steps:
-      # Pin to the exact commit CI greenlit. workflow_run-triggered
-      # workflows default to the default-branch HEAD at fire time,
-      # which can drift past the commit that triggered the upstream
-      # run; release-plz must operate on the actual gated commit.
+      # Check out `main` (not the head_sha) because release-plz needs
+      # a branch context — `git rev-parse @{upstream}` fails on a
+      # detached HEAD. The race window between CI greenlighting a
+      # commit and release-plz seeing a newer main HEAD is bounded
+      # by the concurrency group below, which serializes release runs
+      # so a later push will trigger its own gated release.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: main
 
       - name: Parse .tool-versions
         id: tools
