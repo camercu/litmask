@@ -10,8 +10,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{LitStr, parse_macro_input};
+use syn::parse::{Parse, ParseStream};
+use syn::{LitByteStr, LitCStr, LitStr, parse_macro_input};
 
 use litmask_internal::{
     CipherId, KEY_LEN, NONCE_LEN, NONCE_TAG_CALL_SITE, WRAPPER_LEN, aead_encrypt, xor_cycle,
@@ -29,8 +31,15 @@ use litmask_internal::{
 /// order-stability.
 static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Mask a string literal at compile time; expand to a runtime
-/// decryption call returning `String`.
+/// Mask a string literal, byte string literal, or C string literal at
+/// compile time. The expansion is a runtime decryption call whose
+/// return type depends on the literal kind (per spec §2.1.1.2,
+/// §2.1.1.3, §2.1.1.4):
+///
+/// - `mask!("...")` returns `String`.
+/// - `mask!(b"...")` returns `Vec<u8>`.
+/// - `mask!(c"...")` returns `CString` (NUL-terminator added by the
+///   runtime helper from the decrypted bytes).
 ///
 /// # Panics
 ///
@@ -44,7 +53,8 @@ static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 ///   (cryptographically extraordinary; never observed in practice).
 #[proc_macro]
 pub fn mask(input: TokenStream) -> TokenStream {
-    let value = parse_macro_input!(input as LitStr).value();
+    let kind = parse_macro_input!(input as MaskInput);
+    let plaintext = kind.plaintext();
 
     let mask_key = load_out_dir_artifact::<KEY_LEN>("litmask_key.bin");
     let seed = load_out_dir_artifact::<KEY_LEN>("litmask_seed.bin");
@@ -52,28 +62,72 @@ pub fn mask(input: TokenStream) -> TokenStream {
     let idx = CALL_COUNTER.fetch_add(1, Ordering::Relaxed);
     let nonce = derive_nonce(&seed, idx);
 
-    let ciphertext_and_tag = aead_encrypt(
-        CipherId::ChaCha20Poly1305,
-        &mask_key,
-        &nonce,
-        value.as_bytes(),
-    )
-    .expect("AEAD encryption failed at mask! expansion");
+    let ciphertext_and_tag =
+        aead_encrypt(CipherId::ChaCha20Poly1305, &mask_key, &nonce, &plaintext)
+            .expect("AEAD encryption failed at mask! expansion");
 
     let blob: Vec<u8> = [nonce.as_slice(), &ciphertext_and_tag].concat();
     let blob_lit = byte_array_token(&blob);
     let blob_len = blob.len();
+    let decrypt_call = kind.decrypt_call();
 
     quote! {
         {
             const __LITMASK_BLOB: &[u8; #blob_len] = &#blob_lit;
-            ::litmask::__internal::__decrypt_str(
+            #decrypt_call(
                 __LITMASK_BLOB,
                 ::litmask::__wrapper_bytes!(),
             )
         }
     }
     .into()
+}
+
+/// Parsed `mask!` input — exactly one of the three accepted literal
+/// kinds. The variants are exhaustive against the v1 grammar (§2.1.1.1);
+/// the `include_str!` / `concat!` extensions land in Task 7 along with
+/// the rejection-substring contract for invalid types.
+enum MaskInput {
+    Str(LitStr),
+    ByteStr(LitByteStr),
+    CStr(LitCStr),
+}
+
+impl MaskInput {
+    fn plaintext(&self) -> Vec<u8> {
+        match self {
+            Self::Str(lit) => lit.value().into_bytes(),
+            Self::ByteStr(lit) => lit.value(),
+            // `LitCStr::value` returns a `CString`; into_bytes() drops
+            // the NUL terminator. We re-add the NUL at decode time via
+            // `CString::new` so the encrypted blob holds only the
+            // payload, not the terminator.
+            Self::CStr(lit) => lit.value().into_bytes(),
+        }
+    }
+
+    fn decrypt_call(&self) -> TokenStream2 {
+        match self {
+            Self::Str(_) => quote! { ::litmask::__internal::__decrypt_str },
+            Self::ByteStr(_) => quote! { ::litmask::__internal::__decrypt_bytes },
+            Self::CStr(_) => quote! { ::litmask::__internal::__decrypt_cstring },
+        }
+    }
+}
+
+impl Parse for MaskInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let lookahead = input.lookahead1();
+        if lookahead.peek(LitStr) {
+            input.parse().map(Self::Str)
+        } else if lookahead.peek(LitByteStr) {
+            input.parse().map(Self::ByteStr)
+        } else if lookahead.peek(LitCStr) {
+            input.parse().map(Self::CStr)
+        } else {
+            Err(lookahead.error())
+        }
+    }
 }
 
 /// Obfuscate a string literal at compile time using XOR against the

@@ -95,7 +95,7 @@ pub fn __init_with_wrapper<P: KeyProvider>(
     Ok(())
 }
 
-/// Decrypt a per-string blob. Called by every expansion of `mask!()`.
+/// Decrypt a per-string blob. Called by every `mask!("...")` expansion.
 ///
 /// `blob` is `nonce (12) || ciphertext (n) || tag (16)`. `wrapper` is
 /// the embedded encrypted-`mask_key` blob, passed by the macro so lazy
@@ -109,12 +109,44 @@ pub fn __init_with_wrapper<P: KeyProvider>(
 /// mismatch.
 #[doc(hidden)]
 pub fn __decrypt_str(blob: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> String {
-    let mask_key = mask_key_or_lazy_init(wrapper);
-    let plaintext = decrypt_blob_or_panic(mask_key.as_bytes(), blob);
     // mask! generates UTF-8 ciphertext from UTF-8 string literals; the
-    // AEAD tag check above already rejects any tampering that could
-    // produce non-UTF-8 plaintext. unwrap is safe by construction.
-    String::from_utf8(plaintext).unwrap()
+    // AEAD tag check inside decrypt_blob_to_vec rejects any tampering
+    // that could produce non-UTF-8 plaintext, so the unwrap is safe by
+    // construction.
+    String::from_utf8(decrypt_blob_to_vec(blob, wrapper)).unwrap()
+}
+
+/// Decrypt a per-string blob to raw bytes. Called by every
+/// `mask!(b"...")` expansion (spec §2.1.1.3).
+///
+/// Same panic policy as [`__decrypt_str`].
+#[doc(hidden)]
+pub fn __decrypt_bytes(blob: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> alloc::vec::Vec<u8> {
+    decrypt_blob_to_vec(blob, wrapper)
+}
+
+/// Decrypt a per-string blob to a NUL-terminated `CString`. Called by
+/// every `mask!(c"...")` expansion (spec §2.1.1.4). The NUL terminator
+/// is added by `CString::new` over the decrypted payload bytes; the
+/// blob itself never carries a NUL.
+///
+/// # Panics
+///
+/// Same panic policy as [`__decrypt_str`]. The `CString::new` step
+/// cannot reach its `NulError` branch in practice: c-string literals
+/// reject interior NUL at parse time, AEAD authentication rejects any
+/// tampering that could introduce one — but the unwrap stays
+/// `unwrap()` rather than expect-with-message to preserve spec §1.9.5
+/// panic hygiene.
+#[cfg(feature = "std")]
+#[doc(hidden)]
+pub fn __decrypt_cstring(blob: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> std::ffi::CString {
+    std::ffi::CString::new(decrypt_blob_to_vec(blob, wrapper)).unwrap()
+}
+
+fn decrypt_blob_to_vec(blob: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> alloc::vec::Vec<u8> {
+    let mask_key = mask_key_or_lazy_init(wrapper);
+    decrypt_blob_or_panic(mask_key.as_bytes(), blob)
 }
 
 /// Decode a `weak_mask!()`-obfuscated literal on first call and cache

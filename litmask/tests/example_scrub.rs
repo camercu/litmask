@@ -22,7 +22,7 @@ use common::Profile;
 
 /// Every example binary the workspace ships. Add new names here when
 /// new examples land under `litmask/examples/`.
-const EXAMPLES: &[&str] = &["hello_world", "weak_mask_demo"];
+const EXAMPLES: &[&str] = &["hello_world", "weak_mask_demo", "byte_cstr_demo"];
 
 #[test]
 fn no_forbidden_substrings_in_any_example_binary() {
@@ -43,4 +43,17 @@ fn weak_mask_fixture_absent_from_binary() {
     common::build_example("weak_mask_demo", Profile::Release);
     let path = common::example_path("weak_mask_demo", Profile::Release);
     common::assert_substring_absent(&path, "yellow-velvet-tortoise-9c4f1a");
+}
+
+/// `mask!(b"...")` and `mask!(c"...")` must keep their fixture bytes
+/// out of the compiled binary, matching the §2.1.1.3 and §2.1.1.4
+/// contract that all three literal kinds go through AEAD encryption
+/// at expansion time. Each fixture is a lexically unusual phrase to
+/// keep the absence assertion precise.
+#[test]
+fn byte_and_cstr_fixtures_absent_from_binary() {
+    common::build_example("byte_cstr_demo", Profile::Release);
+    let path = common::example_path("byte_cstr_demo", Profile::Release);
+    common::assert_substring_absent(&path, "scarlet-onyx-narwhal-c8d7e9");
+    common::assert_substring_absent(&path, "navy-velvet-quokka-3f1a7b");
 }
