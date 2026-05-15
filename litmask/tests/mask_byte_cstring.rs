@@ -75,6 +75,30 @@ fn mask_c_string_literal_with_multibyte_utf8() {
 }
 
 #[test]
+fn mask_c_string_literal_empty_round_trips() {
+    setup();
+    let c: CString = mask!(c"");
+    assert!(c.to_bytes().is_empty());
+    assert_eq!(c.as_bytes_with_nul(), b"\0");
+}
+
+/// Locks the contract that raw byte / raw C string literals dispatch
+/// through the same arms as their non-raw siblings. `syn::LitByteStr`
+/// and `syn::LitCStr` strip the `r` prefix and de-escape uniformly, so
+/// from the macro's perspective `br"..."` and `b"..."` are
+/// indistinguishable — but a regression in syn or our `Parse` impl
+/// could surface here.
+#[test]
+fn mask_raw_byte_and_c_string_literals_round_trip() {
+    setup();
+    let v: Vec<u8> = mask!(br"raw \n stays literal");
+    assert_eq!(v, br"raw \n stays literal");
+
+    let c: CString = mask!(cr"raw \n stays literal");
+    assert_eq!(c.to_bytes(), br"raw \n stays literal");
+}
+
+#[test]
 fn mask_string_literal_returns_string_unchanged() {
     // Regression net: §2.1.1.2 string-literal behavior is preserved by
     // the dispatch change.
