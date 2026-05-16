@@ -8,12 +8,17 @@ use core::fmt;
 pub enum InitError {
     /// The [`crate::KeyProvider`] failed to retrieve `unlock_key`.
     KeyProvider(KeyError),
+    /// AEAD authentication failed during embedded `mask_key` wrapper
+    /// decryption — indistinguishable from the cryptographic
+    /// standpoint between a wrong `unlock_key` and a tampered wrapper.
+    Decryption,
 }
 
 impl fmt::Display for InitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::KeyProvider(e) => write!(f, "key_provider:{e}"),
+            Self::Decryption => f.write_str("decryption"),
         }
     }
 }
@@ -22,6 +27,7 @@ impl core::error::Error for InitError {
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
         match self {
             Self::KeyProvider(e) => Some(e),
+            Self::Decryption => None,
         }
     }
 }
@@ -94,5 +100,22 @@ mod tests {
         let err = InitError::KeyProvider(KeyError::NotFound);
         let src = err.source().expect("InitError::KeyProvider has a source");
         assert_eq!(format!("{src}"), "not_found");
+    }
+
+    #[test]
+    fn decryption_variant_display_tag_is_terse_and_non_identifying() {
+        // Display contributes to operator-facing error logs; the tag
+        // must be short and free of litmask-specific vocabulary so it
+        // matches the §1.9.3 minimal-plaintext aim.
+        assert_eq!(format!("{}", InitError::Decryption), "decryption");
+    }
+
+    #[test]
+    fn decryption_variant_has_no_inner_source() {
+        // `Decryption` is a terminal cause — AEAD failure has no
+        // typed inner; chained errors would either leak structure or
+        // require carrying a non-Send error around.
+        use core::error::Error;
+        assert!(InitError::Decryption.source().is_none());
     }
 }
