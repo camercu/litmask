@@ -78,9 +78,11 @@ mod cell {
 ///
 /// # Errors
 ///
-/// Forwards provider errors via [`InitError::KeyProvider`]. Decryption
-/// failures panic with no litmask-specific message until the
-/// `InitError::Decryption` variant lands.
+/// Forwards provider errors via [`InitError::KeyProvider`]. AEAD
+/// authentication failure on the embedded wrapper (wrong `unlock_key`
+/// or tampered wrapper — cryptographically indistinguishable) returns
+/// [`InitError::Decryption`]. Unsupported format/cipher header bytes
+/// still panic until their typed variants land.
 #[doc(hidden)]
 pub fn __init_with_wrapper<P: KeyProvider>(
     provider: P,
@@ -90,7 +92,15 @@ pub fn __init_with_wrapper<P: KeyProvider>(
         return Ok(());
     }
     let unlock_key = provider.unlock_key()?;
-    let mask_key_bytes = decrypt_wrapper_or_panic(unlock_key.as_bytes(), wrapper);
+    let mask_key_bytes = match cipher::decrypt_wrapper(unlock_key.as_bytes(), wrapper) {
+        Ok(bytes) => bytes,
+        Err(cipher::DecryptError::AuthenticationFailed) => {
+            return Err(InitError::Decryption);
+        }
+        // UnsupportedFormat / UnsupportedCipher panic for now; their
+        // dedicated InitError variants are deferred to a later task.
+        Err(_) => panic!(),
+    };
     cell::try_set(MaskKey::new(mask_key_bytes));
     Ok(())
 }
@@ -178,7 +188,7 @@ pub fn __weak_decode<const N: usize>(
             let wrapper = core::hint::black_box(&wrapper[..]);
             let obf = core::hint::black_box(&obf[..]);
             let decoded = crate::internal::xor_cycle(obf, wrapper);
-            String::from_utf8(decoded).expect("weak_mask! input was valid UTF-8")
+            String::from_utf8(decoded).unwrap()
         })
         .as_str()
 }
