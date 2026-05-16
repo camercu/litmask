@@ -264,6 +264,60 @@ fn resolve_concat(mac: &syn::Macro) -> syn::Result<MaskInput> {
     Ok(MaskInput::Str(LitStr::new(&acc, span)))
 }
 
+/// Identity macro that accepts one string, byte string, or C string
+/// literal and expands to that literal unchanged. Exists so
+/// `#[mask_all]` (Task 12) and `#[mask_all(strict)]` (Task 14) can
+/// recognize it as an explicit opt-out marker — a literal wrapped
+/// in `unmasked!` is left alone by the deep-rewriting attribute.
+///
+/// Zero runtime overhead: the expansion is the bare literal token,
+/// so the result is `&'static str` / `&'static [u8; N]` /
+/// `&'static CStr` exactly as if the wrapper macro were absent.
+#[proc_macro]
+pub fn unmasked(input: TokenStream) -> TokenStream {
+    let kind = parse_macro_input!(input as UnmaskedInput);
+    quote!(#kind).into()
+}
+
+/// Parsed `unmasked!` input. Mirrors `MaskInput`'s grammar (string /
+/// byte string / C string literal) but emits the literal verbatim
+/// instead of running the encryption pipeline. The `ToTokens` impl
+/// delegates to the inner literal so `quote!(#kind)` produces the
+/// same token the caller wrote.
+enum UnmaskedInput {
+    Str(LitStr),
+    ByteStr(LitByteStr),
+    CStr(LitCStr),
+}
+
+impl quote::ToTokens for UnmaskedInput {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        match self {
+            Self::Str(lit) => lit.to_tokens(tokens),
+            Self::ByteStr(lit) => lit.to_tokens(tokens),
+            Self::CStr(lit) => lit.to_tokens(tokens),
+        }
+    }
+}
+
+impl Parse for UnmaskedInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        if input.peek(LitStr) {
+            return input.parse().map(Self::Str);
+        }
+        if input.peek(LitByteStr) {
+            return input.parse().map(Self::ByteStr);
+        }
+        if input.peek(LitCStr) {
+            return input.parse().map(Self::CStr);
+        }
+        Err(syn::Error::new(
+            input.span(),
+            "unmasked! accepts string, byte string, or C string literals",
+        ))
+    }
+}
+
 /// Obfuscate a string literal at compile time using XOR against the
 /// per-build encrypted-`mask_key` wrapper bytes. Expand to code that
 /// decodes back to `&'static str` on first runtime access and caches
