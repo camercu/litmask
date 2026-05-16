@@ -1,0 +1,5 @@
+error: unexpected token
+ --> tests/compile/unmasked_multi_arg.rs:7:26
+  |
+7 |     let _ = unmasked!("a", "b");
+  |                          ^
