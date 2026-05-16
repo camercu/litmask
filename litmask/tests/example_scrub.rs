@@ -27,6 +27,7 @@ const EXAMPLES: &[&str] = &[
     "weak_mask_demo",
     "byte_cstr_demo",
     "include_str_demo",
+    "maskfmt_demo",
 ];
 
 #[test]
@@ -71,4 +72,16 @@ fn include_str_fixture_absent_from_binary() {
     common::build_example("include_str_demo", Profile::Release);
     let path = common::example_path("include_str_demo", Profile::Release);
     common::assert_substring_absent(&path, "vermilion-axolotl-7e2d4a");
+}
+
+/// `maskfmt!` must mask the literal fragments between placeholders
+/// (§2.2.2.1) so the template text never appears in plaintext. Each
+/// fragment phrase is lexically unusual to make the absence
+/// assertion precise.
+#[test]
+fn maskfmt_fragments_absent_from_binary() {
+    common::build_example("maskfmt_demo", Profile::Release);
+    let path = common::example_path("maskfmt_demo", Profile::Release);
+    common::assert_substring_absent(&path, "saffron-koala-2b8e1c");
+    common::assert_substring_absent(&path, "amber-otter-4f3d27");
 }
