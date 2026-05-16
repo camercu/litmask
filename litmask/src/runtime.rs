@@ -216,6 +216,11 @@ fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {
     })
 }
 
+// Only the lazy-init path under `cfg(feature = "std")` panics on
+// wrapper decrypt failure now; `__init_with_wrapper` returns
+// `InitError::Decryption` instead. Without the cfg gate this would
+// be dead code under `--no-default-features`.
+#[cfg(feature = "std")]
 fn decrypt_wrapper_or_panic(
     unlock_key: &[u8; crate::internal::KEY_LEN],
     wrapper: &[u8; WRAPPER_LEN],
