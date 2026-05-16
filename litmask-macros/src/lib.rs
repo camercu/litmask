@@ -561,7 +561,9 @@ fn parse_maskfmt_template(s: &str) -> Result<(Vec<String>, Vec<MaskfmtPlaceholde
                 }
                 let index = if index_str.is_empty() {
                     let i = next_auto;
-                    next_auto += 1;
+                    next_auto = next_auto.checked_add(1).ok_or_else(|| {
+                        "too many auto-positional placeholders in maskfmt! template".to_string()
+                    })?;
                     i
                 } else {
                     index_str
