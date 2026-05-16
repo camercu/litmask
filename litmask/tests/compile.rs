@@ -26,4 +26,8 @@ fn compile_fixtures() {
     t.compile_fail("tests/compile/unmasked_invalid_literal.rs");
     t.compile_fail("tests/compile/unmasked_non_literal_expr.rs");
     t.compile_fail("tests/compile/unmasked_multi_arg.rs");
+    t.compile_fail("tests/compile/maskfmt_non_literal_template.rs");
+    t.compile_fail("tests/compile/maskfmt_too_many_args.rs");
+    t.compile_fail("tests/compile/maskfmt_too_few_args.rs");
+    t.compile_fail("tests/compile/maskfmt_type_incompatible_spec.rs");
 }

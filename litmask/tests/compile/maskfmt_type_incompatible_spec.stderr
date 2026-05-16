@@ -1,0 +1,19 @@
+error[E0277]: the trait bound `str: LowerHex` is not satisfied
+  --> tests/compile/maskfmt_type_incompatible_spec.rs:10:13
+   |
+10 |     let _ = maskfmt!("{:x}", "not a number");
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `LowerHex` is not implemented for `str`
+   |
+   = help: the following other types implement trait `LowerHex`:
+             &T
+             &mut T
+             NonZero<T>
+             Saturating<T>
+             Wrapping<T>
+             compiler_builtins::math::libm_math::support::hex_float::Hexf<(F, F)>
+             compiler_builtins::math::libm_math::support::hex_float::Hexf<(F, i32)>
+             compiler_builtins::math::libm_math::support::hex_float::Hexf<F>
+           and $N others
+   = note: required for `&str` to implement `LowerHex`
+note: required by a bound in `core::fmt::rt::Argument::<'_>::new_lower_hex`
+  --> $RUST/core/src/fmt/rt.rs
