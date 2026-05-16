@@ -52,8 +52,12 @@ const NONCE_TAG_WRAPPER: &[u8] = b"litmask-mask-key-nonce";
 
 /// Wire-format version of the encrypted-`mask_key` wrapper. Encoded as
 /// a single byte at offset 0 of every wrapper.
+///
+/// Marked `#[non_exhaustive]` so adding a future format version is
+/// non-breaking for downstream exhaustive matches.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FormatVersion {
     /// Initial format. 62-byte wrapper layout described at the crate
     /// docs.
@@ -92,8 +96,12 @@ impl TryFrom<u8> for FormatVersion {
 /// AEAD cipher identifier. Encoded as a single byte at offset 1 of
 /// every wrapper. Used by runtime tooling to confirm the wrapper was
 /// produced with the cipher the current binary was compiled to handle.
+///
+/// Marked `#[non_exhaustive]` so adding AES-256-GCM (and any future
+/// cipher) is non-breaking for downstream exhaustive matches.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CipherId {
     /// ChaCha20-Poly1305 AEAD, RFC 8439.
     ChaCha20Poly1305 = 0x01,
