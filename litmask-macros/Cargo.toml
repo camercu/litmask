@@ -17,6 +17,7 @@ proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }
 blake3 = "1"
+zeroize = "1"
 
 [lints]
 workspace = true

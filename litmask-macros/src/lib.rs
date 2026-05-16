@@ -17,6 +17,7 @@ use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{Expr, LitByteStr, LitCStr, LitStr, parse_macro_input};
+use zeroize::Zeroize;
 
 use litmask_internal::{
     CipherId, KEY_LEN, NONCE_LEN, NONCE_TAG_CALL_SITE, WRAPPER_LEN, aead_encrypt, xor_cycle,
@@ -68,17 +69,24 @@ static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 #[proc_macro]
 pub fn mask(input: TokenStream) -> TokenStream {
     let kind = parse_macro_input!(input as MaskInput);
-    let plaintext = kind.plaintext();
+    let mut plaintext = kind.plaintext();
 
-    let mask_key = load_out_dir_artifact::<KEY_LEN>("litmask_key.bin");
-    let seed = load_out_dir_artifact::<KEY_LEN>("litmask_seed.bin");
+    let mut mask_key = load_out_dir_artifact::<KEY_LEN>("litmask_key.bin");
+    let mut seed = load_out_dir_artifact::<KEY_LEN>("litmask_seed.bin");
 
     let idx = CALL_COUNTER.fetch_add(1, Ordering::Relaxed);
     let nonce = derive_nonce(&seed, idx);
+    seed.zeroize();
 
     let ciphertext_and_tag =
         aead_encrypt(CipherId::ChaCha20Poly1305, &mask_key, &nonce, &plaintext)
             .expect("AEAD encryption failed at mask! expansion");
+    // The proc-macro server is a long-lived dylib; build-time key
+    // material lingers in process memory if not explicitly cleared.
+    // `litmask-build::emit` already zeroizes its copies — mirror that
+    // discipline here for every expansion.
+    mask_key.zeroize();
+    plaintext.zeroize();
 
     let blob: Vec<u8> = [nonce.as_slice(), &ciphertext_and_tag].concat();
     let blob_lit = byte_array_token(&blob);
@@ -631,8 +639,9 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
     // The wrapper is per-build random ciphertext; using it as the XOR
     // key removes any fixed litmask byte signature from the encoded
     // output.
-    let wrapper = load_out_dir_artifact::<WRAPPER_LEN>("litmask_wrapper.bin");
+    let mut wrapper = load_out_dir_artifact::<WRAPPER_LEN>("litmask_wrapper.bin");
     let encoded = xor_cycle(value.as_bytes(), &wrapper);
+    wrapper.zeroize();
     let encoded_lit = byte_array_token(&encoded);
     let encoded_len = encoded.len();
 
