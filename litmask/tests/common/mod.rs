@@ -30,6 +30,13 @@ pub const FORBIDDEN_SUBSTRINGS: &[&str] = &[
     "ChaCha20-Poly1305",
     "OUT_DIR",
     "locator_b64",
+    // Both `weak_mask` and `tamper` would identify a binary as
+    // litmask-related if they surfaced through panic-message text
+    // or a leaked identifier. The binary's own basename is filtered
+    // out before matching (see `filter_binary_basename`) so
+    // `weak_mask_demo` does not false-fire on `weak_mask`.
+    "weak_mask",
+    "tamper",
 ];
 
 /// Workspace root, derived from `CARGO_MANIFEST_DIR` (set by cargo for
@@ -118,18 +125,24 @@ pub fn strings_of(binary: &Path) -> String {
 }
 
 /// Assert that none of the [`FORBIDDEN_SUBSTRINGS`] appear in
-/// `binary`'s `strings` output, case-insensitively. Source-location
-/// references emitted by std's panic machinery (shaped
-/// `<crate-name>/src/<path>.rs`) are filtered out before matching;
-/// they are unavoidable on stable Rust without
-/// `RUSTFLAGS="-Z location-detail=none"` and are explicitly
-/// acknowledged in the spec.
+/// `binary`'s `strings` output, case-insensitively. Two classes of
+/// substrings are stripped from the haystack before matching:
+///
+/// - Rust source-file locations of the form `<crate>/src/<path>.rs`,
+///   emitted by `core::panic::Location::caller()` at every panic
+///   site. Unavoidable on stable Rust without the nightly-only
+///   `-Z location-detail=none` flag.
+/// - The binary's own basename (e.g. `weak_mask_demo`), which the
+///   linker embeds in the build-id section. Without this filter,
+///   adding `weak_mask` to the forbidden list false-fires on
+///   `weak_mask_demo`'s own filename.
 ///
 /// Reports every hit in a single panic message so callers see all
 /// leaks at once instead of fixing one and re-running.
 pub fn assert_no_dirty_words(binary: &Path) {
     let output = strings_of(binary);
     let filtered = filter_source_locations(&output);
+    let filtered = filter_binary_basename(&filtered, binary);
     let haystack = filtered.to_ascii_lowercase();
 
     let hits: Vec<&str> = FORBIDDEN_SUBSTRINGS
@@ -144,6 +157,17 @@ pub fn assert_no_dirty_words(binary: &Path) {
         binary.display(),
         hits,
     );
+}
+
+/// Strip the binary's own filename (without extension) from the
+/// haystack. Linkers embed the executable name in the build-id /
+/// note section, which would otherwise false-fire any forbidden
+/// substring that overlaps with an example name.
+fn filter_binary_basename(input: &str, binary: &Path) -> String {
+    let Some(name) = binary.file_stem().and_then(|s| s.to_str()) else {
+        return input.to_owned();
+    };
+    input.replace(name, "")
 }
 
 /// Strip substrings that look like Rust source-file locations of the
@@ -206,8 +230,12 @@ pub fn init_once() {
     });
 }
 
-struct StaticProvider {
-    key_b64: String,
+/// `KeyProvider` that returns a base64url-encoded unlock key from an
+/// in-process `String`. Used by integration tests that want
+/// deterministic init against the build's `litmask.config` without
+/// depending on `LITMASK_UNLOCK_KEY` in the test environment.
+pub struct StaticProvider {
+    pub key_b64: String,
 }
 
 impl KeyProvider for StaticProvider {
