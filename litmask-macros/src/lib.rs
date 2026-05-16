@@ -91,14 +91,16 @@ pub fn mask(input: TokenStream) -> TokenStream {
     let blob: Vec<u8> = [nonce.as_slice(), &ciphertext_and_tag].concat();
     let blob_lit = byte_array_token(&blob);
     let blob_len = blob.len();
-    let decrypt_expr = kind.decrypt_expr(
-        &quote! { __LITMASK_BLOB },
-        &quote! { ::litmask::__wrapper_bytes!() },
-    );
+    // Hygienic identifier — emitting at `mixed_site` keeps the binding
+    // invisible to the caller's identifier namespace, so a user with
+    // their own `__LITMASK_BLOB` in scope doesn't collide.
+    let blob_ident = syn::Ident::new("__LITMASK_BLOB", proc_macro2::Span::mixed_site());
+    let blob_ref = quote! { #blob_ident };
+    let decrypt_expr = kind.decrypt_expr(&blob_ref, &quote! { ::litmask::__wrapper_bytes!() });
 
     quote! {
         {
-            const __LITMASK_BLOB: &[u8; #blob_len] = &#blob_lit;
+            const #blob_ident: &[u8; #blob_len] = &#blob_lit;
             #decrypt_expr
         }
     }
@@ -469,6 +471,10 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
             quote! { let _ = ::core::format_args!(#check_template, #arg); }
         });
 
+    // Hygienic output identifier — `mixed_site` isolates the binding
+    // from caller scope, parallel to the `maskfmt_arg_N` hygiene.
+    let out_ident = syn::Ident::new("maskfmt_out", proc_macro2::Span::mixed_site());
+
     // Interleave fragment + placeholder writes. Skip empty fragments
     // so we don't pay for a mask!() round-trip on a zero-byte literal.
     let mut writes: Vec<TokenStream2> = Vec::new();
@@ -476,7 +482,7 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
         if !fragment.is_empty() {
             writes.push(quote! {
                 ::std::fmt::Write::write_str(
-                    &mut maskfmt_out,
+                    &mut #out_ident,
                     &::litmask::mask!(#fragment),
                 ).unwrap();
             });
@@ -486,7 +492,7 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
             let write_template = &placeholder_templates[i];
             writes.push(quote! {
                 ::std::fmt::Write::write_fmt(
-                    &mut maskfmt_out,
+                    &mut #out_ident,
                     ::core::format_args!(#write_template, #arg),
                 ).unwrap();
             });
@@ -497,9 +503,9 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
         {
             #(#arg_bindings)*
             #(#arg_checks)*
-            let mut maskfmt_out = ::std::string::String::new();
+            let mut #out_ident = ::std::string::String::new();
             #(#writes)*
-            maskfmt_out
+            #out_ident
         }
     })
 }
@@ -645,15 +651,22 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
     let encoded_lit = byte_array_token(&encoded);
     let encoded_len = encoded.len();
 
+    // Hygienic identifiers — `mixed_site` keeps the const + static
+    // invisible to the caller's identifier namespace, so a user with
+    // their own `__WEAK_OBF` or `__WEAK_CACHE` in scope doesn't
+    // collide.
+    let obf_ident = syn::Ident::new("__WEAK_OBF", proc_macro2::Span::mixed_site());
+    let cache_ident = syn::Ident::new("__WEAK_CACHE", proc_macro2::Span::mixed_site());
+
     quote! {
         {
-            const __WEAK_OBF: &[u8; #encoded_len] = &#encoded_lit;
-            static __WEAK_CACHE: ::std::sync::OnceLock<::std::string::String> =
+            const #obf_ident: &[u8; #encoded_len] = &#encoded_lit;
+            static #cache_ident: ::std::sync::OnceLock<::std::string::String> =
                 ::std::sync::OnceLock::new();
             ::litmask::__internal::__weak_decode(
-                __WEAK_OBF,
+                #obf_ident,
                 ::litmask::__wrapper_bytes!(),
-                &__WEAK_CACHE,
+                &#cache_ident,
             )
         }
     }
