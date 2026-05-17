@@ -84,4 +84,24 @@ fn maskfmt_fragments_absent_from_binary() {
     let path = common::example_path("maskfmt_demo", Profile::Release);
     common::assert_substring_absent(&path, "saffron-koala-2b8e1c");
     common::assert_substring_absent(&path, "amber-otter-4f3d27");
+    common::assert_substring_absent(&path, "indigo-marmot-7a3e8b");
+    common::assert_substring_absent(&path, "crimson-bobcat-9d1c47");
+    common::assert_substring_absent(&path, "ochre-hedgehog-2f5d8e");
+}
+
+/// §2.2.2.2: placeholder names (named args, implicit captures,
+/// dynamic-width refs) MUST NOT appear in the compiled binary. The
+/// fixtures below are unique tokens used as placeholder names in
+/// maskfmt_demo; their absence locks the proc-macro's positional
+/// rewriting.
+#[test]
+fn maskfmt_placeholder_names_absent_from_binary() {
+    common::build_example("maskfmt_demo", Profile::Release);
+    let path = common::example_path("maskfmt_demo", Profile::Release);
+    // Named arg.
+    common::assert_substring_absent(&path, "vermilion_finch_5c2e9a");
+    // Implicit-capture local name.
+    common::assert_substring_absent(&path, "cobalt_terrapin_4b6f12");
+    // Dynamic-width ref.
+    common::assert_substring_absent(&path, "magenta_lemur_3e8a14");
 }
