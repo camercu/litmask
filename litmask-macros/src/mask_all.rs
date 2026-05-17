@@ -27,7 +27,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::spanned::Spanned;
 use syn::visit_mut::{self, VisitMut};
-use syn::{Expr, ExprLit, Item, ItemConst, ItemStatic, Lit, Pat, parse_macro_input};
+use syn::{Expr, ExprLit, Item, ItemConst, ItemStatic, Lit, Pat, Stmt, parse_macro_input};
 
 /// Implementation of the `#[proc_macro_attribute] mask_all` entry
 /// point. The attribute applies only to module items (§2.3.1.1);
@@ -186,16 +186,20 @@ impl VisitMut for MaskAllWalker {
         // which is the desired order for replacement semantics.
         visit_mut::visit_expr_mut(self, expr);
 
-        // §2.3.2.2 + §2.3.2.5: macro-family rewrites. Each helper
-        // recognizes one family by macro path; literal-template
-        // checking happens inside. Order doesn't matter — the
-        // helpers' path matches are disjoint.
+        // §2.3.2.2 + §2.3.2.3 + §2.3.2.5: macro-family rewrites.
+        // Each helper recognizes one family by macro path;
+        // literal-template checking happens inside. Order doesn't
+        // matter — the helpers' path matches are disjoint.
         if self.skip_macro_depth == 0 && self.current_skip_reason().is_none() {
             if let Some(wrapped) = maybe_wrap_include_or_concat(expr) {
                 *expr = wrapped;
                 return;
             }
             if let Some(rewritten) = maybe_rewrite_format(expr) {
+                *expr = rewritten;
+                return;
+            }
+            if let Some(rewritten) = maybe_rewrite_output_macro(expr) {
                 *expr = rewritten;
                 return;
             }
@@ -240,6 +244,34 @@ impl VisitMut for MaskAllWalker {
         self.static_depth -= 1;
     }
 
+    fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
+        // Recurse first so the rewrite operates on already-walked
+        // children if any.
+        visit_mut::visit_stmt_mut(self, stmt);
+
+        // Statement-position macro invocations (`println!(...);`,
+        // `format!(...);` used as a statement, etc.) parse as
+        // `Stmt::Macro`, NOT `Stmt::Expr(Expr::Macro)`. `visit_expr_mut`
+        // never sees them. Promote known macro families to a block
+        // expression here.
+        let Stmt::Macro(stmt_mac) = stmt else { return };
+        if self.skip_macro_depth > 0 || self.current_skip_reason().is_some() {
+            return;
+        }
+        // Synthesize an Expr::Macro from the Stmt::Macro and run it
+        // through the same rewrite pipeline used by visit_expr_mut.
+        let synthetic_expr = Expr::Macro(syn::ExprMacro {
+            attrs: stmt_mac.attrs.clone(),
+            mac: stmt_mac.mac.clone(),
+        });
+        let rewritten = maybe_wrap_include_or_concat(&synthetic_expr)
+            .or_else(|| maybe_rewrite_format(&synthetic_expr))
+            .or_else(|| maybe_rewrite_output_macro(&synthetic_expr));
+        if let Some(rewritten) = rewritten {
+            *stmt = Stmt::Expr(rewritten, stmt_mac.semi_token);
+        }
+    }
+
     fn visit_pat_mut(&mut self, pat: &mut Pat) {
         // Record pattern literals separately from expression
         // literals: in syn 2, `Pat::Lit` carries a `Lit` directly
@@ -255,6 +287,40 @@ impl VisitMut for MaskAllWalker {
             }
         }
     }
+}
+
+/// Return `Some({ let __s = maskfmt!(...); println!("{}", __s) })`
+/// if `expr` is an output-macro invocation (`println!` / `eprintln!`
+/// / `print!` / `eprint!`) whose template is a string literal, per
+/// §2.3.2.3. The rewrite preserves the original macro's return type
+/// and side effects (stdout/stderr writes, line termination); only
+/// the format-string materialization moves into `maskfmt!`. The
+/// `__s` binding uses `Span::mixed_site()` hygiene so a caller with
+/// their own `__s` in scope doesn't collide.
+///
+/// `write!` / `writeln!` are intentionally NOT recognized here:
+/// they take the writer as their first argument, so the literal
+/// template appears in the second position. They land in a follow-up
+/// commit alongside the panic family that also has variant
+/// argument shapes.
+fn maybe_rewrite_output_macro(expr: &Expr) -> Option<Expr> {
+    const OUTPUT_MACROS: &[&str] = &["println", "eprintln", "print", "eprint"];
+    let Expr::Macro(em) = expr else {
+        return None;
+    };
+    let ident = em.mac.path.get_ident()?;
+    if !OUTPUT_MACROS.iter().any(|name| ident == name) {
+        return None;
+    }
+    if !macro_starts_with_str_lit(&em.mac) {
+        return None;
+    }
+    let tokens = &em.mac.tokens;
+    let s = syn::Ident::new("__s", proc_macro2::Span::mixed_site());
+    Some(syn::parse_quote! {{
+        let #s = ::litmask::maskfmt!(#tokens);
+        #ident!("{}", #s)
+    }})
 }
 
 /// Return `Some(maskfmt!(...))` if `expr` is a `format!(literal, ...)`

@@ -44,6 +44,13 @@ mod demo {
         let n = 7;
         let formatted = format!("erbium-narwhal-1a4e83-task13={n}");
         println!("formatted={formatted}");
+
+        // Task 13 §2.3.2.3 fixture — `println!` with a literal
+        // template becomes
+        // `{ let __s = maskfmt!(...); println!("{}", __s) }`. The
+        // template fragment must be absent from the binary.
+        let m = 99;
+        println!("praseodymium-tapir-9f2c14-task13={m}");
     }
 }
 
