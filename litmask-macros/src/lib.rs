@@ -8,10 +8,10 @@
 //! input grammar and expansion logic for each macro lives in its own
 //! submodule:
 //!
-//! - [`mask`] — AEAD-encrypt a literal at compile time.
-//! - [`unmasked`] — identity wrapper marking an opt-out literal.
-//! - [`maskfmt`] — masked format-string template.
-//! - [`weak_mask`] — XOR-against-wrapper anti-`strings(1)` obfuscation.
+//! - [`mask!`] — AEAD-encrypt a literal at compile time.
+//! - [`unmasked!`] — identity wrapper marking an opt-out literal.
+//! - [`maskfmt!`] — masked format-string template.
+//! - [`weak_mask!`] — XOR-against-wrapper anti-`strings(1)` obfuscation.
 
 use proc_macro::TokenStream;
 
