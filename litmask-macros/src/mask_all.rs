@@ -25,14 +25,25 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
+use syn::spanned::Spanned;
 use syn::visit_mut::{self, VisitMut};
-use syn::{Expr, ExprLit, ItemConst, ItemMod, ItemStatic, Lit, Pat, parse_macro_input};
+use syn::{Expr, ExprLit, Item, ItemConst, ItemMod, ItemStatic, Lit, Pat, parse_macro_input};
 
 /// Implementation of the `#[proc_macro_attribute] mask_all` entry
 /// point. The attribute applies only to module items (§2.3.1.1);
-/// other targets produce a `syn::Error` at expansion time.
+/// other targets produce a typed compile error naming the constraint
+/// (rather than the opaque "expected `mod`" syn parse error that
+/// `parse_macro_input!(item as ItemMod)` alone would produce).
 pub(crate) fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let mut module = parse_macro_input!(item as ItemMod);
+    let parsed = parse_macro_input!(item as Item);
+    let Item::Mod(mut module) = parsed else {
+        return syn::Error::new(
+            parsed.span(),
+            "#[mask_all] applies only to module items (e.g. `#[mask_all] mod foo { ... }`)",
+        )
+        .to_compile_error()
+        .into();
+    };
     let mut walker = MaskAllWalker::default();
     walker.visit_item_mod_mut(&mut module);
 
