@@ -7,9 +7,10 @@
 
 #![allow(dead_code)] // Some helpers are used by only a subset of integration tests.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Once;
+use std::sync::{Mutex, Once, OnceLock};
 
 use litmask::{KeyError, KeyProvider, UnlockKey, init_with};
 
@@ -50,7 +51,7 @@ pub fn workspace_root() -> PathBuf {
 }
 
 /// Cargo build profiles available to integration tests.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Profile {
     Debug,
     /// Stripped-symbols release profile — the recommended deployment
@@ -93,7 +94,28 @@ pub fn config_path(profile: Profile) -> PathBuf {
 
 /// Build one example by name in the given profile, panicking with a
 /// useful message on failure.
+///
+/// Memoized per `(name, profile)` for the lifetime of the test
+/// process: subsequent calls with the same key are no-ops. Cargo's
+/// own fingerprint cache already skips a recompile for an
+/// up-to-date binary, but each `cargo build` invocation still pays
+/// ~100–500ms of startup (process spawn + manifest parse +
+/// dep-graph walk). The `example_scrub` test file builds `maskfmt_demo`
+/// three times across separate `#[test]`s; memoizing here shaves a
+/// few seconds off the integration-test wall time without changing
+/// semantics — within one test-binary process, building an example
+/// the second time guarantees nothing has changed since the first.
 pub fn build_example(name: &str, profile: Profile) {
+    static BUILT: OnceLock<Mutex<HashSet<(String, Profile)>>> = OnceLock::new();
+    let built = BUILT.get_or_init(|| Mutex::new(HashSet::new()));
+    if !built
+        .lock()
+        .expect("build_example memoization mutex poisoned")
+        .insert((name.to_string(), profile))
+    {
+        return;
+    }
+
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let mut cmd = Command::new(&cargo);
     cmd.arg("build");
