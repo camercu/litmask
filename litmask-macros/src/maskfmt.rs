@@ -291,13 +291,9 @@ fn build_writes(
             });
         }
         if resolved.get(i).is_some() {
-            let (template, refs) = &emissions[i];
-            let refs_tokens: Vec<&syn::Ident> = refs.iter().map(|&idx| &arg_idents[idx]).collect();
+            let args = placeholder_format_args(&emissions[i], arg_idents);
             writes.push(quote! {
-                ::std::fmt::Write::write_fmt(
-                    &mut #out_ident,
-                    ::core::format_args!(#template #(, #refs_tokens)*),
-                ).unwrap();
+                ::std::fmt::Write::write_fmt(&mut #out_ident, #args).unwrap();
             });
         }
     }
@@ -314,11 +310,23 @@ fn build_arg_checks(
 ) -> Vec<TokenStream2> {
     emissions
         .iter()
-        .map(|(template, refs)| {
-            let refs_tokens: Vec<&syn::Ident> = refs.iter().map(|&idx| &arg_idents[idx]).collect();
-            quote! { let _ = ::core::format_args!(#template #(, #refs_tokens)*); }
+        .map(|emission| {
+            let args = placeholder_format_args(emission, arg_idents);
+            quote! { let _ = #args; }
         })
         .collect()
+}
+
+/// Render a single placeholder's `format_args!(template, refs...)`
+/// call. Shared by the runtime write path and the compile-time
+/// type-check path; both wrap the same call in different shells.
+fn placeholder_format_args(
+    emission: &(String, Vec<usize>),
+    arg_idents: &[syn::Ident],
+) -> TokenStream2 {
+    let (template, refs) = emission;
+    let refs_tokens: Vec<&syn::Ident> = refs.iter().map(|&idx| &arg_idents[idx]).collect();
+    quote! { ::core::format_args!(#template #(, #refs_tokens)*) }
 }
 
 /// Internal binding layout: positional args first (indices `0..P`),
