@@ -111,6 +111,15 @@ macro_rules! init_with {
 /// happen here, in `litmask`'s own cfg context. The c-string-specific
 /// construction lives in this shim rather than in a dedicated runtime
 /// helper because it is the only kind whose return type is `std`-only.
+///
+/// `CString::new(...)` only returns `NulError` if the input contains
+/// an interior NUL byte. Two layers rule this out at compile + runtime:
+/// `LitCStr` rejects interior NUL at parse time (so the encrypted
+/// blob never carries one), and AEAD authentication rejects any
+/// tampering that could introduce one. The bare `.unwrap()` is
+/// therefore unreachable in practice — and stays bare (no message)
+/// per spec §1.9.5 panic hygiene. The unwind point is the user's
+/// `mask!(c"...")` call site, not inside the litmask crate.
 #[cfg(feature = "std")]
 #[doc(hidden)]
 #[macro_export]

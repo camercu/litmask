@@ -120,6 +120,15 @@ impl MaskInput {
     /// missing-`std`-feature build surfaces a clear `compile_error!`
     /// at the user's `mask!(c"...")` site instead of a
     /// "`CString` not found" diagnostic.
+    ///
+    /// Panic policy: the str-path `String::from_utf8(...).unwrap()`
+    /// is unreachable under valid inputs — `mask!("...")` only
+    /// accepts UTF-8 string literals, and AEAD authentication rejects
+    /// any tampering that could yield non-UTF-8 bytes. The bare
+    /// `.unwrap()` (no message) preserves §1.9.5 hygiene. The c-string
+    /// shim's analogous invariant lives in its doc-comment in
+    /// `litmask::lib.rs`. Unwinds in either path land at the user's
+    /// `mask!(...)` call site, not inside the litmask crate.
     fn decrypt_expr(&self, blob: &TokenStream2, wrapper: &TokenStream2) -> TokenStream2 {
         match self {
             Self::Str(_) => quote! {
