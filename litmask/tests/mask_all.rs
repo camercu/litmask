@@ -8,7 +8,16 @@
 //! functions, blocks, closures all get rewritten). The skip rules
 //! and warning emission live in separate test modules.
 
-#![allow(dead_code)] // Many fixture items are referenced only by the test bodies.
+#![allow(dead_code)]
+// Many fixture items are referenced only by the test bodies.
+// `#[mask_all]` emits ghost-deprecation warnings for every skipped
+// literal (§2.3.1.4) — that's the spec contract. The integration
+// tests below intentionally exercise skip paths; `-D warnings` (set
+// by the workspace pre-push hook) would otherwise upgrade those
+// warnings to errors. The warning *text* is locked separately in
+// `tests/compile/mask_all_pattern_warning.rs` via trybuild +
+// `#[deny(deprecated)]`.
+#![allow(deprecated)]
 
 mod common;
 

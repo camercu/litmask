@@ -32,4 +32,5 @@ fn compile_fixtures() {
     t.compile_fail("tests/compile/maskfmt_type_incompatible_spec.rs");
     t.compile_fail("tests/compile/maskfmt_duplicate_named_arg.rs");
     t.compile_fail("tests/compile/maskfmt_positional_after_named.rs");
+    t.compile_fail("tests/compile/mask_all_pattern_warning.rs");
 }
