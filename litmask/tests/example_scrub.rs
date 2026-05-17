@@ -28,6 +28,7 @@ const EXAMPLES: &[&str] = &[
     "byte_cstr_demo",
     "include_str_demo",
     "maskfmt_demo",
+    "mask_all_demo",
 ];
 
 #[test]
@@ -87,6 +88,19 @@ fn maskfmt_fragments_absent_from_binary() {
     common::assert_substring_absent(&path, "indigo-marmot-7a3e8b");
     common::assert_substring_absent(&path, "crimson-bobcat-9d1c47");
     common::assert_substring_absent(&path, "ochre-hedgehog-2f5d8e");
+}
+
+/// §2.3.2.1: every bare string / byte string / C string literal
+/// rewritten by `#[mask_all]` must be absent from the compiled
+/// binary. Fixtures in `mask_all_demo` are unique-enough phrases
+/// that the absence assertion is precise.
+#[test]
+fn mask_all_literals_absent_from_binary() {
+    common::build_example("mask_all_demo", Profile::Release);
+    let path = common::example_path("mask_all_demo", Profile::Release);
+    common::assert_substring_absent(&path, "uranium-walrus-5f8d23-task12");
+    common::assert_substring_absent(&path, "thorium-loris-2a9b41-task12");
+    common::assert_substring_absent(&path, "polonium-dingo-7c4e68-task12");
 }
 
 /// §2.2.2.2: placeholder names (named args, implicit captures,

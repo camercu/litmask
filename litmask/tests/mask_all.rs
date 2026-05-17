@@ -163,8 +163,11 @@ fn mask_all_skips_const_and_static_initializers() {
 #[mask_all]
 mod byte_string_literal_round_trip {
     pub fn fixture() -> Vec<u8> {
-        let bytes = b"chromium-bobcat-1c5e92";
-        bytes.to_vec()
+        // After `#[mask_all]` rewrites `b"..."` → `mask!(b"...")`,
+        // the tail expression evaluates directly to an owned
+        // `Vec<u8>` and matches the return type without any
+        // `.to_vec()` round-trip.
+        b"chromium-bobcat-1c5e92"
     }
 }
 
@@ -181,6 +184,9 @@ fn mask_all_rewrites_byte_string_literals() {
 mod c_string_literal_round_trip {
     use std::ffi::CString;
     pub fn fixture() -> CString {
+        // After `#[mask_all]` rewrites `c"..."` → `mask!(c"...")`,
+        // the expression evaluates to an owned `CString`, no
+        // intermediate borrow needed.
         c"radium-quetzal-8e3a51".to_owned()
     }
 }
