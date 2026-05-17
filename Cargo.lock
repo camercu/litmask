@@ -287,7 +287,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "litmask"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "base64ct",
  "litmask-build",
@@ -301,7 +301,7 @@ dependencies = [
 
 [[package]]
 name = "litmask-build"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "base64ct",
  "getrandom",
@@ -315,11 +315,11 @@ dependencies = [
 
 [[package]]
 name = "litmask-cli"
-version = "0.1.2"
+version = "0.2.0"
 
 [[package]]
 name = "litmask-internal"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
@@ -327,7 +327,7 @@ dependencies = [
 
 [[package]]
 name = "litmask-macros"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "litmask-internal",
