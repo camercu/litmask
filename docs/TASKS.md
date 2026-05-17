@@ -416,14 +416,14 @@ appear anywhere in the compiled binary.
 
 ### Acceptance Criteria
 
-- [ ] GIVEN a side-effecting expression `e` that increments a counter,
+- [x] GIVEN a side-effecting expression `e` that increments a counter,
       WHEN `maskfmt!("{x} {x}", x = e)` is evaluated, THEN the counter
       increments exactly once
-- [ ] `let var = 7; maskfmt!("{var}")` returns `"7"`
-- [ ] `maskfmt!("{:>w$}", "hi", w = 5)` returns `"   hi"`
-- [ ] Strings check shows no placeholder name (`x`, `var`, etc.) present
+- [x] `let var = 7; maskfmt!("{var}")` returns `"7"`
+- [x] `maskfmt!("{:>w$}", "hi", w = 5)` returns `"   hi"`
+- [x] Strings check shows no placeholder name (`x`, `var`, etc.) present
       in plaintext
-- [ ] Output matches `format!` byte-for-byte for all named/implicit cases
+- [x] Output matches `format!` byte-for-byte for all named/implicit cases
 
 ---
 
