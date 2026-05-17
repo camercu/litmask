@@ -83,3 +83,68 @@ fn mask_all_does_not_double_mask_explicit_mask_invocation() {
     assert!(s.contains("titanium-finch-2a6c40"));
     assert!(s.contains("tungsten-ibis-1f9d63"));
 }
+
+// ── §2.3.1.3 skip rules ────────────────────────────────────────
+
+#[mask_all]
+mod pattern_position_left_unchanged {
+    pub fn classify(x: &str) -> u32 {
+        match x {
+            "alpha" => 1,
+            "beta" => 2,
+            _ => 0,
+        }
+    }
+}
+
+#[test]
+fn mask_all_skips_pattern_literals_match_arm() {
+    common::init_once();
+    // The pattern literals "alpha"/"beta" must NOT have been
+    // rewritten — patterns can't accept `mask!()` expressions. RHS
+    // values are integers so no rewriting risk on the arms.
+    assert_eq!(pattern_position_left_unchanged::classify("alpha"), 1);
+    assert_eq!(pattern_position_left_unchanged::classify("beta"), 2);
+    assert_eq!(pattern_position_left_unchanged::classify("zzz"), 0);
+}
+
+#[mask_all]
+mod if_let_pattern_left_unchanged {
+    pub fn detect(input: Option<&str>) -> bool {
+        if let Some("trigger") = input {
+            return true;
+        }
+        false
+    }
+}
+
+#[test]
+fn mask_all_skips_pattern_literals_if_let() {
+    common::init_once();
+    assert!(if_let_pattern_left_unchanged::detect(Some("trigger")));
+    assert!(!if_let_pattern_left_unchanged::detect(Some("other")));
+    assert!(!if_let_pattern_left_unchanged::detect(None));
+}
+
+#[mask_all]
+mod const_and_static_initializers {
+    pub const SLUG: &str = "compile-time-only";
+    pub static GREETING: &str = "static-also-compile-time";
+
+    pub fn fixture() -> (String, String) {
+        // Bare runtime literal — DOES get masked.
+        let runtime = "runtime-eligible";
+        (SLUG.to_string(), format!("{GREETING}+{runtime}"))
+    }
+}
+
+#[test]
+fn mask_all_skips_const_and_static_initializers() {
+    common::init_once();
+    let (slug, greeting) = const_and_static_initializers::fixture();
+    // const/static round-trip unchanged (would not even compile if
+    // `mask!()` had been substituted — `mask!()` is not const).
+    assert_eq!(slug, "compile-time-only");
+    assert!(greeting.contains("static-also-compile-time"));
+    assert!(greeting.contains("runtime-eligible"));
+}

@@ -26,7 +26,7 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::visit_mut::{self, VisitMut};
-use syn::{Expr, ExprLit, ItemMod, Lit, parse_macro_input};
+use syn::{Expr, ExprLit, ItemConst, ItemMod, ItemStatic, Lit, Pat, parse_macro_input};
 
 /// Implementation of the `#[proc_macro_attribute] mask_all` entry
 /// point. The attribute applies only to module items (§2.3.1.1);
@@ -39,13 +39,36 @@ pub(crate) fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 /// AST walker that rewrites eligible literal expressions to
-/// `mask!(literal)`. `in_skip_macro_depth` is a counter rather than a
-/// boolean so nested skip-macro invocations (e.g., `dbg!(mask!(...))`
-/// — pathological but possible) still apply the skip rule at the
-/// outermost level without re-entering rewrite mode.
+/// `mask!(literal)`. Each `in_*_depth` counter is bumped on entry
+/// to a skip context and decremented on exit. Counters rather than
+/// booleans handle nested cases (e.g., `dbg!(mask!(...))` — outer
+/// `dbg!` already suppresses, inner `mask!` independently suppresses)
+/// without re-entering rewrite mode in the middle.
+// Field names share the `_depth` suffix by intent: each is a
+// stack-depth counter for the same nesting model. Clippy's
+// `struct_field_names` heuristic flags this as a "same postfix"
+// smell; the suffix is load-bearing here for naming consistency.
+#[allow(clippy::struct_field_names)]
 #[derive(Default)]
 struct MaskAllWalker {
-    in_skip_macro_depth: usize,
+    /// Depth inside `mask!`/`maskfmt!`/`unmasked!`/`weak_mask!`/`dbg!`/
+    /// `stringify!`/`assert_eq!`/`assert_ne!`.
+    skip_macro_depth: usize,
+    /// Depth inside a `const` or `static` initializer expression.
+    /// `mask!()` returns a runtime `String`, so substituting it into
+    /// a const context would fail to compile with a non-const-fn
+    /// error.
+    const_static_depth: usize,
+    /// Depth inside a `Pat` (match arm pattern, `if let`,
+    /// `while let`, `let` LHS pattern). Pattern syntax does not
+    /// accept arbitrary macro invocations.
+    pattern_depth: usize,
+}
+
+impl MaskAllWalker {
+    fn skip_active(&self) -> bool {
+        self.skip_macro_depth > 0 || self.const_static_depth > 0 || self.pattern_depth > 0
+    }
 }
 
 impl VisitMut for MaskAllWalker {
@@ -56,7 +79,7 @@ impl VisitMut for MaskAllWalker {
         // which is the desired order for replacement semantics.
         visit_mut::visit_expr_mut(self, expr);
 
-        if self.in_skip_macro_depth > 0 {
+        if self.skip_active() {
             return;
         }
         if let Some(rewritten) = maybe_rewrite_literal(expr) {
@@ -67,12 +90,30 @@ impl VisitMut for MaskAllWalker {
     fn visit_expr_macro_mut(&mut self, mac: &mut syn::ExprMacro) {
         let was_skip = is_skip_macro(&mac.mac);
         if was_skip {
-            self.in_skip_macro_depth += 1;
+            self.skip_macro_depth += 1;
         }
         visit_mut::visit_expr_macro_mut(self, mac);
         if was_skip {
-            self.in_skip_macro_depth -= 1;
+            self.skip_macro_depth -= 1;
         }
+    }
+
+    fn visit_item_const_mut(&mut self, item: &mut ItemConst) {
+        self.const_static_depth += 1;
+        visit_mut::visit_item_const_mut(self, item);
+        self.const_static_depth -= 1;
+    }
+
+    fn visit_item_static_mut(&mut self, item: &mut ItemStatic) {
+        self.const_static_depth += 1;
+        visit_mut::visit_item_static_mut(self, item);
+        self.const_static_depth -= 1;
+    }
+
+    fn visit_pat_mut(&mut self, pat: &mut Pat) {
+        self.pattern_depth += 1;
+        visit_mut::visit_pat_mut(self, pat);
+        self.pattern_depth -= 1;
     }
 }
 
