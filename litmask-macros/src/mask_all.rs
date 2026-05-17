@@ -40,6 +40,12 @@ pub(crate) fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // ghost-deprecation pair per skipped literal so rustc's
     // `deprecated` lint surfaces each skip in cargo's warning
     // output. Splice the anchor items into the module body.
+    //
+    // `module.content` is `None` for the `mod foo;` file-module
+    // form — the actual items live in another file we never see.
+    // Pass that form through unchanged; users wanting `#[mask_all]`
+    // semantics there can apply the attribute inside the target
+    // file's root module instead.
     if let Some((_, items)) = module.content.as_mut() {
         items.extend(walker.warning_items());
     }
@@ -68,8 +74,8 @@ impl SkipReason {
 }
 
 /// AST walker that rewrites eligible literal expressions to
-/// `mask!(literal)`. Each `in_*_depth` counter is bumped on entry
-/// to a skip context and decremented on exit. Counters rather than
+/// `mask!(literal)`. Each `*_depth` field is bumped on entry to a
+/// skip context and decremented on exit. Counters rather than
 /// booleans handle nested cases (e.g., `dbg!(mask!(...))` — outer
 /// `dbg!` already suppresses, inner `mask!` independently suppresses)
 /// without re-entering rewrite mode in the middle.
@@ -102,10 +108,13 @@ struct MaskAllWalker {
 }
 
 impl MaskAllWalker {
-    /// Current skip reason for warning emission. Caller is
-    /// responsible for only invoking this when at least one skip
-    /// context is active; the priority order (pattern → const →
-    /// static) is arbitrary but stable.
+    /// Current skip reason for warning emission. Returns `None` when
+    /// no skip-context is active. The priority order (pattern →
+    /// const → static) is most-local-context-first: when a pattern
+    /// literal appears inside a `const` initializer, the pattern
+    /// position is the proximate cause and gives the more useful
+    /// warning. The three counters can in principle overlap; only
+    /// one reason ever lands in the warning text.
     fn current_skip_reason(&self) -> Option<SkipReason> {
         if self.pattern_depth > 0 {
             Some(SkipReason::PatternPosition)
@@ -133,9 +142,13 @@ impl MaskAllWalker {
         for (i, reason) in self.skipped.iter().enumerate() {
             let ident = format_ident!("_LITMASK_SKIP_{i}");
             let note = format!("litmask: skipped literal: {}", reason.tag());
+            // `dead_code` is load-bearing: the const has no public
+            // callers besides the anchor fn below (which itself has
+            // `#[allow(dead_code)]`). Without it, every skip would
+            // emit a competing `unused constant` warning.
             let const_item: syn::Item = syn::parse_quote! {
                 #[deprecated(note = #note)]
-                #[allow(non_upper_case_globals, dead_code)]
+                #[allow(dead_code)]
                 const #ident: () = ();
             };
             items.push(const_item);
@@ -161,23 +174,18 @@ impl VisitMut for MaskAllWalker {
         // which is the desired order for replacement semantics.
         visit_mut::visit_expr_mut(self, expr);
 
-        if !is_string_shaped_literal(expr) {
+        let Some(rewritten) = maybe_rewrite_string_literal(expr) else {
             return;
-        }
+        };
         if let Some(reason) = self.current_skip_reason() {
             // Literal in a context where rewriting would be invalid
-            // — but it's still a string-shaped literal worth flagging
-            // (§2.3.1.4). Record the reason; ghost-deprecation
+            // (§2.3.1.3). Record the reason; ghost-deprecation
             // emission happens after the walk completes.
             self.skipped.push(reason);
-            return;
-        }
-        if self.skip_macro_depth > 0 {
-            // Inside an explicit mask/maskfmt/unmasked/dbg/etc. —
-            // intentional skip per spec rationale, no warning.
-            return;
-        }
-        if let Some(rewritten) = maybe_rewrite_literal(expr) {
+        } else if self.skip_macro_depth == 0 {
+            // Outside every skip context — rewrite. Skip-macro
+            // depth produces no warning by design: those macro
+            // invocations are intentional opt-outs.
             *expr = rewritten;
         }
     }
@@ -222,23 +230,16 @@ impl VisitMut for MaskAllWalker {
     }
 }
 
-/// True if `expr` is a bare string / byte string / C string literal
-/// expression — the three kinds §2.3.2.1 targets. Used both to gate
-/// rewrite emission AND to recognize when a skipped literal should
-/// fire the §2.3.1.4 warning (non-string literals like numerics or
-/// chars never trigger a warning even when in a skip context).
-fn is_string_shaped_literal(expr: &Expr) -> bool {
-    let Expr::Lit(ExprLit { lit, .. }) = expr else {
-        return false;
-    };
-    matches!(lit, Lit::Str(_) | Lit::ByteStr(_) | Lit::CStr(_))
-}
-
 /// Return `Some(mask!(literal))` if `expr` is a bare string / byte
-/// string / C string literal expression; otherwise `None`. Numeric,
-/// boolean, char, and other literal kinds are left alone — only the
-/// three string-shaped literal kinds are masked per §2.3.2.1.
-fn maybe_rewrite_literal(expr: &Expr) -> Option<Expr> {
+/// string / C string literal expression; otherwise `None`. The three
+/// string-shaped literal kinds §2.3.2.1 targets are the only ones
+/// considered — numeric, boolean, char, and other `Lit` variants
+/// are out of scope and produce no rewrite and no warning.
+///
+/// The returned `Expr` is the rewritten form. The caller decides
+/// whether to install it (free literal, not in any skip context) or
+/// just record a skip (literal in a pattern / const / static).
+fn maybe_rewrite_string_literal(expr: &Expr) -> Option<Expr> {
     let Expr::Lit(ExprLit { lit, .. }) = expr else {
         return None;
     };
