@@ -450,14 +450,14 @@ a v2 candidate.
 
 ### Acceptance Criteria
 
-- [ ] GIVEN a module with `let s = "secret";`, WHEN `#[mask_all]` is
+- [x] GIVEN a module with `let s = "secret";`, WHEN `#[mask_all]` is
       applied, THEN compiled binary contains no `secret` plaintext and
       `s` decrypts to `String::from("secret")` at runtime
-- [ ] `match x { "literal" => ... }` is left unchanged and warned about
-- [ ] `const X: &str = "foo";` is left unchanged and warned about
-- [ ] `mask!("already masked")` inside the module is not double-masked
-- [ ] Warnings include file:line and a reason string
-- [ ] Coverage spans nested modules, functions, blocks, and closures
+- [x] `match x { "literal" => ... }` is left unchanged and warned about
+- [x] `const X: &str = "foo";` is left unchanged and warned about
+- [x] `mask!("already masked")` inside the module is not double-masked
+- [x] Warnings include file:line and a reason string
+- [x] Coverage spans nested modules, functions, blocks, and closures
 
 ---
 
