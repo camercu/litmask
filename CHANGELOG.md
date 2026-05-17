@@ -1,3 +1,19 @@
+## [0.3.0](https://github.com/camercu/litmask/compare/v0.2.0...v0.3.0) (2026-05-17)
+
+### Features
+
+* **macros:** maskfmt! named args, implicit captures, dynamic width/precision ([1d24851](https://github.com/camercu/litmask/commit/1d248516220e7918e1b9063fac8a142b3a453e24))
+
+### Bug Fixes
+
+* **macros:** reject duplicate named args in maskfmt! ([9dac5dc](https://github.com/camercu/litmask/commit/9dac5dcde640e727c85bd301d8c97a8bc3a08e65))
+
+### Performance Improvements
+
+* **macros:** cache build_placeholder_emission + hoist out_ident ([0426acc](https://github.com/camercu/litmask/commit/0426acc395e40bd3d3dd6703e3eb10404206eb8a))
+* **macros:** use bitmap for maskfmt unused-positional check ([2c9fdfa](https://github.com/camercu/litmask/commit/2c9fdfa336228a0e9cc48a3d2ee8e48aba5e3184))
+* **test:** memoize build_example per (name, profile) ([23a5557](https://github.com/camercu/litmask/commit/23a5557b77f1108f7f12119e33bf0d4498a4b30e))
+
 ## [0.2.0](https://github.com/camercu/litmask/compare/v0.1.2...v0.2.0) (2026-05-17)
 
 
