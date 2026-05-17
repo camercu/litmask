@@ -7,13 +7,13 @@
     "commitlint": "commitlint --edit"
   },
   "devDependencies": {
-    "@commitlint/cli": "^19.5.0",
-    "@commitlint/config-conventional": "^19.5.0",
+    "@commitlint/cli": "^21.0.1",
+    "@commitlint/config-conventional": "^21.0.1",
     "@semantic-release/changelog": "^6.0.0",
-    "@semantic-release/commit-analyzer": "^11.0.0",
+    "@semantic-release/commit-analyzer": "^13.0.1",
     "@semantic-release/git": "^10.0.0",
-    "@semantic-release/release-notes-generator": "^12.0.0",
-    "semantic-release": "^23.0.0",
+    "@semantic-release/release-notes-generator": "^14.1.1",
+    "semantic-release": "^25.0.3",
     "semantic-release-cargo": "^2.0.0"
   }
 }
