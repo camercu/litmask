@@ -47,12 +47,14 @@ fn decrypt_panics_on_tampered_blob() {
 /// patterns — the two ways a litmask-specific string would leak into
 /// user binaries (§1.9.5). The decrypt-collapse refactor (661393e)
 /// moved type construction out of `runtime.rs` and into the proc-macro
-/// emission + the c-string shim, so the scan now spans three files:
+/// emission + the c-string shim, so the scan now spans four files:
 ///
 /// - `runtime.rs` — `__decrypt`, `__weak_decode`, lazy-init helpers.
 /// - `litmask/src/lib.rs` — `__decrypt_cstring_call!` shim.
 /// - `litmask-macros/src/mask.rs` — proc-macro emission for `mask!`
 ///   (`String::from_utf8(...).unwrap()` and the cstring routing).
+/// - `litmask-macros/src/maskfmt.rs` — proc-macro emission for
+///   `maskfmt!` (write_fmt + format_args! per placeholder).
 ///
 /// Each entry pairs a path with an allowlist of substrings whose
 /// containing line executes at PROC-MACRO TIME (inside rustc's
@@ -76,6 +78,15 @@ fn no_custom_panic_messages_in_decryption_path() {
                 // Runs at proc-macro expansion time inside rustc, not
                 // in the user binary.
                 r#".expect("AEAD encryption failed at mask! expansion")"#,
+            ],
+        ),
+        (
+            format!("{manifest}/../litmask-macros/src/maskfmt.rs"),
+            vec![
+                // Runs at proc-macro expansion time on a string the
+                // parser has already validated as all-digits; never
+                // reaches the user binary.
+                r#".expect("all-digits parses as usize")"#,
             ],
         ),
     ];
