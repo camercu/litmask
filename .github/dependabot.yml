@@ -3,8 +3,9 @@
 # without manual cargo update / npm update / pre-commit autoupdate
 # chores. Weekly schedule trades freshness for review-fatigue floor.
 #
-# Conventional Commit type set to `chore(deps)` so release-plz's
-# changelog parser skips them (see release-plz.toml).
+# Conventional Commit type set to `chore(deps)` so semantic-release's
+# commit-analyzer skips them (the `chore` type has no release rule in
+# .releaserc.json, so Dependabot updates do not trigger releases).
 version: 2
 
 updates:

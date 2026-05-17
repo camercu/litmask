@@ -87,7 +87,7 @@ Conventional Commits, enforced by:
 - The `commitlint` CI job (on every push **and** every PR).
 
 The release pipeline parses the commit log to drive version bumps
-and CHANGELOG.md sections (see `release-plz.toml`); deviating from
+and CHANGELOG.md sections (see `.releaserc.json`); deviating from
 the convention silently drops your commit from the next release.
 
 ## CI surface
@@ -104,29 +104,35 @@ pre-commit hook dependencies.
 ## Release
 
 Releases are driven by
-[release-plz](https://release-plz.dev/) in `.github/workflows/release.yml`:
+[semantic-release](https://semantic-release.gitbook.io/) with the
+[semantic-release-cargo](https://www.npmjs.com/package/semantic-release-cargo)
+plugin in `.github/workflows/release.yml`:
 
-1. Every push to `main` triggers `release.yml`, **gated** on a
-   successful canonical-gate run via `workflow_run`.
-2. release-plz opens or updates a `Release v{version}` PR with the
-   bump + CHANGELOG.md entry.
-3. Merging that PR fires the same workflow again; release-plz sees
-   the release commit, tags it, and cuts a GitHub Release.
+1. Every push to `main` runs CI; on success `release.yml` fires
+   (workflow_run trigger gated on `conclusion == 'success'`).
+2. `just release` runs `npx semantic-release`, which analyzes the
+   commit history since the last `v*` tag and either skips (no
+   release-worthy commits) or computes the next version.
+3. On a bump, the workflow updates `Cargo.toml` + `Cargo.lock`,
+   appends to `CHANGELOG.md`, pushes a `chore(release): <version>`
+   commit to `main`, tags `v<version>`, and cuts a GitHub Release.
 
-There is no `just release` recipe — release-plz runs from the
-action, not from the workspace. To preview a release PR locally:
+To preview a release locally from a clean working tree:
 
 ```sh
-cargo install release-plz
-release-plz release-pr --dry-run
+npm ci
+GITHUB_TOKEN=<personal-token> npx semantic-release --dry-run
 ```
 
-**GitHub setup requirement:** the `release-plz` job uses the
-`release` environment. The first successful release requires this
-environment to exist in the repository's GitHub settings (Settings →
-Environments → New environment → "release"). The
-`CRATES_API_KEY` secret can be added there when crates.io publish
-is enabled in `release-plz.toml` (currently `publish = false`).
+**GitHub setup requirement:** the `release` job uses the `release`
+environment. The first successful release requires this environment
+to exist in the repository's GitHub settings (Settings →
+Environments → New environment → "release"). The `CRATES_API_KEY`
+secret can be added there once crates.io publish is enabled in
+`.releaserc.json` (currently `publish: false`). Because the release
+job pushes commits + tags directly to `main`, any branch-protection
+rules must permit pushes from `github-actions[bot]` (or be relaxed
+for this workflow's `GITHUB_TOKEN`).
 
 ## Reporting issues
 
