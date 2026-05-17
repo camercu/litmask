@@ -119,6 +119,17 @@ fn mask_all_include_str_and_concat_absent_from_binary() {
     common::assert_substring_absent(&path, "rhodium-lemur-5c2a93-task13");
 }
 
+/// §2.3.2.2: `format!(template, args...)` inside `#[mask_all]` is
+/// rewritten to `maskfmt!(template, args...)` when `template` is a
+/// string literal. The literal-fragment text must be absent from
+/// binary plaintext.
+#[test]
+fn mask_all_format_template_absent_from_binary() {
+    common::build_example("mask_all_demo", Profile::Release);
+    let path = common::example_path("mask_all_demo", Profile::Release);
+    common::assert_substring_absent(&path, "erbium-narwhal-1a4e83-task13");
+}
+
 /// §2.2.2.2: placeholder names (named args, implicit captures,
 /// dynamic-width refs) MUST NOT appear in the compiled binary. The
 /// fixtures below are unique tokens used as placeholder names in

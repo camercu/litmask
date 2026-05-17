@@ -36,6 +36,14 @@ mod demo {
         let assembled = concat!("rhodium-", "lemur-", "5c2a93-task13");
         println!("included ={}", included.trim());
         println!("assembled={assembled}");
+
+        // Task 13 §2.3.2.2 fixture — `format!` with literal template
+        // becomes `maskfmt!`, masking each fragment between
+        // placeholders. The high-entropy phrase below must be absent
+        // from the binary.
+        let n = 7;
+        let formatted = format!("erbium-narwhal-1a4e83-task13={n}");
+        println!("formatted={formatted}");
     }
 }
 

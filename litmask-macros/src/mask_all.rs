@@ -186,13 +186,17 @@ impl VisitMut for MaskAllWalker {
         // which is the desired order for replacement semantics.
         visit_mut::visit_expr_mut(self, expr);
 
-        // §2.3.2.5: `include_str!(...)` and `concat!(...)` invocations
-        // are wrapped in `mask!()`. Must run before the literal-rewrite
-        // arm below because the macro is an expression itself, not a
-        // literal — and the wrap is the whole point of §2.3.2.5.
+        // §2.3.2.2 + §2.3.2.5: macro-family rewrites. Each helper
+        // recognizes one family by macro path; literal-template
+        // checking happens inside. Order doesn't matter — the
+        // helpers' path matches are disjoint.
         if self.skip_macro_depth == 0 && self.current_skip_reason().is_none() {
             if let Some(wrapped) = maybe_wrap_include_or_concat(expr) {
                 *expr = wrapped;
+                return;
+            }
+            if let Some(rewritten) = maybe_rewrite_format(expr) {
+                *expr = rewritten;
                 return;
             }
         }
@@ -251,6 +255,41 @@ impl VisitMut for MaskAllWalker {
             }
         }
     }
+}
+
+/// Return `Some(maskfmt!(...))` if `expr` is a `format!(literal, ...)`
+/// macro invocation, per §2.3.2.2. The literal-template check uses
+/// syn to peek the first token as a `LitStr`; only `format!`
+/// invocations whose first argument is a string literal are
+/// rewritten — non-literal-template forms are left alone here and
+/// will fall through to the §2.3.2.7 user-defined-macro warning
+/// path in a later phase.
+fn maybe_rewrite_format(expr: &Expr) -> Option<Expr> {
+    let Expr::Macro(em) = expr else {
+        return None;
+    };
+    let ident = em.mac.path.get_ident()?;
+    if ident != "format" {
+        return None;
+    }
+    if !macro_starts_with_str_lit(&em.mac) {
+        return None;
+    }
+    let tokens = &em.mac.tokens;
+    Some(syn::parse_quote! { ::litmask::maskfmt!(#tokens) })
+}
+
+/// True if `mac`'s body parses as `LitStr [, ...]` — i.e., the first
+/// argument is a string literal. Used by §2.3.2.2 and §2.3.2.3 /
+/// §2.3.2.4 (when those phases land) to distinguish literal-template
+/// from non-literal-template macro invocations.
+fn macro_starts_with_str_lit(mac: &syn::Macro) -> bool {
+    use syn::parse::Parser as _;
+    let parser = |input: syn::parse::ParseStream| -> syn::Result<()> {
+        input.parse::<syn::LitStr>()?;
+        Ok(())
+    };
+    parser.parse2(mac.tokens.clone()).is_ok()
 }
 
 /// Return `Some(mask!(<expr>))` if `expr` is an `include_str!(...)`

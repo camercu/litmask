@@ -191,6 +191,35 @@ fn mask_all_wraps_concat_in_mask() {
     assert_eq!(concat_wrapped::fixture(), "rhodium-lemur-5c2a93-task13");
 }
 
+// ── §2.3.2.2: format! → maskfmt! ───────────────────────────────
+
+#[mask_all]
+mod format_macro_rewritten {
+    pub fn fixture() -> String {
+        let n = 42;
+        format!("x={n}")
+    }
+}
+
+#[test]
+fn mask_all_rewrites_format_with_literal_template() {
+    common::init_once();
+    assert_eq!(format_macro_rewritten::fixture(), "x=42");
+}
+
+#[mask_all]
+mod format_macro_named_args {
+    pub fn fixture() -> String {
+        format!("a={a} b={b}", a = 1, b = 2)
+    }
+}
+
+#[test]
+fn mask_all_rewrites_format_with_named_args() {
+    common::init_once();
+    assert_eq!(format_macro_named_args::fixture(), "a=1 b=2");
+}
+
 #[mask_all]
 mod const_and_static_initializers {
     pub const SLUG: &str = "compile-time-only";
