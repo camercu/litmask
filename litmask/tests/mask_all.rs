@@ -158,6 +158,39 @@ fn mask_all_skips_pattern_literals_while_let() {
     );
 }
 
+// ── §2.3.2.5: include_str! and concat! wrapping ────────────────
+
+#[mask_all]
+mod include_str_wrapped {
+    pub fn fixture() -> String {
+        // Shares the fixture file with `mask_all_demo`; path resolves
+        // relative to `CARGO_MANIFEST_DIR` (= `litmask/`).
+        include_str!("examples/fixtures/task13_include_str.txt").to_string()
+    }
+}
+
+#[test]
+fn mask_all_wraps_include_str_in_mask() {
+    common::init_once();
+    let contents = include_str_wrapped::fixture();
+    // The fixture file content (minus trailing newline normalization)
+    // must round-trip through mask!() correctly.
+    assert!(contents.contains("selenium-pangolin-3d8a91-task13"));
+}
+
+#[mask_all]
+mod concat_wrapped {
+    pub fn fixture() -> String {
+        concat!("rhodium-", "lemur-", "5c2a93-task13").to_string()
+    }
+}
+
+#[test]
+fn mask_all_wraps_concat_in_mask() {
+    common::init_once();
+    assert_eq!(concat_wrapped::fixture(), "rhodium-lemur-5c2a93-task13");
+}
+
 #[mask_all]
 mod const_and_static_initializers {
     pub const SLUG: &str = "compile-time-only";

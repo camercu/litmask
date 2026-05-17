@@ -186,6 +186,17 @@ impl VisitMut for MaskAllWalker {
         // which is the desired order for replacement semantics.
         visit_mut::visit_expr_mut(self, expr);
 
+        // §2.3.2.5: `include_str!(...)` and `concat!(...)` invocations
+        // are wrapped in `mask!()`. Must run before the literal-rewrite
+        // arm below because the macro is an expression itself, not a
+        // literal — and the wrap is the whole point of §2.3.2.5.
+        if self.skip_macro_depth == 0 && self.current_skip_reason().is_none() {
+            if let Some(wrapped) = maybe_wrap_include_or_concat(expr) {
+                *expr = wrapped;
+                return;
+            }
+        }
+
         let Some(rewritten) = maybe_rewrite_string_literal(expr) else {
             return;
         };
@@ -240,6 +251,24 @@ impl VisitMut for MaskAllWalker {
             }
         }
     }
+}
+
+/// Return `Some(mask!(<expr>))` if `expr` is an `include_str!(...)`
+/// or `concat!(...)` macro invocation, per §2.3.2.5. The wrap
+/// produces the literal source form `mask!(include_str!(...))` /
+/// `mask!(concat!(...))`, which `mask!`'s extended grammar
+/// (§2.1.1.14) accepts and resolves at proc-macro time. Returns
+/// `None` for any other expression — including macro invocations
+/// whose paths don't match.
+fn maybe_wrap_include_or_concat(expr: &Expr) -> Option<Expr> {
+    let Expr::Macro(em) = expr else {
+        return None;
+    };
+    let ident = em.mac.path.get_ident()?;
+    if !(ident == "include_str" || ident == "concat") {
+        return None;
+    }
+    Some(syn::parse_quote! { ::litmask::mask!(#em) })
 }
 
 /// Return `Some(mask!(literal))` if `expr` is a bare string / byte

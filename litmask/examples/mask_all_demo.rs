@@ -28,6 +28,14 @@ mod demo {
         println!("banner={banner}");
         println!("bytes ={bytes_decoded}");
         println!("cstr  ={cstr_decoded}");
+
+        // Task 13 §2.3.2.5 fixtures — `include_str!` and `concat!`
+        // invocations must be wrapped in `mask!()` by the walker so
+        // the resulting strings are absent from the binary plaintext.
+        let included = include_str!("examples/fixtures/task13_include_str.txt");
+        let assembled = concat!("rhodium-", "lemur-", "5c2a93-task13");
+        println!("included ={}", included.trim());
+        println!("assembled={assembled}");
     }
 }
 

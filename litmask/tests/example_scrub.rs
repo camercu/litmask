@@ -103,6 +103,22 @@ fn mask_all_literals_absent_from_binary() {
     common::assert_substring_absent(&path, "polonium-dingo-7c4e68-task12");
 }
 
+/// §2.3.2.5: `include_str!` and `concat!` invocations inside a
+/// `#[mask_all]` module must be wrapped in `mask!()` so their
+/// resulting strings are absent from binary plaintext. The
+/// included-file content (`selenium-pangolin-3d8a91-task13`) lives
+/// only in the fixture file at compile time and would otherwise
+/// land in `.rodata`; the concatenated literal
+/// (`rhodium-lemur-5c2a93-task13`) is assembled by the `concat!`
+/// builtin and would similarly be a single `.rodata` string.
+#[test]
+fn mask_all_include_str_and_concat_absent_from_binary() {
+    common::build_example("mask_all_demo", Profile::Release);
+    let path = common::example_path("mask_all_demo", Profile::Release);
+    common::assert_substring_absent(&path, "selenium-pangolin-3d8a91-task13");
+    common::assert_substring_absent(&path, "rhodium-lemur-5c2a93-task13");
+}
+
 /// §2.2.2.2: placeholder names (named args, implicit captures,
 /// dynamic-width refs) MUST NOT appear in the compiled binary. The
 /// fixtures below are unique tokens used as placeholder names in
