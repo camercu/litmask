@@ -134,10 +134,9 @@ fn as_named_arg(expr: &Expr) -> Option<NamedArg> {
     Some((seg.ident.clone(), (*assign.right).clone()))
 }
 
-/// A placeholder reference — either an explicit positional index
-/// from `{N}` / `<N>$`, or an identifier from `{name}` / `<name>$`.
-/// `Auto` is used for bare `{}` which gets resolved to the
-/// next-available positional index during parsing.
+/// A placeholder reference — either a positional index (from `{}`,
+/// `{N}`, or `<N>$`; bare `{}` resolves to the next auto-positional
+/// index during parsing) or an identifier from `{name}` / `<name>$`.
 #[derive(Clone, Debug)]
 enum TemplateRef {
     Positional(usize),
@@ -174,12 +173,11 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
     let resolved = resolve_placeholders(&placeholders, &mut bindings, template_span)?;
     check_unused_positionals(&resolved, positional_count, template_span)?;
 
-    // Bindings, in layout order (positional → named → implicit):
-    // each gets evaluated exactly once into a `maskfmt_arg_<i>` local
-    // (§2.2.3.1, §2.2.2.3-4). For implicit captures, the RHS is the
-    // bare identifier so resolution happens against the caller's
-    // local of the same name (the `mixed_site` hygiene keeps the LHS
-    // binding name isolated from the user's namespace).
+    // `mixed_site` hygiene on the LHS keeps each `maskfmt_arg_<i>`
+    // binding isolated from the caller's namespace — required because
+    // implicit captures emit the user's bare identifier on the RHS
+    // (e.g. `let maskfmt_arg_3 = &var;`) and call_site resolution there
+    // would otherwise risk capturing our own LHS name.
     let arg_idents: Vec<syn::Ident> = (0..bindings.total())
         .map(|i| syn::Ident::new(&format!("maskfmt_arg_{i}"), proc_macro2::Span::mixed_site()))
         .collect();
@@ -213,13 +211,12 @@ fn resolve_placeholders(
     bindings: &mut Bindings,
     template_span: proc_macro2::Span,
 ) -> syn::Result<Vec<ResolvedPlaceholder>> {
-    let positional_count = bindings.positional_count();
     let mut resolved: Vec<ResolvedPlaceholder> = Vec::with_capacity(placeholders.len());
     for ph in placeholders {
-        let value_idx = bindings.resolve(&ph.value, template_span, positional_count)?;
+        let value_idx = bindings.resolve(&ph.value, template_span)?;
         let mut spec_idxs: Vec<usize> = Vec::with_capacity(ph.spec_refs.len());
         for sr in &ph.spec_refs {
-            spec_idxs.push(bindings.resolve(sr, template_span, positional_count)?);
+            spec_idxs.push(bindings.resolve(sr, template_span)?);
         }
         resolved.push(ResolvedPlaceholder {
             value_idx,
@@ -345,27 +342,19 @@ impl Bindings {
         }
     }
 
-    fn positional_count(&self) -> usize {
-        self.positional_count
-    }
-
     fn total(&self) -> usize {
         self.base_for_implicit + self.implicit.len()
     }
 
-    fn resolve(
-        &mut self,
-        r: &TemplateRef,
-        span: proc_macro2::Span,
-        positional_count: usize,
-    ) -> syn::Result<usize> {
+    fn resolve(&mut self, r: &TemplateRef, span: proc_macro2::Span) -> syn::Result<usize> {
         match r {
             TemplateRef::Positional(k) => {
-                if *k >= positional_count {
+                if *k >= self.positional_count {
                     return Err(syn::Error::new(
                         span,
                         format!(
-                            "positional argument {k} not provided to maskfmt! (only {positional_count} given)",
+                            "positional argument {k} not provided to maskfmt! (only {} given)",
+                            self.positional_count,
                         ),
                     ));
                 }
@@ -462,10 +451,9 @@ fn build_placeholder_emission(ph: &ResolvedPlaceholder) -> (String, Vec<usize>) 
     (template, refs)
 }
 
-fn is_token_start(c: char) -> bool {
-    c.is_ascii_digit() || c == '_' || c.is_alphabetic()
-}
-
+/// Chars permitted in a placeholder name or numeric index — both
+/// positions accept the same alphabet, so a single predicate covers
+/// the start char and the continuation chars uniformly.
 fn is_token_char(c: char) -> bool {
     c.is_ascii_digit() || c == '_' || c.is_alphabetic()
 }
@@ -485,7 +473,7 @@ fn rewrite_spec_refs(spec: &str, resolved: &[usize]) -> String {
     let mut i = 0;
     let mut next_resolved = 0;
     while i < chars.len() {
-        if is_token_start(chars[i]) {
+        if is_token_char(chars[i]) {
             let start = i;
             while i < chars.len() && is_token_char(chars[i]) {
                 i += 1;
@@ -495,12 +483,10 @@ fn rewrite_spec_refs(spec: &str, resolved: &[usize]) -> String {
                     unreachable!("rewrite_spec_refs: resolved list shorter than $-tokens in spec")
                 });
                 next_resolved += 1;
-                // write! into a String never returns Err; ignore.
                 let _ = write!(out, "{idx}$");
-                i += 1; // consume $
+                i += 1;
                 continue;
             }
-            // Not a $-token; emit literally.
             out.extend(&chars[start..i]);
             continue;
         }
