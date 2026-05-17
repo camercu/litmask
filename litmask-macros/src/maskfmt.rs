@@ -188,10 +188,21 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
         .map(|(expr, name)| quote! { let #name = #expr; })
         .collect();
 
-    let writes = build_writes(&fragments, &resolved, &arg_idents);
-    let arg_checks = build_arg_checks(&resolved, &arg_idents);
+    // Hygienic output binding name — call_site idents in the user's
+    // scope cannot collide with it. Built once and reused at the
+    // declaration site, every fragment/placeholder write, and the
+    // tail expression.
+    let out_ident = syn::Ident::new("maskfmt_out", proc_macro2::Span::mixed_site());
 
-    let out_ident = out_ident_token();
+    // Each placeholder's `format_args!` template + ref list is
+    // identical between the runtime write and the compile-time
+    // type-check; compute once, share between both builders.
+    let emissions: Vec<(String, Vec<usize>)> =
+        resolved.iter().map(build_placeholder_emission).collect();
+
+    let writes = build_writes(&fragments, &resolved, &emissions, &arg_idents, &out_ident);
+    let arg_checks = build_arg_checks(&emissions, &arg_idents);
+
     Ok(quote! {
         {
             #(#arg_bindings)*
@@ -262,12 +273,13 @@ fn check_unused_positionals(
 fn build_writes(
     fragments: &[String],
     resolved: &[ResolvedPlaceholder],
+    emissions: &[(String, Vec<usize>)],
     arg_idents: &[syn::Ident],
+    out_ident: &syn::Ident,
 ) -> Vec<TokenStream2> {
     let mut writes: Vec<TokenStream2> = Vec::new();
     for (i, fragment) in fragments.iter().enumerate() {
         if !fragment.is_empty() {
-            let out_ident = out_ident_token();
             writes.push(quote! {
                 ::std::fmt::Write::write_str(
                     &mut #out_ident,
@@ -275,10 +287,9 @@ fn build_writes(
                 ).unwrap();
             });
         }
-        if let Some(ph) = resolved.get(i) {
-            let (template, refs) = build_placeholder_emission(ph);
+        if resolved.get(i).is_some() {
+            let (template, refs) = &emissions[i];
             let refs_tokens: Vec<&syn::Ident> = refs.iter().map(|&idx| &arg_idents[idx]).collect();
-            let out_ident = out_ident_token();
             writes.push(quote! {
                 ::std::fmt::Write::write_fmt(
                     &mut #out_ident,
@@ -295,24 +306,16 @@ fn build_writes(
 /// leaking the surrounding template text — each `format_args!`
 /// here carries only one placeholder's spec plus its bindings.
 fn build_arg_checks(
-    resolved: &[ResolvedPlaceholder],
+    emissions: &[(String, Vec<usize>)],
     arg_idents: &[syn::Ident],
 ) -> Vec<TokenStream2> {
-    resolved
+    emissions
         .iter()
-        .map(|ph| {
-            let (template, refs) = build_placeholder_emission(ph);
+        .map(|(template, refs)| {
             let refs_tokens: Vec<&syn::Ident> = refs.iter().map(|&idx| &arg_idents[idx]).collect();
             quote! { let _ = ::core::format_args!(#template #(, #refs_tokens)*); }
         })
         .collect()
-}
-
-/// Hygienic output ident, generated once per emission. Matches the
-/// `maskfmt_arg_N` hygiene treatment so a caller with their own
-/// `maskfmt_out` in scope doesn't collide with the internal binding.
-fn out_ident_token() -> syn::Ident {
-    syn::Ident::new("maskfmt_out", proc_macro2::Span::mixed_site())
 }
 
 /// Internal binding layout: positional args first (indices `0..P`),
