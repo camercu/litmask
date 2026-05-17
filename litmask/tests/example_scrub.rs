@@ -92,7 +92,7 @@ fn maskfmt_fragments_absent_from_binary() {
 /// §2.2.2.2: placeholder names (named args, implicit captures,
 /// dynamic-width refs) MUST NOT appear in the compiled binary. The
 /// fixtures below are unique tokens used as placeholder names in
-/// maskfmt_demo; their absence locks the proc-macro's positional
+/// `maskfmt_demo`; their absence locks the proc-macro's positional
 /// rewriting.
 #[test]
 fn maskfmt_placeholder_names_absent_from_binary() {

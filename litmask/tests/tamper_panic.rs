@@ -54,7 +54,7 @@ fn decrypt_panics_on_tampered_blob() {
 /// - `litmask-macros/src/mask.rs` — proc-macro emission for `mask!`
 ///   (`String::from_utf8(...).unwrap()` and the cstring routing).
 /// - `litmask-macros/src/maskfmt.rs` — proc-macro emission for
-///   `maskfmt!` (write_fmt + format_args! per placeholder).
+///   `maskfmt!` (`write_fmt` + `format_args!` per placeholder).
 ///
 /// Each entry pairs a path with an allowlist of substrings whose
 /// containing line executes at PROC-MACRO TIME (inside rustc's
