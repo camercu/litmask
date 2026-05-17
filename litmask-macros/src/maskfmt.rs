@@ -1,16 +1,20 @@
 //! `maskfmt!` proc-macro: format-string template whose literal fragments
 //! are individually masked via [`crate::mask::expand`] and spliced with
-//! the formatted positional arguments at runtime.
+//! the formatted arguments at runtime.
 //!
 //! Template parsing happens here at proc-macro time; only the
 //! per-placeholder format specs (e.g. `{:.2}`, `{:?}`) appear in the
-//! compiled binary — the template text never does.
+//! compiled binary — the template text never does. Placeholder names
+//! (named arguments and implicit captures) are rewritten to positional
+//! references against an internal binding table, so the names never
+//! survive into the compiled output (§2.2.2.2).
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::{Expr, LitStr, Token, parse_macro_input};
 
 /// §1.9.6 mandates this exact substring when `maskfmt!`'s template
@@ -19,16 +23,18 @@ const MASKFMT_NON_LITERAL_MSG: &str = "maskfmt! requires a string literal templa
 
 /// Implementation of the `#[proc_macro] maskfmt` entry point.
 ///
-/// Task 10 supports positional placeholders only. Named arguments
-/// (`{name}`) and implicit captures (`{var}`) land in Task 11; the
-/// parser rejects them with a typed error today.
+/// Supports positional placeholders (`{}`, `{N}`), named arguments
+/// (`maskfmt!("{x}", x = e)`), implicit captures (`{var}` where `var`
+/// is a local in scope), and dynamic width/precision (`{:>w$}`,
+/// `{:.p$}`) per spec §2.2.2.
 ///
 /// # Compile errors
 ///
 /// - Non-literal template → §1.9.6 substring "maskfmt! requires a
 ///   string literal template at the call site".
-/// - Named / implicit-capture placeholder → deferred-feature error.
-/// - Positional index out of range → typed error.
+/// - Positional argument after a named argument → typed error.
+/// - Out-of-range positional index → typed error.
+/// - Unused positional argument → typed error (mirrors `format!`).
 ///
 /// # Panics
 ///
@@ -42,6 +48,9 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     }
 }
 
+/// Parsed `maskfmt!(...)` input — the literal template plus the
+/// raw argument list, which may mix positional exprs and `name = expr`
+/// named-argument forms.
 struct MaskfmtInput {
     template: LitStr,
     args: Punctuated<Expr, Token![,]>,
@@ -63,12 +72,78 @@ impl Parse for MaskfmtInput {
     }
 }
 
-struct MaskfmtPlaceholder {
-    /// Positional index into the user's argument list.
-    index: usize,
-    /// Format spec after the colon, e.g. `"?"`, `">10"`, `".2"`.
-    /// Empty when the placeholder was bare `{}` / `{N}`.
-    spec: String,
+/// One argument from the user's call: either positional (a bare
+/// expression) or named (`ident = expr`). Named arguments are
+/// detected by matching `Expr::Assign { left: <single-ident path> }`.
+enum InputArg {
+    Positional(Expr),
+    Named { name: syn::Ident, value: Expr },
+}
+
+/// `(ident, value-expression)` pair for one named argument.
+type NamedArg = (syn::Ident, Expr);
+
+/// Split the args list into positional + named, enforcing
+/// `format!`'s ordering rule: positional args must precede named
+/// args. Returns `(positional, named)`.
+fn split_args(args: &Punctuated<Expr, Token![,]>) -> syn::Result<(Vec<Expr>, Vec<NamedArg>)> {
+    let mut positional: Vec<Expr> = Vec::new();
+    let mut named: Vec<NamedArg> = Vec::new();
+    for expr in args {
+        match classify_arg(expr.clone()) {
+            InputArg::Positional(e) => {
+                if !named.is_empty() {
+                    return Err(syn::Error::new(
+                        e.span(),
+                        "positional arguments must precede named arguments in maskfmt!",
+                    ));
+                }
+                positional.push(e);
+            }
+            InputArg::Named { name, value } => named.push((name, value)),
+        }
+    }
+    Ok((positional, named))
+}
+
+fn classify_arg(expr: Expr) -> InputArg {
+    if let Expr::Assign(assign) = &expr {
+        if let Expr::Path(path) = &*assign.left {
+            if path.qself.is_none() && path.path.segments.len() == 1 {
+                let seg = &path.path.segments[0];
+                if seg.arguments.is_none() {
+                    let name = seg.ident.clone();
+                    let value = (*assign.right).clone();
+                    return InputArg::Named { name, value };
+                }
+            }
+        }
+    }
+    InputArg::Positional(expr)
+}
+
+/// A placeholder reference — either an explicit positional index
+/// from `{N}` / `<N>$`, or an identifier from `{name}` / `<name>$`.
+/// `Auto` is used for bare `{}` which gets resolved to the
+/// next-available positional index during parsing.
+#[derive(Clone, Debug)]
+enum TemplateRef {
+    Positional(usize),
+    Named(String),
+}
+
+/// One placeholder parsed from the template. `value` is the main
+/// argument being formatted; `spec_refs` are the dynamic width /
+/// precision references found inside the spec text (e.g. `w` in
+/// `{:>w$}`). `spec_raw` is the spec text as written, with
+/// `<token>$` patterns left in their source form; resolution
+/// rewrites them to positional indices when building the per-
+/// placeholder format template.
+#[derive(Debug)]
+struct ParsedPlaceholder {
+    value: TemplateRef,
+    spec_refs: Vec<TemplateRef>,
+    spec_raw: String,
 }
 
 fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
@@ -77,26 +152,39 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
     let (fragments, placeholders) =
         parse_maskfmt_template(&template_value).map_err(|m| syn::Error::new(template_span, m))?;
 
-    let arg_count = parsed.args.len();
+    let (positional, named) = split_args(&parsed.args)?;
+    let positional_count = positional.len();
+    let named_count = named.len();
+
+    // Resolve every TemplateRef in every placeholder to a binding
+    // index in the internal layout described on `Binding`. Implicit
+    // captures are discovered here in first-reference order.
+    let mut bindings = Bindings::new(positional_count, &named);
+    let mut resolved: Vec<ResolvedPlaceholder> = Vec::with_capacity(placeholders.len());
     for ph in &placeholders {
-        if ph.index >= arg_count {
-            return Err(syn::Error::new(
-                template_span,
-                format!(
-                    "positional argument {} not provided to maskfmt! (only {} given)",
-                    ph.index, arg_count
-                ),
-            ));
+        let value_idx = bindings.resolve(&ph.value, template_span, positional_count)?;
+        let mut spec_idxs: Vec<usize> = Vec::with_capacity(ph.spec_refs.len());
+        for sr in &ph.spec_refs {
+            spec_idxs.push(bindings.resolve(sr, template_span, positional_count)?);
         }
+        resolved.push(ResolvedPlaceholder {
+            value_idx,
+            spec_idxs,
+            spec_raw: ph.spec_raw.clone(),
+        });
     }
+
     // §2.2.3.2 mirrors `format!`'s arg-count check, which is a hard
     // rustc error (not a lint). Detect unused positional args at
-    // proc-macro time so the failure mode matches `format!()` —
-    // relying on `unused_variables` would only fire under
-    // `-D warnings`, leaving stock builds permissive.
-    let used: Vec<usize> = placeholders.iter().map(|ph| ph.index).collect();
-    for i in 0..arg_count {
-        if !used.contains(&i) {
+    // proc-macro time. Implicit captures and named args don't get
+    // this check — format! doesn't either.
+    let used_positional: std::collections::BTreeSet<usize> = resolved
+        .iter()
+        .flat_map(|r| std::iter::once(r.value_idx).chain(r.spec_idxs.iter().copied()))
+        .filter(|&i| i < positional_count)
+        .collect();
+    for i in 0..positional_count {
+        if !used_positional.contains(&i) {
             return Err(syn::Error::new(
                 template_span,
                 format!(
@@ -106,60 +194,31 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
         }
     }
 
-    // Bind each user-supplied expression to a stable local exactly
-    // once, matching format!()'s single-evaluation guarantee (§2.2.3.1).
-    //
-    // Two non-obvious choices in the binding name:
-    // 1. `Span::mixed_site()` hygiene isolates the name from the
-    //    caller's identifier namespace. A user writing
-    //    `maskfmt!("{}", maskfmt_arg_0)` (with their own
-    //    `maskfmt_arg_0` in scope) sees their identifier resolve at
-    //    the call site, not our internal binding.
-    // 2. No leading underscore. Rust suppresses `unused_variables`
-    //    on `_`-prefixed names, which would silently accept extra
-    //    arguments — but §2.2.3.2 requires `format!`'s arg-count
-    //    check. A binding the placeholders never reference now
-    //    fires `unused_variables`, which CI's `-D warnings` upgrades
-    //    to a compile error.
-    let arg_idents: Vec<syn::Ident> = (0..arg_count)
+    // Bindings, in layout order (positional → named → implicit):
+    // each gets evaluated exactly once into a `maskfmt_arg_<i>` local
+    // (§2.2.3.1, §2.2.2.3-4). For implicit captures, the RHS is the
+    // bare identifier so resolution happens against the caller's
+    // local of the same name (the `mixed_site` hygiene keeps the LHS
+    // binding name isolated from the user's namespace).
+    let arg_idents: Vec<syn::Ident> = (0..bindings.total())
         .map(|i| syn::Ident::new(&format!("maskfmt_arg_{i}"), proc_macro2::Span::mixed_site()))
         .collect();
-    let arg_bindings = arg_idents
+    let arg_bindings: Vec<TokenStream2> = bindings
+        .binding_exprs(&positional, &named)
         .iter()
-        .zip(parsed.args.iter())
-        .map(|(name, expr)| {
-            quote! { let #name = #expr; }
-        });
-
-    // Canonical `{:spec}` (or `{}`) template per placeholder. Computed
-    // once and reused for both the compile-time type check and the
-    // runtime write — same spec, same canonical form.
-    let placeholder_templates: Vec<String> = placeholders
-        .iter()
-        .map(|ph| placeholder_spec_to_format_template(&ph.spec))
+        .zip(arg_idents.iter())
+        .map(|(expr, name)| quote! { let #name = #expr; })
         .collect();
 
-    // Per-placeholder compile-time type validation, separate from the
-    // runtime write. Catches spec/type incompatibility early without
-    // leaking the surrounding template text — each `format_args!`
-    // carries only the per-placeholder spec.
-    let arg_checks = placeholders
-        .iter()
-        .zip(&placeholder_templates)
-        .map(|(ph, check_template)| {
-            let arg = &arg_idents[ph.index];
-            quote! { let _ = ::core::format_args!(#check_template, #arg); }
-        });
-
-    // Hygienic output identifier — `mixed_site` isolates the binding
-    // from caller scope, parallel to the `maskfmt_arg_N` hygiene.
-    let out_ident = syn::Ident::new("maskfmt_out", proc_macro2::Span::mixed_site());
-
-    // Interleave fragment + placeholder writes. Skip empty fragments
-    // so we don't pay for a mask!() round-trip on a zero-byte literal.
+    // Per-placeholder write_fmt with format_args!() over only the
+    // bindings the placeholder actually references. The spec text
+    // is rewritten so any `<token>$` (dynamic width/precision)
+    // refers to a LOCAL positional index inside this single
+    // format_args!, never to a name.
     let mut writes: Vec<TokenStream2> = Vec::new();
     for (i, fragment) in fragments.iter().enumerate() {
         if !fragment.is_empty() {
+            let out_ident = out_ident_token();
             writes.push(quote! {
                 ::std::fmt::Write::write_str(
                     &mut #out_ident,
@@ -167,18 +226,33 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
                 ).unwrap();
             });
         }
-        if let Some(ph) = placeholders.get(i) {
-            let arg = &arg_idents[ph.index];
-            let write_template = &placeholder_templates[i];
+        if let Some(ph) = resolved.get(i) {
+            let (template, refs) = build_placeholder_emission(ph);
+            let refs_tokens: Vec<&syn::Ident> = refs.iter().map(|&idx| &arg_idents[idx]).collect();
+            let out_ident = out_ident_token();
             writes.push(quote! {
                 ::std::fmt::Write::write_fmt(
                     &mut #out_ident,
-                    ::core::format_args!(#write_template, #arg),
+                    ::core::format_args!(#template #(, #refs_tokens)*),
                 ).unwrap();
             });
         }
     }
 
+    // Per-placeholder compile-time type-check, separate from the
+    // runtime write. Catches spec/type incompatibility early without
+    // leaking the surrounding template text.
+    let arg_checks: Vec<TokenStream2> = resolved
+        .iter()
+        .map(|ph| {
+            let (template, refs) = build_placeholder_emission(ph);
+            let refs_tokens: Vec<&syn::Ident> = refs.iter().map(|&idx| &arg_idents[idx]).collect();
+            quote! { let _ = ::core::format_args!(#template #(, #refs_tokens)*); }
+        })
+        .collect();
+
+    let _ = named_count; // counted indirectly via bindings.total()
+    let out_ident = out_ident_token();
     Ok(quote! {
         {
             #(#arg_bindings)*
@@ -190,23 +264,232 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
     })
 }
 
-/// Reassemble a placeholder's spec into the canonical `{:spec}` shape
-/// that `format_args!()` accepts. Empty spec collapses to `"{}"`
-/// rather than `"{:}"` for clarity in emitted code.
-fn placeholder_spec_to_format_template(spec: &str) -> String {
-    if spec.is_empty() {
-        "{}".to_string()
-    } else {
-        format!("{{:{spec}}}")
+/// Hygienic output ident, generated once per emission. Matches the
+/// `maskfmt_arg_N` hygiene treatment so a caller with their own
+/// `maskfmt_out` in scope doesn't collide with the internal binding.
+fn out_ident_token() -> syn::Ident {
+    syn::Ident::new("maskfmt_out", proc_macro2::Span::mixed_site())
+}
+
+/// Internal binding layout: positional args first (indices `0..P`),
+/// then named args in declaration order (`P..P+N`), then implicit
+/// captures in first-reference order (`P+N..P+N+I`). Resolution maps
+/// every `TemplateRef` to a single index in this space.
+struct Bindings {
+    named_idx: std::collections::BTreeMap<String, usize>, // ident → P + i
+    implicit: Vec<syn::Ident>,                            // first-ref order
+    implicit_idx: std::collections::BTreeMap<String, usize>,
+    base_for_implicit: usize, // = P + N
+}
+
+impl Bindings {
+    fn new(positional_count: usize, named: &[NamedArg]) -> Self {
+        let mut named_idx = std::collections::BTreeMap::new();
+        for (i, (ident, _)) in named.iter().enumerate() {
+            named_idx.insert(ident.to_string(), positional_count + i);
+        }
+        Self {
+            base_for_implicit: positional_count + named.len(),
+            named_idx,
+            implicit: Vec::new(),
+            implicit_idx: std::collections::BTreeMap::new(),
+        }
     }
+
+    fn total(&self) -> usize {
+        self.base_for_implicit + self.implicit.len()
+    }
+
+    fn resolve(
+        &mut self,
+        r: &TemplateRef,
+        span: proc_macro2::Span,
+        positional_count: usize,
+    ) -> syn::Result<usize> {
+        match r {
+            TemplateRef::Positional(k) => {
+                if *k >= positional_count {
+                    return Err(syn::Error::new(
+                        span,
+                        format!(
+                            "positional argument {k} not provided to maskfmt! (only {positional_count} given)",
+                        ),
+                    ));
+                }
+                Ok(*k)
+            }
+            TemplateRef::Named(name) => {
+                if let Some(&idx) = self.named_idx.get(name) {
+                    return Ok(idx);
+                }
+                if let Some(&idx) = self.implicit_idx.get(name) {
+                    return Ok(idx);
+                }
+                // Implicit capture: register the ident with call-site
+                // resolution so it picks up the caller's local of the
+                // same name, mirroring `format!("{var}")`'s behavior.
+                let ident = syn::Ident::new(name, proc_macro2::Span::call_site());
+                let idx = self.base_for_implicit + self.implicit.len();
+                self.implicit_idx.insert(name.clone(), idx);
+                self.implicit.push(ident);
+                Ok(idx)
+            }
+        }
+    }
+
+    /// Return the per-binding initializer expressions in layout
+    /// order: positional exprs verbatim, named arg RHS exprs in
+    /// declaration order, then bare-ident exprs for each implicit
+    /// capture (which resolve at the call site).
+    fn binding_exprs(&self, positional: &[Expr], named: &[NamedArg]) -> Vec<TokenStream2> {
+        let mut out: Vec<TokenStream2> = Vec::with_capacity(self.total());
+        for e in positional {
+            out.push(quote! { #e });
+        }
+        for (_, e) in named {
+            out.push(quote! { #e });
+        }
+        // Implicit-capture bindings reference the caller's local by
+        // name. Take a borrow rather than moving: matches `format!`'s
+        // borrow semantics for `{var}` (locals stay usable after the
+        // call) and works for both Copy and non-Copy types.
+        for ident in &self.implicit {
+            out.push(quote! { &#ident });
+        }
+        out
+    }
+}
+
+/// A placeholder after binding resolution. The spec text still
+/// contains source-form refs (`<token>$`); rewriting to local indices
+/// happens in `build_placeholder_emission`.
+#[derive(Debug)]
+struct ResolvedPlaceholder {
+    value_idx: usize,
+    spec_idxs: Vec<usize>,
+    spec_raw: String,
+}
+
+/// Produce the per-placeholder `format_args!` template + the list of
+/// binding indices it references (in local-positional order). The
+/// template embeds local positional indices (`{0}`, `{1:>2$}`, etc.)
+/// so the runtime `format_args!` resolves references against the
+/// passed-in argument list rather than against names.
+fn build_placeholder_emission(ph: &ResolvedPlaceholder) -> (String, Vec<usize>) {
+    // Local-positional layout: the value is always local index 0;
+    // spec refs follow in declaration order.
+    let mut refs: Vec<usize> = Vec::with_capacity(1 + ph.spec_idxs.len());
+    refs.push(ph.value_idx);
+
+    // `binding_to_local`: maps an internal binding index → its
+    // local positional index inside this single `format_args!`.
+    let mut binding_to_local: std::collections::BTreeMap<usize, usize> =
+        std::collections::BTreeMap::new();
+    binding_to_local.insert(ph.value_idx, 0);
+    for &b in &ph.spec_idxs {
+        binding_to_local.entry(b).or_insert_with(|| {
+            let local = refs.len();
+            refs.push(b);
+            local
+        });
+    }
+
+    let spec_rewritten = rewrite_spec_refs(&ph.spec_raw, &|name_or_num| {
+        // resolve `name$` or `<num>$` to a local index by going through
+        // the (already-resolved) parent placeholder's spec_idxs in
+        // source order.
+        for (i, idx) in spec_dollar_token_iter(&ph.spec_raw).enumerate() {
+            if idx == name_or_num {
+                // i-th $-token in source order; this maps to the i-th
+                // entry of `ph.spec_idxs`.
+                let binding = ph.spec_idxs[i];
+                return binding_to_local[&binding];
+            }
+        }
+        unreachable!("dollar-token resolver miss for {name_or_num}");
+    });
+
+    let template = if spec_rewritten.is_empty() {
+        "{0}".to_string()
+    } else {
+        format!("{{0:{spec_rewritten}}}")
+    };
+    (template, refs)
+}
+
+/// Yield each `<token>$` substring in `spec` in source order. Used
+/// during emission to walk the spec's dynamic refs in lockstep with
+/// the placeholder's `spec_idxs` list.
+fn spec_dollar_token_iter(spec: &str) -> impl Iterator<Item = String> + '_ {
+    spec_scan_dollar_tokens(spec).into_iter()
+}
+
+fn spec_scan_dollar_tokens(spec: &str) -> Vec<String> {
+    let chars: Vec<char> = spec.chars().collect();
+    let mut tokens: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if is_token_start(chars[i]) {
+            let start = i;
+            while i < chars.len() && is_token_char(chars[i]) {
+                i += 1;
+            }
+            if i < chars.len() && chars[i] == '$' {
+                tokens.push(chars[start..i].iter().collect::<String>());
+                i += 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    tokens
+}
+
+fn is_token_start(c: char) -> bool {
+    c.is_ascii_digit() || c == '_' || c.is_alphabetic()
+}
+
+fn is_token_char(c: char) -> bool {
+    c.is_ascii_digit() || c == '_' || c.is_alphabetic()
+}
+
+/// Walk `spec`, replacing each `<token>$` substring with
+/// `<resolve(token)>$`. Other characters pass through verbatim.
+fn rewrite_spec_refs(spec: &str, resolve: &dyn Fn(&str) -> usize) -> String {
+    use std::fmt::Write as _;
+    let chars: Vec<char> = spec.chars().collect();
+    let mut out = String::with_capacity(spec.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if is_token_start(chars[i]) {
+            let start = i;
+            while i < chars.len() && is_token_char(chars[i]) {
+                i += 1;
+            }
+            if i < chars.len() && chars[i] == '$' {
+                let token: String = chars[start..i].iter().collect();
+                let idx = resolve(&token);
+                // write! into a String never returns Err; ignore.
+                let _ = write!(out, "{idx}$");
+                i += 1; // consume $
+                continue;
+            }
+            // Not a $-token; emit literally.
+            out.extend(&chars[start..i]);
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
 }
 
 /// Walk the user's template once, emitting alternating literal
 /// fragments and parsed placeholders. The result invariant is
 /// `fragments.len() == placeholders.len() + 1`.
-fn parse_maskfmt_template(s: &str) -> Result<(Vec<String>, Vec<MaskfmtPlaceholder>), String> {
+fn parse_maskfmt_template(s: &str) -> Result<(Vec<String>, Vec<ParsedPlaceholder>), String> {
     let mut fragments = vec![String::new()];
-    let mut placeholders: Vec<MaskfmtPlaceholder> = Vec::new();
+    let mut placeholders: Vec<ParsedPlaceholder> = Vec::new();
     let mut next_auto = 0_usize;
     let mut chars = s.chars().peekable();
 
@@ -218,70 +501,8 @@ fn parse_maskfmt_template(s: &str) -> Result<(Vec<String>, Vec<MaskfmtPlaceholde
                     fragments.last_mut().unwrap().push('{');
                     continue;
                 }
-                // Parse optional positional index.
-                let mut index_str = String::new();
-                while let Some(&c) = chars.peek() {
-                    if c.is_ascii_digit() {
-                        index_str.push(c);
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
-                // Reject named arguments and implicit captures for
-                // Task 10's positional-only scope. Identifier-leading
-                // chars in placeholder position are the signal.
-                if let Some(&c) = chars.peek()
-                    && (c.is_alphabetic() || c == '_')
-                {
-                    return Err(
-                        "named arguments and implicit captures are not yet supported by maskfmt!"
-                            .to_string(),
-                    );
-                }
-                let index = if index_str.is_empty() {
-                    let i = next_auto;
-                    next_auto = next_auto.checked_add(1).ok_or_else(|| {
-                        "too many auto-positional placeholders in maskfmt! template".to_string()
-                    })?;
-                    i
-                } else {
-                    index_str
-                        .parse::<usize>()
-                        .map_err(|_| "invalid positional index in maskfmt! template".to_string())?
-                };
-                let mut spec = String::new();
-                match chars.next() {
-                    Some(':') => loop {
-                        match chars.next() {
-                            Some('}') => break,
-                            // Dynamic width / precision (`{:>{w}}`,
-                            // `{:.prec$}`) is deferred to Task 11 per
-                            // §2.2.2.6. Surfacing the deferred-feature
-                            // message at parse time gives a clearer
-                            // diagnostic than the natural "unmatched
-                            // `}`" that would otherwise fire on the
-                            // trailing brace.
-                            Some('{') => {
-                                return Err(
-                                    "dynamic width and precision are not yet supported by maskfmt!"
-                                        .to_string(),
-                                );
-                            }
-                            Some(c) => spec.push(c),
-                            None => {
-                                return Err(
-                                    "unclosed `{...}` placeholder in maskfmt! template".to_string()
-                                );
-                            }
-                        }
-                    },
-                    Some('}') => {}
-                    _ => {
-                        return Err("unclosed `{...}` placeholder in maskfmt! template".to_string());
-                    }
-                }
-                placeholders.push(MaskfmtPlaceholder { index, spec });
+                let placeholder = parse_placeholder_body(&mut chars, &mut next_auto)?;
+                placeholders.push(placeholder);
                 fragments.push(String::new());
             }
             '}' => {
@@ -300,4 +521,112 @@ fn parse_maskfmt_template(s: &str) -> Result<(Vec<String>, Vec<MaskfmtPlaceholde
     }
 
     Ok((fragments, placeholders))
+}
+
+/// Parse the inside of a single `{...}` placeholder. The opening
+/// `{` has already been consumed; this consumes through the closing
+/// `}` and returns the parsed placeholder.
+fn parse_placeholder_body(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    next_auto: &mut usize,
+) -> Result<ParsedPlaceholder, String> {
+    let header = consume_placeholder_header(chars)?;
+    let value = resolve_value_ref(&header, next_auto)?;
+    let (spec_raw, spec_refs) = consume_placeholder_spec(chars)?;
+    Ok(ParsedPlaceholder {
+        value,
+        spec_refs,
+        spec_raw,
+    })
+}
+
+/// Consume the placeholder's header — the chars between `{` and
+/// either `:` or `}`. Empty header means bare `{}`; all-digit means
+/// explicit positional; identifier means named / implicit-capture.
+fn consume_placeholder_header(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) -> Result<String, String> {
+    let mut header = String::new();
+    while let Some(&c) = chars.peek() {
+        if c == ':' || c == '}' {
+            break;
+        }
+        if !is_token_char(c) {
+            return Err(format!(
+                "unexpected `{c}` inside `{{...}}` placeholder in maskfmt! template",
+            ));
+        }
+        header.push(c);
+        chars.next();
+    }
+    Ok(header)
+}
+
+fn resolve_value_ref(header: &str, next_auto: &mut usize) -> Result<TemplateRef, String> {
+    if header.is_empty() {
+        let i = *next_auto;
+        *next_auto = next_auto.checked_add(1).ok_or_else(|| {
+            "too many auto-positional placeholders in maskfmt! template".to_string()
+        })?;
+        Ok(TemplateRef::Positional(i))
+    } else if header.chars().all(|c| c.is_ascii_digit()) {
+        let i = header
+            .parse::<usize>()
+            .map_err(|_| "invalid positional index in maskfmt! template".to_string())?;
+        Ok(TemplateRef::Positional(i))
+    } else {
+        Ok(TemplateRef::Named(header.to_string()))
+    }
+}
+
+/// Consume the placeholder's spec — everything between an optional
+/// `:` and the closing `}`. Collects `<token>$` patterns as
+/// `TemplateRef`s in source order; the spec text itself is preserved
+/// verbatim for later rewriting in `build_placeholder_emission`.
+fn consume_placeholder_spec(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) -> Result<(String, Vec<TemplateRef>), String> {
+    let mut spec_raw = String::new();
+    let mut spec_refs: Vec<TemplateRef> = Vec::new();
+    match chars.next() {
+        Some(':') => {
+            let mut token = String::new();
+            loop {
+                match chars.next() {
+                    Some('}') => break,
+                    Some('{') => {
+                        return Err(
+                            "nested `{` inside maskfmt! placeholder spec; use `<name>$` for dynamic width / precision"
+                                .to_string(),
+                        );
+                    }
+                    Some(c) => {
+                        spec_raw.push(c);
+                        if is_token_char(c) {
+                            token.push(c);
+                        } else if c == '$' && !token.is_empty() {
+                            spec_refs.push(make_template_ref(&token));
+                            token.clear();
+                        } else {
+                            token.clear();
+                        }
+                    }
+                    None => {
+                        return Err("unclosed `{...}` placeholder in maskfmt! template".to_string());
+                    }
+                }
+            }
+        }
+        Some('}') => {}
+        _ => return Err("unclosed `{...}` placeholder in maskfmt! template".to_string()),
+    }
+    Ok((spec_raw, spec_refs))
+}
+
+fn make_template_ref(token: &str) -> TemplateRef {
+    if token.chars().all(|c| c.is_ascii_digit()) {
+        TemplateRef::Positional(token.parse::<usize>().expect("all-digits parses as usize"))
+    } else {
+        TemplateRef::Named(token.to_string())
+    }
 }
