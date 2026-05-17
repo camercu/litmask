@@ -27,7 +27,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::spanned::Spanned;
 use syn::visit_mut::{self, VisitMut};
-use syn::{Expr, ExprLit, Item, ItemConst, ItemMod, ItemStatic, Lit, Pat, parse_macro_input};
+use syn::{Expr, ExprLit, Item, ItemConst, ItemStatic, Lit, Pat, parse_macro_input};
 
 /// Implementation of the `#[proc_macro_attribute] mask_all` entry
 /// point. The attribute applies only to module items (§2.3.1.1);
