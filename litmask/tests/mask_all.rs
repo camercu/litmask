@@ -157,3 +157,37 @@ fn mask_all_skips_const_and_static_initializers() {
     assert!(greeting.contains("static-also-compile-time"));
     assert!(greeting.contains("runtime-eligible"));
 }
+
+// ── §2.3.2.1 byte-string + c-string coverage ──────────────────
+
+#[mask_all]
+mod byte_string_literal_round_trip {
+    pub fn fixture() -> Vec<u8> {
+        let bytes = b"chromium-bobcat-1c5e92";
+        bytes.to_vec()
+    }
+}
+
+#[test]
+fn mask_all_rewrites_byte_string_literals() {
+    common::init_once();
+    assert_eq!(
+        byte_string_literal_round_trip::fixture(),
+        b"chromium-bobcat-1c5e92".to_vec(),
+    );
+}
+
+#[mask_all]
+mod c_string_literal_round_trip {
+    use std::ffi::CString;
+    pub fn fixture() -> CString {
+        c"radium-quetzal-8e3a51".to_owned()
+    }
+}
+
+#[test]
+fn mask_all_rewrites_c_string_literals() {
+    common::init_once();
+    let s = c_string_literal_round_trip::fixture();
+    assert_eq!(s.to_bytes(), b"radium-quetzal-8e3a51");
+}
