@@ -1,5 +1,5 @@
 //! Helpers shared across the `mask`, `weak_mask`, `maskfmt`, and
-//! `unmasked` macros: OUT_DIR artifact loading + byte-array token
+//! `unmasked` macros: `OUT_DIR` artifact loading + byte-array token
 //! emission. Each per-macro module owns its own input grammar and
 //! expansion logic; this module owns the small set of utilities that
 //! cross those seams.
@@ -12,6 +12,13 @@ use std::sync::{Mutex, OnceLock};
 use proc_macro2::TokenStream;
 use quote::quote;
 use zeroize::Zeroizing;
+
+/// Process-lifetime cache of `OUT_DIR` artifact contents keyed by file
+/// name. `Zeroizing<Vec<u8>>` keeps the type-level signal that the
+/// cached buffers carry secret material (`litmask_key.bin`,
+/// `litmask_seed.bin`); statics don't run `Drop`, but the wrap covers
+/// any code path that evicts an entry.
+type ArtifactCache = Mutex<HashMap<&'static str, Zeroizing<Vec<u8>>>>;
 
 /// Load a fixed-size build artifact from the caller crate's `OUT_DIR`.
 /// Cached per `name` for the lifetime of the proc-macro process — the
@@ -32,7 +39,7 @@ use zeroize::Zeroizing;
 /// out-of-date `litmask_build::emit()` invocation in the caller's
 /// `build.rs`.
 pub(crate) fn load_out_dir_artifact<const N: usize>(name: &'static str) -> [u8; N] {
-    static CACHE: OnceLock<Mutex<HashMap<&'static str, Zeroizing<Vec<u8>>>>> = OnceLock::new();
+    static CACHE: OnceLock<ArtifactCache> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let mut map = cache.lock().expect("artifact cache mutex poisoned");
     let bytes = map.entry(name).or_insert_with(|| read_out_dir_file(name));
