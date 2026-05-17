@@ -12,7 +12,7 @@ mod common;
 /// this test green; the only thing we assert is that the call
 /// unwinds.
 #[test]
-fn decrypt_str_panics_on_tampered_blob() {
+fn decrypt_panics_on_tampered_blob() {
     // `init_once` populates the process-global mask key cell from the
     // production unlock key. The subsequent blob is the minimum valid
     // shape (nonce + zero-byte ciphertext + tag) but zero-filled, so
@@ -31,14 +31,14 @@ fn decrypt_str_panics_on_tampered_blob() {
 
     let outcome = std::panic::catch_unwind(|| {
         let blob: [u8; 28] = [0u8; 28];
-        let _ = ::litmask::__internal::__decrypt_str(&blob, ::litmask::__wrapper_bytes!());
+        let _ = ::litmask::__internal::__decrypt(&blob, ::litmask::__wrapper_bytes!());
     });
 
     std::panic::set_hook(prev_hook);
 
     assert!(
         outcome.is_err(),
-        "expected __decrypt_str to panic on tampered blob"
+        "expected __decrypt to panic on tampered blob"
     );
 }
 

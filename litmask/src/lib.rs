@@ -102,20 +102,21 @@ macro_rules! init_with {
 }
 
 /// Internal dispatch for `mask!(c"...")` expansion. With the `std`
-/// feature, forwards to [`__internal::__decrypt_cstring`]; without
-/// it, emits a `compile_error!` pointing at the user's `mask!(c"...")`
-/// call site.
+/// feature, wraps the runtime's [`__internal::__decrypt`] return in
+/// `CString::new(...).unwrap()`; without it, emits a `compile_error!`
+/// pointing at the user's `mask!(c"...")` call site.
 ///
 /// Lives at the crate root (not inside [`__internal`]) because the
 /// proc-macro can't read the consumer's feature flags — gating must
-/// happen here, in `litmask`'s own cfg context, before the call
-/// reaches the runtime helper.
+/// happen here, in `litmask`'s own cfg context. The c-string-specific
+/// construction lives in this shim rather than in a dedicated runtime
+/// helper because it is the only kind whose return type is `std`-only.
 #[cfg(feature = "std")]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __decrypt_cstring_call {
     ($blob:expr, $wrapper:expr) => {
-        $crate::__internal::__decrypt_cstring($blob, $wrapper)
+        ::std::ffi::CString::new($crate::__internal::__decrypt($blob, $wrapper)).unwrap()
     };
 }
 
@@ -135,8 +136,12 @@ macro_rules! __decrypt_cstring_call {
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.
     #[cfg(feature = "std")]
-    pub use crate::runtime::__decrypt_cstring;
-    #[cfg(feature = "std")]
     pub use crate::runtime::__weak_decode;
-    pub use crate::runtime::{__decrypt_bytes, __decrypt_str, __init_with_wrapper};
+    pub use crate::runtime::{__decrypt, __init_with_wrapper};
+    // Re-export under a hygienic alias so the proc-macro can emit a
+    // single `::litmask::__internal::__String::from_utf8(...)` path
+    // that resolves identically under `std`, `no_std + alloc`, and
+    // any future feature combination — without forcing user crates
+    // to add `extern crate alloc;` for paths the macro emits.
+    pub use alloc::string::String as __String;
 }

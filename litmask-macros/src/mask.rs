@@ -113,17 +113,22 @@ impl MaskInput {
     }
 
     /// Build the call expression that decrypts the blob to the
-    /// kind-appropriate type. The c-string arm routes through a
-    /// `macro_rules` dispatcher in `litmask` so a missing-`std`-feature
-    /// build surfaces a clear `compile_error!` at the user's
-    /// `mask!(c"...")` site instead of a "function not found" diagnostic.
+    /// kind-appropriate type. All three arms share the same runtime
+    /// `__decrypt(blob, wrapper) -> Vec<u8>` core; only the
+    /// type-construction wrapper differs. The c-string arm routes
+    /// through a `macro_rules` dispatcher in `litmask` so a
+    /// missing-`std`-feature build surfaces a clear `compile_error!`
+    /// at the user's `mask!(c"...")` site instead of a
+    /// "`CString` not found" diagnostic.
     fn decrypt_expr(&self, blob: &TokenStream2, wrapper: &TokenStream2) -> TokenStream2 {
         match self {
             Self::Str(_) => quote! {
-                ::litmask::__internal::__decrypt_str(#blob, #wrapper)
+                ::litmask::__internal::__String::from_utf8(
+                    ::litmask::__internal::__decrypt(#blob, #wrapper)
+                ).unwrap()
             },
             Self::ByteStr(_) => quote! {
-                ::litmask::__internal::__decrypt_bytes(#blob, #wrapper)
+                ::litmask::__internal::__decrypt(#blob, #wrapper)
             },
             Self::CStr(_) => quote! {
                 ::litmask::__decrypt_cstring_call!(#blob, #wrapper)
