@@ -14,6 +14,18 @@ edition = "2024"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/camercu/litmask"
+# crates.io publish is intentionally disabled at the workspace level.
+# Two effects:
+# (1) cargo publish errors out unconditionally for every member — the
+#     `.releaserc.json` `publish: false` is the soft equivalent; this
+#     adds a hard guard at the manifest level.
+# (2) cargo-deny's `allow-wildcard-paths = true` in deny.toml only
+#     applies to non-public crates, so the workspace.dependencies
+#     entries (which carry no version field) pass the wildcards lint.
+# To enable publishing: flip to `publish = true` here, add explicit
+# `version = "X.Y.Z"` to each `[workspace.dependencies]` entry, and
+# flip `.releaserc.json`'s `semantic-release-cargo` `publish` field.
+publish = false
 
 # Path-only inter-workspace dependencies. Member crates use
 # `dep.workspace = true` to inherit the path. Versions are deliberately

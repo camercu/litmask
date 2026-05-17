@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish.workspace = true
 build = "build.rs"
 # Explicit allowlist for `cargo publish`. `tests/` is dev-only (runs in
 # this workspace's CI, not for downstream consumers) and is excluded to
