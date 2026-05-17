@@ -395,12 +395,11 @@ struct ResolvedPlaceholder {
 /// passed-in argument list rather than against names.
 fn build_placeholder_emission(ph: &ResolvedPlaceholder) -> (String, Vec<usize>) {
     // Local-positional layout: the value is always local index 0;
-    // spec refs follow in declaration order.
+    // spec refs follow in declaration order, deduplicated by binding
+    // index so a placeholder like `{:>w$.w$}` only passes `w` once
+    // to `format_args!`.
     let mut refs: Vec<usize> = Vec::with_capacity(1 + ph.spec_idxs.len());
     refs.push(ph.value_idx);
-
-    // `binding_to_local`: maps an internal binding index → its
-    // local positional index inside this single `format_args!`.
     let mut binding_to_local: std::collections::BTreeMap<usize, usize> =
         std::collections::BTreeMap::new();
     binding_to_local.insert(ph.value_idx, 0);
@@ -412,20 +411,13 @@ fn build_placeholder_emission(ph: &ResolvedPlaceholder) -> (String, Vec<usize>) 
         });
     }
 
-    let spec_rewritten = rewrite_spec_refs(&ph.spec_raw, &|name_or_num| {
-        // resolve `name$` or `<num>$` to a local index by going through
-        // the (already-resolved) parent placeholder's spec_idxs in
-        // source order.
-        for (i, idx) in spec_dollar_token_iter(&ph.spec_raw).enumerate() {
-            if idx == name_or_num {
-                // i-th $-token in source order; this maps to the i-th
-                // entry of `ph.spec_idxs`.
-                let binding = ph.spec_idxs[i];
-                return binding_to_local[&binding];
-            }
-        }
-        unreachable!("dollar-token resolver miss for {name_or_num}");
-    });
+    // Precompute the per-$-token local index in source order so the
+    // rewriter walks the spec linearly — one $-token consumes one
+    // entry of `local_idx_in_source_order`. This avoids re-scanning
+    // the spec for each token, which would be O(K^2).
+    let local_idx_in_source_order: Vec<usize> =
+        ph.spec_idxs.iter().map(|b| binding_to_local[b]).collect();
+    let spec_rewritten = rewrite_spec_refs(&ph.spec_raw, &local_idx_in_source_order);
 
     let template = if spec_rewritten.is_empty() {
         "{0}".to_string()
@@ -433,34 +425,6 @@ fn build_placeholder_emission(ph: &ResolvedPlaceholder) -> (String, Vec<usize>) 
         format!("{{0:{spec_rewritten}}}")
     };
     (template, refs)
-}
-
-/// Yield each `<token>$` substring in `spec` in source order. Used
-/// during emission to walk the spec's dynamic refs in lockstep with
-/// the placeholder's `spec_idxs` list.
-fn spec_dollar_token_iter(spec: &str) -> impl Iterator<Item = String> + '_ {
-    spec_scan_dollar_tokens(spec).into_iter()
-}
-
-fn spec_scan_dollar_tokens(spec: &str) -> Vec<String> {
-    let chars: Vec<char> = spec.chars().collect();
-    let mut tokens: Vec<String> = Vec::new();
-    let mut i = 0;
-    while i < chars.len() {
-        if is_token_start(chars[i]) {
-            let start = i;
-            while i < chars.len() && is_token_char(chars[i]) {
-                i += 1;
-            }
-            if i < chars.len() && chars[i] == '$' {
-                tokens.push(chars[start..i].iter().collect::<String>());
-                i += 1;
-                continue;
-            }
-        }
-        i += 1;
-    }
-    tokens
 }
 
 fn is_token_start(c: char) -> bool {
@@ -471,13 +435,20 @@ fn is_token_char(c: char) -> bool {
     c.is_ascii_digit() || c == '_' || c.is_alphabetic()
 }
 
-/// Walk `spec`, replacing each `<token>$` substring with
-/// `<resolve(token)>$`. Other characters pass through verbatim.
-fn rewrite_spec_refs(spec: &str, resolve: &dyn Fn(&str) -> usize) -> String {
+/// Walk `spec`, replacing the i-th `<token>$` substring with
+/// `<resolved[i]>$`. Non-`$`-suffixed token runs and all other
+/// characters pass through verbatim.
+///
+/// Precondition: `resolved.len()` equals the count of source-order
+/// `<token>$` substrings in `spec`. The parser builds both lists in
+/// lockstep (`ParsedPlaceholder::spec_refs`), so this is invariant
+/// by construction; a mismatch trips the `unreachable!()` below.
+fn rewrite_spec_refs(spec: &str, resolved: &[usize]) -> String {
     use std::fmt::Write as _;
     let chars: Vec<char> = spec.chars().collect();
     let mut out = String::with_capacity(spec.len());
     let mut i = 0;
+    let mut next_resolved = 0;
     while i < chars.len() {
         if is_token_start(chars[i]) {
             let start = i;
@@ -485,8 +456,10 @@ fn rewrite_spec_refs(spec: &str, resolve: &dyn Fn(&str) -> usize) -> String {
                 i += 1;
             }
             if i < chars.len() && chars[i] == '$' {
-                let token: String = chars[start..i].iter().collect();
-                let idx = resolve(&token);
+                let idx = *resolved.get(next_resolved).unwrap_or_else(|| {
+                    unreachable!("rewrite_spec_refs: resolved list shorter than $-tokens in spec")
+                });
+                next_resolved += 1;
                 // write! into a String never returns Err; ignore.
                 let _ = write!(out, "{idx}$");
                 i += 1; // consume $
