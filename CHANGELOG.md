@@ -17,7 +17,7 @@
 
 * **build:** honor LITMASK_RNG_SEED + profile-aware seed sourcing ([a6bbbfe](https://github.com/camercu/litmask/commit/a6bbbfe654c13f88ead4578e4ae022e60d76e298))
 * **runtime:** gate decrypt_wrapper_or_panic on std feature ([206fdb7](https://github.com/camercu/litmask/commit/206fdb7e33e2af7e3a68afd739fb1b080a85f609))
-* **tests:** rename fixture marker vermillion → vermilion ([88270cd](https://github.com/camercu/litmask/commit/88270cdae0f61cc35587c022afc3580c8e0e3730))
+* **tests:** correct misspelling of vermilion fixture marker ([88270cd](https://github.com/camercu/litmask/commit/88270cdae0f61cc35587c022afc3580c8e0e3730))
 
 
 ### Reverts
