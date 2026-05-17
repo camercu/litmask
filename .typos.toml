@@ -5,6 +5,14 @@
 extend-ignore-re = []
 
 [default.extend-words]
+# `vermillion` appears verbatim as a historical commit subject quoted
+# in the auto-generated CHANGELOG.md (the rename `vermillion →
+# vermilion` documented in 88270cd). Allowlist the word so semantic-
+# release's changelog regeneration on each release doesn't re-trip
+# the typos lint. Real `vermillion` typos in source code remain
+# unguarded — the trade-off is acceptable: the word is rare and any
+# new source-side occurrence would be intentional.
+vermillion = "vermillion"
 
 [files]
 extend-exclude = ["target/", "node_modules/", "Cargo.lock", "package-lock.json"]
