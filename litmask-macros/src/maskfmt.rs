@@ -172,45 +172,13 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
 
     let (positional, named) = split_args(&parsed.args)?;
     let positional_count = positional.len();
-    let named_count = named.len();
 
     // Resolve every TemplateRef in every placeholder to a binding
-    // index in the internal layout described on `Binding`. Implicit
+    // index in the internal layout described on `Bindings`. Implicit
     // captures are discovered here in first-reference order.
     let mut bindings = Bindings::new(positional_count, &named);
-    let mut resolved: Vec<ResolvedPlaceholder> = Vec::with_capacity(placeholders.len());
-    for ph in &placeholders {
-        let value_idx = bindings.resolve(&ph.value, template_span, positional_count)?;
-        let mut spec_idxs: Vec<usize> = Vec::with_capacity(ph.spec_refs.len());
-        for sr in &ph.spec_refs {
-            spec_idxs.push(bindings.resolve(sr, template_span, positional_count)?);
-        }
-        resolved.push(ResolvedPlaceholder {
-            value_idx,
-            spec_idxs,
-            spec_raw: ph.spec_raw.clone(),
-        });
-    }
-
-    // §2.2.3.2 mirrors `format!`'s arg-count check, which is a hard
-    // rustc error (not a lint). Detect unused positional args at
-    // proc-macro time. Implicit captures and named args don't get
-    // this check — format! doesn't either.
-    let used_positional: std::collections::BTreeSet<usize> = resolved
-        .iter()
-        .flat_map(|r| std::iter::once(r.value_idx).chain(r.spec_idxs.iter().copied()))
-        .filter(|&i| i < positional_count)
-        .collect();
-    for i in 0..positional_count {
-        if !used_positional.contains(&i) {
-            return Err(syn::Error::new(
-                template_span,
-                format!(
-                    "positional argument {i} is never used (give it a placeholder or remove it from the maskfmt! call)",
-                ),
-            ));
-        }
-    }
+    let resolved = resolve_placeholders(&placeholders, &mut bindings, template_span)?;
+    check_unused_positionals(&resolved, positional_count, template_span)?;
 
     // Bindings, in layout order (positional → named → implicit):
     // each gets evaluated exactly once into a `maskfmt_arg_<i>` local
@@ -228,11 +196,83 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
         .map(|(expr, name)| quote! { let #name = #expr; })
         .collect();
 
-    // Per-placeholder write_fmt with format_args!() over only the
-    // bindings the placeholder actually references. The spec text
-    // is rewritten so any `<token>$` (dynamic width/precision)
-    // refers to a LOCAL positional index inside this single
-    // format_args!, never to a name.
+    let writes = build_writes(&fragments, &resolved, &arg_idents);
+    let arg_checks = build_arg_checks(&resolved, &arg_idents);
+
+    let out_ident = out_ident_token();
+    Ok(quote! {
+        {
+            #(#arg_bindings)*
+            #(#arg_checks)*
+            let mut #out_ident = ::std::string::String::new();
+            #(#writes)*
+            #out_ident
+        }
+    })
+}
+
+/// Walk parsed placeholders + resolve every `TemplateRef` against
+/// the binding table. Implicit captures are discovered here in
+/// first-reference order via `Bindings::resolve`.
+fn resolve_placeholders(
+    placeholders: &[ParsedPlaceholder],
+    bindings: &mut Bindings,
+    template_span: proc_macro2::Span,
+) -> syn::Result<Vec<ResolvedPlaceholder>> {
+    let positional_count = bindings.positional_count();
+    let mut resolved: Vec<ResolvedPlaceholder> = Vec::with_capacity(placeholders.len());
+    for ph in placeholders {
+        let value_idx = bindings.resolve(&ph.value, template_span, positional_count)?;
+        let mut spec_idxs: Vec<usize> = Vec::with_capacity(ph.spec_refs.len());
+        for sr in &ph.spec_refs {
+            spec_idxs.push(bindings.resolve(sr, template_span, positional_count)?);
+        }
+        resolved.push(ResolvedPlaceholder {
+            value_idx,
+            spec_idxs,
+            spec_raw: ph.spec_raw.clone(),
+        });
+    }
+    Ok(resolved)
+}
+
+/// §2.2.3.2: mirror `format!`'s "positional argument never used"
+/// hard error. Implicit captures and named args don't get this
+/// check — format! doesn't either.
+fn check_unused_positionals(
+    resolved: &[ResolvedPlaceholder],
+    positional_count: usize,
+    template_span: proc_macro2::Span,
+) -> syn::Result<()> {
+    let used: std::collections::BTreeSet<usize> = resolved
+        .iter()
+        .flat_map(|r| std::iter::once(r.value_idx).chain(r.spec_idxs.iter().copied()))
+        .filter(|&i| i < positional_count)
+        .collect();
+    for i in 0..positional_count {
+        if !used.contains(&i) {
+            return Err(syn::Error::new(
+                template_span,
+                format!(
+                    "positional argument {i} is never used (give it a placeholder or remove it from the maskfmt! call)",
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Interleave fragment + placeholder writes. Each fragment is masked
+/// individually via `mask!()` (§2.2.2.1); each placeholder lands as
+/// its own `format_args!` over only the bindings it references,
+/// with the spec text rewritten so any `<token>$` resolves to a
+/// LOCAL positional index — placeholder names never reach
+/// `format_args!`'s argument list either.
+fn build_writes(
+    fragments: &[String],
+    resolved: &[ResolvedPlaceholder],
+    arg_idents: &[syn::Ident],
+) -> Vec<TokenStream2> {
     let mut writes: Vec<TokenStream2> = Vec::new();
     for (i, fragment) in fragments.iter().enumerate() {
         if !fragment.is_empty() {
@@ -256,30 +296,25 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
             });
         }
     }
+    writes
+}
 
-    // Per-placeholder compile-time type-check, separate from the
-    // runtime write. Catches spec/type incompatibility early without
-    // leaking the surrounding template text.
-    let arg_checks: Vec<TokenStream2> = resolved
+/// Per-placeholder compile-time type-check, separate from the
+/// runtime write. Catches spec/type incompatibility early without
+/// leaking the surrounding template text — each `format_args!`
+/// here carries only one placeholder's spec plus its bindings.
+fn build_arg_checks(
+    resolved: &[ResolvedPlaceholder],
+    arg_idents: &[syn::Ident],
+) -> Vec<TokenStream2> {
+    resolved
         .iter()
         .map(|ph| {
             let (template, refs) = build_placeholder_emission(ph);
             let refs_tokens: Vec<&syn::Ident> = refs.iter().map(|&idx| &arg_idents[idx]).collect();
             quote! { let _ = ::core::format_args!(#template #(, #refs_tokens)*); }
         })
-        .collect();
-
-    let _ = named_count; // counted indirectly via bindings.total()
-    let out_ident = out_ident_token();
-    Ok(quote! {
-        {
-            #(#arg_bindings)*
-            #(#arg_checks)*
-            let mut #out_ident = ::std::string::String::new();
-            #(#writes)*
-            #out_ident
-        }
-    })
+        .collect()
 }
 
 /// Hygienic output ident, generated once per emission. Matches the
@@ -294,6 +329,7 @@ fn out_ident_token() -> syn::Ident {
 /// captures in first-reference order (`P+N..P+N+I`). Resolution maps
 /// every `TemplateRef` to a single index in this space.
 struct Bindings {
+    positional_count: usize,
     named_idx: std::collections::BTreeMap<String, usize>, // ident → P + i
     implicit: Vec<syn::Ident>,                            // first-ref order
     implicit_idx: std::collections::BTreeMap<String, usize>,
@@ -307,11 +343,16 @@ impl Bindings {
             named_idx.insert(ident.to_string(), positional_count + i);
         }
         Self {
+            positional_count,
             base_for_implicit: positional_count + named.len(),
             named_idx,
             implicit: Vec::new(),
             implicit_idx: std::collections::BTreeMap::new(),
         }
+    }
+
+    fn positional_count(&self) -> usize {
+        self.positional_count
     }
 
     fn total(&self) -> usize {
