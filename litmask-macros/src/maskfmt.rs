@@ -612,39 +612,42 @@ fn resolve_value_ref(header: &str, next_auto: &mut usize) -> Result<TemplateRef,
 fn consume_placeholder_spec(
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
 ) -> Result<(String, Vec<TemplateRef>), String> {
+    // Caller has already consumed the header. The next char tells us
+    // whether a spec follows (`:`) or the placeholder closes here
+    // (`}`); anything else means an unterminated `{...}`.
+    match chars.next() {
+        Some(':') => {}
+        Some('}') => return Ok((String::new(), Vec::new())),
+        _ => return Err("unclosed `{...}` placeholder in maskfmt! template".to_string()),
+    }
+
     let mut spec_raw = String::new();
     let mut spec_refs: Vec<TemplateRef> = Vec::new();
-    match chars.next() {
-        Some(':') => {
-            let mut token = String::new();
-            loop {
-                match chars.next() {
-                    Some('}') => break,
-                    Some('{') => {
-                        return Err(
-                            "nested `{` inside maskfmt! placeholder spec; use `<name>$` for dynamic width / precision"
-                                .to_string(),
-                        );
-                    }
-                    Some(c) => {
-                        spec_raw.push(c);
-                        if is_token_char(c) {
-                            token.push(c);
-                        } else if c == '$' && !token.is_empty() {
-                            spec_refs.push(make_template_ref(&token));
-                            token.clear();
-                        } else {
-                            token.clear();
-                        }
-                    }
-                    None => {
-                        return Err("unclosed `{...}` placeholder in maskfmt! template".to_string());
-                    }
+    let mut token = String::new();
+    loop {
+        let Some(c) = chars.next() else {
+            return Err("unclosed `{...}` placeholder in maskfmt! template".to_string());
+        };
+        match c {
+            '}' => break,
+            '{' => {
+                return Err(
+                    "nested `{` inside maskfmt! placeholder spec; use `<name>$` for dynamic width / precision"
+                        .to_string(),
+                );
+            }
+            _ => {
+                spec_raw.push(c);
+                if is_token_char(c) {
+                    token.push(c);
+                } else if c == '$' && !token.is_empty() {
+                    spec_refs.push(make_template_ref(&token));
+                    token.clear();
+                } else {
+                    token.clear();
                 }
             }
         }
-        Some('}') => {}
-        _ => return Err("unclosed `{...}` placeholder in maskfmt! template".to_string()),
     }
     Ok((spec_raw, spec_refs))
 }
