@@ -42,28 +42,63 @@ fn decrypt_panics_on_tampered_blob() {
     );
 }
 
-/// Scans `runtime.rs` for `.expect("msg")` and `panic!("msg"` patterns
-/// — the two ways a litmask-specific string would leak into a binary
-/// from the decryption path. Adding any new helper in `runtime.rs`
-/// must use the match-Ok-Err-panic!() form documented in §1.9.5.
+/// Scans every file that contributes text to the user binary's
+/// `mask!()` decryption path for `.expect("msg")` and `panic!("msg")`
+/// patterns — the two ways a litmask-specific string would leak into
+/// user binaries (§1.9.5). The decrypt-collapse refactor (661393e)
+/// moved type construction out of `runtime.rs` and into the proc-macro
+/// emission + the c-string shim, so the scan now spans three files:
+///
+/// - `runtime.rs` — `__decrypt`, `__weak_decode`, lazy-init helpers.
+/// - `litmask/src/lib.rs` — `__decrypt_cstring_call!` shim.
+/// - `litmask-macros/src/mask.rs` — proc-macro emission for `mask!`
+///   (`String::from_utf8(...).unwrap()` and the cstring routing).
+///
+/// Each entry pairs a path with an allowlist of substrings whose
+/// containing line executes at PROC-MACRO TIME (inside rustc's
+/// process) and therefore cannot leak into a user binary. New
+/// allowlist entries require §1.9.5 review.
 #[test]
-fn no_custom_panic_messages_in_mask_decryption_path() {
+fn no_custom_panic_messages_in_decryption_path() {
     let manifest = env!("CARGO_MANIFEST_DIR");
-    let src =
-        std::fs::read_to_string(format!("{manifest}/src/runtime.rs")).expect("read runtime.rs");
+    let scans: Vec<(String, Vec<&str>)> = vec![
+        (format!("{manifest}/src/runtime.rs"), vec![]),
+        (
+            format!("{manifest}/src/lib.rs"),
+            vec![
+                // crate-level doc-comment example — does not compile.
+                r#".expect("missing LITMASK_UNLOCK_KEY")"#,
+            ],
+        ),
+        (
+            format!("{manifest}/../litmask-macros/src/mask.rs"),
+            vec![
+                // Runs at proc-macro expansion time inside rustc, not
+                // in the user binary.
+                r#".expect("AEAD encryption failed at mask! expansion")"#,
+            ],
+        ),
+    ];
 
     let custom_panic =
         regex::Regex::new(r#"\.expect\("[^"]+"\)|panic!\("[^"]+""#).expect("regex compiles");
 
-    let hits: Vec<(usize, &str)> = src
-        .lines()
-        .enumerate()
-        .filter(|(_, line)| custom_panic.is_match(line))
-        .map(|(i, line)| (i + 1, line))
-        .collect();
+    let mut hits: Vec<(String, usize, String)> = Vec::new();
+    for (path, allow) in &scans {
+        let src = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        for (i, line) in src.lines().enumerate() {
+            if !custom_panic.is_match(line) {
+                continue;
+            }
+            if allow.iter().any(|s| line.contains(s)) {
+                continue;
+            }
+            hits.push((path.clone(), i + 1, line.to_string()));
+        }
+    }
 
     assert!(
         hits.is_empty(),
-        "runtime.rs leaks custom panic-message text in the decryption path: {hits:?}",
+        "decryption-path files leak custom panic-message text: {hits:#?}",
     );
 }
