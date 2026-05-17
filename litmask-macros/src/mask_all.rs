@@ -66,7 +66,8 @@ pub(crate) fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 /// Reason tag for one skipped literal. Lives in the
 /// `#[deprecated(note = "...")]` text so the user can grep cargo's
-/// warning stream for the skip kind.
+/// warning stream for the skip kind. The note string is fully
+/// preformatted per variant so emission doesn't allocate.
 #[derive(Clone, Copy)]
 enum SkipReason {
     PatternPosition,
@@ -75,11 +76,11 @@ enum SkipReason {
 }
 
 impl SkipReason {
-    fn tag(self) -> &'static str {
+    fn note(self) -> &'static str {
         match self {
-            Self::PatternPosition => "pattern_position",
-            Self::ConstInitializer => "const_initializer",
-            Self::StaticInitializer => "static_initializer",
+            Self::PatternPosition => "litmask: skipped literal: pattern_position",
+            Self::ConstInitializer => "litmask: skipped literal: const_initializer",
+            Self::StaticInitializer => "litmask: skipped literal: static_initializer",
         }
     }
 }
@@ -152,7 +153,7 @@ impl MaskAllWalker {
         let mut anchor_refs: Vec<TokenStream2> = Vec::with_capacity(self.skipped.len());
         for (i, reason) in self.skipped.iter().enumerate() {
             let ident = format_ident!("_LITMASK_SKIP_{i}");
-            let note = format!("litmask: skipped literal: {}", reason.tag());
+            let note = reason.note();
             // `dead_code` is load-bearing: the const has no public
             // callers besides the anchor fn below (which itself has
             // `#[allow(dead_code)]`). Without it, every skip would
@@ -268,19 +269,23 @@ fn maybe_rewrite_string_literal(expr: &Expr) -> Option<Expr> {
 /// path-segment match — qualified paths (`std::dbg!`, `core::dbg!`)
 /// are not currently recognized; that nuance lands in Task 13 along
 /// with the full substitution table.
+///
+/// Comparison uses `proc_macro2::Ident == &str` directly so the
+/// hot path (every macro invocation in the user's module) doesn't
+/// pay a per-call `Ident::to_string` allocation.
 fn is_skip_macro(mac: &syn::Macro) -> bool {
+    const SKIP_LIST: &[&str] = &[
+        "mask",
+        "maskfmt",
+        "unmasked",
+        "weak_mask",
+        "dbg",
+        "stringify",
+        "assert_eq",
+        "assert_ne",
+    ];
     let Some(ident) = mac.path.get_ident() else {
         return false;
     };
-    matches!(
-        ident.to_string().as_str(),
-        "mask"
-            | "maskfmt"
-            | "unmasked"
-            | "weak_mask"
-            | "dbg"
-            | "stringify"
-            | "assert_eq"
-            | "assert_ne"
-    )
+    SKIP_LIST.iter().any(|name| ident == name)
 }
