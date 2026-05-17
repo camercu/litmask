@@ -15,16 +15,19 @@ rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/camercu/litmask"
 
-# Centralized version + path for every inter-workspace dependency.
-# Member crates use `dep.workspace = true` to inherit both fields. A
-# single version requirement lives here (rather than per-crate `=X.Y.Z`
-# pins) so `cargo set-version --workspace` during a semantic-release
-# run has one place to update and inter-crate cargo resolution never
-# falls out of sync with `[workspace.package].version` after a bump.
+# Path-only inter-workspace dependencies. Member crates use
+# `dep.workspace = true` to inherit the path. Versions are deliberately
+# absent: `cargo set-version --workspace` (driven by
+# semantic-release-cargo on each release) only bumps
+# `[workspace.package].version` and would leave any explicit pins here
+# stale, breaking `cargo check` on the next bump. `path = "..."` alone
+# is sufficient for workspace resolution; a `version` field is only
+# required when publishing to a registry (and `publish = false` in
+# `.releaserc.json` skips that path).
 [workspace.dependencies]
-litmask-internal = { path = "litmask-internal", version = "0.1.0" }
-litmask-macros = { path = "litmask-macros", version = "0.1.0" }
-litmask-build = { path = "litmask-build", version = "0.1.0" }
+litmask-internal = { path = "litmask-internal" }
+litmask-macros = { path = "litmask-macros" }
+litmask-build = { path = "litmask-build" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
