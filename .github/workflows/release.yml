@@ -3,32 +3,34 @@ name: Release
 on:
   # Gate on CI: fire only after the CI workflow finishes against
   # `main`, and skip the job body if CI did not conclude with success
-  # (see the `if:` on the release-plz job below). Without this gate,
-  # a push to `main` triggered ci.yml and release.yml in parallel and
-  # release-plz could open the release PR even when canonical-gate
-  # was red.
+  # (see the `if:` on the release job below). Without this gate, a
+  # push to `main` triggered ci.yml and release.yml in parallel and
+  # semantic-release could cut a release even when canonical-gate was
+  # red.
   workflow_run:
     workflows: [CI]
     types: [completed]
     branches: [main]
 
-# `release-plz` operates in PR mode: a successful CI run on `main`
-# triggers this workflow, which opens or updates a "Release v{version}"
-# PR with the bump + CHANGELOG.md entry. When the PR is merged, the
-# resulting push fires CI again, and on success this workflow fires
-# again, sees the release commit, tags it, and cuts a GitHub Release.
-
 permissions:
   contents: write
+  # `@semantic-release/github`'s `success` step posts comments on
+  # issues and PRs closed by the release. Without these scopes the
+  # call to the issues API returns "Resource not accessible by
+  # integration" and the entire step fails (the release itself has
+  # already published at that point).
+  issues: write
   pull-requests: write
 
+# Prevent two release runs from racing. `cancel-in-progress: false`
+# protects an in-flight release from being killed mid tag-push.
 concurrency:
-  group: release-plz-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
-  release-plz:
-    name: release-plz
+  release:
+    name: release
     # Skip the job body entirely if CI failed/was cancelled. The
     # workflow_run trigger fires regardless of upstream conclusion;
     # the conclusion check is the actual gate.
@@ -37,12 +39,12 @@ jobs:
     timeout-minutes: 20
     environment: release
     steps:
-      # Check out `main` (not the head_sha) because release-plz needs
-      # a branch context — `git rev-parse @{upstream}` fails on a
-      # detached HEAD. The race window between CI greenlighting a
-      # commit and release-plz seeing a newer main HEAD is bounded
-      # by the concurrency group below, which serializes release runs
-      # so a later push will trigger its own gated release.
+      # Check out `main` (not the head_sha) so semantic-release's git
+      # plugin commits and pushes against a branch context. The race
+      # window between CI greenlighting a commit and this step seeing a
+      # newer main HEAD is bounded by the concurrency group above,
+      # which serializes release runs so a later push triggers its own
+      # gated release.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -62,13 +64,17 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # The action defaults to running `release-pr` followed by
-      # `release` in one step, which matches the two phases of the
-      # PR-based flow (open/update the PR, then release on merge).
-      # CARGO_REGISTRY_TOKEN is exported even though `publish = false`
-      # in release-plz.toml so enabling crates.io publish later is a
-      # single-key edit there.
-      - uses: MarcoIeni/release-plz-action@v0.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .tool-versions
+          cache: npm
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just@${{ steps.tools.outputs.just }}
+
+      - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_API_KEY }}
+        run: just release

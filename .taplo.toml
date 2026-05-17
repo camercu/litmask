@@ -1,0 +1,8 @@
+# Taplo config. Reference: https://taplo.tamasfe.dev/configuration/file.html
+#
+# `just lint-taplo` runs `taplo format --check` from the repo root,
+# which walks every `*.toml` it can reach unless excluded. Without
+# this, taplo trips over the third-party `pyproject.toml` files inside
+# `node_modules/` after `npm ci` (semantic-release devDependencies),
+# failing the pre-commit hook on any dev with node_modules installed.
+exclude = ["node_modules/**", "target/**"]
