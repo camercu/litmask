@@ -136,6 +136,29 @@ fn mask_all_skips_pattern_literals_if_let() {
 }
 
 #[mask_all]
+mod while_let_pattern_left_unchanged {
+    pub fn count_until_sentinel<I: Iterator<Item = &'static str>>(iter: I) -> u32 {
+        let mut n = 0;
+        let mut it = iter.peekable();
+        while let Some(&"STOP") = it.peek() {
+            it.next();
+            n += 1;
+        }
+        n
+    }
+}
+
+#[test]
+fn mask_all_skips_pattern_literals_while_let() {
+    common::init_once();
+    let items = vec!["STOP", "STOP", "go"];
+    assert_eq!(
+        while_let_pattern_left_unchanged::count_until_sentinel(items.into_iter()),
+        2,
+    );
+}
+
+#[mask_all]
 mod const_and_static_initializers {
     pub const SLUG: &str = "compile-time-only";
     pub static GREETING: &str = "static-also-compile-time";
