@@ -246,13 +246,16 @@ fn check_unused_positionals(
     positional_count: usize,
     template_span: proc_macro2::Span,
 ) -> syn::Result<()> {
-    let used: std::collections::BTreeSet<usize> = resolved
-        .iter()
-        .flat_map(|r| std::iter::once(r.value_idx).chain(r.spec_idxs.iter().copied()))
-        .filter(|&i| i < positional_count)
-        .collect();
-    for i in 0..positional_count {
-        if !used.contains(&i) {
+    let mut used = vec![false; positional_count];
+    for r in resolved {
+        for idx in std::iter::once(r.value_idx).chain(r.spec_idxs.iter().copied()) {
+            if idx < positional_count {
+                used[idx] = true;
+            }
+        }
+    }
+    for (i, &was_used) in used.iter().enumerate() {
+        if !was_used {
             return Err(syn::Error::new(
                 template_span,
                 format!(
