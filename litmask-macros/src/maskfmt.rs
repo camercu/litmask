@@ -83,9 +83,17 @@ enum InputArg {
 /// `(ident, value-expression)` pair for one named argument.
 type NamedArg = (syn::Ident, Expr);
 
-/// Split the args list into positional + named, enforcing
-/// `format!`'s ordering rule: positional args must precede named
-/// args. Returns `(positional, named)`.
+/// Split the args list into positional + named. Two `format!`-style
+/// invariants are enforced as `syn::Error`s, both with the user's
+/// span so the diagnostic lands on the offending source:
+///
+/// - Positional args must precede named args (mirrors `format!`).
+/// - Each name appears at most once across the named-args list.
+///   Without this check, a duplicate silently shadows the earlier
+///   binding in the internal layout and surfaces as a stray
+///   `unused variable: maskfmt_arg_N` later — a diagnostic that
+///   points at proc-macro-generated identifiers and confuses the
+///   caller.
 fn split_args(args: &Punctuated<Expr, Token![,]>) -> syn::Result<(Vec<Expr>, Vec<NamedArg>)> {
     let mut positional: Vec<Expr> = Vec::new();
     let mut named: Vec<NamedArg> = Vec::new();
@@ -100,7 +108,17 @@ fn split_args(args: &Punctuated<Expr, Token![,]>) -> syn::Result<(Vec<Expr>, Vec
                 }
                 positional.push(e);
             }
-            InputArg::Named { name, value } => named.push((name, value)),
+            InputArg::Named { name, value } => {
+                if let Some((prev, _)) = named.iter().find(|(n, _)| n == &name) {
+                    return Err(syn::Error::new(
+                        name.span(),
+                        format!(
+                            "duplicate named argument `{prev}` in maskfmt! (each name may appear at most once)",
+                        ),
+                    ));
+                }
+                named.push((name, value));
+            }
         }
     }
     Ok((positional, named))

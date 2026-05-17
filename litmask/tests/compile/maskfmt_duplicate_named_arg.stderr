@@ -1,0 +1,5 @@
+error: duplicate named argument `x` in maskfmt! (each name may appear at most once)
+  --> tests/compile/maskfmt_duplicate_named_arg.rs:10:36
+   |
+10 |     let _ = maskfmt!("{x}", x = 1, x = 2);
+   |                                    ^
