@@ -147,10 +147,17 @@ pub mod __internal {
     #[cfg(feature = "std")]
     pub use crate::runtime::__weak_decode;
     pub use crate::runtime::{__decrypt, __init_with_wrapper};
-    // Re-export under a hygienic alias so the proc-macro can emit a
+    // Re-export under a hygienic alias so the proc-macro emits a
     // single `::litmask::__internal::__String::from_utf8(...)` path
-    // that resolves identically under `std`, `no_std + alloc`, and
-    // any future feature combination — without forcing user crates
-    // to add `extern crate alloc;` for paths the macro emits.
+    // for the `mask!("...")` case.
+    //
+    // The natural alternative — emitting `::alloc::string::String`
+    // directly — does NOT work in std consumer crates: `alloc` is
+    // not in the list of imported crates at a std crate's root
+    // unless the user adds `extern crate alloc;` explicitly. Without
+    // it, the emitted path fails with E0433. The re-export routes
+    // through `::litmask::`, which the user is already importing,
+    // so no extra declaration is required from the consumer side
+    // for either std or no_std + alloc.
     pub use alloc::string::String as __String;
 }
