@@ -72,14 +72,6 @@ impl Parse for MaskfmtInput {
     }
 }
 
-/// One argument from the user's call: either positional (a bare
-/// expression) or named (`ident = expr`). Named arguments are
-/// detected by matching `Expr::Assign { left: <single-ident path> }`.
-enum InputArg {
-    Positional(Expr),
-    Named { name: syn::Ident, value: Expr },
-}
-
 /// `(ident, value-expression)` pair for one named argument.
 type NamedArg = (syn::Ident, Expr);
 
@@ -98,46 +90,48 @@ fn split_args(args: &Punctuated<Expr, Token![,]>) -> syn::Result<(Vec<Expr>, Vec
     let mut positional: Vec<Expr> = Vec::new();
     let mut named: Vec<NamedArg> = Vec::new();
     for expr in args {
-        match classify_arg(expr.clone()) {
-            InputArg::Positional(e) => {
-                if !named.is_empty() {
-                    return Err(syn::Error::new(
-                        e.span(),
-                        "positional arguments must precede named arguments in maskfmt!",
-                    ));
-                }
-                positional.push(e);
+        if let Some((name, value)) = as_named_arg(expr) {
+            if let Some((prev, _)) = named.iter().find(|(n, _)| n == &name) {
+                return Err(syn::Error::new(
+                    name.span(),
+                    format!(
+                        "duplicate named argument `{prev}` in maskfmt! (each name may appear at most once)",
+                    ),
+                ));
             }
-            InputArg::Named { name, value } => {
-                if let Some((prev, _)) = named.iter().find(|(n, _)| n == &name) {
-                    return Err(syn::Error::new(
-                        name.span(),
-                        format!(
-                            "duplicate named argument `{prev}` in maskfmt! (each name may appear at most once)",
-                        ),
-                    ));
-                }
-                named.push((name, value));
+            named.push((name, value));
+        } else {
+            if !named.is_empty() {
+                return Err(syn::Error::new(
+                    expr.span(),
+                    "positional arguments must precede named arguments in maskfmt!",
+                ));
             }
+            positional.push(expr.clone());
         }
     }
     Ok((positional, named))
 }
 
-fn classify_arg(expr: Expr) -> InputArg {
-    if let Expr::Assign(assign) = &expr {
-        if let Expr::Path(path) = &*assign.left {
-            if path.qself.is_none() && path.path.segments.len() == 1 {
-                let seg = &path.path.segments[0];
-                if seg.arguments.is_none() {
-                    let name = seg.ident.clone();
-                    let value = (*assign.right).clone();
-                    return InputArg::Named { name, value };
-                }
-            }
-        }
+/// If `expr` is `<ident> = <value>` with a simple single-segment
+/// path on the left, return the `(name, value)` pair (cloning both
+/// halves so the caller owns them). Otherwise return `None` — the
+/// expression is a positional argument.
+fn as_named_arg(expr: &Expr) -> Option<NamedArg> {
+    let Expr::Assign(assign) = expr else {
+        return None;
+    };
+    let Expr::Path(path) = &*assign.left else {
+        return None;
+    };
+    if path.qself.is_some() || path.path.segments.len() != 1 {
+        return None;
     }
-    InputArg::Positional(expr)
+    let seg = &path.path.segments[0];
+    if !seg.arguments.is_none() {
+        return None;
+    }
+    Some((seg.ident.clone(), (*assign.right).clone()))
 }
 
 /// A placeholder reference — either an explicit positional index
