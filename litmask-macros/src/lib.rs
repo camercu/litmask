@@ -17,6 +17,7 @@ use proc_macro::TokenStream;
 
 mod common;
 mod mask;
+mod mask_all;
 mod maskfmt;
 mod unmasked;
 mod weak_mask;
@@ -118,4 +119,28 @@ pub fn maskfmt(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn weak_mask(input: TokenStream) -> TokenStream {
     weak_mask::expand(input)
+}
+
+/// Apply `mask!` recursively to every bare string-shaped literal
+/// expression inside the attributed module. Walks nested modules,
+/// functions, blocks, and closures (§2.3.1.5). Skips literals inside
+/// `mask!` / `maskfmt!` / `unmasked!` / `weak_mask!` invocations
+/// (already explicit) and inside `dbg!` / `stringify!` / `assert_eq!`
+/// / `assert_ne!` per §2.3.2.6.
+///
+/// Task 12 covers bare-literal rewriting + the skip-macro list.
+/// Pattern-position / `const` + `static` initializer skips + the
+/// ghost-deprecation warning emission land in follow-up commits.
+/// The full `format!`/`println!`/`panic!`/`include_str!`/`concat!`/
+/// user-macro substitution table is Task 13; `#[mask_all(strict)]`
+/// is Task 14.
+///
+/// # Panics
+///
+/// Panics during macro expansion if applied to anything other than a
+/// module item (`#[mask_all] mod ...`) — `syn` reports the parse
+/// error at the attribute's call site.
+#[proc_macro_attribute]
+pub fn mask_all(attr: TokenStream, item: TokenStream) -> TokenStream {
+    mask_all::expand(attr, item)
 }

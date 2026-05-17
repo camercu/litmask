@@ -16,7 +16,7 @@ proc-macro = true
 litmask-internal.workspace = true
 proc-macro2 = "1"
 quote = "1"
-syn = { version = "2", features = ["full"] }
+syn = { version = "2", features = ["full", "visit-mut"] }
 blake3 = "1"
 zeroize = "1"
 
