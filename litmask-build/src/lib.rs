@@ -94,24 +94,36 @@ pub fn emit() {
 /// `wrapper` that encrypts the mask key under the unlock key.
 ///
 /// Constructed via [`BuildArtifacts::derive`] and persisted to disk via
-/// [`BuildArtifacts::write_to`]. `derive` is pure — no I/O, no globals,
-/// no time-dependence — so given the same seed it returns byte-identical
-/// fields every call. The split lets tests cover key derivation and
-/// wrapper assembly without going through the filesystem.
+/// [`BuildArtifacts::write_to`]. `derive` is pure — no I/O, no globals
+/// — so given the same seed it returns byte-identical fields every
+/// call. The split lets tests cover key derivation and wrapper assembly
+/// without going through the filesystem.
 ///
 /// Drop zeroizes the secret fields (`seed`, `mask_key`, `unlock_key`).
 /// The `wrapper` field is not secret (it's the public ciphertext
 /// embedded into user binaries) and is not zeroized.
 struct BuildArtifacts {
+    /// 32-byte build seed — root of the derivation tree. Persisted to
+    /// `OUT_DIR/litmask_seed.bin` for the proc-macro's per-call-site
+    /// nonce derivation.
     seed: [u8; KEY_LEN],
+    /// 32-byte ChaCha20-Poly1305 key that encrypts every per-call-site
+    /// blob. Persisted to `OUT_DIR/litmask_key.bin` for the proc-macro
+    /// to read at expansion time.
     mask_key: [u8; KEY_LEN],
+    /// 32-byte ChaCha20-Poly1305 key that encrypts the wrapper.
+    /// Written into `litmask.config` (deployer-facing TOML); the
+    /// runtime reads it back via env var.
     unlock_key: [u8; KEY_LEN],
+    /// Assembled wrapper bytes — header + AEAD-encrypted `mask_key`
+    /// under `unlock_key`. Persisted to `OUT_DIR/litmask_wrapper.bin`
+    /// and embedded into user binaries via `include_bytes!`.
     wrapper: [u8; WRAPPER_LEN],
 }
 
 impl BuildArtifacts {
     /// Derive the full artifact set from a build seed. Pure: same seed
-    /// in, byte-identical fields out, every call.
+    /// in, byte-identical fields out.
     fn derive(seed: &[u8; KEY_LEN]) -> Self {
         let mut rng = ChaCha20Rng::from_seed(*seed);
         let mut mask_key = [0u8; KEY_LEN];
