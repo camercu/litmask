@@ -1,3 +1,16 @@
+## [0.4.0](https://github.com/camercu/litmask/compare/v0.3.0...v0.4.0) (2026-05-17)
+
+### Features
+
+* **macros:** clearer error when mask_all is applied to non-module ([e6f77f6](https://github.com/camercu/litmask/commit/e6f77f622e2d10c9dd8b2ded71c68681766a8d50))
+* **macros:** mask_all ghost-deprecation warnings per skip ([542420a](https://github.com/camercu/litmask/commit/542420afe712c488a6d0c2466f273ef37b6f5980)), closes [#5](https://github.com/camercu/litmask/issues/5)
+* **macros:** mask_all skip rules — patterns + const/static ([8d946e7](https://github.com/camercu/litmask/commit/8d946e78a87eb940a705f53dd4c80addd2be5bcc))
+* **macros:** mask_all walking skeleton ([fa19eed](https://github.com/camercu/litmask/commit/fa19eed6046049c233b1adf6a14e0a05b8a5ad33)), closes [#1](https://github.com/camercu/litmask/issues/1) [#4](https://github.com/camercu/litmask/issues/4) [#6](https://github.com/camercu/litmask/issues/6)
+
+### Performance Improvements
+
+* **macros:** drop two allocations in mask_all hot paths ([e8ed24c](https://github.com/camercu/litmask/commit/e8ed24c656da0f501633d9bc500dd5e7bb5d404b))
+
 ## [0.3.0](https://github.com/camercu/litmask/compare/v0.2.0...v0.3.0) (2026-05-17)
 
 ### Features
