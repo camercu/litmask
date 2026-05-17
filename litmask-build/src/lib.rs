@@ -82,36 +82,85 @@ pub fn emit() {
         );
     }
 
-    let mut rng = ChaCha20Rng::from_seed(seed);
-    let mut mask_key = [0u8; KEY_LEN];
-    let mut unlock_key = [0u8; KEY_LEN];
-    rng.fill_bytes(&mut mask_key);
-    rng.fill_bytes(&mut unlock_key);
-
-    let cipher = CipherId::ChaCha20Poly1305;
-    let wrapper_nonce = nonce_for_wrapper(&seed);
-
-    let mut ciphertext_with_tag =
-        aead_encrypt(cipher, &unlock_key, &wrapper_nonce, mask_key.as_slice())
-            .expect("wrapper encryption failed");
-    let body: &[u8; WRAPPER_BODY_LEN] = ciphertext_with_tag
-        .as_slice()
-        .try_into()
-        .expect("AEAD output of 32-byte plaintext is WRAPPER_BODY_LEN bytes");
-    let wrapper = assemble_wrapper(FormatVersion::CURRENT, cipher, &wrapper_nonce, body);
-    ciphertext_with_tag.zeroize();
-
-    // OUT_DIR receives the binary artifacts the proc-macro and runtime
-    // `include_bytes!` at macro-expansion time. profile_dir receives
-    // `litmask.config`, the TOML the runtime reads via env var.
-    write_secret(&out_dir.join("litmask_seed.bin"), &seed);
-    write_secret(&out_dir.join("litmask_key.bin"), &mask_key);
-    write_secret(&out_dir.join("litmask_wrapper.bin"), &wrapper);
-    write_config(&profile_dir.join("litmask.config"), &unlock_key, &wrapper);
-
+    let artifacts = BuildArtifacts::derive(&seed);
     seed.zeroize();
-    mask_key.zeroize();
-    unlock_key.zeroize();
+    artifacts.write_to(&out_dir, &profile_dir);
+    // artifacts' Drop zeroizes mask_key, unlock_key, and the in-memory
+    // copy of the seed.
+}
+
+/// The five byte arrays produced from a single build seed: the seed
+/// itself, the derived `mask_key` and `unlock_key`, and the assembled
+/// `wrapper` that encrypts the mask key under the unlock key.
+///
+/// Constructed via [`BuildArtifacts::derive`] and persisted to disk via
+/// [`BuildArtifacts::write_to`]. `derive` is pure — no I/O, no globals,
+/// no time-dependence — so given the same seed it returns byte-identical
+/// fields every call. The split lets tests cover key derivation and
+/// wrapper assembly without going through the filesystem.
+///
+/// Drop zeroizes the secret fields (`seed`, `mask_key`, `unlock_key`).
+/// The `wrapper` field is not secret (it's the public ciphertext
+/// embedded into user binaries) and is not zeroized.
+struct BuildArtifacts {
+    seed: [u8; KEY_LEN],
+    mask_key: [u8; KEY_LEN],
+    unlock_key: [u8; KEY_LEN],
+    wrapper: [u8; WRAPPER_LEN],
+}
+
+impl BuildArtifacts {
+    /// Derive the full artifact set from a build seed. Pure: same seed
+    /// in, byte-identical fields out, every call.
+    fn derive(seed: &[u8; KEY_LEN]) -> Self {
+        let mut rng = ChaCha20Rng::from_seed(*seed);
+        let mut mask_key = [0u8; KEY_LEN];
+        let mut unlock_key = [0u8; KEY_LEN];
+        rng.fill_bytes(&mut mask_key);
+        rng.fill_bytes(&mut unlock_key);
+
+        let cipher = CipherId::ChaCha20Poly1305;
+        let wrapper_nonce = nonce_for_wrapper(seed);
+        let mut ciphertext_with_tag =
+            aead_encrypt(cipher, &unlock_key, &wrapper_nonce, mask_key.as_slice())
+                .expect("wrapper encryption failed");
+        let body: &[u8; WRAPPER_BODY_LEN] = ciphertext_with_tag
+            .as_slice()
+            .try_into()
+            .expect("AEAD output of 32-byte plaintext is WRAPPER_BODY_LEN bytes");
+        let wrapper = assemble_wrapper(FormatVersion::CURRENT, cipher, &wrapper_nonce, body);
+        ciphertext_with_tag.zeroize();
+
+        Self {
+            seed: *seed,
+            mask_key,
+            unlock_key,
+            wrapper,
+        }
+    }
+
+    /// Persist artifacts to disk. `out_dir` receives the three binary
+    /// blobs the proc-macro and runtime `include_bytes!` at expansion
+    /// time; `profile_dir` receives `litmask.config`, the deployer-facing
+    /// TOML the runtime reads via env var.
+    fn write_to(&self, out_dir: &Path, profile_dir: &Path) {
+        write_secret(&out_dir.join("litmask_seed.bin"), &self.seed);
+        write_secret(&out_dir.join("litmask_key.bin"), &self.mask_key);
+        write_secret(&out_dir.join("litmask_wrapper.bin"), &self.wrapper);
+        write_config(
+            &profile_dir.join("litmask.config"),
+            &self.unlock_key,
+            &self.wrapper,
+        );
+    }
+}
+
+impl Drop for BuildArtifacts {
+    fn drop(&mut self) {
+        self.seed.zeroize();
+        self.mask_key.zeroize();
+        self.unlock_key.zeroize();
+    }
 }
 
 /// Indicates which of the three sources in §1.3.2 the seed came from.
@@ -416,5 +465,45 @@ mod tests {
             &canned_persist,
             "release must not write persist file",
         );
+    }
+
+    /// `derive` is the pure core of `emit()`. Same seed in must yield
+    /// byte-identical artifacts out — the spec calls this out as the
+    /// reproducible-builds property.
+    #[test]
+    fn build_artifacts_derive_is_deterministic() {
+        let seed = [0x55u8; KEY_LEN];
+        let first = BuildArtifacts::derive(&seed);
+        let second = BuildArtifacts::derive(&seed);
+        assert_eq!(first.mask_key, second.mask_key);
+        assert_eq!(first.unlock_key, second.unlock_key);
+        assert_eq!(first.wrapper, second.wrapper);
+    }
+
+    /// Distinct seeds must yield distinct keys + wrappers. Guards
+    /// against any future refactor that accidentally shares state
+    /// across `derive` calls.
+    #[test]
+    fn build_artifacts_derive_is_seed_sensitive() {
+        let a = BuildArtifacts::derive(&[0xAAu8; KEY_LEN]);
+        let b = BuildArtifacts::derive(&[0xBBu8; KEY_LEN]);
+        assert_ne!(a.mask_key, b.mask_key);
+        assert_ne!(a.unlock_key, b.unlock_key);
+        assert_ne!(a.wrapper, b.wrapper);
+    }
+
+    /// The wrapper produced by `derive` must round-trip through the
+    /// runtime's decrypt path under the matching `unlock_key`. Without
+    /// this, a successful `emit()` could ship a wrapper the runtime
+    /// rejects — a silent breakage detectable only at user-program
+    /// startup.
+    #[test]
+    fn build_artifacts_wrapper_round_trips_under_unlock_key() {
+        use litmask_internal::cipher::decrypt_wrapper;
+        let seed = [0x33u8; KEY_LEN];
+        let artifacts = BuildArtifacts::derive(&seed);
+        let recovered =
+            decrypt_wrapper(&artifacts.unlock_key, &artifacts.wrapper).expect("round-trip");
+        assert_eq!(recovered, artifacts.mask_key);
     }
 }
