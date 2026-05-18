@@ -487,16 +487,16 @@ a v2 candidate.
 
 ### Acceptance Criteria
 
-- [ ] GIVEN `println!("hi {}", n);` inside `#[mask_all]`, WHEN compiled,
+- [x] GIVEN `println!("hi {}", n);` inside `#[mask_all]`, WHEN compiled,
       THEN plaintext `"hi "` is absent from the binary; runtime output
       identical to original
-- [ ] `format!("x={x}", x = 1)` rewritten correctly and produces same
+- [x] `format!("x={x}", x = 1)` rewritten correctly and produces same
       output as without `#[mask_all]`
-- [ ] `panic!("boom")` rewritten so panic still fires with `"boom"`
+- [x] `panic!("boom")` rewritten so panic still fires with `"boom"`
       string at runtime, but `"boom"` is absent from binary plaintext
-- [ ] `include_str!("file.txt")` runtime value equal to file contents
+- [x] `include_str!("file.txt")` runtime value equal to file contents
       and file contents absent from binary plaintext
-- [ ] User-defined `my_macro!("foo")` left alone, warning emitted
+- [x] User-defined `my_macro!("foo")` left alone, warning emitted
 
 ---
 
