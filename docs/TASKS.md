@@ -472,9 +472,14 @@ a v2 candidate.
 - `println!`/`eprintln!`/`print!`/`eprint!`/`write!`/`writeln!` with
   literal template: rewrite to
   `{ let __s = maskfmt!(t, args...); <macro>("{}", __s) }`
-- Panic family (`panic!`, `todo!`, `unimplemented!`, `debug_assert!`,
+- Panic family (`panic!`, `todo!`, `unimplemented!`, `unreachable!`,
   `assert!`/`assert_eq!`/`assert_ne!` with custom message form):
-  analogous wrapping with `"{}"` template
+  analogous wrapping with `"{}"` template. The `debug_assert!`
+  family (`debug_assert!`, `debug_assert_eq!`, `debug_assert_ne!`)
+  is classified as diagnostic-only and left alone — release builds
+  strip the body via `cfg!(debug_assertions)`, so masking would
+  only add a `.rodata` blob and a runtime decrypt that's never
+  observed in shipping binaries.
 - `include_str!`, `concat!`: wrap entire invocation in `mask!()` —
   works because of the spec amendment in the intro: `mask!`'s parser
   is extended (Task 7 / amended §2.3.2.5) to accept these two specific

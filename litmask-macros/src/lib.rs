@@ -144,18 +144,22 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
 /// - `panic!` / `todo!` / `unimplemented!` / `unreachable!` with a
 ///   literal message are wrapped so the panic still fires with the
 ///   same message text at runtime.
-/// - `assert!` / `debug_assert!` / `assert_eq!` / `assert_ne!` /
-///   `debug_assert_eq!` / `debug_assert_ne!` with a custom-message
+/// - `assert!` / `assert_eq!` / `assert_ne!` with a custom-message
 ///   argument: the message is masked while the assertion still
-///   fires.
+///   fires. The `debug_assert!` family is **not** masked — its
+///   body is dead-code-eliminated in release builds via
+///   `cfg!(debug_assertions)`, so masking would only add a
+///   `.rodata` blob and a runtime decrypt that's never observed in
+///   shipping binaries.
 /// - `include_str!(...)` and `concat!(...)` are wrapped in `mask!()`
 ///   so their compile-time-resolved strings are masked.
 /// - `dbg!`, `stringify!`, `compile_error!`, `cfg!`, `file!`,
-///   `line!`, `column!`, `module_path!` and the no-message forms of
-///   the assert family are recognized as diagnostic-only and skipped
-///   silently — their literals serve compile-time or developer-facing
-///   purposes that never land in shipped output as user-visible
-///   data.
+///   `line!`, `column!`, `module_path!`, the no-message forms of
+///   `assert!` / `assert_eq!` / `assert_ne!`, and **all** forms of
+///   the `debug_assert!` family are recognized as diagnostic-only
+///   and skipped silently — their literals either serve compile-
+///   time / developer-facing purposes that never reach shipping
+///   binaries, or are dead-code-eliminated in release builds.
 /// - Qualified macro paths (`std::format!`, `core::dbg!`, etc.) are
 ///   recognized by matching the last path segment.
 ///

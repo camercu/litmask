@@ -109,10 +109,15 @@ enum MacroFamily {
     /// `mask!`, `maskfmt!`, `unmasked!`, `weak_mask!` — explicit user
     /// choice; never rewritten, never warned.
     SkipExplicit,
-    /// `dbg!`, `stringify!`, and the no-message forms of `assert!`,
-    /// `debug_assert!`, `assert_eq!`, `assert_ne!`, `debug_assert_eq!`,
-    /// `debug_assert_ne!` — left alone with no warning. The literals
-    /// these contain serve diagnostic purposes, not data.
+    /// `dbg!`, `stringify!`, `compile_error!`, `cfg!`, `file!`,
+    /// `line!`, `column!`, `module_path!`; the no-message form of
+    /// `assert!` / `assert_eq!` / `assert_ne!`; and **all** forms of
+    /// the `debug_assert!` family (`debug_assert!`,
+    /// `debug_assert_eq!`, `debug_assert_ne!`, with or without a
+    /// message). Left alone with no warning. Release builds strip
+    /// `debug_assert!` bodies via `cfg!(debug_assertions)`, so
+    /// masking their messages would add a `.rodata` blob and a
+    /// runtime decrypt that's never observed in shipping binaries.
     SkipDiagnostic,
     /// `format!` — rewritten to `maskfmt!`.
     Format,
@@ -126,13 +131,13 @@ enum MacroFamily {
     /// `panic!`, `todo!`, `unimplemented!`, `unreachable!` — wrapped
     /// via `maskfmt!`, preserving the unwinding behavior.
     Panic,
-    /// `assert!`, `debug_assert!` with a custom-message argument, or
-    /// `assert_eq!`, `assert_ne!`, `debug_assert_eq!`,
-    /// `debug_assert_ne!` with the equivalent custom-message form. The
+    /// `assert!` with a custom-message argument, or `assert_eq!` /
+    /// `assert_ne!` with the equivalent custom-message form. The
     /// condition (and values, for the equality variants) stay
-    /// positional; the message is masked. `head_arity` is 1 for the
-    /// boolean asserts (just the condition) and 2 for the equality
-    /// asserts (both operands).
+    /// positional; the message is masked. `head_arity` is 1 for
+    /// `assert!` (just the condition) and 2 for the equality
+    /// asserts (both operands). The `debug_assert!` family does
+    /// **not** route here — see `SkipDiagnostic`.
     AssertWithMessage { head_arity: usize },
     /// `include_str!` or `concat!` — the entire invocation is wrapped
     /// in `mask!()`. The wrapped invocation is resolved at proc-macro
@@ -155,9 +160,18 @@ fn classify_macro(mac: &syn::Macro) -> MacroFamily {
     };
     match name.as_str() {
         "mask" | "maskfmt" | "unmasked" | "weak_mask" => MacroFamily::SkipExplicit,
+        // `debug_assert!` / `_eq!` / `_ne!` expand to
+        // `if cfg!(debug_assertions) { assert!(...) }`; release
+        // builds dead-code-eliminate the body, so masking the
+        // message would generate a `.rodata` blob and a runtime
+        // decrypt that's discarded — pure cost for no release-
+        // binary benefit. Treat the whole debug-assert family as
+        // diagnostic-only regardless of the message form.
         "dbg" | "stringify" | "compile_error" | "cfg" | "file" | "line" | "column"
-        | "module_path" => MacroFamily::SkipDiagnostic,
-        "assert" | "debug_assert" => {
+        | "module_path" | "debug_assert" | "debug_assert_eq" | "debug_assert_ne" => {
+            MacroFamily::SkipDiagnostic
+        }
+        "assert" => {
             // assert!(cond) — no message; assert!(cond, msg, ...) — with.
             if count_top_level_args(&mac.tokens) >= 2 {
                 MacroFamily::AssertWithMessage { head_arity: 1 }
@@ -165,7 +179,7 @@ fn classify_macro(mac: &syn::Macro) -> MacroFamily {
                 MacroFamily::SkipDiagnostic
             }
         }
-        "assert_eq" | "assert_ne" | "debug_assert_eq" | "debug_assert_ne" => {
+        "assert_eq" | "assert_ne" => {
             // assert_eq!(a, b) — no message; assert_eq!(a, b, msg, ...) — with.
             if count_top_level_args(&mac.tokens) >= 3 {
                 MacroFamily::AssertWithMessage { head_arity: 2 }
