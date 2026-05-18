@@ -51,6 +51,16 @@ mod demo {
         // template fragment must be absent from the binary.
         let m = 99;
         println!("praseodymium-tapir-9f2c14-task13={m}");
+
+        // Task 13 §2.3.2.4 fixture — `panic!` with a literal message
+        // becomes
+        // `{ let __s = maskfmt!(msg); panic!("{}", __s) }`. The
+        // env-var guard keeps the demo's normal run from actually
+        // unwinding; the compiler can't drop the `panic!` call
+        // because the branch is taken based on runtime env state.
+        if std::env::var_os("LITMASK_DEMO_PANIC").is_some() {
+            panic!("rubidium-yak-7a9c54-task13");
+        }
     }
 }
 

@@ -220,6 +220,40 @@ fn mask_all_rewrites_format_with_named_args() {
     assert_eq!(format_macro_named_args::fixture(), "a=1 b=2");
 }
 
+// ── §2.3.2.4: panic family ─────────────────────────────────────
+
+#[mask_all]
+mod panic_message_rewritten {
+    pub fn fixture() {
+        panic!("titanium-yak-3a8e57-task13");
+    }
+}
+
+#[test]
+fn mask_all_panic_message_round_trips() {
+    common::init_once();
+
+    // Quiet the default panic hook so catch_unwind output doesn't
+    // pollute test logs.
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+
+    let outcome = std::panic::catch_unwind(panic_message_rewritten::fixture);
+
+    std::panic::set_hook(prev_hook);
+
+    let payload = outcome.expect_err("expected panic");
+    let msg = payload
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| payload.downcast_ref::<&'static str>().copied())
+        .expect("panic payload is a string");
+    assert!(
+        msg.contains("titanium-yak-3a8e57-task13"),
+        "panic message lost the fixture text; got: {msg:?}",
+    );
+}
+
 #[mask_all]
 mod const_and_static_initializers {
     pub const SLUG: &str = "compile-time-only";

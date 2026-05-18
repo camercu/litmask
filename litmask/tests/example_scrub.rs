@@ -141,6 +141,17 @@ fn mask_all_println_template_absent_from_binary() {
     common::assert_substring_absent(&path, "praseodymium-tapir-9f2c14-task13");
 }
 
+/// §2.3.2.4: `panic!` with a literal message inside `#[mask_all]` is
+/// wrapped analogously to the output macros — the message text gets
+/// masked while the panic still fires at runtime. The fixture
+/// phrase must be absent from the binary plaintext.
+#[test]
+fn mask_all_panic_message_absent_from_binary() {
+    common::build_example("mask_all_demo", Profile::Release);
+    let path = common::example_path("mask_all_demo", Profile::Release);
+    common::assert_substring_absent(&path, "rubidium-yak-7a9c54-task13");
+}
+
 /// §2.2.2.2: placeholder names (named args, implicit captures,
 /// dynamic-width refs) MUST NOT appear in the compiled binary. The
 /// fixtures below are unique tokens used as placeholder names in

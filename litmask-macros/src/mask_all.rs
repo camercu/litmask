@@ -203,6 +203,10 @@ impl VisitMut for MaskAllWalker {
                 *expr = rewritten;
                 return;
             }
+            if let Some(rewritten) = maybe_rewrite_panic_family(expr) {
+                *expr = rewritten;
+                return;
+            }
         }
 
         let Some(rewritten) = maybe_rewrite_string_literal(expr) else {
@@ -266,7 +270,8 @@ impl VisitMut for MaskAllWalker {
         });
         let rewritten = maybe_wrap_include_or_concat(&synthetic_expr)
             .or_else(|| maybe_rewrite_format(&synthetic_expr))
-            .or_else(|| maybe_rewrite_output_macro(&synthetic_expr));
+            .or_else(|| maybe_rewrite_output_macro(&synthetic_expr))
+            .or_else(|| maybe_rewrite_panic_family(&synthetic_expr));
         if let Some(rewritten) = rewritten {
             *stmt = Stmt::Expr(rewritten, stmt_mac.semi_token);
         }
@@ -287,6 +292,40 @@ impl VisitMut for MaskAllWalker {
             }
         }
     }
+}
+
+/// Return `Some({ let __s = maskfmt!(msg, args); panic!("{}", __s) })`
+/// if `expr` is a panic-family invocation (`panic!`, `todo!`,
+/// `unimplemented!`) whose first argument is a string literal —
+/// per §2.3.2.4. The rewrite preserves the original macro's
+/// unwinding behavior; only the message materialization moves into
+/// `maskfmt!`. Forms without any message (e.g. bare `todo!()`,
+/// `panic!()`) are left alone — there's nothing to mask.
+///
+/// `debug_assert!`, `assert!`, `assert_eq!`, `assert_ne!` are NOT
+/// covered here: they take a condition (and additional values for
+/// the equality variants) before the message, so the template
+/// position varies. `assert_eq!`/`assert_ne!` also have a no-message
+/// form covered by the §2.3.2.6 skip list. Lands in a follow-up
+/// commit.
+fn maybe_rewrite_panic_family(expr: &Expr) -> Option<Expr> {
+    const PANIC_MACROS: &[&str] = &["panic", "todo", "unimplemented"];
+    let Expr::Macro(em) = expr else {
+        return None;
+    };
+    let ident = em.mac.path.get_ident()?;
+    if !PANIC_MACROS.iter().any(|name| ident == name) {
+        return None;
+    }
+    if !macro_starts_with_str_lit(&em.mac) {
+        return None;
+    }
+    let tokens = &em.mac.tokens;
+    let s = syn::Ident::new("__s", proc_macro2::Span::mixed_site());
+    Some(syn::parse_quote! {{
+        let #s = ::litmask::maskfmt!(#tokens);
+        #ident!("{}", #s)
+    }})
 }
 
 /// Return `Some({ let __s = maskfmt!(...); println!("{}", __s) })`
