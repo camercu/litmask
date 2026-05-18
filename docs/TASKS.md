@@ -204,7 +204,7 @@ the default `EnvVarProvider` (reads `LITMASK_UNLOCK_KEY` as base64url),
 `init()` and `init_with()` (decrypt the embedded `mask_key` wrapper into a
 process-global `OnceLock<MaskKey>`), and a `mask!` proc-macro accepting a
 single string literal — emitting a `[u8; N]` blob (nonce derived per
-§1.5.2 from a per-process atomic counter + seed) and runtime
+§1.5.2 from `(seed, file, line, column, plaintext)`) and runtime
 decryption returning `String`. Lazy init triggers on first `mask!` call when no explicit
 `init()` was called. The runtime crate is `#![no_std]` + `alloc` from day
 one (gates `EnvVarProvider` behind the `std` feature so `litmask::init`
@@ -246,16 +246,16 @@ followed by `\n`.
 - [x] `let _: Box<dyn KeyProvider> = Box::new(EnvVarProvider::default());`
       compiles (object-safety check)
 - [x] BLAKE3 nonce-derivation unit tests in `litmask-internal` cover
-      determinism (same `(seed, idx)` → same nonce), seed-dependence
-      (distinct seeds → distinct nonces), uniqueness across indices
-      (sample ≥1000), source-position independence (counter-based
-      derivation is keyed only on `(seed, idx)`, so re-ordering call
-      sites does not affect a given idx's nonce), and disjointness
-      from the wrapper nonce space (`NONCE_TAG_CALL_SITE` differs
-      from `NONCE_TAG_WRAPPER`). Spec §1.5.2 documents the
-      counter-based derivation as v1; the originally-proposed
-      `(file, line, column)` scheme is unreachable on stable Rust
-      without `proc_macro_span`.
+      determinism (same `(seed, file, line, column, plaintext)` →
+      same nonce), per-axis sensitivity (changing any of seed, file,
+      line, column, or plaintext yields a distinct nonce), canonical
+      length-prefixed encoding (file/plaintext boundary cannot
+      ambiguously decode as a different tuple), uniqueness across a
+      4096-sample spread of distinct sites, and disjointness from
+      the wrapper nonce space. Spec §1.5.2 keys the v1 derivation on
+      `(seed, file, line, column, plaintext)` via the now-stable
+      `proc_macro::Span::file()` / `line()` / `column()` accessors
+      (Rust 1.88+).
 - [x] base64url helper module unit tests cover round-trip + reject of
       padded inputs
 - [x] `cargo build -p litmask --no-default-features --features alloc`
