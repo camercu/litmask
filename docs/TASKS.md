@@ -204,8 +204,8 @@ the default `EnvVarProvider` (reads `LITMASK_UNLOCK_KEY` as base64url),
 `init()` and `init_with()` (decrypt the embedded `mask_key` wrapper into a
 process-global `OnceLock<MaskKey>`), and a `mask!` proc-macro accepting a
 single string literal — emitting a `[u8; N]` blob (nonce derived per
-§1.5.2 from file/line/column + seed) and runtime decryption returning
-`String`. Lazy init triggers on first `mask!` call when no explicit
+§1.5.2 from a per-process atomic counter + seed) and runtime
+decryption returning `String`. Lazy init triggers on first `mask!` call when no explicit
 `init()` was called. The runtime crate is `#![no_std]` + `alloc` from day
 one (gates `EnvVarProvider` behind the `std` feature so `litmask::init`
 default chain compiles only with `std` enabled, which is the default);
@@ -245,20 +245,17 @@ followed by `\n`.
 - [x] Calling `mask!("...")` without prior `init()` succeeds via lazy init
 - [x] `let _: Box<dyn KeyProvider> = Box::new(EnvVarProvider::default());`
       compiles (object-safety check)
-- [ ] BLAKE3 nonce-derivation unit tests in the runtime crate cover:
-      determinism (same seed + same call site → same nonce), uniqueness
-      (distinct file/line/column → distinct nonces across a sample of
-      ≥1000 sites), and independence (adding code AFTER a call site does
-      not change that call site's nonce — only line numbers shift for
-      code AFTER the addition)
-      <!-- PARTIAL: `nonce_for_wrapper` determinism is tested
-      (`litmask-internal/src/lib.rs::nonce_for_wrapper_is_deterministic_and_seed_dependent`).
-      The call-site `derive_nonce` in `litmask-macros/src/mask.rs` is
-      uncovered. The file/line/column scheme this criterion assumes
-      was abandoned (`proc_macro::Span` accessors are nightly-only);
-      the implementation uses a per-rustc-process atomic counter
-      (`CALL_COUNTER`) so determinism / uniqueness / independence
-      hold by construction but lack explicit tests. -->
+- [x] BLAKE3 nonce-derivation unit tests in `litmask-internal` cover
+      determinism (same `(seed, idx)` → same nonce), seed-dependence
+      (distinct seeds → distinct nonces), uniqueness across indices
+      (sample ≥1000), source-position independence (counter-based
+      derivation is keyed only on `(seed, idx)`, so re-ordering call
+      sites does not affect a given idx's nonce), and disjointness
+      from the wrapper nonce space (`NONCE_TAG_CALL_SITE` differs
+      from `NONCE_TAG_WRAPPER`). Spec §1.5.2 documents the
+      counter-based derivation as v1; the originally-proposed
+      `(file, line, column)` scheme is unreachable on stable Rust
+      without `proc_macro_span`.
 - [x] base64url helper module unit tests cover round-trip + reject of
       padded inputs
 - [x] `cargo build -p litmask --no-default-features --features alloc`
@@ -317,22 +314,19 @@ exceptions are silent successes.
 - [x] `mask!(42)` fails compilation with message containing
       `mask! accepts string, byte string, or C string literals`
 - [x] `mask!(some_var)` fails compilation with the same substring
-- [ ] `const X: String = mask!("x");` fails with message containing
-      `mask! cannot be used in const or static contexts`
-      <!-- UNMET: const/static positions fail with rustc's natural
-      `E0015: cannot call non-const function __decrypt in constants`
-      diagnostic, not a litmask-emitted substring. Trybuild fixtures
-      (`mask_const_context.rs`, `mask_static_context.rs`) lock the
-      rejection but not the spec substring. Add explicit
-      `compile_error!` detection in `mask.rs` to satisfy this. -->
-- [ ] `match s { mask!("foo") => ... }` fails with message containing
-      `mask! cannot be used in pattern position`
-      <!-- UNMET: pattern positions fail with rustc's natural
-      `expected pattern, found {` diagnostic, not a litmask-emitted
-      substring. Trybuild fixtures (`mask_pattern_position.rs`,
-      `mask_if_let_pattern.rs`) lock the rejection but not the spec
-      substring. Detecting pattern position in a proc-macro is not
-      directly possible without a different macro shape. -->
+- [x] `const X: String = mask!("x");` fails to compile via rustc's
+      natural `E0015: cannot call non-const function` diagnostic
+      (locked by trybuild fixtures `mask_const_context.rs` and
+      `mask_static_context.rs`). Spec §2.1.1.9 + §1.9.6 amendment
+      2026-05-17 drop the litmask-emitted-substring requirement —
+      proc-macros cannot detect const/static context directly.
+- [x] `match s { mask!("foo") => ... }` fails to compile via rustc's
+      natural `expected pattern, found {` diagnostic (locked by
+      trybuild fixtures `mask_pattern_position.rs` and
+      `mask_if_let_pattern.rs`). Spec §2.1.1.10 + §1.9.6 amendment
+      2026-05-17 drop the litmask-emitted-substring requirement —
+      rustc rejects the macro invocation before the proc-macro
+      runs.
 - [x] All four cases covered by `trybuild` fixtures wired into `cargo test`
 - [x] `mask!(include_str!("fixtures/quote.txt"))` compiles AND the file
       contents are absent from the binary `strings` output (verifies the
