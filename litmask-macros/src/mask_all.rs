@@ -73,6 +73,11 @@ enum SkipReason {
     PatternPosition,
     ConstInitializer,
     StaticInitializer,
+    /// String-shaped literal argument to a macro the walker doesn't
+    /// recognize (neither in the skip list nor in any of the rewrite
+    /// families). Per §2.3.2.7 the literal is left alone and a
+    /// warning fires per occurrence.
+    UnrecognizedMacro,
 }
 
 impl SkipReason {
@@ -81,6 +86,7 @@ impl SkipReason {
             Self::PatternPosition => "litmask: skipped literal: pattern_position",
             Self::ConstInitializer => "litmask: skipped literal: const_initializer",
             Self::StaticInitializer => "litmask: skipped literal: static_initializer",
+            Self::UnrecognizedMacro => "litmask: skipped literal: unrecognized_macro",
         }
     }
 }
@@ -120,6 +126,14 @@ struct MaskAllWalker {
 }
 
 impl MaskAllWalker {
+    /// True when the walker is in a position where emitting a
+    /// `SkipReason` warning is meaningful: outside skip-list macros
+    /// and outside any pattern / const / static context that would
+    /// have its own dedicated reason.
+    fn in_warnable_context(&self) -> bool {
+        self.skip_macro_depth == 0 && self.current_skip_reason().is_none()
+    }
+
     /// Current skip reason for warning emission. Returns `None` when
     /// no skip-context is active. The priority order (pattern →
     /// const → static) is most-local-context-first: when a pattern
@@ -233,6 +247,20 @@ impl VisitMut for MaskAllWalker {
         visit_mut::visit_expr_macro_mut(self, mac);
         if was_skip {
             self.skip_macro_depth -= 1;
+            return;
+        }
+        // §2.3.2.7: unrecognized macro with literal string args →
+        // count + warn. visit_expr_mut handles the rewrite for
+        // recognized macros (format/output/panic/include_str/concat);
+        // anything else falls through to here.
+        if !self.in_warnable_context() {
+            return;
+        }
+        if is_recognized_for_rewrite(&mac.mac) {
+            return;
+        }
+        for _ in 0..count_string_literal_tokens(&mac.mac.tokens) {
+            self.skipped.push(SkipReason::UnrecognizedMacro);
         }
     }
 
@@ -435,6 +463,54 @@ fn maybe_rewrite_string_literal(expr: &Expr) -> Option<Expr> {
         _ => return None,
     };
     Some(syn::parse2(tokens).expect("emitted mask!(literal) parses as Expr"))
+}
+
+/// True when the macro is handled by one of the §2.3.2.2-§2.3.2.5
+/// rewrite paths (`format!`, `println!`/etc., `panic!`/etc.,
+/// `include_str!`, `concat!`). Used by the unrecognized-macro
+/// warning emitter to know whether to skip a given macro.
+fn is_recognized_for_rewrite(mac: &syn::Macro) -> bool {
+    const RECOGNIZED: &[&str] = &[
+        "format",
+        "println",
+        "eprintln",
+        "print",
+        "eprint",
+        "panic",
+        "todo",
+        "unimplemented",
+        "include_str",
+        "concat",
+    ];
+    let Some(ident) = mac.path.get_ident() else {
+        return false;
+    };
+    RECOGNIZED.iter().any(|name| ident == name)
+}
+
+/// Count string-shaped literal token-trees in `tokens`, recursing
+/// into groups. Used to emit one `UnrecognizedMacro` warning per
+/// string literal argument to a user-defined macro per §2.3.2.7.
+/// A literal "starts string-shaped" if its source form begins with
+/// `"`, `b"`, or `c"` — the discriminator `proc_macro2::Literal`
+/// gives us at the token level.
+fn count_string_literal_tokens(tokens: &TokenStream2) -> usize {
+    let mut count = 0;
+    for tt in tokens.clone() {
+        match tt {
+            proc_macro2::TokenTree::Literal(lit) => {
+                let s = lit.to_string();
+                if s.starts_with('"') || s.starts_with("b\"") || s.starts_with("c\"") {
+                    count += 1;
+                }
+            }
+            proc_macro2::TokenTree::Group(g) => {
+                count += count_string_literal_tokens(&g.stream());
+            }
+            _ => {}
+        }
+    }
+    count
 }
 
 /// Recognize the small set of macros whose literal arguments must NOT

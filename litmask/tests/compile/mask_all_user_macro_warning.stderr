@@ -1,0 +1,12 @@
+error: use of deprecated constant `fixture::_LITMASK_SKIP_0`: litmask: skipped literal: unrecognized_macro
+  --> tests/compile/mask_all_user_macro_warning.rs:18:1
+   |
+18 | #[mask_all]
+   | ^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> tests/compile/mask_all_user_macro_warning.rs:8:9
+   |
+8  | #![deny(deprecated)]
+   |         ^^^^^^^^^^
+   = note: this error originates in the attribute macro `mask_all` (in Nightly builds, run with -Z macro-backtrace for more info)

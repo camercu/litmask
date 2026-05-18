@@ -254,6 +254,33 @@ fn mask_all_panic_message_round_trips() {
     );
 }
 
+// ── §2.3.2.7: user-defined macros left alone ───────────────────
+
+macro_rules! my_user_macro {
+    ($s:literal) => {
+        $s
+    };
+}
+
+#[mask_all]
+mod user_macro_left_alone {
+    pub fn fixture() -> &'static str {
+        // `my_user_macro!` is user-defined; mask_all must leave its
+        // literal argument intact (would otherwise type-mismatch the
+        // `&'static str` return — `mask!()` returns `String`).
+        my_user_macro!("hafnium-quokka-4d3e72-task13")
+    }
+}
+
+#[test]
+fn mask_all_leaves_user_macro_literal_args_intact() {
+    common::init_once();
+    assert_eq!(
+        user_macro_left_alone::fixture(),
+        "hafnium-quokka-4d3e72-task13",
+    );
+}
+
 #[mask_all]
 mod const_and_static_initializers {
     pub const SLUG: &str = "compile-time-only";
