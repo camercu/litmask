@@ -498,6 +498,37 @@ a v2 candidate.
       and file contents absent from binary plaintext
 - [x] User-defined `my_macro!("foo")` left alone, warning emitted
 
+### Known limitations (track in security docs)
+
+Document these for users so they understand which literals stay
+plaintext under `#[mask_all]`:
+
+- **Literals inside `vec!` / `thread_local!` / `lazy_static!` /
+  other user-defined or `macro_rules!` macros.** `syn::VisitMut` does
+  not descend into a macro invocation's `mac.tokens`, so the walker
+  cannot see and rewrite literals nested inside arbitrary macro
+  bodies. Workaround: wrap each literal manually with `mask!()` /
+  `maskfmt!()` / `unmasked!()`.
+- **Literals inside `format_args!` invocations.** `format_args!`
+  returns `core::fmt::Arguments<'_>` (a borrowed view, not a
+  `String`), so it cannot be swapped for `maskfmt!` (which returns
+  `String`). Treated as `UserDefined` and warned on. Workaround:
+  rewrite the call to a `format!` (rewritten to `maskfmt!`) and
+  thread the resulting `String` through manually.
+- **Nested-module skip warnings pool at the outer attributed
+  module.** A literal skipped inside `#[mask_all] mod outer { mod
+  inner { ... } }` produces a ghost-deprecation anchor in
+  `outer::__litmask_skips` rather than `outer::inner::__litmask_skips`,
+  so the diagnostic path is shifted up one level. Workaround: apply
+  `#[mask_all]` per innermost module, or read the skip count as an
+  outer-module total.
+- **`include_str!(...)` / `include_bytes!(...)` / `env!(...)` /
+  `option_env!(...)` are rewritten via the `mask!(include_str!(...))`
+  shim, which only recognizes `include_str!` and `concat!` today.**
+  Symmetric `include_bytes!` / `env!` / `option_env!` support
+  requires dedicated `include_masked_str!` / `include_masked_bytes!`
+  / `env_masked!` / `option_env_masked!` macros (Task 34 below).
+
 ---
 
 ## Task 14: `#[mask_all(strict)]` (AFK)
@@ -1133,3 +1164,56 @@ Audit surface:
 - [ ] Panic-hygiene grep returns zero hits in the runtime decryption path
 - [ ] Reproducibility cross-machine check produces byte-identical
       artifacts
+
+---
+
+## Task 34: Dedicated masked-include + masked-env macros (AFK)
+
+**Implements:** spec amendment forthcoming
+**Blocked by:** Task 13
+
+Macro expansion rules mean a macro doesn't actually expand inside
+another macro's arguments — `mask!(include_str!("p"))` works today
+only because `mask!`'s parser has a hand-rolled shim that reads the
+file at proc-macro time. The shim is one-off and asymmetric: it
+covers `include_str!` and `concat!` but not `include_bytes!`,
+`env!`, or `option_env!`, leaving `mask_all` to special-case some
+families and leave others unhandled (a `UserDefined` warning).
+
+Introduce four new public macros that fold the file-read / env-var
+lookup AND the encryption into a single proc-macro pass:
+
+- `include_masked_str!("path")` → `String`
+- `include_masked_bytes!("path")` → `Vec<u8>`
+- `env_masked!("VAR")` → `String` (panics at proc-macro time if the
+  env var isn't set, matching `env!`'s contract)
+- `option_env_masked!("VAR")` → `Option<String>`
+
+`#[mask_all]` rewrites the un-masked stdlib forms to the dedicated
+masked counterparts:
+
+- `include_str!(...)` → `include_masked_str!(...)`
+- `include_bytes!(...)` → `include_masked_bytes!(...)`
+- `env!(...)` → `env_masked!(...)`
+- `option_env!(...)` → `option_env_masked!(...)`
+
+Drop the `mask!(include_str!(...))` / `mask!(concat!(...))` shim
+from `litmask-macros/src/mask.rs` once the dedicated path covers it
+(deprecate the shim with a doc-note in the intermediate release;
+remove in the breaking-change cycle).
+
+### Acceptance Criteria
+
+- [ ] `include_masked_str!("relative.txt")` returns the file's
+      contents as `String`; file contents absent from binary plaintext
+- [ ] `include_masked_bytes!("relative.bin")` returns the file's
+      contents as `Vec<u8>`; bytes absent from binary plaintext
+- [ ] `env_masked!("FOO")` returns the env-var value as `String` at
+      runtime; value absent from binary plaintext; missing env var
+      panics at proc-macro time with the same message style as `env!`
+- [ ] `option_env_masked!("FOO")` returns `None` when the env var is
+      unset at build time, `Some(masked_value)` otherwise
+- [ ] `#[mask_all]` rewrites the four stdlib forms above; round-trip
+      tests cover each
+- [ ] Doc notes on `mask!`'s `include_str!` / `concat!` shim point
+      users at the new macros and announce the deprecation horizon
