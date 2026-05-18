@@ -1,0 +1,5 @@
+error: `1abc` is not a valid Rust identifier and cannot be used as a maskfmt! implicit-capture placeholder
+  --> tests/compile/maskfmt_invalid_placeholder_name.rs:10:22
+   |
+10 |     let _ = maskfmt!("{1abc}");
+   |                      ^^^^^^^^

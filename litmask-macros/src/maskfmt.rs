@@ -384,7 +384,19 @@ impl Bindings {
                 // Implicit capture: register the ident with call-site
                 // resolution so it picks up the caller's local of the
                 // same name, mirroring `format!("{var}")`'s behavior.
-                let ident = syn::Ident::new(name, proc_macro2::Span::call_site());
+                // Route through `parse_str` rather than `Ident::new`
+                // so that keywords (`self`, `_`, `crate`), digit-
+                // prefixed names (`1abc`), and other non-identifier
+                // headers surface as a typed compile error instead of
+                // a proc-macro panic.
+                let ident: syn::Ident = syn::parse_str(name).map_err(|_| {
+                    syn::Error::new(
+                        span,
+                        format!(
+                            "`{name}` is not a valid Rust identifier and cannot be used as a maskfmt! implicit-capture placeholder",
+                        ),
+                    )
+                })?;
                 let idx = self.base_for_implicit + self.implicit.len();
                 self.implicit_idx.insert(name.clone(), idx);
                 self.implicit.push(ident);
