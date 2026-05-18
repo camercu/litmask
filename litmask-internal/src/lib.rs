@@ -309,38 +309,59 @@ pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
 
 /// Derive a per-call-site nonce: first [`NONCE_LEN`] bytes of the
 /// keyed BLAKE3 hash of the `"litmask-nonce"` domain separator
-/// concatenated with the 8-byte little-endian encoding of `idx`,
-/// keyed on `seed`.
+/// followed by the call site's `file` path, `line`, `column`, and
+/// the `plaintext` being encrypted — all keyed on `seed`.
 ///
-/// `idx` is the proc-macro-process-global call counter incremented
-/// once per `mask!()` invocation. Each crate that uses `mask!` has
-/// its own `mask_key` (one per `build.rs` `emit()`), so AEAD nonce
-/// uniqueness only needs to hold inside one rustc invocation —
-/// which a fresh counter per proc-macro server process satisfies
-/// trivially.
+/// **Why include plaintext.** `maskfmt!` synthesizes one `mask!()`
+/// per template fragment with all fragments routed through the
+/// `maskfmt!` invocation's span, so the `(file, line, column)`
+/// triple alone is not unique across mask invocations within a
+/// single proc-macro expansion. Mixing the plaintext into the
+/// keyed hash guarantees that two `mask!()` calls with distinct
+/// plaintexts at the same span get distinct nonces — required for
+/// AEAD security, since encrypting two plaintexts under one
+/// `(key, nonce)` pair would XOR-leak their contents.
 ///
-/// The seed-keyed hash is hardening, not a security boundary: the
-/// nonce ships in plaintext at the head of every blob. Keying on
-/// the seed prevents nonces from showing up as `0, 1, 2, …`
-/// little-endian patterns in the compiled binary, so an attacker
-/// inspecting `.rodata` cannot trivially count `mask!` invocations
-/// or order them by appearance.
+/// **Why (file, line, column) at all.** Keying on source
+/// coordinates instead of an expansion-order counter makes nonces
+/// stable under parallel macro expansion (`-Z threads=N`): two
+/// `mask!()` calls at distinct source positions receive distinct
+/// nonces regardless of which rustc thread visited first. The
+/// counter-based scheme this replaces relied on sequential
+/// expansion and would race under parallelization.
 ///
-/// The call-site domain separator (`"litmask-nonce"`) differs from
-/// the wrapper's (`"litmask-mask-key-nonce"`), so the call-site
-/// nonce space is disjoint from the wrapper's at the same seed.
+/// **Encoding.** `line` and `column` are 4-byte little-endian.
+/// `file` and `plaintext` are length-prefixed with 8-byte
+/// little-endian byte counts so the canonical byte stream is
+/// unambiguous — two distinct tuples cannot share an input
+/// encoding by accident-of-concatenation.
 ///
-/// A (file, line, column) keying is unreachable on stable Rust
-/// because `proc_macro::Span` does not expose those accessors
-/// without the nightly `proc_macro_span` feature. Once that
-/// stabilizes, this fn's body switches to the canonical derivation
-/// without a wire-format change (the nonce stays 12 bytes and stays
-/// the leading prefix of every blob).
+/// **Seed keying.** The seed-keyed hash is hardening, not a
+/// security boundary: the nonce ships in plaintext at the head of
+/// every blob. Keying on the seed prevents source coordinates and
+/// plaintext-length patterns from showing up as recognizable
+/// structure in `.rodata`.
+///
+/// **Domain separation.** The call-site domain separator
+/// (`"litmask-nonce"`) differs from the wrapper's
+/// (`"litmask-mask-key-nonce"`), so the call-site nonce space is
+/// disjoint from the wrapper's at the same seed.
 #[must_use]
-pub fn nonce_for_call_site(seed: &[u8; KEY_LEN], idx: u64) -> [u8; NONCE_LEN] {
+pub fn nonce_for_call_site(
+    seed: &[u8; KEY_LEN],
+    file: &str,
+    line: u32,
+    column: u32,
+    plaintext: &[u8],
+) -> [u8; NONCE_LEN] {
     let mut hasher = blake3::Hasher::new_keyed(seed);
     hasher.update(NONCE_TAG_CALL_SITE);
-    hasher.update(&idx.to_le_bytes());
+    hasher.update(&(file.len() as u64).to_le_bytes());
+    hasher.update(file.as_bytes());
+    hasher.update(&line.to_le_bytes());
+    hasher.update(&column.to_le_bytes());
+    hasher.update(&(plaintext.len() as u64).to_le_bytes());
+    hasher.update(plaintext);
     let digest = hasher.finalize();
     let mut out = [0u8; NONCE_LEN];
     out.copy_from_slice(&digest.as_bytes()[..NONCE_LEN]);
@@ -490,55 +511,120 @@ mod tests {
 
     #[test]
     fn nonce_for_call_site_is_deterministic() {
-        // Same (seed, idx) MUST yield the same nonce across calls
-        // — repeated builds with the same source and seed produce
-        // byte-identical artifacts.
-        for idx in [0u64, 1, 42, u64::MAX] {
-            let first = nonce_for_call_site(&SEED_A, idx);
-            let second = nonce_for_call_site(&SEED_A, idx);
-            assert_eq!(first, second, "non-deterministic at idx={idx}");
+        // Same (seed, file, line, column, plaintext) MUST yield the
+        // same nonce — identical sources rebuilt with the same seed
+        // produce byte-identical ciphertext (§2.1.1.8).
+        for (file, line, column, plaintext) in [
+            ("a.rs", 1u32, 1u32, b"x".as_slice()),
+            ("src/lib.rs", 42, 17, b"long-plaintext-value".as_slice()),
+            (
+                "/abs/very/deep/path/mod.rs",
+                u32::MAX,
+                u32::MAX,
+                b"".as_slice(),
+            ),
+        ] {
+            let first = nonce_for_call_site(&SEED_A, file, line, column, plaintext);
+            let second = nonce_for_call_site(&SEED_A, file, line, column, plaintext);
+            assert_eq!(first, second, "non-deterministic at {file}:{line}:{column}",);
         }
     }
 
     #[test]
     fn nonce_for_call_site_changes_with_seed() {
-        // Different seeds MUST yield different nonces for the same
-        // idx — two crates sharing source but built with different
-        // seeds (e.g. via LITMASK_RNG_SEED) get disjoint nonces.
-        let from_a = nonce_for_call_site(&SEED_A, 7);
-        let from_b = nonce_for_call_site(&SEED_B, 7);
-        assert_ne!(from_a, from_b);
+        let a = nonce_for_call_site(&SEED_A, "x.rs", 1, 1, b"p");
+        let b = nonce_for_call_site(&SEED_B, "x.rs", 1, 1, b"p");
+        assert_ne!(a, b);
     }
 
     #[test]
-    fn nonce_for_call_site_unique_across_indices() {
-        // AEAD requires unique (key, nonce) within one mask_key. A
-        // single rustc invocation can plausibly emit thousands of
-        // `mask!()` calls; sample 2048 indices and assert all
-        // resulting nonces are distinct.
-        const SAMPLE: usize = 2048;
+    fn nonce_for_call_site_changes_with_file() {
+        let a = nonce_for_call_site(&SEED_A, "a.rs", 1, 1, b"p");
+        let b = nonce_for_call_site(&SEED_A, "b.rs", 1, 1, b"p");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn nonce_for_call_site_changes_with_line() {
+        let a = nonce_for_call_site(&SEED_A, "x.rs", 1, 1, b"p");
+        let b = nonce_for_call_site(&SEED_A, "x.rs", 2, 1, b"p");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn nonce_for_call_site_changes_with_column() {
+        let a = nonce_for_call_site(&SEED_A, "x.rs", 1, 1, b"p");
+        let b = nonce_for_call_site(&SEED_A, "x.rs", 1, 2, b"p");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn nonce_for_call_site_changes_with_plaintext() {
+        // Multiple synthesized `mask!()` calls can share the same
+        // (file, line, column) — e.g., `maskfmt!` emits one
+        // `mask!()` per template fragment with all fragments
+        // routed through the `maskfmt!` invocation's span.
+        // Distinct plaintexts at the same span MUST get distinct
+        // nonces; otherwise two ciphertexts share `(key, nonce)`
+        // and their XOR leaks plaintext.
+        let a = nonce_for_call_site(&SEED_A, "x.rs", 1, 1, b"first");
+        let b = nonce_for_call_site(&SEED_A, "x.rs", 1, 1, b"second");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn nonce_for_call_site_unique_across_realistic_spread() {
+        // AEAD requires unique (key, nonce) per plaintext. A
+        // realistic crate spread — 16 files × 32 lines × 4 columns
+        // × 2 distinct plaintexts = 4096 distinct logical sites
+        // — MUST yield distinct nonces in full.
         let mut seen = alloc::collections::BTreeSet::new();
-        for idx in 0..SAMPLE as u64 {
-            let nonce = nonce_for_call_site(&SEED_A, idx);
-            assert!(seen.insert(nonce), "nonce collision at idx={idx}");
+        for f in 0..16u32 {
+            for l in 0..32u32 {
+                for c in 0..4u32 {
+                    for p in [b"alpha".as_slice(), b"beta".as_slice()] {
+                        let file = alloc::format!("crate/src/file_{f}.rs");
+                        let nonce = nonce_for_call_site(&SEED_A, &file, l, c, p);
+                        assert!(seen.insert(nonce), "collision at {file}:{l}:{c}");
+                    }
+                }
+            }
         }
-        assert_eq!(seen.len(), SAMPLE);
+        assert_eq!(seen.len(), 16 * 32 * 4 * 2);
+    }
+
+    #[test]
+    fn nonce_for_call_site_canonical_encoding() {
+        // Length-prefixing of file and plaintext prevents adjacent
+        // variable-length fields from being ambiguously decoded.
+        // Without the prefix, ("a", line=0x62, ...) could share a
+        // byte stream with ("ab", line=0x00, ...) where 'b' bleeds
+        // from file into the line bytes. Lock the property: tuples
+        // that differ only in where the file/plaintext boundary
+        // falls MUST produce distinct nonces.
+        let a = nonce_for_call_site(&SEED_A, "ab", 1, 1, b"cd");
+        let b = nonce_for_call_site(&SEED_A, "a", 1, 1, b"bcd");
+        assert_ne!(a, b);
+        let c = nonce_for_call_site(&SEED_A, "abc", 1, 1, b"d");
+        assert_ne!(a, c);
     }
 
     #[test]
     fn nonce_for_call_site_independent_of_wrapper_space() {
-        // The call-site and wrapper nonce derivations key on the
-        // same seed but distinct domain-separator tags
-        // (NONCE_TAG_CALL_SITE vs NONCE_TAG_WRAPPER), so collisions
+        // The call-site and wrapper derivations key on the same
+        // seed but distinct domain separators, so collisions
         // between the two spaces at the same seed are vanishingly
-        // unlikely. Spot-check a few indices to confirm at least
-        // these inputs disagree.
+        // unlikely. Spot-check several call sites to confirm.
         let wrapper = nonce_for_wrapper(&SEED_A);
-        for idx in [0u64, 1, 2, 100, u64::MAX] {
+        for (file, line, column, plaintext) in [
+            ("a.rs", 0u32, 0u32, b"p".as_slice()),
+            ("b.rs", 1, 1, b"".as_slice()),
+            ("/c.rs", u32::MAX, u32::MAX, b"longer".as_slice()),
+        ] {
             assert_ne!(
                 wrapper,
-                nonce_for_call_site(&SEED_A, idx),
-                "call-site idx={idx} collided with wrapper nonce"
+                nonce_for_call_site(&SEED_A, file, line, column, plaintext),
+                "{file}:{line}:{column} collided with wrapper",
             );
         }
     }

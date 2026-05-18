@@ -66,10 +66,10 @@ fn mask_concat_mixes_include_str_with_literal() {
 /// Each `mask!(include_str!(...))` call site is its own AEAD blob —
 /// resolving the same file at two sites must still produce two
 /// independently-decryptable values that agree on plaintext. Nonce
-/// uniqueness across the two blobs is enforced by `CALL_COUNTER` in
-/// the proc-macro, not asserted here (the runtime values would be
-/// identical even on nonce reuse); see the macro-side invariant for
-/// that contract.
+/// uniqueness across the two blobs comes from the distinct
+/// `(file, line, column)` source positions keyed into the per-call-
+/// site nonce derivation (spec §1.5.2); not asserted here (the
+/// runtime values would be identical even on nonce reuse).
 #[test]
 fn mask_include_str_decrypts_at_every_call_site() {
     common::init_once();

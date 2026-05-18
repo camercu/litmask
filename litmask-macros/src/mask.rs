@@ -8,7 +8,6 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -22,19 +21,6 @@ use zeroize::Zeroize;
 use litmask_internal::{CipherId, KEY_LEN, aead_encrypt, nonce_for_call_site};
 
 use crate::common::{byte_array_token, load_out_dir_artifact};
-
-/// Monotonic counter combined with the build seed to produce a unique
-/// AEAD nonce per `mask!()` call (spec §1.5.2). One counter per
-/// rustc process — resets per crate compile, which is the correctness
-/// scope: each crate that uses `mask!` has its own `mask_key`, so
-/// nonce uniqueness only needs to hold within a single crate's
-/// expansion.
-///
-/// `(file, line, column)` would produce order-stable nonces but is
-/// unreachable on stable Rust (`proc_macro::Span` accessors are
-/// nightly-only); §1.5.2 documents the switch path once
-/// `proc_macro_span` stabilizes.
-static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Error text emitted for any `mask!` input that isn't a supported
 /// literal kind or one of the two accepted built-in macro inputs.
@@ -57,8 +43,11 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let mut mask_key = load_out_dir_artifact::<KEY_LEN>("litmask_key.bin");
     let mut seed = load_out_dir_artifact::<KEY_LEN>("litmask_seed.bin");
 
-    let idx = CALL_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let nonce = nonce_for_call_site(&seed, idx);
+    let pm_span = kind.span().unwrap();
+    let file = pm_span.file();
+    let line = u32::try_from(pm_span.line()).unwrap_or(u32::MAX);
+    let column = u32::try_from(pm_span.column()).unwrap_or(u32::MAX);
+    let nonce = nonce_for_call_site(&seed, &file, line, column, &plaintext);
     seed.zeroize();
 
     let ciphertext_and_tag =
@@ -101,6 +90,20 @@ enum MaskInput {
 }
 
 impl MaskInput {
+    /// `proc_macro2::Span` of the underlying literal. Preserved
+    /// through `quote!` interpolation, so a `mask!()` invocation
+    /// synthesized by `#[mask_all]` carries the user's source span
+    /// (not the attribute's), even when several synthesized calls
+    /// share an outer span — the per-literal span gives the most
+    /// granular `(file, line, column)` available.
+    fn span(&self) -> proc_macro2::Span {
+        match self {
+            Self::Str(lit) => lit.span(),
+            Self::ByteStr(lit) => lit.span(),
+            Self::CStr(lit) => lit.span(),
+        }
+    }
+
     fn plaintext(&self) -> Vec<u8> {
         match self {
             Self::Str(lit) => lit.value().into_bytes(),
