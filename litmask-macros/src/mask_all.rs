@@ -71,12 +71,6 @@ enum SkipReason {
     /// families). The literal is left alone and a warning fires per
     /// occurrence.
     UnrecognizedMacro,
-    /// The template argument of a `format!` / `println!` / `panic!`
-    /// (etc.) invocation was not a string literal, so the macro is
-    /// left alone — the runtime template assembly happens against
-    /// whatever expression the user supplied, and any literal
-    /// substrings inside become unreachable to `mask_all`.
-    NonLiteralTemplate,
 }
 
 impl SkipReason {
@@ -86,7 +80,6 @@ impl SkipReason {
             Self::ConstInitializer => "litmask: skipped literal: const_initializer",
             Self::StaticInitializer => "litmask: skipped literal: static_initializer",
             Self::UnrecognizedMacro => "litmask: skipped literal: unrecognized_macro",
-            Self::NonLiteralTemplate => "litmask: skipped literal: non_literal_template",
         }
     }
 }
@@ -103,9 +96,9 @@ enum MacroFamily {
     /// choice; never rewritten, never warned.
     SkipExplicit,
     /// `dbg!`, `stringify!`, and the no-message forms of `assert!`,
-    /// `debug_assert!`, `assert_eq!`, `assert_ne!` — left alone with
-    /// no warning. The literals these contain serve diagnostic
-    /// purposes, not data.
+    /// `debug_assert!`, `assert_eq!`, `assert_ne!`, `debug_assert_eq!`,
+    /// `debug_assert_ne!` — left alone with no warning. The literals
+    /// these contain serve diagnostic purposes, not data.
     SkipDiagnostic,
     /// `format!` — rewritten to `maskfmt!`.
     Format,
@@ -116,14 +109,17 @@ enum MacroFamily {
     /// `write!`, `writeln!` — like [`Output`] but the writer occupies
     /// the first argument; the template starts at argument index 1.
     Write,
-    /// `panic!`, `todo!`, `unimplemented!` — wrapped via `maskfmt!`,
-    /// preserving the unwinding behavior.
+    /// `panic!`, `todo!`, `unimplemented!`, `unreachable!` — wrapped
+    /// via `maskfmt!`, preserving the unwinding behavior.
     Panic,
     /// `assert!`, `debug_assert!` with a custom-message argument, or
-    /// `assert_eq!`, `assert_ne!` with the equivalent custom-message
-    /// form. The condition (and values, for the equality variants)
-    /// stay positional; the message is masked.
-    AssertWithMessage,
+    /// `assert_eq!`, `assert_ne!`, `debug_assert_eq!`,
+    /// `debug_assert_ne!` with the equivalent custom-message form. The
+    /// condition (and values, for the equality variants) stay
+    /// positional; the message is masked. `head_arity` is 1 for the
+    /// boolean asserts (just the condition) and 2 for the equality
+    /// asserts (both operands).
+    AssertWithMessage { head_arity: usize },
     /// `include_str!` or `concat!` — the entire invocation is wrapped
     /// in `mask!()`. The wrapped invocation is resolved at proc-macro
     /// expansion time by `mask!`'s grammar and the resulting bytes
@@ -145,19 +141,20 @@ fn classify_macro(mac: &syn::Macro) -> MacroFamily {
     };
     match name.as_str() {
         "mask" | "maskfmt" | "unmasked" | "weak_mask" => MacroFamily::SkipExplicit,
-        "dbg" | "stringify" => MacroFamily::SkipDiagnostic,
+        "dbg" | "stringify" | "compile_error" | "cfg" | "file" | "line" | "column"
+        | "module_path" => MacroFamily::SkipDiagnostic,
         "assert" | "debug_assert" => {
             // assert!(cond) — no message; assert!(cond, msg, ...) — with.
             if count_top_level_args(&mac.tokens) >= 2 {
-                MacroFamily::AssertWithMessage
+                MacroFamily::AssertWithMessage { head_arity: 1 }
             } else {
                 MacroFamily::SkipDiagnostic
             }
         }
-        "assert_eq" | "assert_ne" => {
+        "assert_eq" | "assert_ne" | "debug_assert_eq" | "debug_assert_ne" => {
             // assert_eq!(a, b) — no message; assert_eq!(a, b, msg, ...) — with.
             if count_top_level_args(&mac.tokens) >= 3 {
-                MacroFamily::AssertWithMessage
+                MacroFamily::AssertWithMessage { head_arity: 2 }
             } else {
                 MacroFamily::SkipDiagnostic
             }
@@ -165,7 +162,7 @@ fn classify_macro(mac: &syn::Macro) -> MacroFamily {
         "format" => MacroFamily::Format,
         "println" | "eprintln" | "print" | "eprint" => MacroFamily::Output,
         "write" | "writeln" => MacroFamily::Write,
-        "panic" | "todo" | "unimplemented" => MacroFamily::Panic,
+        "panic" | "todo" | "unimplemented" | "unreachable" => MacroFamily::Panic,
         "include_str" | "concat" => MacroFamily::IncludeConcat,
         _ => MacroFamily::UserDefined,
     }
@@ -203,7 +200,11 @@ fn count_top_level_args(tokens: &TokenStream2) -> usize {
 #[allow(clippy::struct_field_names)]
 #[derive(Default)]
 struct MaskAllWalker {
-    /// Depth inside an explicit / per-spec skip macro.
+    /// Depth inside a `SkipExplicit` (`mask!` / `maskfmt!` /
+    /// `unmasked!` / `weak_mask!`) or `SkipDiagnostic` (`dbg!` /
+    /// `stringify!` / bare `assert*!` family / `compile_error!` /
+    /// `cfg!` / `file!` / `line!` / `column!` / `module_path!`)
+    /// macro. Children inside these are not rewritten.
     skip_macro_depth: usize,
     /// Depth inside a `const` initializer expression.
     const_depth: usize,
@@ -245,66 +246,61 @@ impl MaskAllWalker {
         }
     }
 
-    /// Build the ghost-deprecation pairs: one `#[deprecated]` const
-    /// per skip plus a synthetic anchor fn that holds a
-    /// `let _ = SKIP_N;` reference for each. Rustc's `deprecated`
-    /// lint fires once per anchor reference, surfacing each skip as
-    /// a "warning: use of deprecated constant" line in cargo output.
+    /// Build a hidden submodule housing one `#[deprecated]` const per
+    /// skip plus a synthetic anchor fn that references each. Rustc's
+    /// `deprecated` lint fires once per reference, surfacing each
+    /// skip as a "use of deprecated constant" line in cargo output.
+    /// The submodule (`__litmask_skips`) scopes the consts so they
+    /// don't pollute the user-visible identifier namespace of the
+    /// attributed module.
     fn warning_items(&self) -> Vec<syn::Item> {
         if self.skipped.is_empty() {
             return Vec::new();
         }
-        let mut items: Vec<syn::Item> = Vec::with_capacity(self.skipped.len() + 1);
+        let mut const_items: Vec<TokenStream2> = Vec::with_capacity(self.skipped.len());
         let mut anchor_refs: Vec<TokenStream2> = Vec::with_capacity(self.skipped.len());
         for (i, reason) in self.skipped.iter().enumerate() {
             let ident = format_ident!("_LITMASK_SKIP_{i}");
             let note = reason.note();
-            // `dead_code` is load-bearing: the const has no public
-            // callers besides the anchor fn below (which itself has
-            // `#[allow(dead_code)]`). Without it, every skip would
-            // emit a competing `unused constant` warning.
-            let const_item: syn::Item = syn::parse_quote! {
+            // `dead_code` allow is load-bearing: the const has no use
+            // outside the sibling anchor fn. Without it, every skip
+            // would emit a competing `unused constant` warning.
+            const_items.push(quote! {
                 #[deprecated(note = #note)]
                 #[allow(dead_code)]
                 const #ident: () = ();
-            };
-            items.push(const_item);
+            });
             anchor_refs.push(quote! { let _ = #ident; });
         }
-        let anchor_fn: syn::Item = syn::parse_quote! {
+        let module: syn::Item = syn::parse_quote! {
             #[doc(hidden)]
-            #[allow(dead_code, non_snake_case)]
-            fn __litmask_skip_anchors() {
-                #(#anchor_refs)*
+            #[allow(non_snake_case, dead_code)]
+            mod __litmask_skips {
+                #(#const_items)*
+                fn __anchor() {
+                    #(#anchor_refs)*
+                }
             }
         };
-        items.push(anchor_fn);
-        items
+        vec![module]
     }
 
     /// Single dispatch for macro-family rewrites. Returns the
     /// rewritten `Expr` if any family applies; otherwise `None`.
-    /// Side effects: appends a `SkipReason` to `self.skipped` for
-    /// non-literal-template forms and for user-defined macros with
-    /// literal arguments.
+    /// Side effect: appends a `SkipReason::UnrecognizedMacro` to
+    /// `self.skipped` for each string-literal argument of a
+    /// user-defined macro.
     fn try_rewrite_macro(&mut self, expr: &Expr) -> Option<Expr> {
         let Expr::Macro(em) = expr else { return None };
         match classify_macro(&em.mac) {
             MacroFamily::IncludeConcat => Some(wrap_include_or_concat(em)),
-            MacroFamily::Format => self.rewrite_or_warn_template(em, 0, RewriteShape::Replace),
+            MacroFamily::Format => Self::rewrite_template(em, 0, RewriteShape::Replace),
             MacroFamily::Output | MacroFamily::Panic => {
-                self.rewrite_or_warn_template(em, 0, RewriteShape::Wrap)
+                Self::rewrite_template(em, 0, RewriteShape::Wrap)
             }
-            MacroFamily::Write => self.rewrite_or_warn_template(em, 1, RewriteShape::Wrap),
-            MacroFamily::AssertWithMessage => {
-                // assert!/debug_assert! → head = [cond] → template at idx 1.
-                // assert_eq!/assert_ne! → head = [a, b] → template at idx 2.
-                let name = macro_last_segment(&em.mac);
-                let head_arity = match name.as_deref() {
-                    Some("assert_eq" | "assert_ne") => 2,
-                    _ => 1,
-                };
-                self.rewrite_or_warn_template(em, head_arity, RewriteShape::Wrap)
+            MacroFamily::Write => Self::rewrite_template(em, 1, RewriteShape::Wrap),
+            MacroFamily::AssertWithMessage { head_arity } => {
+                Self::rewrite_template(em, head_arity, RewriteShape::Wrap)
             }
             MacroFamily::UserDefined => {
                 for _ in 0..count_string_literal_tokens(&em.mac.tokens) {
@@ -321,8 +317,13 @@ impl MaskAllWalker {
     ///   rest)`,
     /// - if the template parses as a `LitStr`, emits a `maskfmt!`-
     ///   based rewrite,
-    /// - otherwise records a `NonLiteralTemplate` skip and returns
-    ///   `None`.
+    /// - otherwise returns `None` silently — an empty body
+    ///   (`panic!()`), a non-literal template (`format!(my_tmpl,
+    ///   ...)`), or a non-literal message (`assert!(cond, my_err)`)
+    ///   all reach this path and none contain a literal the walker
+    ///   could have masked. Genuine syntax errors inside the macro
+    ///   body still surface to the user via rustc's expansion of the
+    ///   original unaltered macro.
     ///
     /// `shape` controls the outer form:
     /// - `RewriteShape::Replace`: the entire invocation becomes a
@@ -331,24 +332,23 @@ impl MaskAllWalker {
     ///   binds the masked string and calls the original macro with
     ///   the head positions followed by `"{}", __s` (used for
     ///   output / write / panic / assert).
-    fn rewrite_or_warn_template(
-        &mut self,
+    fn rewrite_template(
         em: &syn::ExprMacro,
         head_arity: usize,
         shape: RewriteShape,
     ) -> Option<Expr> {
-        let Some(head_and_rest) = parse_head_and_template(&em.mac.tokens, head_arity) else {
-            self.skipped.push(SkipReason::NonLiteralTemplate);
-            return None;
-        };
+        let head_and_rest = parse_head_and_template(&em.mac.tokens, head_arity)?;
         let HeadAndTemplate {
             head_tokens,
             template_and_args,
         } = head_and_rest;
-        let macro_name = format_ident!(
-            "{}",
-            macro_last_segment(&em.mac).expect("classified path has a last segment")
-        );
+        let macro_name = &em
+            .mac
+            .path
+            .segments
+            .last()
+            .expect("classified path has a last segment")
+            .ident;
         let s = mixed_site_s();
         let rewritten: Expr = match shape {
             RewriteShape::Replace => syn::parse_quote! {
@@ -549,13 +549,19 @@ fn maybe_rewrite_string_literal(expr: &Expr) -> Option<Expr> {
 /// user-defined macro. The recursion is intentional: a literal
 /// nested inside an inner expression of a user-defined macro is
 /// still data the walker cannot mask and still warrants a warning.
+///
+/// Each `TokenTree::Literal` is routed through `syn::parse2::<Lit>`
+/// so raw forms (`r"..."`, `br"..."`, `cr"..."`) classify uniformly
+/// with their quoted counterparts.
 fn count_string_literal_tokens(tokens: &TokenStream2) -> usize {
     let mut count = 0;
     for tt in tokens.clone() {
         match tt {
             proc_macro2::TokenTree::Literal(lit) => {
-                let s = lit.to_string();
-                if s.starts_with('"') || s.starts_with("b\"") || s.starts_with("c\"") {
+                let ts = TokenStream2::from(proc_macro2::TokenTree::Literal(lit));
+                if let Ok(parsed) = syn::parse2::<Lit>(ts)
+                    && matches!(parsed, Lit::Str(_) | Lit::ByteStr(_) | Lit::CStr(_))
+                {
                     count += 1;
                 }
             }

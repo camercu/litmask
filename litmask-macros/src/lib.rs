@@ -141,14 +141,21 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
 ///   through the original macro.
 /// - `write!` / `writeln!` are wrapped analogously, with the writer
 ///   left as the first argument.
-/// - `panic!` / `todo!` / `unimplemented!` with a literal message
-///   are wrapped so the panic still fires with the same message
-///   text at runtime.
-/// - `assert!` / `debug_assert!` / `assert_eq!` / `assert_ne!` with
-///   a custom-message argument: the message is masked while the
-///   assertion still fires.
+/// - `panic!` / `todo!` / `unimplemented!` / `unreachable!` with a
+///   literal message are wrapped so the panic still fires with the
+///   same message text at runtime.
+/// - `assert!` / `debug_assert!` / `assert_eq!` / `assert_ne!` /
+///   `debug_assert_eq!` / `debug_assert_ne!` with a custom-message
+///   argument: the message is masked while the assertion still
+///   fires.
 /// - `include_str!(...)` and `concat!(...)` are wrapped in `mask!()`
 ///   so their compile-time-resolved strings are masked.
+/// - `dbg!`, `stringify!`, `compile_error!`, `cfg!`, `file!`,
+///   `line!`, `column!`, `module_path!` and the no-message forms of
+///   the assert family are recognized as diagnostic-only and skipped
+///   silently — their literals serve compile-time or developer-facing
+///   purposes that never land in shipped output as user-visible
+///   data.
 /// - Qualified macro paths (`std::format!`, `core::dbg!`, etc.) are
 ///   recognized by matching the last path segment.
 ///
@@ -162,10 +169,11 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
 /// - The literal is an argument to `mask!` / `maskfmt!` /
 ///   `unmasked!` / `weak_mask!` — the user has already chosen
 ///   explicitly.
-/// - The literal is an argument to `dbg!` / `stringify!`, or to a
-///   bare `assert_eq!` / `assert_ne!` (no-message form) — these
-///   serve diagnostic purposes and never embed the literal into
-///   shipped output.
+/// - The literal is an argument to a recognized diagnostic-only
+///   macro (`dbg!`, `stringify!`, `compile_error!`, `cfg!`, `file!`,
+///   `line!`, `column!`, `module_path!`, or any of the assert family
+///   in no-message form) — these serve compile-time or developer
+///   purposes and never embed the literal as user-facing data.
 /// - The literal is an argument to a user-defined or otherwise
 ///   unrecognized macro — the walker cannot rewrite literals inside
 ///   arbitrary macro bodies safely.
