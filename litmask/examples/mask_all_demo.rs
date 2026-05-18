@@ -8,6 +8,8 @@ use litmask::mask_all;
 
 #[mask_all]
 mod demo {
+    use std::fmt::Write as _;
+
     pub fn run() {
         // Each binding here is the rewritten value of a `mask!()`
         // call at runtime — the literal text never landed in
@@ -52,15 +54,36 @@ mod demo {
         let m = 99;
         println!("praseodymium-tapir-9f2c14-task13={m}");
 
-        // Task 13 §2.3.2.4 fixture — `panic!` with a literal message
-        // becomes
-        // `{ let __s = maskfmt!(msg); panic!("{}", __s) }`. The
-        // env-var guard keeps the demo's normal run from actually
-        // unwinding; the compiler can't drop the `panic!` call
-        // because the branch is taken based on runtime env state.
+        // `panic!` with a literal message — message text masked
+        // while the panic still unwinds at runtime. The env-var guard
+        // keeps the demo's normal run from actually unwinding; the
+        // compiler can't drop the `panic!` call because the branch
+        // is taken based on runtime env state.
         if std::env::var_os("LITMASK_DEMO_PANIC").is_some() {
             panic!("rubidium-yak-7a9c54-task13");
         }
+
+        // `write!`/`writeln!` with a literal template — the template
+        // moves into `maskfmt!`, the original macro is re-emitted
+        // with a `"{}"` placeholder over the masked result. Writer
+        // (first arg) stays positional.
+        let mut buf = String::new();
+        write!(buf, "samarium-pika-6e1d35-task13={n}", n = 13).unwrap();
+        println!("written ={buf}");
+
+        // Qualified macro paths (`std::format!`, `core::panic!`,
+        // etc.) are recognized by their last segment, so they get
+        // the same rewrite as their unqualified forms.
+        let qualified = std::format!("ytterbium-finch-4b3a98-task13={n}", n = 17);
+        println!("qualified={qualified}");
+
+        // assert! with a custom message — the message text is masked
+        // while the assertion still fires at runtime.
+        let positive = 5;
+        assert!(
+            positive > 0,
+            "iodine-okapi-9c2e41-task13: value must be positive, got {positive}"
+        );
     }
 }
 

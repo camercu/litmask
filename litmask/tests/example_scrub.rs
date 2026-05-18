@@ -141,15 +141,46 @@ fn mask_all_println_template_absent_from_binary() {
     common::assert_substring_absent(&path, "praseodymium-tapir-9f2c14-task13");
 }
 
-/// §2.3.2.4: `panic!` with a literal message inside `#[mask_all]` is
-/// wrapped analogously to the output macros — the message text gets
-/// masked while the panic still fires at runtime. The fixture
-/// phrase must be absent from the binary plaintext.
+/// `panic!` with a literal message inside `#[mask_all]` is wrapped
+/// analogously to the output macros — the message text gets masked
+/// while the panic still fires at runtime. The fixture phrase must
+/// be absent from the binary plaintext.
 #[test]
 fn mask_all_panic_message_absent_from_binary() {
     common::build_example("mask_all_demo", Profile::Release);
     let path = common::example_path("mask_all_demo", Profile::Release);
     common::assert_substring_absent(&path, "rubidium-yak-7a9c54-task13");
+}
+
+/// `write!`/`writeln!` with a literal template inside `#[mask_all]`
+/// are wrapped via `maskfmt!` so the literal text is masked while
+/// the writer side-effect is preserved.
+#[test]
+fn mask_all_write_template_absent_from_binary() {
+    common::build_example("mask_all_demo", Profile::Release);
+    let path = common::example_path("mask_all_demo", Profile::Release);
+    common::assert_substring_absent(&path, "samarium-pika-6e1d35-task13");
+}
+
+/// Qualified macro paths (`std::format!`, `core::dbg!`, etc.) are
+/// recognized by their last path segment, so `std::format!("...")`
+/// gets the same rewrite as bare `format!("...")` and its template
+/// is masked.
+#[test]
+fn mask_all_qualified_path_template_absent_from_binary() {
+    common::build_example("mask_all_demo", Profile::Release);
+    let path = common::example_path("mask_all_demo", Profile::Release);
+    common::assert_substring_absent(&path, "ytterbium-finch-4b3a98-task13");
+}
+
+/// `assert!` / `debug_assert!` / `assert_eq!` / `assert_ne!` with a
+/// custom message argument: the message text is masked while the
+/// assertion still fires.
+#[test]
+fn mask_all_assert_with_message_absent_from_binary() {
+    common::build_example("mask_all_demo", Profile::Release);
+    let path = common::example_path("mask_all_demo", Profile::Release);
+    common::assert_substring_absent(&path, "iodine-okapi-9c2e41-task13");
 }
 
 /// §2.2.2.2: placeholder names (named args, implicit captures,

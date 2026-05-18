@@ -281,6 +281,103 @@ fn mask_all_leaves_user_macro_literal_args_intact() {
     );
 }
 
+// ── write!/writeln! ────────────────────────────────────────────
+
+#[mask_all]
+mod write_macro_rewritten {
+    use std::fmt::Write as _;
+    pub fn fixture() -> String {
+        let mut buf = String::new();
+        write!(buf, "x={n}", n = 7).unwrap();
+        buf
+    }
+}
+
+#[test]
+fn mask_all_rewrites_write_with_literal_template() {
+    common::init_once();
+    assert_eq!(write_macro_rewritten::fixture(), "x=7");
+}
+
+#[mask_all]
+mod writeln_macro_rewritten {
+    use std::fmt::Write as _;
+    pub fn fixture() -> String {
+        let mut buf = String::new();
+        writeln!(buf, "tag={t}", t = "value").unwrap();
+        buf
+    }
+}
+
+#[test]
+fn mask_all_rewrites_writeln_with_literal_template() {
+    common::init_once();
+    assert_eq!(writeln_macro_rewritten::fixture(), "tag=value\n");
+}
+
+// ── assert family with custom message ──────────────────────────
+
+#[mask_all]
+mod assert_with_message_rewritten {
+    pub fn fixture_passing() {
+        let x = 5;
+        assert!(x > 0, "x must be positive, got x={x}");
+    }
+
+    pub fn fixture_failing() {
+        let x = 5;
+        let y = 6;
+        assert_eq!(x, y, "expected equal, got x={x} y={y}");
+    }
+}
+
+#[test]
+fn mask_all_assert_with_message_round_trips_passing() {
+    common::init_once();
+    // No panic expected — assert!'s condition holds.
+    assert_with_message_rewritten::fixture_passing();
+}
+
+#[test]
+fn mask_all_assert_eq_with_message_panics_with_message() {
+    common::init_once();
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let outcome = std::panic::catch_unwind(assert_with_message_rewritten::fixture_failing);
+    std::panic::set_hook(prev_hook);
+    let payload = outcome.expect_err("expected panic");
+    let msg = payload
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| payload.downcast_ref::<&'static str>().copied())
+        .expect("panic payload is a string");
+    assert!(
+        msg.contains("expected equal, got x=5 y=6"),
+        "panic message lost the custom-message text; got: {msg:?}",
+    );
+}
+
+// ── qualified macro paths ──────────────────────────────────────
+
+#[mask_all]
+mod qualified_macro_path_recognized {
+    pub fn fixture() -> String {
+        // `std::format!` resolves to the same builtin; the last-
+        // segment match in `classify_macro` recognizes it as the
+        // format family.
+        std::format!("ytterbium-pika-2f9c83={n}", n = 11)
+    }
+}
+
+#[test]
+fn mask_all_recognizes_qualified_format_path() {
+    common::init_once();
+    assert_eq!(
+        qualified_macro_path_recognized::fixture(),
+        "ytterbium-pika-2f9c83=11",
+    );
+}
+
 #[mask_all]
 mod const_and_static_initializers {
     pub const SLUG: &str = "compile-time-only";
