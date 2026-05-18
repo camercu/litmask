@@ -1,0 +1,10 @@
+error: expected pattern, found `{`
+  --> tests/compile/mask_while_let_pattern.rs:12:21
+   |
+12 |     while let Some(&mask!("foo")) = iter.next() {
+   |                     ^^^^^^^^^^^^
+   |                     |
+   |                     expected pattern
+   |                     this macro call doesn't expand to a pattern
+   |
+   = note: this error originates in the macro `mask` (in Nightly builds, run with -Z macro-backtrace for more info)

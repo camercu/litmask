@@ -1424,13 +1424,15 @@ dependencies, and same `LITMASK_RNG_SEED` SHALL produce byte-identical
 ciphertext for each `mask!` invocation.
 
 §2.1.1.9 — `mask!` SHALL NOT be usable in `const` or `static` initializers.
-The compile error MAY come from rustc's natural `E0015` diagnostic without a
-litmask-emitted substring; see the §1.9.6 2026-05-17 amendment for rationale.
+The compile error SHALL come from rustc's natural `E0015` diagnostic; the
+proc-macro SHALL NOT emit its own substring for this position. See the §1.9.6
+2026-05-17 amendment for rationale.
 
 §2.1.1.10 — `mask!` SHALL NOT be usable in pattern positions (match arms,
-`if let`, `while let`). The compile error MAY come from rustc's natural
-`expected pattern, found {` diagnostic without a litmask-emitted substring;
-see the §1.9.6 2026-05-17 amendment for rationale.
+`if let`, `while let`). The compile error SHALL come from rustc's natural
+`expected pattern, found {` diagnostic; the proc-macro SHALL NOT emit its
+own substring for this position. See the §1.9.6 2026-05-17 amendment for
+rationale.
 
 §2.1.1.11 — Decryption failure on a `mask!` invocation SHALL panic per the
 policy in §1.9.5.

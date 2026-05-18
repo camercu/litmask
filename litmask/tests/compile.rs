@@ -21,6 +21,7 @@ fn compile_fixtures() {
     t.compile_fail("tests/compile/mask_static_context.rs");
     t.compile_fail("tests/compile/mask_pattern_position.rs");
     t.compile_fail("tests/compile/mask_if_let_pattern.rs");
+    t.compile_fail("tests/compile/mask_while_let_pattern.rs");
     t.compile_fail("tests/compile/mask_include_str_missing.rs");
     t.compile_fail("tests/compile/mask_concat_with_failing_include_str.rs");
     t.compile_fail("tests/compile/unmasked_invalid_literal.rs");
