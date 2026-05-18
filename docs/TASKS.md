@@ -515,13 +515,6 @@ plaintext under `#[mask_all]`:
   `String`). Treated as `UserDefined` and warned on. Workaround:
   rewrite the call to a `format!` (rewritten to `maskfmt!`) and
   thread the resulting `String` through manually.
-- **Nested-module skip warnings pool at the outer attributed
-  module.** A literal skipped inside `#[mask_all] mod outer { mod
-  inner { ... } }` produces a ghost-deprecation anchor in
-  `outer::__litmask_skips` rather than `outer::inner::__litmask_skips`,
-  so the diagnostic path is shifted up one level. Workaround: apply
-  `#[mask_all]` per innermost module, or read the skip count as an
-  outer-module total.
 - **`include_str!(...)` / `include_bytes!(...)` / `env!(...)` /
   `option_env!(...)` are rewritten via the `mask!(include_str!(...))`
   shim, which only recognizes `include_str!` and `concat!` today.**

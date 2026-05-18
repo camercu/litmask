@@ -39,4 +39,5 @@ fn compile_fixtures() {
     t.compile_fail("tests/compile/mask_all_static_initializer_warning.rs");
     t.compile_fail("tests/compile/mask_all_user_macro_warning.rs");
     t.compile_fail("tests/compile/mask_all_user_macro_raw_warning.rs");
+    t.compile_fail("tests/compile/mask_all_nested_module_pattern_warning.rs");
 }

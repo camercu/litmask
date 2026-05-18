@@ -1,0 +1,12 @@
+error: use of deprecated constant `fixture::inner::__litmask_skips::_LITMASK_SKIP_0`: litmask: skipped literal: pattern_position
+  --> tests/compile/mask_all_nested_module_pattern_warning.rs:17:1
+   |
+17 | #[mask_all]
+   | ^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> tests/compile/mask_all_nested_module_pattern_warning.rs:13:9
+   |
+13 | #![deny(deprecated)]
+   |         ^^^^^^^^^^
+   = note: this error originates in the attribute macro `mask_all` (in Nightly builds, run with -Z macro-backtrace for more info)

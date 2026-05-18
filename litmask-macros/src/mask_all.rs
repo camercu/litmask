@@ -42,19 +42,33 @@ pub(crate) fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
         .to_compile_error()
         .into();
     };
-    let mut walker = MaskAllWalker::default();
-    walker.visit_item_mod_mut(&mut module);
-
-    // `module.content` is `None` for the `mod foo;` file-module form
-    // — the actual items live in another file we never see. Pass that
-    // form through unchanged; users wanting `#[mask_all]` semantics
-    // there can apply the attribute inside the target file's root
-    // module instead.
-    if let Some((_, items)) = module.content.as_mut() {
-        items.extend(walker.warning_items());
-    }
-
+    process_module(&mut module);
     quote! { #module }.into()
+}
+
+/// Walk and rewrite one module's items with a fresh `MaskAllWalker`,
+/// then emit that module's `__litmask_skips` submodule (if any skips
+/// fired) into its own item list. Recurses explicitly into nested
+/// `mod` items so each module gets its own walker and its own skip
+/// anchor namespace — pooling all skips at the outer mod would
+/// shift diagnostic paths up one level for every nested literal.
+///
+/// `mod foo;` file-module forms have `content == None`; the items
+/// live in a separate file the proc-macro never sees, so the module
+/// passes through untouched.
+fn process_module(m: &mut syn::ItemMod) {
+    let Some((_, items)) = m.content.as_mut() else {
+        return;
+    };
+    let mut walker = MaskAllWalker::default();
+    for item in items.iter_mut() {
+        if let Item::Mod(child) = item {
+            process_module(child);
+        } else {
+            walker.visit_item_mut(item);
+        }
+    }
+    items.extend(walker.warning_items());
 }
 
 /// Reason tag for one skipped literal. Lives in the
@@ -458,6 +472,16 @@ impl VisitMut for MaskAllWalker {
         if bump {
             self.skip_macro_depth -= 1;
         }
+    }
+
+    fn visit_item_mod_mut(&mut self, m: &mut syn::ItemMod) {
+        // Inline `mod inner { ... }` items (e.g. nested inside a
+        // function body or a block) get their own sub-walker so the
+        // inner mod's skip anchors land in `inner::__litmask_skips`
+        // rather than pooling at the outer mod's namespace. Do not
+        // recurse via `visit_mut::visit_item_mod_mut(self, m)` — that
+        // would re-pool everything into `self.skipped`.
+        process_module(m);
     }
 
     fn visit_item_const_mut(&mut self, item: &mut ItemConst) {
