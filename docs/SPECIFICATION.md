@@ -998,9 +998,14 @@ error message:
 |---|---|
 | `maskfmt!` non-literal template | "maskfmt! requires a string literal template at the call site; use `mask!` to decrypt a runtime string" |
 | `mask!` invalid literal type | "mask! accepts string, byte string, or C string literals" |
-| `mask!` in const/static initializer | "mask! cannot be used in const or static contexts; use OnceLock for lazy initialization" |
-| `mask!` in pattern position | "mask! cannot be used in pattern position; pattern positions require literal values" |
 | `mask!(concat!(...))` with non-literal arg | "concat! arguments inside mask! must be string, byte string, or C string literals" |
+
+`mask!` rejections in `const` / `static` initializer and pattern
+positions fall through to rustc's natural diagnostics
+(`E0015: cannot call non-const function ...` and
+`expected pattern, found {` respectively); the proc-macro emits no
+custom substring for these positions. See §2.1.1.9 and §2.1.1.10
+for the behavioral contract and the amendment below for rationale.
 
 > **Amendment 2026-05-10:** The "mask! invalid literal type" message
 > remains the rejection text for everything that is not a string /
@@ -1010,6 +1015,26 @@ error message:
 > at the grammar level. The new "concat! arguments inside mask!"
 > message covers the case where `concat!`'s arguments are themselves
 > non-literal.
+
+> **Amendment 2026-05-17:** The `mask!` const/static and
+> pattern-position rejection substrings (previously rows in the
+> table above) are dropped. Detecting both positions from inside
+> the proc-macro is not directly possible:
+> - **Const/static initializers** would require the proc-macro to
+>   inspect the surrounding item, which `proc_macro::Span` does not
+>   expose. Calling a non-const function (`__decrypt`) from a const
+>   context naturally fails with rustc's `E0015`, which is precise
+>   and points at the `mask!()` call site.
+> - **Pattern positions** invoke macros in pattern context, which
+>   rustc rejects with `expected pattern, found {` before the
+>   proc-macro runs at all. There is no proc-macro-side hook to
+>   customize the message.
+>
+> Trybuild fixtures `mask_const_context.rs`, `mask_static_context.rs`,
+> `mask_pattern_position.rs`, and `mask_if_let_pattern.rs` lock the
+> rejection by snapshotting the natural diagnostic. The spec's only
+> contract here is that the code MUST fail to compile in these
+> positions — see §2.1.1.9 / §2.1.1.10.
 
 #### §1.9.7 Sysexits.h exit code mapping
 
@@ -1398,13 +1423,14 @@ nonce derived per §1.5.2.
 dependencies, and same `LITMASK_RNG_SEED` SHALL produce byte-identical
 ciphertext for each `mask!` invocation.
 
-§2.1.1.9 — `mask!` SHALL NOT be usable in `const` or `static` initializers;
-the compile error SHALL include the substring "mask! cannot be used in const
-or static contexts".
+§2.1.1.9 — `mask!` SHALL NOT be usable in `const` or `static` initializers.
+The compile error MAY come from rustc's natural `E0015` diagnostic without a
+litmask-emitted substring; see the §1.9.6 2026-05-17 amendment for rationale.
 
 §2.1.1.10 — `mask!` SHALL NOT be usable in pattern positions (match arms,
-`if let`); the compile error SHALL include the substring "mask! cannot be
-used in pattern position".
+`if let`, `while let`). The compile error MAY come from rustc's natural
+`expected pattern, found {` diagnostic without a litmask-emitted substring;
+see the §1.9.6 2026-05-17 amendment for rationale.
 
 §2.1.1.11 — Decryption failure on a `mask!` invocation SHALL panic per the
 policy in §1.9.5.
