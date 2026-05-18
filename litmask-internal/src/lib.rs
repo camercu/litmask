@@ -307,17 +307,44 @@ pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
     out
 }
 
-// The per-call-site nonce is owned by the proc-macro crate
-// (`litmask-macros`). The macro derives it from
-// `(seed, NONCE_TAG_CALL_SITE, counter)` and embeds the resulting
-// 12-byte value in the leading bytes of every per-string blob, so the
-// runtime never re-derives it.
-//
-// A (file, line, column) call-site nonce derivation is unreachable
-// on stable Rust: `proc_macro::Span` does not expose accessors for
-// those fields without the nightly `proc_macro_span` feature. When
-// that stabilizes, the canonical derivation can live here as a
-// shared helper.
+/// Derive a per-call-site nonce: first [`NONCE_LEN`] bytes of the
+/// keyed BLAKE3 hash of [`NONCE_TAG_CALL_SITE`] concatenated with
+/// the 8-byte little-endian encoding of `idx`, keyed on `seed`.
+///
+/// `idx` is the proc-macro-process-global call counter incremented
+/// once per `mask!()` invocation. Each crate that uses `mask!` has
+/// its own `mask_key` (one per `build.rs` `emit()`), so AEAD nonce
+/// uniqueness only needs to hold inside one rustc invocation —
+/// which a fresh counter per proc-macro server process satisfies
+/// trivially.
+///
+/// The seed-keyed hash is hardening, not a security boundary: the
+/// nonce ships in plaintext at the head of every blob. Keying on
+/// the seed prevents nonces from showing up as `0, 1, 2, …`
+/// little-endian patterns in the compiled binary, so an attacker
+/// inspecting `.rodata` cannot trivially count `mask!` invocations
+/// or order them by appearance.
+///
+/// `NONCE_TAG_CALL_SITE` differs from `NONCE_TAG_WRAPPER`, so the
+/// call-site nonce space is disjoint from the wrapper's at the same
+/// seed.
+///
+/// A (file, line, column) keying is unreachable on stable Rust
+/// because `proc_macro::Span` does not expose those accessors
+/// without the nightly `proc_macro_span` feature. Once that
+/// stabilizes, this fn's body switches to the canonical derivation
+/// without a wire-format change (the nonce stays 12 bytes and stays
+/// the leading prefix of every blob).
+#[must_use]
+pub fn nonce_for_call_site(seed: &[u8; KEY_LEN], idx: u64) -> [u8; NONCE_LEN] {
+    let mut hasher = blake3::Hasher::new_keyed(seed);
+    hasher.update(NONCE_TAG_CALL_SITE);
+    hasher.update(&idx.to_le_bytes());
+    let digest = hasher.finalize();
+    let mut out = [0u8; NONCE_LEN];
+    out.copy_from_slice(&digest.as_bytes()[..NONCE_LEN]);
+    out
+}
 
 #[cfg(test)]
 mod tests {
@@ -458,5 +485,77 @@ mod tests {
         let b = nonce_for_wrapper(&SEED_B);
         assert_eq!(a, aa);
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn nonce_for_call_site_is_deterministic() {
+        // Same (seed, idx) MUST yield the same nonce across calls
+        // — repeated builds with the same source and seed produce
+        // byte-identical artifacts.
+        for idx in [0u64, 1, 42, u64::MAX] {
+            let first = nonce_for_call_site(&SEED_A, idx);
+            let second = nonce_for_call_site(&SEED_A, idx);
+            assert_eq!(first, second, "non-deterministic at idx={idx}");
+        }
+    }
+
+    #[test]
+    fn nonce_for_call_site_changes_with_seed() {
+        // Different seeds MUST yield different nonces for the same
+        // idx — two crates sharing source but built with different
+        // seeds (e.g. via LITMASK_RNG_SEED) get disjoint nonces.
+        let from_a = nonce_for_call_site(&SEED_A, 7);
+        let from_b = nonce_for_call_site(&SEED_B, 7);
+        assert_ne!(from_a, from_b);
+    }
+
+    #[test]
+    fn nonce_for_call_site_unique_across_indices() {
+        // AEAD requires unique (key, nonce) within one mask_key. A
+        // single rustc invocation can plausibly emit thousands of
+        // `mask!()` calls; sample 2048 indices and assert all
+        // resulting nonces are distinct.
+        const SAMPLE: usize = 2048;
+        let mut seen = alloc::collections::BTreeSet::new();
+        for idx in 0..SAMPLE as u64 {
+            let nonce = nonce_for_call_site(&SEED_A, idx);
+            assert!(seen.insert(nonce), "nonce collision at idx={idx}");
+        }
+        assert_eq!(seen.len(), SAMPLE);
+    }
+
+    #[test]
+    fn nonce_for_call_site_independent_of_wrapper_space() {
+        // The call-site and wrapper nonce derivations key on the
+        // same seed but distinct domain-separator tags
+        // (NONCE_TAG_CALL_SITE vs NONCE_TAG_WRAPPER), so collisions
+        // between the two spaces at the same seed are vanishingly
+        // unlikely. Spot-check a few indices to confirm at least
+        // these inputs disagree.
+        let wrapper = nonce_for_wrapper(&SEED_A);
+        for idx in [0u64, 1, 2, 100, u64::MAX] {
+            assert_ne!(
+                wrapper,
+                nonce_for_call_site(&SEED_A, idx),
+                "call-site idx={idx} collided with wrapper nonce"
+            );
+        }
+    }
+
+    #[test]
+    fn nonce_for_call_site_independent_of_source_position() {
+        // Counter-based derivation: a given idx maps to a fixed
+        // nonce regardless of WHERE the `mask!` call appears in the
+        // source. This locks the "adding code after a call site
+        // does not change that call site's nonce" property of
+        // §1.5.2 against accidental coupling to compile-time data
+        // beyond (seed, idx).
+        let nonce_at_idx_5_a = nonce_for_call_site(&SEED_A, 5);
+        // Simulate "additional code added before the call" by
+        // advancing the counter past 5 and re-deriving idx=5.
+        let _drained: alloc::vec::Vec<_> =
+            (0..100).map(|i| nonce_for_call_site(&SEED_A, i)).collect();
+        let nonce_at_idx_5_b = nonce_for_call_site(&SEED_A, 5);
+        assert_eq!(nonce_at_idx_5_a, nonce_at_idx_5_b);
     }
 }
