@@ -313,11 +313,11 @@ pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
 // 12-byte value in the leading bytes of every per-string blob, so the
 // runtime never re-derives it.
 //
-// The (file, line, column) scheme that `docs/SPECIFICATION.md §1.5.2`
-// describes is unreachable on stable Rust: `proc_macro::Span` does not
-// expose accessors for those fields without the nightly
-// `proc_macro_span` feature. When that stabilizes, the canonical
-// derivation can live here as a shared helper.
+// A (file, line, column) call-site nonce derivation is unreachable
+// on stable Rust: `proc_macro::Span` does not expose accessors for
+// those fields without the nightly `proc_macro_span` feature. When
+// that stabilizes, the canonical derivation can live here as a
+// shared helper.
 
 #[cfg(test)]
 mod tests {

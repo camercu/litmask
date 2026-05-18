@@ -1,11 +1,11 @@
 error: #[mask_all] applies only to module items (e.g. `#[mask_all] mod foo { ... }`)
-  --> tests/compile/mask_all_non_module_target.rs:10:1
-   |
-10 | fn not_a_module() {
-   | ^^
+ --> tests/compile/mask_all_non_module_target.rs:9:1
+  |
+9 | fn not_a_module() {
+  | ^^
 
 error[E0425]: cannot find function `not_a_module` in this scope
-  --> tests/compile/mask_all_non_module_target.rs:15:5
+  --> tests/compile/mask_all_non_module_target.rs:14:5
    |
-15 |     not_a_module();
+14 |     not_a_module();
    |     ^^^^^^^^^^^^ not found in this scope

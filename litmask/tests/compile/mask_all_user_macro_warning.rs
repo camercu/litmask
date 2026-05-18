@@ -1,9 +1,9 @@
-//! §2.3.2.7: a literal string argument to an unrecognized
-//! (user-defined) macro inside `#[mask_all]` is left unmasked and
-//! emits a "skipped literal: unrecognized_macro" deprecation
-//! warning. `#![deny(deprecated)]` upgrades the warning to a hard
-//! error so trybuild snapshots the exact text — locks the reason
-//! tag against drift.
+//! A literal string argument to an unrecognized (user-defined)
+//! macro inside `#[mask_all]` is left unmasked and emits a "skipped
+//! literal: unrecognized_macro" deprecation warning.
+//! `#![deny(deprecated)]` upgrades the warning to a hard error so
+//! trybuild snapshots the exact text — locks the reason tag against
+//! drift.
 
 #![deny(deprecated)]
 

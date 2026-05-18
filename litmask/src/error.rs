@@ -105,8 +105,8 @@ mod tests {
     #[test]
     fn decryption_variant_display_tag_is_terse_and_non_identifying() {
         // Display contributes to operator-facing error logs; the tag
-        // must be short and free of litmask-specific vocabulary so it
-        // matches the §1.9.3 minimal-plaintext aim.
+        // must be short and free of litmask-specific vocabulary to
+        // satisfy the minimal-plaintext aim of the error surface.
         assert_eq!(format!("{}", InitError::Decryption), "decryption");
     }
 

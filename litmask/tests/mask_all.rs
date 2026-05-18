@@ -1,22 +1,22 @@
-//! Integration tests for `#[mask_all]` (Task 12 / spec §2.3.1 +
-//! §2.3.2.1 + §2.3.2.6).
+//! Integration tests for `#[mask_all]`.
 //!
 //! The attribute walks the module's AST and rewrites bare string /
-//! byte string / C string literal expressions to `mask!(literal)`.
-//! These tests lock the round-trip (the literal decrypts at runtime
-//! to its plaintext) plus the recursion contract (nested modules,
-//! functions, blocks, closures all get rewritten). The skip rules
-//! and warning emission live in separate test modules.
+//! byte string / C string literal expressions to `mask!(literal)`,
+//! plus a set of common macro families (`format!`, `println!` etc.,
+//! `panic!` etc., `assert!` with custom message, `write!`/`writeln!`,
+//! `include_str!`, `concat!`) to their masked equivalents. These
+//! tests lock the round-trip — masked literals decrypt at runtime
+//! to their plaintext — and the recursion contract — nested
+//! modules, functions, blocks, and closures all get rewritten.
 
 #![allow(dead_code)]
 // Many fixture items are referenced only by the test bodies.
 // `#[mask_all]` emits ghost-deprecation warnings for every skipped
-// literal (§2.3.1.4) — that's the spec contract. The integration
-// tests below intentionally exercise skip paths; `-D warnings` (set
-// by the workspace pre-push hook) would otherwise upgrade those
-// warnings to errors. The warning *text* is locked separately in
-// `tests/compile/mask_all_pattern_warning.rs` via trybuild +
-// `#[deny(deprecated)]`.
+// literal — the integration tests below intentionally exercise skip
+// paths, so `-D warnings` (set by the workspace pre-push hook) would
+// otherwise upgrade those warnings to errors. The warning *text* is
+// locked separately in the trybuild fixtures under
+// `tests/compile/mask_all_*_warning.rs` via `#[deny(deprecated)]`.
 #![allow(deprecated)]
 
 mod common;
@@ -93,7 +93,7 @@ fn mask_all_does_not_double_mask_explicit_mask_invocation() {
     assert!(s.contains("tungsten-ibis-1f9d63"));
 }
 
-// ── §2.3.1.3 skip rules ────────────────────────────────────────
+// ── Skip rules ─────────────────────────────────────────────────
 
 #[mask_all]
 mod pattern_position_left_unchanged {
@@ -158,7 +158,7 @@ fn mask_all_skips_pattern_literals_while_let() {
     );
 }
 
-// ── §2.3.2.5: include_str! and concat! wrapping ────────────────
+// ── include_str! and concat! wrapping ──────────────────────────
 
 #[mask_all]
 mod include_str_wrapped {
@@ -191,7 +191,7 @@ fn mask_all_wraps_concat_in_mask() {
     assert_eq!(concat_wrapped::fixture(), "rhodium-lemur-5c2a93-task13");
 }
 
-// ── §2.3.2.2: format! → maskfmt! ───────────────────────────────
+// ── format! → maskfmt! ─────────────────────────────────────────
 
 #[mask_all]
 mod format_macro_rewritten {
@@ -220,7 +220,7 @@ fn mask_all_rewrites_format_with_named_args() {
     assert_eq!(format_macro_named_args::fixture(), "a=1 b=2");
 }
 
-// ── §2.3.2.4: panic family ─────────────────────────────────────
+// ── Panic family ───────────────────────────────────────────────
 
 #[mask_all]
 mod panic_message_rewritten {
@@ -254,7 +254,7 @@ fn mask_all_panic_message_round_trips() {
     );
 }
 
-// ── §2.3.2.7: user-defined macros left alone ───────────────────
+// ── User-defined macros left alone ─────────────────────────────
 
 macro_rules! my_user_macro {
     ($s:literal) => {
@@ -401,7 +401,7 @@ fn mask_all_skips_const_and_static_initializers() {
     assert!(greeting.contains("runtime-eligible"));
 }
 
-// ── §2.3.2.1 byte-string + c-string coverage ──────────────────
+// ── Byte-string + c-string coverage ────────────────────────────
 
 #[mask_all]
 mod byte_string_literal_round_trip {

@@ -1,10 +1,10 @@
 //! `mask!` proc-macro: AEAD-encrypt a string / byte-string / C-string
 //! literal at compile time and expand to a runtime decrypt call.
 //!
-//! Also handles the `include_str!` / `concat!` whitelist (spec
-//! §2.1.1.14): both expand at proc-macro time to a synthetic
-//! `LitStr` value, so the encryption pipeline sees a uniform literal
-//! input regardless of which surface form the user wrote.
+//! Also accepts `include_str!(...)` and `concat!(...)` as inputs:
+//! both expand at proc-macro time to a synthetic string literal, so
+//! the encryption pipeline sees a uniform literal input regardless
+//! of which surface form the user wrote.
 
 use std::fs;
 use std::path::PathBuf;
@@ -35,15 +35,15 @@ use crate::common::{byte_array_token, load_out_dir_artifact};
 /// order-stability.
 static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// §1.9.6 mandates this exact substring for any rejection of `mask!`
-/// input other than the two whitelisted macro invocations. Single
-/// source of truth — change here and regenerate trybuild snapshots
-/// with `TRYBUILD=overwrite`.
+/// Error text emitted for any `mask!` input that isn't a supported
+/// literal kind or one of the two accepted built-in macro inputs.
+/// Single source of truth — change here and regenerate trybuild
+/// snapshots with `TRYBUILD=overwrite`.
 const INVALID_LITERAL_MSG: &str = "mask! accepts string, byte string, or C string literals";
 
-/// §1.9.6 / §2.1.1.14: fired when a `concat!` argument inside `mask!`
-/// is neither a supported literal kind nor a further nested
-/// `concat!`/`include_str!`, or when the args mix literal kinds.
+/// Error text emitted when a `concat!` argument inside `mask!` is
+/// neither a supported literal kind nor a further nested
+/// `concat!`/`include_str!`, or when the arguments mix literal kinds.
 const CONCAT_ARG_MSG: &str =
     "concat! arguments inside mask! must be string, byte string, or C string literals";
 
@@ -89,10 +89,10 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     .into()
 }
 
-/// Parsed `mask!` input. After §2.1.1.14 resolution the input always
-/// reduces to one of three literal kinds — `include_str!`/`concat!`
-/// expand to synthetic `LitStr` values during parsing, so the runtime
-/// path is uniform across all accepted input forms.
+/// Parsed `mask!` input. After accepting `include_str!`/`concat!`
+/// (both resolve to synthetic `LitStr` values during parsing), the
+/// input always reduces to one of three literal kinds — the runtime
+/// path is uniform across every accepted input form.
 enum MaskInput {
     Str(LitStr),
     ByteStr(LitByteStr),
@@ -123,12 +123,13 @@ impl MaskInput {
     ///
     /// Panic policy: the str-path `String::from_utf8(...).unwrap()`
     /// is unreachable under valid inputs — `mask!("...")` only
-    /// accepts UTF-8 string literals, and AEAD authentication rejects
-    /// any tampering that could yield non-UTF-8 bytes. The bare
-    /// `.unwrap()` (no message) preserves §1.9.5 hygiene. The c-string
-    /// shim's analogous invariant lives in its doc-comment in
-    /// `litmask::lib.rs`. Unwinds in either path land at the user's
-    /// `mask!(...)` call site, not inside the litmask crate.
+    /// accepts UTF-8 string literals, and AEAD authentication
+    /// rejects any tampering that could yield non-UTF-8 bytes. The
+    /// bare `.unwrap()` (no message) keeps litmask-identifying text
+    /// out of compiled binaries. The c-string shim's analogous
+    /// invariant lives in its doc-comment in `litmask::lib.rs`.
+    /// Unwinds in either path land at the user's `mask!(...)` call
+    /// site, not inside the litmask crate.
     fn decrypt_expr(&self, blob: &TokenStream2, wrapper: &TokenStream2) -> TokenStream2 {
         match self {
             Self::Str(_) => quote! {
@@ -164,10 +165,10 @@ impl Parse for MaskInput {
     }
 }
 
-/// Resolve the `include_str!(...)` / `concat!(...)` whitelist
-/// (spec §2.1.1.14). Any other macro invocation falls back to the
-/// standard rejection so `mask!(println!(...))` and friends still
-/// produce the §1.9.6 message.
+/// Resolve the two macro inputs `mask!` accepts: `include_str!(...)`
+/// and `concat!(...)`. Any other macro invocation falls back to the
+/// standard rejection so `mask!(println!(...))` and friends produce
+/// the [`INVALID_LITERAL_MSG`] error.
 fn parse_macro_input_arg(input: ParseStream) -> syn::Result<MaskInput> {
     let mac: syn::Macro = input.parse()?;
     let name = mac.path.get_ident().map(syn::Ident::to_string);
@@ -180,13 +181,13 @@ fn parse_macro_input_arg(input: ParseStream) -> syn::Result<MaskInput> {
 
 /// `mask!(include_str!("path"))` — read the file at proc-macro time
 /// and treat its contents as if the user had written a string literal
-/// at the call site. Path is resolved relative to the consumer crate's
-/// `CARGO_MANIFEST_DIR`.
+/// at the call site. Path is resolved relative to the consumer
+/// crate's `CARGO_MANIFEST_DIR`.
 ///
-/// Note: spec §2.1.1.14 specifies `proc_macro::tracked_path::path` for
-/// build-dependency tracking, but that API is unstable as of Rust
-/// 1.88. On stable, edits to the file do NOT trigger an automatic
-/// rebuild — users must `cargo clean` or touch a tracked source file.
+/// Note: stable Rust does not expose a proc-macro API for marking
+/// arbitrary files as build inputs, so edits to the included file
+/// do NOT trigger an automatic rebuild — users must `cargo clean`
+/// or touch a tracked source file.
 fn resolve_include_str(mac: &syn::Macro) -> syn::Result<MaskInput> {
     let path_lit: LitStr = mac.parse_body()?;
     let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR").ok_or_else(|| {
@@ -213,10 +214,10 @@ fn resolve_include_str(mac: &syn::Macro) -> syn::Result<MaskInput> {
 
 /// `mask!(concat!(args...))` — recursively resolve each argument as a
 /// `MaskInput`, reject mixed literal kinds, and emit a synthetic
-/// literal of the unified kind. Currently only string-literal concat is
-/// reachable from the documented acceptance criteria; byte/c-string
-/// concat is rejected with [`CONCAT_ARG_MSG`] until a user need lands
-/// (spec §2.1.1.14 permits them but std `concat!` does not).
+/// literal of the unified kind. Currently only string-literal concat
+/// is reachable: byte/c-string concat is rejected with
+/// [`CONCAT_ARG_MSG`] because the stdlib `concat!` doesn't accept
+/// those forms anyway.
 fn resolve_concat(mac: &syn::Macro) -> syn::Result<MaskInput> {
     let span = mac.path.span();
     let args: Punctuated<MaskInput, Token![,]> = mac.parse_body_with(|input: ParseStream| {

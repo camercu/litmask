@@ -1,7 +1,7 @@
-//! §2.1.1.10: `mask!` must not be usable in pattern positions. As with
-//! the const-context fixture, this rides on the natural compiler error
-//! — the macro expansion is an expression, not a pattern, so pattern
-//! position fails syntactically.
+//! `mask!` must not be usable in pattern positions. As with the
+//! const-context fixture, this rides on the natural compiler error
+//! — the macro expansion is an expression, not a pattern, so
+//! pattern position fails syntactically.
 
 use litmask::mask;
 

@@ -1,16 +1,7 @@
 //! Round-trip integration tests for `mask!` against byte string and
-//! C string literals (Task 6 / spec §2.1.1.1, §2.1.1.3, §2.1.1.4).
-//!
-//! Tests are written test-first per the prove-it pattern: against the
-//! pre-Task-6 macro, `mask!(b"...")` and `mask!(c"...")` fail at compile
-//! time with `expected string literal`, so this file does not compile
-//! against the old codebase. Once the macro dispatches on all three
-//! literal kinds and the two runtime helpers exist, the file compiles
-//! and the assertions hold.
-//!
-//! The tests use `init_with!` + a static `KeyProvider` so they do not
-//! depend on `LITMASK_UNLOCK_KEY` being set in the test process's
-//! environment.
+//! C string literals. The tests use `init_with!` + a static
+//! `KeyProvider` so they do not depend on `LITMASK_UNLOCK_KEY` being
+//! set in the test process's environment.
 
 mod common;
 
@@ -79,8 +70,8 @@ fn mask_raw_byte_and_c_string_literals_round_trip() {
 
 #[test]
 fn mask_string_literal_returns_string_unchanged() {
-    // Regression net: §2.1.1.2 string-literal behavior is preserved by
-    // the dispatch change.
+    // Regression net: string-literal behavior is preserved by the
+    // dispatch change.
     common::init_once();
     let s: String = mask!("hello");
     assert_eq!(s, "hello");

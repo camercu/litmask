@@ -1,7 +1,8 @@
-//! Locks the §1.9.5 tampering panic policy for `mask!`:
-//! - AC 1: a tampered per-string blob panics at the call site.
-//! - AC 4: no `.expect("...")` or `panic!("...")` with a custom
-//!   message survives in the `mask!` decryption path.
+//! Locks the tampering-panic policy for `mask!`:
+//! - A tampered per-string blob panics at the call site.
+//! - No `.expect("...")` or `panic!("...")` with a custom message
+//!   survives in the `mask!` decryption path — those messages would
+//!   otherwise leak litmask-identifying plaintext into user binaries.
 
 mod common;
 
@@ -17,8 +18,8 @@ fn decrypt_panics_on_tampered_blob() {
     // production unlock key. The subsequent blob is the minimum valid
     // shape (nonce + zero-byte ciphertext + tag) but zero-filled, so
     // AEAD authentication fails — the panic this asserts is the
-    // §1.9.5 tampering-detection panic, not a lazy-init env-var
-    // miss that would also surface as an unwind.
+    // tampering-detection panic, not a lazy-init env-var miss that
+    // would also surface as an unwind.
     common::init_once();
 
     // Silence the panic message during catch_unwind; without the noop
@@ -45,9 +46,9 @@ fn decrypt_panics_on_tampered_blob() {
 /// Scans every file that contributes text to the user binary's
 /// `mask!()` decryption path for `.expect("msg")` and `panic!("msg")`
 /// patterns — the two ways a litmask-specific string would leak into
-/// user binaries (§1.9.5). The decrypt-collapse refactor (661393e)
-/// moved type construction out of `runtime.rs` and into the proc-macro
-/// emission + the c-string shim, so the scan now spans four files:
+/// user binaries. Type construction lives in the proc-macro emission
+/// and the c-string shim rather than in `runtime.rs`, so the scan
+/// spans four files:
 ///
 /// - `runtime.rs` — `__decrypt`, `__weak_decode`, lazy-init helpers.
 /// - `litmask/src/lib.rs` — `__decrypt_cstring_call!` shim.
@@ -59,7 +60,7 @@ fn decrypt_panics_on_tampered_blob() {
 /// Each entry pairs a path with an allowlist of substrings whose
 /// containing line executes at PROC-MACRO TIME (inside rustc's
 /// process) and therefore cannot leak into a user binary. New
-/// allowlist entries require §1.9.5 review.
+/// allowlist entries require security review.
 #[test]
 fn no_custom_panic_messages_in_decryption_path() {
     let manifest = env!("CARGO_MANIFEST_DIR");

@@ -1,6 +1,6 @@
-//! Compile-fail fixtures for `mask!` per §1.10.2 and §1.9.6. Each
-//! rejection scenario gets a `compile/<name>.rs` source paired with
-//! a `<name>.stderr` snapshot. Positive cases (round-tripping
+//! Compile-fail fixtures for the proc-macro crate. Each rejection
+//! scenario gets a `compile/<name>.rs` source paired with a
+//! `<name>.stderr` snapshot. Positive cases (round-tripping
 //! `include_str!` / `concat!` outputs) are covered by the runtime
 //! integration tests in `mask_macro_inputs.rs` — `trybuild` would
 //! only verify they compile, not that they decrypt correctly.

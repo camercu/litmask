@@ -1,6 +1,6 @@
-//! §2.2.3.2: `maskfmt!` mirrors `format!`'s rule that positional
-//! arguments must precede named ones. A positional expression after
-//! a `name = expr` form is a parse-time rejection in `format!`;
+//! `maskfmt!` mirrors `format!`'s rule that positional arguments
+//! must precede named ones. A positional expression after a
+//! `name = expr` form is a parse-time rejection in `format!`;
 //! maskfmt enforces the same with a typed error pointing at the
 //! offending positional.
 

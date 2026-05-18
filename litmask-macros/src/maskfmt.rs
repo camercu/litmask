@@ -7,7 +7,7 @@
 //! compiled binary — the template text never does. Placeholder names
 //! (named arguments and implicit captures) are rewritten to positional
 //! references against an internal binding table, so the names never
-//! survive into the compiled output (§2.2.2.2).
+//! survive into the compiled output either.
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -17,8 +17,9 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{Expr, LitStr, Token, parse_macro_input};
 
-/// §1.9.6 mandates this exact substring when `maskfmt!`'s template
-/// argument is not a string literal.
+/// Error text emitted when `maskfmt!`'s template argument is not a
+/// string literal. Single source of truth — change here and
+/// regenerate trybuild snapshots with `TRYBUILD=overwrite`.
 const MASKFMT_NON_LITERAL_MSG: &str = "maskfmt! requires a string literal template at the call site; use `mask!` to decrypt a runtime string";
 
 /// Implementation of the `#[proc_macro] maskfmt` entry point.
@@ -26,12 +27,11 @@ const MASKFMT_NON_LITERAL_MSG: &str = "maskfmt! requires a string literal templa
 /// Supports positional placeholders (`{}`, `{N}`), named arguments
 /// (`maskfmt!("{x}", x = e)`), implicit captures (`{var}` where `var`
 /// is a local in scope), and dynamic width/precision (`{:>w$}`,
-/// `{:.p$}`) per spec §2.2.2.
+/// `{:.p$}`).
 ///
 /// # Compile errors
 ///
-/// - Non-literal template → §1.9.6 substring "maskfmt! requires a
-///   string literal template at the call site".
+/// - Non-literal template — see [`MASKFMT_NON_LITERAL_MSG`].
 /// - Positional argument after a named argument → typed error.
 /// - Out-of-range positional index → typed error.
 /// - Unused positional argument → typed error (mirrors `format!`).
@@ -238,9 +238,9 @@ fn resolve_placeholders(
     Ok(resolved)
 }
 
-/// §2.2.3.2: mirror `format!`'s "positional argument never used"
-/// hard error. Implicit captures and named args don't get this
-/// check — format! doesn't either.
+/// Mirror `format!`'s "positional argument never used" hard error.
+/// Implicit captures and named args don't get this check — `format!`
+/// doesn't either.
 fn check_unused_positionals(
     resolved: &[ResolvedPlaceholder],
     positional_count: usize,
@@ -268,11 +268,11 @@ fn check_unused_positionals(
 }
 
 /// Interleave fragment + placeholder writes. Each fragment is masked
-/// individually via `mask!()` (§2.2.2.1); each placeholder lands as
-/// its own `format_args!` over only the bindings it references,
-/// with the spec text rewritten so any `<token>$` resolves to a
-/// LOCAL positional index — placeholder names never reach
-/// `format_args!`'s argument list either.
+/// individually via `mask!()`; each placeholder lands as its own
+/// `format_args!` over only the bindings it references, with the spec
+/// text rewritten so any `<token>$` resolves to a LOCAL positional
+/// index — placeholder names never reach `format_args!`'s argument
+/// list either.
 fn build_writes(
     fragments: &[String],
     resolved: &[ResolvedPlaceholder],

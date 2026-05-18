@@ -118,8 +118,9 @@ macro_rules! init_with {
 /// blob never carries one), and AEAD authentication rejects any
 /// tampering that could introduce one. The bare `.unwrap()` is
 /// therefore unreachable in practice — and stays bare (no message)
-/// per spec §1.9.5 panic hygiene. The unwind point is the user's
-/// `mask!(c"...")` call site, not inside the litmask crate.
+/// to keep the unwind path free of litmask-identifying plaintext.
+/// The unwind point is the user's `mask!(c"...")` call site, not
+/// inside the litmask crate.
 #[cfg(feature = "std")]
 #[doc(hidden)]
 #[macro_export]

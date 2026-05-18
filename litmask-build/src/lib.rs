@@ -70,9 +70,9 @@ pub fn emit() {
 
     let (mut seed, seed_source) = source_seed(&profile_dir);
 
-    // §2.4.1.5: a release build whose seed was freshly generated
-    // (no `LITMASK_RNG_SEED` supplied) has no persistence path, so
-    // the only way to reproduce the build later is to capture the
+    // A release build whose seed was freshly generated (no
+    // `LITMASK_RNG_SEED` supplied) has no persistence path, so the
+    // only way to reproduce the build later is to capture the
     // generated seed. Print it via `cargo:warning=` so it lands in
     // the developer's terminal output even when stderr is captured.
     if profile == Profile::Release && seed_source == SeedSource::Fresh {
@@ -175,10 +175,9 @@ impl Drop for BuildArtifacts {
     }
 }
 
-/// Indicates which of the three sources in §1.3.2 the seed came from.
-/// `emit()` consults this to decide whether a release-profile
-/// `cargo:warning=` should be emitted (only when freshly generated,
-/// per §2.4.1.5).
+/// Indicates which of the three sources the seed came from. `emit()`
+/// consults this to decide whether a release-profile `cargo:warning=`
+/// should be emitted (only when freshly generated).
 #[derive(Debug, PartialEq, Eq)]
 enum SeedSource {
     /// Supplied via `LITMASK_RNG_SEED` — highest priority.
@@ -190,7 +189,8 @@ enum SeedSource {
 }
 
 /// Cargo build profile, derived from the `PROFILE` env var. Drives
-/// the persist-on-miss / persist-fresh behavior split per §1.3.2.
+/// the persist-on-miss / persist-fresh behavior split between debug
+/// and release builds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Profile {
     Debug,
@@ -209,7 +209,7 @@ impl Profile {
     }
 }
 
-/// Load the per-build seed per §1.3.2 priority order:
+/// Load the per-build seed in priority order:
 /// 1. `LITMASK_RNG_SEED` env var (base64url, 32 bytes), regardless of profile.
 /// 2. Profile-dir persist file (debug profile only).
 /// 3. Fresh OS-RNG generation (with persist write on debug; no persist on release).
@@ -252,8 +252,8 @@ fn source_seed_with_env_and_profile(
 
 /// Decode a base64url-encoded 32-byte seed from `LITMASK_RNG_SEED`.
 /// Panics with an actionable message on malformed input — this is
-/// build-time input from the developer, not runtime data subject to
-/// §1.9.5 panic hygiene.
+/// build-time input from the developer, not runtime data subject
+/// to the panic-message-hygiene rule that applies in user binaries.
 fn decode_env_seed(raw: &OsString) -> [u8; KEY_LEN] {
     let text = raw.to_str().expect("LITMASK_RNG_SEED must be valid UTF-8");
     let mut decoded = Zeroizing::new(
@@ -301,9 +301,8 @@ mod tests {
     }
 
     /// Helper: invoke `source_seed_with_env_and_profile` with no env
-    /// override and the debug profile (matches the pre-§2.4.1.3
-    /// default), returning just the seed bytes to keep the existing
-    /// assertions tight.
+    /// override and the debug profile, returning just the seed bytes
+    /// to keep the existing assertions tight.
     fn debug_seed(profile_dir: &Path) -> [u8; KEY_LEN] {
         let (seed, _) = source_seed_with_env_and_profile(profile_dir, None, Profile::Debug);
         seed
@@ -379,12 +378,9 @@ mod tests {
         assert_eq!(first, second);
     }
 
-    /// Prove-it for §2.4.1.3: when `LITMASK_RNG_SEED` is set, the
-    /// returned seed comes from the env var (decoded base64url),
-    /// regardless of profile or whether a persist file exists. The
-    /// pre-fix code only read the persist file and ignored the env,
-    /// so this assertion failed (returned bytes were the cached
-    /// canned-persist value instead of the env-decoded value).
+    /// When `LITMASK_RNG_SEED` is set, the returned seed comes from
+    /// the env var (decoded base64url), regardless of profile or
+    /// whether a persist file exists.
     #[test]
     fn source_seed_honors_litmask_rng_seed_env_var() {
         let dir = TempDir::new().expect("tempdir");
@@ -402,20 +398,14 @@ mod tests {
         assert_eq!(source, SeedSource::Env);
     }
 
-    /// End-to-end prove-it for the §2.4.1.3 wire-up: when `source_seed`
-    /// (not the explicit-env helper) is invoked with `LITMASK_RNG_SEED`
-    /// present in the **process** environment, the returned seed is
-    /// env-decoded.
+    /// End-to-end wire-up: when `source_seed` (not the explicit-env
+    /// helper) is invoked with `LITMASK_RNG_SEED` present in the
+    /// **process** environment, the returned seed is env-decoded.
     ///
     /// The test uses a self-exec subprocess pattern so the env var is
     /// set by `Command::env` in the child only — no in-process
     /// `std::env::set_var` call, which would require `unsafe` and is
     /// forbidden workspace-wide.
-    ///
-    /// RED state (pre-fix) observed: with `source_seed`'s old body
-    /// (read persist or fresh, ignoring env), the child returned a
-    /// fresh-generated seed not matching the env-supplied bytes; the
-    /// `assert_eq!(source, SeedSource::Env)` line failed.
     #[test]
     fn source_seed_wires_up_litmask_rng_seed_from_process_env() {
         const MARKER: &str = "__LITMASK_SEED_TEST_CHILD";
@@ -461,8 +451,8 @@ mod tests {
     fn source_seed_release_profile_skips_persist_read_and_write() {
         let dir = TempDir::new().expect("tempdir");
         // A canned persist file MUST be ignored under the release
-        // profile (§1.3.2: release seed priority is env → fresh,
-        // with no persistence).
+        // profile (release seed priority is env → fresh, with no
+        // persistence).
         let canned_persist = [0x42u8; KEY_LEN];
         fs::write(persist_path(&dir), canned_persist).expect("seed file");
 

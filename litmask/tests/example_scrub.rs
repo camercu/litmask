@@ -53,10 +53,9 @@ fn weak_mask_fixture_absent_from_binary() {
 }
 
 /// `mask!(b"...")` and `mask!(c"...")` must keep their fixture bytes
-/// out of the compiled binary, matching the §2.1.1.3 and §2.1.1.4
-/// contract that all three literal kinds go through AEAD encryption
-/// at expansion time. Each fixture is a lexically unusual phrase to
-/// keep the absence assertion precise.
+/// out of the compiled binary — all three literal kinds go through
+/// AEAD encryption at expansion time. Each fixture is a lexically
+/// unusual phrase to keep the absence assertion precise.
 #[test]
 fn byte_and_cstr_fixtures_absent_from_binary() {
     common::build_example("byte_cstr_demo", Profile::Release);
@@ -67,7 +66,7 @@ fn byte_and_cstr_fixtures_absent_from_binary() {
 
 /// `mask!(include_str!(...))` must mask the file contents at
 /// proc-macro time so the plaintext from the fixture file is absent
-/// from the compiled binary (§2.1.1.14).
+/// from the compiled binary.
 #[test]
 fn include_str_fixture_absent_from_binary() {
     common::build_example("include_str_demo", Profile::Release);
@@ -76,9 +75,9 @@ fn include_str_fixture_absent_from_binary() {
 }
 
 /// `maskfmt!` must mask the literal fragments between placeholders
-/// (§2.2.2.1) so the template text never appears in plaintext. Each
-/// fragment phrase is lexically unusual to make the absence
-/// assertion precise.
+/// so the template text never appears in plaintext. Each fragment
+/// phrase is lexically unusual to make the absence assertion
+/// precise.
 #[test]
 fn maskfmt_fragments_absent_from_binary() {
     common::build_example("maskfmt_demo", Profile::Release);
@@ -90,10 +89,10 @@ fn maskfmt_fragments_absent_from_binary() {
     common::assert_substring_absent(&path, "ochre-hedgehog-2f5d8e");
 }
 
-/// §2.3.2.1: every bare string / byte string / C string literal
-/// rewritten by `#[mask_all]` must be absent from the compiled
-/// binary. Fixtures in `mask_all_demo` are unique-enough phrases
-/// that the absence assertion is precise.
+/// Every bare string / byte string / C string literal rewritten by
+/// `#[mask_all]` must be absent from the compiled binary. Fixtures
+/// in `mask_all_demo` are unique-enough phrases that the absence
+/// assertion is precise.
 #[test]
 fn mask_all_literals_absent_from_binary() {
     common::build_example("mask_all_demo", Profile::Release);
@@ -103,14 +102,14 @@ fn mask_all_literals_absent_from_binary() {
     common::assert_substring_absent(&path, "polonium-dingo-7c4e68-task12");
 }
 
-/// §2.3.2.5: `include_str!` and `concat!` invocations inside a
-/// `#[mask_all]` module must be wrapped in `mask!()` so their
-/// resulting strings are absent from binary plaintext. The
-/// included-file content (`selenium-pangolin-3d8a91-task13`) lives
-/// only in the fixture file at compile time and would otherwise
-/// land in `.rodata`; the concatenated literal
-/// (`rhodium-lemur-5c2a93-task13`) is assembled by the `concat!`
-/// builtin and would similarly be a single `.rodata` string.
+/// `include_str!` and `concat!` invocations inside a `#[mask_all]`
+/// module must be wrapped in `mask!()` so their resulting strings
+/// are absent from binary plaintext. The included-file content
+/// (`selenium-pangolin-3d8a91-task13`) lives only in the fixture
+/// file at compile time and would otherwise land in `.rodata`; the
+/// concatenated literal (`rhodium-lemur-5c2a93-task13`) is assembled
+/// by the `concat!` builtin and would similarly be a single
+/// `.rodata` string.
 #[test]
 fn mask_all_include_str_and_concat_absent_from_binary() {
     common::build_example("mask_all_demo", Profile::Release);
@@ -119,10 +118,10 @@ fn mask_all_include_str_and_concat_absent_from_binary() {
     common::assert_substring_absent(&path, "rhodium-lemur-5c2a93-task13");
 }
 
-/// §2.3.2.2: `format!(template, args...)` inside `#[mask_all]` is
-/// rewritten to `maskfmt!(template, args...)` when `template` is a
-/// string literal. The literal-fragment text must be absent from
-/// binary plaintext.
+/// `format!(template, args...)` inside `#[mask_all]` is rewritten
+/// to `maskfmt!(template, args...)` when `template` is a string
+/// literal. The literal-fragment text must be absent from binary
+/// plaintext.
 #[test]
 fn mask_all_format_template_absent_from_binary() {
     common::build_example("mask_all_demo", Profile::Release);
@@ -130,10 +129,10 @@ fn mask_all_format_template_absent_from_binary() {
     common::assert_substring_absent(&path, "erbium-narwhal-1a4e83-task13");
 }
 
-/// §2.3.2.3: output macros (`println!` etc.) with a literal template
-/// inside `#[mask_all]` are wrapped as
-/// `{ let __s = maskfmt!(template, args...); println!("{}", __s) }`.
-/// The template fragment must be absent from binary plaintext.
+/// Output macros (`println!` etc.) with a literal template inside
+/// `#[mask_all]` are wrapped so the formatted result flows through
+/// `maskfmt!` first; the template fragment must be absent from
+/// binary plaintext.
 #[test]
 fn mask_all_println_template_absent_from_binary() {
     common::build_example("mask_all_demo", Profile::Release);
@@ -183,11 +182,10 @@ fn mask_all_assert_with_message_absent_from_binary() {
     common::assert_substring_absent(&path, "iodine-okapi-9c2e41-task13");
 }
 
-/// §2.2.2.2: placeholder names (named args, implicit captures,
-/// dynamic-width refs) MUST NOT appear in the compiled binary. The
-/// fixtures below are unique tokens used as placeholder names in
-/// `maskfmt_demo`; their absence locks the proc-macro's positional
-/// rewriting.
+/// Placeholder names (named args, implicit captures, dynamic-width
+/// refs) MUST NOT appear in the compiled binary. The fixtures below
+/// are unique tokens used as placeholder names in `maskfmt_demo`;
+/// their absence locks the proc-macro's positional rewriting.
 #[test]
 fn maskfmt_placeholder_names_absent_from_binary() {
     common::build_example("maskfmt_demo", Profile::Release);

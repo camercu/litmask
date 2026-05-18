@@ -69,9 +69,9 @@ pub fn decrypt_wrapper(
 /// Decrypt a per-string blob.
 ///
 /// `blob` is `nonce (12) || ciphertext (n) || tag (16)`. The blob
-/// format does not record its own cipher id; per spec §1.7.2 every
-/// per-string blob in a binary uses the same cipher as the wrapper.
-/// Until that cipher is threaded through from init time, the blob path
+/// format does not record its own cipher id; every per-string blob
+/// in a binary uses the same cipher as the wrapper. Until that
+/// cipher is threaded through from init time, the blob path
 /// hardcodes the default ChaCha20-Poly1305.
 ///
 /// # Errors

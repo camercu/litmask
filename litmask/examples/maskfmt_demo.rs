@@ -15,23 +15,23 @@ fn main() {
     );
     println!("{s}");
 
-    // Named arg (§2.2.2.3): the binary must not carry the placeholder
-    // name `vermilion_finch_5c2e9a`.
+    // Named arg: the binary must not carry the placeholder name
+    // `vermilion_finch_5c2e9a`.
     let named = maskfmt!(
         "indigo-marmot-7a3e8b={vermilion_finch_5c2e9a}",
         vermilion_finch_5c2e9a = 1u32,
     );
     println!("{named}");
 
-    // Implicit capture (§2.2.2.4): the binary must not carry the
-    // local name `cobalt_terrapin_4b6f12`, which we capture against
+    // Implicit capture: the binary must not carry the local name
+    // `cobalt_terrapin_4b6f12`, which we capture against
     // `{cobalt_terrapin_4b6f12}` in the template.
     let cobalt_terrapin_4b6f12 = "ok";
     let captured = maskfmt!("crimson-bobcat-9d1c47={cobalt_terrapin_4b6f12}");
     println!("{captured}");
 
-    // Dynamic width (§2.2.2.6): the binary must not carry the
-    // dynamic-ref name `magenta_lemur_3e8a14`.
+    // Dynamic width: the binary must not carry the dynamic-ref name
+    // `magenta_lemur_3e8a14`.
     let dynamic = maskfmt!(
         "ochre-hedgehog-2f5d8e={:>magenta_lemur_3e8a14$}",
         "x",

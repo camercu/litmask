@@ -12,11 +12,11 @@ use litmask::{__wrapper_bytes, InitError};
 
 #[test]
 fn init_returns_decryption_error_on_tampered_wrapper() {
-    // Wrapper layout (litmask-internal §1.7.3): byte 0 = format
-    // version, byte 1 = cipher id, bytes 2..14 = nonce, bytes 14..62
-    // = AEAD body. Flipping a byte inside the body keeps the header
-    // valid, so the parse step succeeds and AEAD authentication is
-    // what fails — the very signal Decryption is meant to surface.
+    // Wrapper layout: byte 0 = format version, byte 1 = cipher id,
+    // bytes 2..14 = nonce, bytes 14..62 = AEAD body. Flipping a byte
+    // inside the body keeps the header valid, so the parse step
+    // succeeds and AEAD authentication is what fails — the very
+    // signal Decryption is meant to surface.
     let mut tampered = *__wrapper_bytes!();
     tampered[20] ^= 0x01;
 

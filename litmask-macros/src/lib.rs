@@ -4,14 +4,16 @@
 //! public `litmask` crate re-exports the macros here.
 //!
 //! `#[proc_macro]` attributes are required by rustc to live in the
-//! crate root, so this file only carries the four entry points. The
-//! input grammar and expansion logic for each macro lives in its own
+//! crate root, so this file only carries the entry points. The input
+//! grammar and expansion logic for each macro lives in its own
 //! submodule:
 //!
 //! - [`mask!`] — AEAD-encrypt a literal at compile time.
 //! - [`unmasked!`] — identity wrapper marking an opt-out literal.
 //! - [`maskfmt!`] — masked format-string template.
 //! - [`weak_mask!`] — XOR-against-wrapper anti-`strings(1)` obfuscation.
+//! - [`mask_all!`] — module-level attribute that rewrites every
+//!   masking-eligible literal in the attributed module.
 
 use proc_macro::TokenStream;
 
@@ -59,10 +61,9 @@ pub fn mask(input: TokenStream) -> TokenStream {
 }
 
 /// Identity macro that accepts one string, byte string, or C string
-/// literal and expands to that literal unchanged. Exists so
-/// `#[mask_all]` (Task 12) and `#[mask_all(strict)]` (Task 14) can
-/// recognize it as an explicit opt-out marker — a literal wrapped
-/// in `unmasked!` is left alone by the deep-rewriting attribute.
+/// literal and expands to that literal unchanged. Used as an explicit
+/// opt-out marker: a literal wrapped in `unmasked!` is left alone by
+/// [`mask_all!`] (which would otherwise rewrite it).
 ///
 /// Zero runtime overhead: the expansion is the bare literal token,
 /// so the result is `&'static str` / `&'static [u8; N]` /
@@ -73,21 +74,26 @@ pub fn unmasked(input: TokenStream) -> TokenStream {
 }
 
 /// Build a runtime `String` by masking each literal fragment of the
-/// template via [`mask!`] and splicing in the formatted positional
-/// arguments. The template is parsed at proc-macro time; only the
+/// template via [`mask!`] and splicing in the formatted arguments at
+/// runtime. The template is parsed at proc-macro time; only the
 /// per-placeholder format specs (e.g. `{:.2}`, `{:?}`) appear in the
 /// compiled binary — the template text never does.
 ///
-/// Task 10 supports positional placeholders only. Named arguments
-/// (`{name}`) and implicit captures (`{var}`) land in Task 11; the
-/// parser rejects them with a typed error today.
+/// Supports positional placeholders (`{}`, `{N}`), named arguments
+/// (`maskfmt!("{x}", x = e)`), implicit captures (`{var}` where
+/// `var` is a local in scope), and dynamic width/precision
+/// (`{:>w$}`, `{:.p$}`). Placeholder names are rewritten to
+/// positional references at proc-macro time so the names never
+/// survive into the compiled output.
 ///
 /// # Compile errors
 ///
-/// - Non-literal template → §1.9.6 substring "maskfmt! requires a
-///   string literal template at the call site".
-/// - Named / implicit-capture placeholder → deferred-feature error.
-/// - Positional index out of range → typed error.
+/// - Non-literal template — `maskfmt!` cannot mask a runtime-built
+///   format string; use [`mask!`] for that case.
+/// - Positional argument with no matching placeholder, or
+///   placeholder index out of range — mirrors `format!`'s
+///   compile-time checks.
+/// - Duplicate named argument.
 ///
 /// # Panics
 ///
@@ -121,25 +127,65 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
     weak_mask::expand(input)
 }
 
-/// Apply `mask!` recursively to every bare string-shaped literal
-/// expression inside the attributed module. Walks nested modules,
-/// functions, blocks, and closures (§2.3.1.5). Skips literals inside
-/// `mask!` / `maskfmt!` / `unmasked!` / `weak_mask!` invocations
-/// (already explicit) and inside `dbg!` / `stringify!` / `assert_eq!`
-/// / `assert_ne!` per §2.3.2.6.
+/// Module-level attribute that recursively rewrites every
+/// masking-eligible literal in the attributed module. Each direct
+/// string-shaped literal becomes a [`mask!`] call, and common
+/// formatting / output / panic / assert macros are rewritten to use
+/// [`maskfmt!`] for their templates.
 ///
-/// Task 12 covers bare-literal rewriting + the skip-macro list.
-/// Pattern-position / `const` + `static` initializer skips + the
-/// ghost-deprecation warning emission land in follow-up commits.
-/// The full `format!`/`println!`/`panic!`/`include_str!`/`concat!`/
-/// user-macro substitution table is Task 13; `#[mask_all(strict)]`
-/// is Task 14.
+/// Recognized macro families:
+///
+/// - `format!(lit, ...)` → `maskfmt!(lit, ...)`
+/// - `println!` / `eprintln!` / `print!` / `eprint!` with a literal
+///   template are wrapped so the masked formatted result is written
+///   through the original macro.
+/// - `write!` / `writeln!` are wrapped analogously, with the writer
+///   left as the first argument.
+/// - `panic!` / `todo!` / `unimplemented!` with a literal message
+///   are wrapped so the panic still fires with the same message
+///   text at runtime.
+/// - `assert!` / `debug_assert!` / `assert_eq!` / `assert_ne!` with
+///   a custom-message argument: the message is masked while the
+///   assertion still fires.
+/// - `include_str!(...)` and `concat!(...)` are wrapped in `mask!()`
+///   so their compile-time-resolved strings are masked.
+/// - Qualified macro paths (`std::format!`, `core::dbg!`, etc.) are
+///   recognized by matching the last path segment.
+///
+/// Literals are left untouched (with a per-occurrence warning) when:
+///
+/// - The literal appears in a pattern position (`match`, `if let`,
+///   `while let`) — patterns cannot accept macro invocations.
+/// - The literal initializes a `const` or `static` — `mask!()`
+///   returns a runtime value and cannot be evaluated at compile
+///   time.
+/// - The literal is an argument to `mask!` / `maskfmt!` /
+///   `unmasked!` / `weak_mask!` — the user has already chosen
+///   explicitly.
+/// - The literal is an argument to `dbg!` / `stringify!`, or to a
+///   bare `assert_eq!` / `assert_ne!` (no-message form) — these
+///   serve diagnostic purposes and never embed the literal into
+///   shipped output.
+/// - The literal is an argument to a user-defined or otherwise
+///   unrecognized macro — the walker cannot rewrite literals inside
+///   arbitrary macro bodies safely.
+/// - The template argument of `format!` / `println!` / `panic!`
+///   etc. is not itself a string literal — runtime template
+///   assembly leaves the formatted output unreachable to
+///   `mask_all!`.
+///
+/// Warnings are emitted as `deprecated` lints so they surface in
+/// `cargo build` output without changing build success on stable
+/// `#[mask_all]`. Each warning's note includes a tag identifying
+/// the skip kind (`pattern_position`, `const_initializer`,
+/// `static_initializer`, `non_literal_template`,
+/// `unrecognized_macro`) so the user can grep for them.
 ///
 /// # Panics
 ///
 /// Panics during macro expansion if applied to anything other than a
-/// module item (`#[mask_all] mod ...`) — `syn` reports the parse
-/// error at the attribute's call site.
+/// module item — `syn` reports the parse error at the attribute's
+/// call site.
 #[proc_macro_attribute]
 pub fn mask_all(attr: TokenStream, item: TokenStream) -> TokenStream {
     mask_all::expand(attr, item)

@@ -5,11 +5,12 @@
 //! [`__init_with_wrapper`] (the target of `init!` / `init_with!`) or
 //! lazily by [`__decrypt_str`] on the first `mask!()` call.
 //!
-//! Spec §1.9.5 prescribes the `match X { Ok(_) => …, Err(_) => panic!() }`
-//! form for panic hygiene. The `assert!` and `.expect(...)` alternatives
-//! that clippy's pedantic group prefers all inject custom message text
-//! that would identify the code as litmask-related, which §1.9.5
-//! forbids.
+//! The decryption path uses bare `panic!()` with no custom message
+//! for AEAD authentication and configuration failures. `assert!` and
+//! `.expect(...)` alternatives inject message text that would
+//! identify the code as litmask-related and leak into user binaries;
+//! `match X { Ok(_) => …, Err(_) => panic!() }` is the only form
+//! that keeps the unwind path identifier-free.
 #![allow(
     clippy::single_match_else,
     clippy::match_wild_err_arm,
@@ -166,7 +167,8 @@ fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {
     cell::get_or_init(|| {
         // Under no_std there is no default provider — lazy init only
         // makes sense if init_with! ran first. Reaching this branch
-        // means a configuration error; panic per §1.9.5.
+        // means a configuration error; panic with no message to
+        // avoid leaking litmask-identifying plaintext.
         #[cfg(feature = "std")]
         {
             let provider = crate::EnvVarProvider::default();

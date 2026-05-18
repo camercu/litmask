@@ -1,6 +1,6 @@
-//! §2.1.1.5/§2.1.1.6: `mask!` must reject non-literal expressions
-//! with the required substring "mask! accepts string, byte string,
-//! or C string literals".
+//! `mask!` must reject non-literal expressions with the required
+//! substring "mask! accepts string, byte string, or C string
+//! literals".
 
 use litmask::mask;
 

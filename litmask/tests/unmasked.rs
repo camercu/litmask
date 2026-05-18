@@ -1,7 +1,7 @@
-//! Integration tests for `unmasked!` (spec §2.1.2). The macro is an
-//! identity over the three accepted literal kinds; this file proves
-//! both the round-trip and the type-preservation guarantees, plus
-//! the §2.1.2.4 zero-overhead property via const-context evaluation.
+//! Integration tests for `unmasked!`. The macro is an identity over
+//! the three accepted literal kinds; this file proves both the
+//! round-trip and the type-preservation guarantees, plus the
+//! zero-overhead property via const-context evaluation.
 
 use litmask::unmasked;
 use std::ffi::CStr;
@@ -25,9 +25,9 @@ fn unmasked_c_string_literal_yields_static_cstr() {
     assert_eq!(c.to_bytes_with_nul(), b"hi\0");
 }
 
-/// `const` context evaluation locks the §2.1.2.4 zero-overhead
-/// contract: only an expression of `&'static str` (the bare literal)
-/// can initialize a `const` of that type. Any runtime decoding or
+/// `const` context evaluation locks the zero-overhead contract:
+/// only an expression of `&'static str` (the bare literal) can
+/// initialize a `const` of that type. Any runtime decoding or
 /// allocation would fail to compile here.
 #[test]
 fn unmasked_string_literal_is_const_evaluable() {

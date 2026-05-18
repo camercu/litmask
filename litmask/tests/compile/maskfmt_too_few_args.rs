@@ -1,5 +1,5 @@
-//! §2.2.3.2: `maskfmt!` rejects placeholders that reference an
-//! argument index beyond the supplied positional list.
+//! `maskfmt!` rejects placeholders that reference an argument
+//! index beyond the supplied positional list.
 
 use litmask::maskfmt;
 

@@ -1,11 +1,9 @@
-//! Integration tests for `maskfmt!` (spec §2.2). Task 10 covers
-//! positional placeholders; Task 11 adds named arguments
-//! (§2.2.2.3), implicit captures (§2.2.2.4), and dynamic
-//! width/precision (§2.2.2.6).
+//! Integration tests for `maskfmt!`. Covers positional placeholders,
+//! named arguments, implicit captures, and dynamic width/precision.
 //!
 //! Each round-trip test asserts the produced `String` byte-equals
 //! the output of an equivalent `format!()` invocation, locking
-//! §2.2.2.8 (output identity) directly.
+//! output identity directly.
 
 mod common;
 
@@ -98,11 +96,11 @@ fn maskfmt_evaluates_each_argument_exactly_once() {
     assert_eq!(s, "1 2 3");
 }
 
-// ── Task 11: named args + implicit captures + dynamic width/precision ──
+// ── Named args + implicit captures + dynamic width/precision ───
 
-/// §2.2.2.3: a named argument's RHS expression is evaluated exactly
-/// once even if referenced multiple times in the template. Matches
-/// `format!`'s single-evaluation guarantee for named args.
+/// A named argument's RHS expression is evaluated exactly once even
+/// if referenced multiple times in the template. Matches `format!`'s
+/// single-evaluation guarantee for named args.
 #[test]
 fn maskfmt_named_arg_evaluates_exactly_once() {
     common::init_once();
@@ -120,8 +118,8 @@ fn maskfmt_named_arg_evaluates_exactly_once() {
     assert_eq!(s, "1 1");
 }
 
-/// §2.2.2.4: a placeholder `{var}` with no corresponding named arg
-/// resolves to the local `var` already in scope at the call site.
+/// A placeholder `{var}` with no corresponding named arg resolves
+/// to the local `var` already in scope at the call site.
 #[test]
 fn maskfmt_implicit_capture_reads_local() {
     common::init_once();
@@ -131,8 +129,8 @@ fn maskfmt_implicit_capture_reads_local() {
     assert_eq!(s, format!("{var}"));
 }
 
-/// §2.2.2.6: dynamic width `{:>w$}` resolves `w` against the named
-/// arg with the same name, producing identical output to `format!`.
+/// Dynamic width `{:>w$}` resolves `w` against the named arg with
+/// the same name, producing identical output to `format!`.
 #[test]
 fn maskfmt_dynamic_width_matches_format() {
     common::init_once();
@@ -141,9 +139,8 @@ fn maskfmt_dynamic_width_matches_format() {
     assert_eq!(s, "   hi");
 }
 
-/// §2.2.2.6: dynamic precision `{:.p$}` resolves `p` against the
-/// named arg with the same name, producing identical output to
-/// `format!`.
+/// Dynamic precision `{:.p$}` resolves `p` against the named arg
+/// with the same name, producing identical output to `format!`.
 #[test]
 fn maskfmt_dynamic_precision_matches_format() {
     common::init_once();
@@ -153,8 +150,8 @@ fn maskfmt_dynamic_precision_matches_format() {
     assert_eq!(s, "3.142");
 }
 
-/// §2.2.2.6: dynamic width via implicit capture (no named-arg
-/// declaration; `w` is a local in scope).
+/// Dynamic width via implicit capture (no named-arg declaration;
+/// `w` is a local in scope).
 #[test]
 fn maskfmt_dynamic_width_implicit_capture_matches_format() {
     common::init_once();
@@ -164,8 +161,8 @@ fn maskfmt_dynamic_width_implicit_capture_matches_format() {
     assert_eq!(s, "       x");
 }
 
-/// §2.2.2.8: mixed positional + named placeholders produce identical
-/// output to `format!` for the same input.
+/// Mixed positional + named placeholders produce identical output
+/// to `format!` for the same input.
 #[test]
 fn maskfmt_named_and_positional_mix_matches_format() {
     common::init_once();
@@ -174,9 +171,9 @@ fn maskfmt_named_and_positional_mix_matches_format() {
     assert_eq!(s, "1 pos 2");
 }
 
-/// §2.2.2.4: an implicit capture of a non-Copy type works the same
-/// way as `format!` — the reference is borrowed, the local stays
-/// usable after the call.
+/// An implicit capture of a non-Copy type works the same way as
+/// `format!` — the reference is borrowed, the local stays usable
+/// after the call.
 #[test]
 fn maskfmt_implicit_capture_borrows_non_copy() {
     common::init_once();

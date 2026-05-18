@@ -1,5 +1,5 @@
-//! §2.3.1.4: a string literal in a `const` initializer must produce
-//! a "skipped literal: const_initializer" deprecation warning.
+//! A string literal in a `const` initializer must produce a
+//! "skipped literal: const_initializer" deprecation warning.
 //! `#![deny(deprecated)]` makes that warning a hard error so
 //! trybuild can snapshot the exact text — locks the reason tag
 //! against drift.

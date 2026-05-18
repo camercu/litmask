@@ -1,8 +1,8 @@
-//! §2.3.1.4: each skipped literal under `#[mask_all]` emits a
-//! ghost-deprecation warning identifying the reason. Pinning the
-//! warning under `#[deny(deprecated)]` turns it into a compile
-//! error so trybuild can snapshot the message text — that locks
-//! the §2.3.1.4 wording against accidental drift.
+//! Each skipped literal under `#[mask_all]` emits a ghost-
+//! deprecation warning identifying the reason. Pinning the warning
+//! under `#[deny(deprecated)]` turns it into a compile error so
+//! trybuild can snapshot the message text — locks the wording
+//! against accidental drift.
 
 #![deny(deprecated)]
 

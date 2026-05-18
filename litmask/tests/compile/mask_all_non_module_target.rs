@@ -1,8 +1,7 @@
-//! §2.3.1.1: `#[mask_all]` applies only to module items. Other
-//! targets (functions, structs, etc.) must fail with a typed
-//! error naming the constraint — not the opaque syn "expected
-//! `mod`" parse error that an unguarded `parse_macro_input!`
-//! would emit.
+//! `#[mask_all]` applies only to module items. Other targets
+//! (functions, structs, etc.) must fail with a typed error naming
+//! the constraint — not the opaque syn "expected `mod`" parse error
+//! that an unguarded `parse_macro_input!` would emit.
 
 use litmask::mask_all;
 
