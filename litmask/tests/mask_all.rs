@@ -420,3 +420,201 @@ fn mask_all_rewrites_c_string_literals() {
     let s = c_string_literal_round_trip::fixture();
     assert_eq!(s.to_bytes(), b"radium-quetzal-8e3a51");
 }
+
+// ── assert_ne! with custom message ─────────────────────────────
+
+#[mask_all]
+mod assert_ne_with_message_rewritten {
+    pub fn fixture_failing() {
+        let x = 5;
+        let y = 5;
+        assert_ne!(x, y, "expected unequal, got x={x} y={y}");
+    }
+}
+
+#[test]
+fn mask_all_assert_ne_with_message_panics_with_message() {
+    common::init_once();
+    let msg = common::catch_panic_msg(assert_ne_with_message_rewritten::fixture_failing)
+        .expect("expected panic");
+    assert!(
+        msg.contains("expected unequal, got x=5 y=5"),
+        "panic message lost the custom-message text; got: {msg:?}",
+    );
+}
+
+// ── Output family (eprintln!, print!, eprint!) ─────────────────
+
+#[mask_all]
+mod eprintln_macro_rewritten {
+    pub fn fixture() {
+        eprintln!("zirconium-marten-1b8d47={n}", n = 3);
+    }
+}
+
+#[test]
+fn mask_all_rewrites_eprintln_with_literal_template() {
+    common::init_once();
+    eprintln_macro_rewritten::fixture();
+}
+
+#[mask_all]
+mod print_macro_rewritten {
+    pub fn fixture() {
+        print!("vanadium-civet-4a2e83={n}", n = 5);
+    }
+}
+
+#[test]
+fn mask_all_rewrites_print_with_literal_template() {
+    common::init_once();
+    print_macro_rewritten::fixture();
+}
+
+#[mask_all]
+mod eprint_macro_rewritten {
+    pub fn fixture() {
+        eprint!("niobium-coati-7c5f29={n}", n = 7);
+    }
+}
+
+#[test]
+fn mask_all_rewrites_eprint_with_literal_template() {
+    common::init_once();
+    eprint_macro_rewritten::fixture();
+}
+
+// ── Panic family (todo!, unimplemented!, unreachable!) ─────────
+
+#[mask_all]
+mod todo_macro_rewritten {
+    pub fn fixture() {
+        todo!("hafnium-aardvark-8d4e62: feature gating in progress");
+    }
+}
+
+#[test]
+fn mask_all_todo_message_round_trips() {
+    common::init_once();
+    let msg = common::catch_panic_msg(todo_macro_rewritten::fixture).expect("expected panic");
+    assert!(
+        msg.contains("hafnium-aardvark-8d4e62"),
+        "todo! panic lost the fixture text; got: {msg:?}",
+    );
+}
+
+#[mask_all]
+mod unimplemented_macro_rewritten {
+    pub fn fixture() {
+        unimplemented!("tantalum-shrew-2a9f51: experimental path");
+    }
+}
+
+#[test]
+fn mask_all_unimplemented_message_round_trips() {
+    common::init_once();
+    let msg =
+        common::catch_panic_msg(unimplemented_macro_rewritten::fixture).expect("expected panic");
+    assert!(
+        msg.contains("tantalum-shrew-2a9f51"),
+        "unimplemented! panic lost the fixture text; got: {msg:?}",
+    );
+}
+
+#[mask_all]
+mod unreachable_macro_rewritten {
+    pub fn fixture(x: u32) -> u32 {
+        match x {
+            0 => 0,
+            _ => unreachable!("ruthenium-loris-3c8e74: x must be zero in this fixture, got {x}"),
+        }
+    }
+}
+
+#[test]
+fn mask_all_unreachable_message_round_trips() {
+    common::init_once();
+    // Direct call with x != 0 trips the unreachable! and panics
+    // with the masked message.
+    let msg = common::catch_panic_msg(|| {
+        let _ = unreachable_macro_rewritten::fixture(1);
+    })
+    .expect("expected panic");
+    assert!(
+        msg.contains("ruthenium-loris-3c8e74"),
+        "unreachable! panic lost the fixture text; got: {msg:?}",
+    );
+}
+
+// ── debug_assert family — left alone (SkipDiagnostic) ──────────
+//
+// The walker classifies `debug_assert!`, `debug_assert_eq!`, and
+// `debug_assert_ne!` as `SkipDiagnostic` regardless of the message
+// form: release builds dead-code-eliminate the body via
+// `cfg!(debug_assertions)`, so masking the message would only add
+// a `.rodata` blob and a runtime decrypt that's never observed in
+// shipping binaries. These tests pin that classification by
+// asserting the original (un-rewritten) panic-message behavior in
+// the debug profile that `cargo test` uses.
+
+#[mask_all]
+mod debug_assert_left_alone {
+    pub fn fixture_passing() {
+        let x = 5;
+        debug_assert!(x > 0, "x must be positive, got x={x}");
+    }
+
+    pub fn fixture_failing() {
+        let x = 5;
+        debug_assert!(x < 0, "x must be negative, got x={x}");
+    }
+}
+
+#[test]
+fn mask_all_leaves_debug_assert_untouched() {
+    debug_assert_left_alone::fixture_passing();
+    let msg = common::catch_panic_msg(debug_assert_left_alone::fixture_failing)
+        .expect("expected panic in debug build");
+    assert!(
+        msg.contains("x must be negative, got x=5"),
+        "debug_assert! panic message lost; got: {msg:?}",
+    );
+}
+
+#[mask_all]
+mod debug_assert_eq_left_alone {
+    pub fn fixture_failing() {
+        let x = 5;
+        let y = 6;
+        debug_assert_eq!(x, y, "expected equal, got x={x} y={y}");
+    }
+}
+
+#[test]
+fn mask_all_leaves_debug_assert_eq_untouched() {
+    let msg = common::catch_panic_msg(debug_assert_eq_left_alone::fixture_failing)
+        .expect("expected panic in debug build");
+    assert!(
+        msg.contains("expected equal, got x=5 y=6"),
+        "debug_assert_eq! panic message lost; got: {msg:?}",
+    );
+}
+
+#[mask_all]
+mod debug_assert_ne_left_alone {
+    pub fn fixture_failing() {
+        let x = 5;
+        let y = 5;
+        debug_assert_ne!(x, y, "expected unequal, got x={x} y={y}");
+    }
+}
+
+#[test]
+fn mask_all_leaves_debug_assert_ne_untouched() {
+    let msg = common::catch_panic_msg(debug_assert_ne_left_alone::fixture_failing)
+        .expect("expected panic in debug build");
+    assert!(
+        msg.contains("expected unequal, got x=5 y=5"),
+        "debug_assert_ne! panic message lost; got: {msg:?}",
+    );
+}

@@ -172,14 +172,43 @@ fn mask_all_qualified_path_template_absent_from_binary() {
     common::assert_substring_absent(&path, "ytterbium-finch-4b3a98-mask-all-macro");
 }
 
-/// `assert!` / `debug_assert!` / `assert_eq!` / `assert_ne!` with a
-/// custom message argument: the message text is masked while the
-/// assertion still fires.
+/// `assert!` / `assert_eq!` / `assert_ne!` with a custom message
+/// argument: the message text is masked while the assertion still
+/// fires. The `debug_assert!` family is intentionally NOT scrubbed
+/// here — its body is dead-code-eliminated in release builds via
+/// `cfg!(debug_assertions)`, so absence of the literal is a property
+/// of LLVM DCE rather than litmask's masking.
 #[test]
 fn mask_all_assert_with_message_absent_from_binary() {
     common::build_example("mask_all_demo", Profile::Release);
     let path = common::example_path("mask_all_demo", Profile::Release);
     common::assert_substring_absent(&path, "iodine-okapi-9c2e41-mask-all-macro");
+    common::assert_substring_absent(&path, "europium-meerkat-2d8c41-mask-all-macro");
+    common::assert_substring_absent(&path, "thallium-gerbil-6a4e29-mask-all-macro");
+}
+
+/// Remaining `Output` family (`eprintln!`, `print!`, `eprint!`)
+/// shares the println rewrite path; each template literal must be
+/// absent from binary plaintext.
+#[test]
+fn mask_all_eprintln_print_eprint_templates_absent_from_binary() {
+    common::build_example("mask_all_demo", Profile::Release);
+    let path = common::example_path("mask_all_demo", Profile::Release);
+    common::assert_substring_absent(&path, "zirconium-marten-1b8d47-mask-all-macro");
+    common::assert_substring_absent(&path, "vanadium-civet-4a2e83-mask-all-macro");
+    common::assert_substring_absent(&path, "niobium-coati-7c5f29-mask-all-macro");
+}
+
+/// Remaining panic family (`todo!`, `unimplemented!`, `unreachable!`)
+/// shares the panic rewrite path; each message literal must be
+/// absent from binary plaintext.
+#[test]
+fn mask_all_todo_unimplemented_unreachable_messages_absent_from_binary() {
+    common::build_example("mask_all_demo", Profile::Release);
+    let path = common::example_path("mask_all_demo", Profile::Release);
+    common::assert_substring_absent(&path, "hafnium-aardvark-8d4e62-mask-all-macro");
+    common::assert_substring_absent(&path, "tantalum-shrew-2a9f51-mask-all-macro");
+    common::assert_substring_absent(&path, "ruthenium-loris-3c8e74-mask-all-macro");
 }
 
 /// Placeholder names (named args, implicit captures, dynamic-width

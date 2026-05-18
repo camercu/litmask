@@ -81,6 +81,49 @@ mod demo {
             positive > 0,
             "iodine-okapi-9c2e41-mask-all-macro: value must be positive, got {positive}"
         );
+        // assert_eq! / assert_ne! with custom messages — message is
+        // masked while the operand comparison still runs. Pick
+        // operands such that the assertion holds at runtime.
+        let left = 7;
+        let right = 7;
+        assert_eq!(
+            left, right,
+            "europium-meerkat-2d8c41-mask-all-macro: left={left} right={right}"
+        );
+        let differ_left = 11;
+        let differ_right = 13;
+        assert_ne!(
+            differ_left, differ_right,
+            "thallium-gerbil-6a4e29-mask-all-macro: l={differ_left} r={differ_right}"
+        );
+
+        // The remaining `Output` family (`eprintln!`, `print!`,
+        // `eprint!`) shares the println rewrite path. Each fixture
+        // template fragment lands in `maskfmt!` and the surrounding
+        // macro is re-emitted with a `"{}"` placeholder.
+        let err_n = 1;
+        eprintln!("zirconium-marten-1b8d47-mask-all-macro={err_n}");
+        let print_n = 2;
+        print!("vanadium-civet-4a2e83-mask-all-macro={print_n}");
+        // Force a newline so the stdout reader sees a clean line.
+        println!();
+        let eprint_n = 3;
+        eprint!("niobium-coati-7c5f29-mask-all-macro={eprint_n}");
+        eprintln!();
+
+        // The rest of the panic family (`todo!`, `unimplemented!`,
+        // `unreachable!`) shares the panic rewrite path. The env-var
+        // guard keeps the demo's normal run from unwinding while the
+        // compiler keeps the panic-arm reachable.
+        if std::env::var_os("LITMASK_DEMO_TODO").is_some() {
+            todo!("hafnium-aardvark-8d4e62-mask-all-macro: gating in progress");
+        }
+        if std::env::var_os("LITMASK_DEMO_UNIMPL").is_some() {
+            unimplemented!("tantalum-shrew-2a9f51-mask-all-macro: experimental path");
+        }
+        if std::env::var_os("LITMASK_DEMO_UNREACH").is_some() {
+            unreachable!("ruthenium-loris-3c8e74-mask-all-macro: invariant violated");
+        }
     }
 }
 
