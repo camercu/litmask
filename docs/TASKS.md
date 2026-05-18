@@ -79,13 +79,13 @@ pinned toolchain.
 
 ### Acceptance Criteria
 
-- [ ] `cargo metadata --format-version 1` lists all three workspace crates
-- [ ] Pinned toolchain is honored: `rustc --version` matches
+- [x] `cargo metadata --format-version 1` lists all three workspace crates
+- [x] Pinned toolchain is honored: `rustc --version` matches
       `rust-toolchain.toml` after `rustup show`
-- [ ] `just fmt-check`, `just lint`, `just test`, `just build`, `just doc`,
+- [x] `just fmt-check`, `just lint`, `just test`, `just build`, `just doc`,
       `just ci` each exit 0 against the empty workspace
-- [ ] `git status` is clean after `just fmt` (no unformatted code in stubs)
-- [ ] `Cargo.lock` is tracked by git (committed)
+- [x] `git status` is clean after `just fmt` (no unformatted code in stubs)
+- [x] `Cargo.lock` is tracked by git (committed)
 
 ---
 
@@ -107,13 +107,13 @@ fleshed out in Task 3.
 
 ### Acceptance Criteria
 
-- [ ] `nix-shell` (or `direnv allow` then `cd`) produces an environment in
+- [x] `nix-shell` (or `direnv allow` then `cd`) produces an environment in
       which `rustc`, `just`, `cargo-deny`, `cargo-nextest`, `typos`, `taplo`,
       and `node` are all on `PATH` at the pinned versions
-- [ ] `just check-tool-versions` exits 0 inside the Nix shell
-- [ ] Bumping a version in `.tool-versions` without updating `shell.nix`
+- [x] `just check-tool-versions` exits 0 inside the Nix shell
+- [x] Bumping a version in `.tool-versions` without updating `shell.nix`
       causes `just check-tool-versions` to fail with a diagnostic
-- [ ] `just setup` exits 0
+- [x] `just setup` exits 0
 
 ---
 
@@ -142,15 +142,15 @@ and runs `npm ci`.
 
 ### Acceptance Criteria
 
-- [ ] `just setup` installs `pre-commit`, `pre-push`, and `commit-msg` hooks
+- [x] `just setup` installs `pre-commit`, `pre-push`, and `commit-msg` hooks
       under `.git/hooks/`
-- [ ] `pre-commit run --all-files` exits 0
-- [ ] GIVEN a staged change, WHEN attempting `git commit -m "fix stuff"`,
+- [x] `pre-commit run --all-files` exits 0
+- [x] GIVEN a staged change, WHEN attempting `git commit -m "fix stuff"`,
       THEN commitlint rejects with non-zero exit
-- [ ] GIVEN a staged change, WHEN attempting `git commit -m "feat: add x"`,
+- [x] GIVEN a staged change, WHEN attempting `git commit -m "feat: add x"`,
       THEN commit succeeds
-- [ ] `just lint` runs typos + deny + clippy + fmt-check, all green
-- [ ] `cargo deny check` advisories/licenses/bans/sources all green
+- [x] `just lint` runs typos + deny + clippy + fmt-check, all green
+- [x] `cargo deny check` advisories/licenses/bans/sources all green
 
 ---
 
@@ -174,14 +174,14 @@ non-`main` refs. `permissions: contents: read`. `justfile` gains
 
 ### Acceptance Criteria
 
-- [ ] PR opened against `main` triggers the workflow
-- [ ] `canonical-gate` job uses the toolchain version from `.tool-versions`
-- [ ] `canonical-gate` runs `just ci` and exits 0
-- [ ] `stable-advisory` job runs independently; failure does not block PR
-- [ ] `commitlint` job runs on PRs and rejects non-Conventional commits
+- [x] PR opened against `main` triggers the workflow
+- [x] `canonical-gate` job uses the toolchain version from `.tool-versions`
+- [x] `canonical-gate` runs `just ci` and exits 0
+- [x] `stable-advisory` job runs independently; failure does not block PR
+- [x] `commitlint` job runs on PRs and rejects non-Conventional commits
       (verified by opening a draft PR with a `bad message` commit)
-- [ ] Second run of the same workflow shows a cache hit on `Swatinem/rust-cache`
-- [ ] Pushing a new commit to a PR cancels the previous in-progress run
+- [x] Second run of the same workflow shows a cache hit on `Swatinem/rust-cache`
+- [x] Pushing a new commit to a PR cancels the previous in-progress run
 
 ---
 
@@ -234,16 +234,16 @@ followed by `\n`.
 
 ### Acceptance Criteria
 
-- [ ] `cargo build --example hello_world` succeeds
-- [ ] `strings target/<profile>/examples/hello_world` does NOT contain
+- [x] `cargo build --example hello_world` succeeds
+- [x] `strings target/<profile>/examples/hello_world` does NOT contain
       the substring `greatly exaggerated`
-- [ ] GIVEN `LITMASK_UNLOCK_KEY` set to the value in `litmask.config`,
+- [x] GIVEN `LITMASK_UNLOCK_KEY` set to the value in `litmask.config`,
       WHEN running the example, THEN stdout is the Twain fixture
       followed by `\n` and exit code is 0
-- [ ] `litmask.config` is present at the expected path with `unlock_key`,
+- [x] `litmask.config` is present at the expected path with `unlock_key`,
       `locator`, and `length = 62` fields
-- [ ] Calling `mask!("...")` without prior `init()` succeeds via lazy init
-- [ ] `let _: Box<dyn KeyProvider> = Box::new(EnvVarProvider::default());`
+- [x] Calling `mask!("...")` without prior `init()` succeeds via lazy init
+- [x] `let _: Box<dyn KeyProvider> = Box::new(EnvVarProvider::default());`
       compiles (object-safety check)
 - [ ] BLAKE3 nonce-derivation unit tests in the runtime crate cover:
       determinism (same seed + same call site → same nonce), uniqueness
@@ -251,17 +251,25 @@ followed by `\n`.
       ≥1000 sites), and independence (adding code AFTER a call site does
       not change that call site's nonce — only line numbers shift for
       code AFTER the addition)
-- [ ] base64url helper module unit tests cover round-trip + reject of
+      <!-- PARTIAL: `nonce_for_wrapper` determinism is tested
+      (`litmask-internal/src/lib.rs::nonce_for_wrapper_is_deterministic_and_seed_dependent`).
+      The call-site `derive_nonce` in `litmask-macros/src/mask.rs` is
+      uncovered. The file/line/column scheme this criterion assumes
+      was abandoned (`proc_macro::Span` accessors are nightly-only);
+      the implementation uses a per-rustc-process atomic counter
+      (`CALL_COUNTER`) so determinism / uniqueness / independence
+      hold by construction but lack explicit tests. -->
+- [x] base64url helper module unit tests cover round-trip + reject of
       padded inputs
-- [ ] `cargo build -p litmask --no-default-features --features alloc`
+- [x] `cargo build -p litmask --no-default-features --features alloc`
       succeeds (proves runtime is `no_std` + `alloc` clean from day one;
       `EnvVarProvider` is gated behind `std` so it disappears under
       `--no-default-features`)
-- [ ] `justfile` gains a `test-examples` recipe that runs every example
+- [x] `justfile` gains a `test-examples` recipe that runs every example
       end-to-end (`cargo run --example hello_world` here; future
       examples added to the recipe in their owning tasks); `just ci`
       invokes it so example bitrot is caught
-- [ ] `just ci` remains green
+- [x] `just ci` remains green
 
 ---
 
@@ -277,12 +285,12 @@ expand integration tests.
 
 ### Acceptance Criteria
 
-- [ ] `let v: Vec<u8> = mask!(b"\x01\x02\x03");` decrypts to `vec![1, 2, 3]`
-- [ ] `let c: CString = mask!(c"hello");` decrypts to a `CString` whose
+- [x] `let v: Vec<u8> = mask!(b"\x01\x02\x03");` decrypts to `vec![1, 2, 3]`
+- [x] `let c: CString = mask!(c"hello");` decrypts to a `CString` whose
       `to_bytes()` equals `b"hello"`
-- [ ] Strings check on a binary masking byte / cstr literals shows no
+- [x] Strings check on a binary masking byte / cstr literals shows no
       plaintext leakage
-- [ ] Existing string-literal behavior unchanged
+- [x] Existing string-literal behavior unchanged
 
 ---
 
@@ -306,21 +314,39 @@ exceptions are silent successes.
 
 ### Acceptance Criteria
 
-- [ ] `mask!(42)` fails compilation with message containing
+- [x] `mask!(42)` fails compilation with message containing
       `mask! accepts string, byte string, or C string literals`
-- [ ] `mask!(some_var)` fails compilation with the same substring
+- [x] `mask!(some_var)` fails compilation with the same substring
 - [ ] `const X: String = mask!("x");` fails with message containing
       `mask! cannot be used in const or static contexts`
+      <!-- UNMET: const/static positions fail with rustc's natural
+      `E0015: cannot call non-const function __decrypt in constants`
+      diagnostic, not a litmask-emitted substring. Trybuild fixtures
+      (`mask_const_context.rs`, `mask_static_context.rs`) lock the
+      rejection but not the spec substring. Add explicit
+      `compile_error!` detection in `mask.rs` to satisfy this. -->
 - [ ] `match s { mask!("foo") => ... }` fails with message containing
       `mask! cannot be used in pattern position`
-- [ ] All four cases covered by `trybuild` fixtures wired into `cargo test`
-- [ ] `mask!(include_str!("fixtures/quote.txt"))` compiles AND the file
+      <!-- UNMET: pattern positions fail with rustc's natural
+      `expected pattern, found {` diagnostic, not a litmask-emitted
+      substring. Trybuild fixtures (`mask_pattern_position.rs`,
+      `mask_if_let_pattern.rs`) lock the rejection but not the spec
+      substring. Detecting pattern position in a proc-macro is not
+      directly possible without a different macro shape. -->
+- [x] All four cases covered by `trybuild` fixtures wired into `cargo test`
+- [x] `mask!(include_str!("fixtures/quote.txt"))` compiles AND the file
       contents are absent from the binary `strings` output (verifies the
       built-in extension; trybuild positive fixture)
-- [ ] `mask!(concat!("a", "b", "c"))` compiles and `mask!` returns
+- [x] `mask!(concat!("a", "b", "c"))` compiles and `mask!` returns
       `String::from("abc")` at runtime
 - [ ] Editing `fixtures/quote.txt` triggers a rebuild of the dependent
       crate (verifies `tracked_path` registration)
+      <!-- UNMET on stable: `proc_macro::tracked_path::path` is a
+      nightly-only API (rust-lang/rust#73921). Documented in
+      `litmask-macros/src/mask.rs::resolve_include_str` — users must
+      `cargo clean` or touch a tracked source file after editing an
+      included file. Revisit when the API stabilizes. -->
+
 
 ---
 
@@ -342,14 +368,14 @@ appropriate channel — `Result` for init, panic for call site.
 
 ### Acceptance Criteria
 
-- [ ] GIVEN a binary with a single per-string blob byte flipped, WHEN
+- [x] GIVEN a binary with a single per-string blob byte flipped, WHEN
       `mask!` is invoked at that call site, THEN the process panics
-- [ ] `strings` over the binary reveals NO panic-message text containing
+- [x] `strings` over the binary reveals NO panic-message text containing
       `litmask`, `mask`, `tamper`, `decrypt`, or any other litmask-specific
       identifier
-- [ ] GIVEN a corrupted `mask_key` wrapper, WHEN `init()` is called,
+- [x] GIVEN a corrupted `mask_key` wrapper, WHEN `init()` is called,
       THEN it returns `Err(InitError::Decryption)`
-- [ ] No `.expect("...")` or `panic!("...")` with custom message exists in
+- [x] No `.expect("...")` or `panic!("...")` with custom message exists in
       the runtime decryption path (verified by grep test or clippy lint)
 
 ---
@@ -366,10 +392,10 @@ explicit opt-out marker.
 
 ### Acceptance Criteria
 
-- [ ] `let s: &str = unmasked!("plain");` compiles and equals `"plain"`
-- [ ] `let b: &[u8; 3] = unmasked!(b"abc");` compiles with the array type
-- [ ] `let c: &CStr = unmasked!(c"hi");` compiles with `&CStr` type
-- [ ] Generated code for `unmasked!(literal)` and the bare literal are
+- [x] `let s: &str = unmasked!("plain");` compiles and equals `"plain"`
+- [x] `let b: &[u8; 3] = unmasked!(b"abc");` compiles with the array type
+- [x] `let c: &CStr = unmasked!(c"hi");` compiles with `&CStr` type
+- [x] Generated code for `unmasked!(literal)` and the bare literal are
       equivalent (no extra runtime overhead — verified by checking
       expansion equals the input token)
 
@@ -391,12 +417,12 @@ required by §1.9.6.
 
 ### Acceptance Criteria
 
-- [ ] `maskfmt!("x={}, y={:.2}", 1, 2.5)` returns `"x=1, y=2.50"`
-- [ ] Output of `maskfmt!(t, args...)` byte-equals output of `format!(t,
+- [x] `maskfmt!("x={}, y={:.2}", 1, 2.5)` returns `"x=1, y=2.50"`
+- [x] Output of `maskfmt!(t, args...)` byte-equals output of `format!(t,
       args...)` across debug, hex, padded, and precision specifiers
-- [ ] `maskfmt!(some_var, 1)` fails compilation with the substring
+- [x] `maskfmt!(some_var, 1)` fails compilation with the substring
       `maskfmt! requires a string literal template at the call site`
-- [ ] Strings check shows template fragments are not present in plaintext
+- [x] Strings check shows template fragments are not present in plaintext
 
 ---
 
