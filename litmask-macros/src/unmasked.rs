@@ -1,7 +1,7 @@
 //! `unmasked!` proc-macro: identity wrapper for an explicitly opt-out
-//! literal. Exists so the deep-rewriting `#[mask_all]` attribute
-//! (Tasks 12–14) can recognize a literal as deliberately not-to-be-
-//! masked, while expanding to the bare literal token at compile time.
+//! literal. Exists so the deep-rewriting `#[mask_all]` attribute can
+//! recognize a literal as deliberately not-to-be-masked, while
+//! expanding to the bare literal token at compile time.
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;

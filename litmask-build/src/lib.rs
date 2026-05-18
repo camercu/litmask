@@ -384,8 +384,9 @@ mod tests {
     #[test]
     fn source_seed_honors_litmask_rng_seed_env_var() {
         let dir = TempDir::new().expect("tempdir");
-        // A canned persist file would be returned by the buggy
-        // pre-fix path; the env var must win over it.
+        // Persist file must be ignored when an env-var seed is
+        // provided — env priority over persist is the invariant
+        // this test asserts.
         let canned_persist = [0x42u8; KEY_LEN];
         fs::write(persist_path(&dir), canned_persist).expect("seed file");
 

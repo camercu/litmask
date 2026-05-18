@@ -100,8 +100,9 @@ pub fn __init_with_wrapper<P: KeyProvider>(
         Err(cipher::DecryptError::AuthenticationFailed) => {
             return Err(InitError::Decryption);
         }
-        // UnsupportedFormat / UnsupportedCipher panic for now; their
-        // dedicated InitError variants are deferred to a later task.
+        // UnsupportedFormat / UnsupportedCipher have no dedicated
+        // `InitError` variants yet; panic with no message to avoid
+        // embedding litmask-identifying text in the binary.
         Err(_) => panic!(),
     };
     cell::try_set(MaskKey::new(mask_key_bytes));
