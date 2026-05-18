@@ -358,20 +358,29 @@ blobs are derived deterministically inside the `mask!` proc-macro as:
 ```
 nonce = first_12_bytes(BLAKE3-keyed-hash(
     seed,
-    "litmask-nonce" || counter_le
+    "litmask-nonce"
+    || file_len_le || file
+    || line_le
+    || column_le
+    || plaintext_len_le || plaintext
 ))
 ```
 
-where `counter_le` is a 64-bit monotonic counter encoded little-endian
-and incremented once per `mask!` invocation in the proc-macro process.
+where `file` is the call-site source path (`proc_macro::Span::file()`),
+`line` and `column` are the 4-byte little-endian source coordinates
+(`Span::line()` / `Span::column()` truncated to `u32`), `plaintext` is
+the bytes being masked, and `file_len_le` / `plaintext_len_le` are the
+8-byte little-endian byte counts of the two variable-length fields.
 
 **Correctness scope.** ChaCha20-Poly1305 (and AES-256-GCM) require the
-`(key, nonce)` pair to be unique across every encryption under a given
-key — nothing more. The nonce is not required to be secret or
-unpredictable; it ships in plaintext at the head of every per-string
-blob (§1.7.2). Therefore the only invariant the derivation must
-preserve is **nonce uniqueness within a single rustc invocation that
-encrypts under one `mask_key`**.
+`(key, nonce)` pair to be unique per **distinct plaintext** under a
+given key. Encrypting the same plaintext twice with the same
+`(key, nonce)` is harmless (produces identical ciphertext); encrypting
+two *different* plaintexts with the same `(key, nonce)` is the
+security failure — their XOR leaks the plaintext XOR. Therefore the
+invariant the derivation must preserve is **nonce uniqueness across
+distinct plaintexts within a single rustc invocation that encrypts
+under one `mask_key`**.
 
 That scope is narrower than it looks. Each crate that uses `mask!`
 must have its own `build.rs` calling `litmask_build::emit()` (§1.4),
@@ -382,60 +391,57 @@ harmless — collisions only matter inside the set of blobs sharing one
 `mask_key`, i.e., the blobs produced by one rustc process expanding
 one crate.
 
-A single `AtomicU64` in the proc-macro dylib gives that property:
-- rustc loads the proc-macro dylib once per crate compile, so
-  `CALL_COUNTER` starts at zero in every rustc process and is
-  monotonic for the lifetime of that process.
-- `fetch_add(1, Relaxed)` is atomic, so the counter remains correct
-  if rustc ever parallelizes macro expansion (currently single-
-  threaded; `-Z threads=N` is the relevant future).
+**Why (file, line, column).** Span coordinates are
+expansion-order-independent: two `mask!()` calls at distinct source
+positions receive distinct nonces regardless of which rustc thread or
+macro-expansion pass visited first. This matters for two reasons:
 
-**Why a counter, not (file, line, column).** The (file, line, column)
-form is the *intended* derivation: it produces nonces that are
-order-independent and stable against unrelated source edits. It is not
-used in v1 because stable Rust's `proc_macro::Span` does not expose
-those accessors — `Span::source_file()`, `Span::start()`, and
-`Span::end()` all require the nightly `proc_macro_span` feature. The
-counter-based form preserves the uniqueness property at the cost of
-order-stability: re-shuffling `mask!` call sites within a crate
-permutes their nonces. When `proc_macro_span` stabilizes, the
-derivation switches to the (file, line, column) keyed message
-without a wire-format change (the nonce is still 12 bytes and still
-the leading prefix of every blob).
+1. **Reproducibility (§2.1.1.8).** Identical source + identical seed
+   must produce byte-identical ciphertext across builds. A counter-
+   based scheme is sensitive to expansion order; a Span-based scheme
+   is not.
+2. **Future parallel macro expansion.** Rustc currently expands proc-
+   macros sequentially, but `-Z threads=N` parallelizes other parts
+   of compilation and may eventually parallelize macro expansion. A
+   counter would race; Span coordinates do not.
 
-**Why the seed-keyed BLAKE3 is kept.** The counter alone (encoded
-little-endian and zero-padded to 12 bytes) would satisfy the
-uniqueness invariant. Hashing it under the build seed serves a single
-purpose: nonces in the compiled binary then look like uniformly random
-bytes instead of `0, 1, 2, …` little-endian patterns, so a binary
-inspector cannot trivially count `mask!` invocations or order them by
-appearance. This is hardening, not a security boundary — the nonce is
-public.
+`proc_macro::Span::file()`, `Span::line()`, and `Span::column()` were
+stabilized in Rust 1.88, the workspace's pinned toolchain.
 
-**Why `crate_name` and `literal` are not inputs.** Earlier revisions
-mixed `CARGO_PKG_NAME` and the literal plaintext into the keyed
-message as belt-and-suspenders against hypothetical cross-crate
-counter sharing and proc-macro re-expansion races. Both inputs are
-redundant: each crate's proc-macro server is a fresh process with a
-fresh counter (no cross-crate sharing path), and proc-macro expansion
-within a single crate compile is deterministic and sequential (no
-re-fire path that could collide on the same `idx`).
+**Why plaintext is also keyed.** `maskfmt!` synthesizes multiple
+`mask!()` calls inside a single `quote!{}` expansion — one per
+template fragment — and `quote!`'s default span propagation makes
+those calls share a `(file, line, column)` triple. Distinct
+plaintexts at the same triple **must** get distinct nonces for AEAD
+security. Including the plaintext bytes in the keyed hash makes that
+property invariant-by-construction: two `mask!()` calls with the
+same plaintext at the same span share a nonce (and produce identical
+ciphertext — harmless); two `mask!()` calls with different plaintexts
+at the same span receive different nonces (no XOR leak).
 
-Properties of the v1 derivation:
+**Encoding (canonical, unambiguous).** The two variable-length fields
+(`file`, `plaintext`) are 8-byte length-prefixed so the byte stream
+cannot be ambiguously decoded as a distinct tuple. Without the
+prefix, `(file = "ab", line = 0x01, …)` could share its byte
+representation with `(file = "a", line = 0x6201, …)` because the
+boundary between file and line bytes shifts.
 
-- **Uniqueness across call sites**: distinct `counter` values produce
-  distinct nonces (BLAKE3 collision resistance), so distinct `mask!`
-  invocations in one crate compile receive distinct nonces.
+**Seed keying.** The seed-keyed hash is hardening, not a security
+boundary — the nonce ships in plaintext at the head of every blob.
+Keying on the seed prevents source coordinates and plaintext-length
+patterns from appearing as recognizable structure in `.rodata`.
+
+Properties:
+
+- **Uniqueness per (key, plaintext)**: distinct `(file, line, column,
+  plaintext)` tuples produce distinct nonces (BLAKE3 collision
+  resistance plus canonical encoding).
 - **Determinism across builds**: same source layout + same seed →
-  same nonces → same ciphertext, *if* the proc-macro expands the
-  same `mask!` call sites in the same order.
+  same nonces → same ciphertext, independent of expansion order.
 - **Independence from the wrapper nonce**: the `"litmask-nonce"`
-  domain separator differs from the wrapper's `"litmask-mask-key-nonce"`,
-  so the nonce spaces are disjoint at the same seed.
-
-Identical literals at different call sites receive different nonces
-(and therefore different ciphertext) because they have different
-counter values.
+  domain separator differs from the wrapper's
+  `"litmask-mask-key-nonce"`, so the nonce spaces are disjoint at
+  the same seed.
 
 The wrapper around the encrypted `mask_key` uses a separate nonce derivation
 documented in §1.7.3.
