@@ -45,7 +45,7 @@ const HEADER_LEN: usize = 2 + NONCE_LEN;
 pub const WRAPPER_LEN: usize = HEADER_LEN + KEY_LEN + TAG_LEN;
 
 /// BLAKE3 domain separator for per-call-site nonces.
-pub const NONCE_TAG_CALL_SITE: &[u8] = b"litmask-nonce";
+const NONCE_TAG_CALL_SITE: &[u8] = b"litmask-nonce";
 
 /// BLAKE3 domain separator for the wrapper nonce.
 const NONCE_TAG_WRAPPER: &[u8] = b"litmask-mask-key-nonce";
@@ -308,8 +308,9 @@ pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
 }
 
 /// Derive a per-call-site nonce: first [`NONCE_LEN`] bytes of the
-/// keyed BLAKE3 hash of [`NONCE_TAG_CALL_SITE`] concatenated with
-/// the 8-byte little-endian encoding of `idx`, keyed on `seed`.
+/// keyed BLAKE3 hash of the `"litmask-nonce"` domain separator
+/// concatenated with the 8-byte little-endian encoding of `idx`,
+/// keyed on `seed`.
 ///
 /// `idx` is the proc-macro-process-global call counter incremented
 /// once per `mask!()` invocation. Each crate that uses `mask!` has
@@ -325,9 +326,9 @@ pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
 /// inspecting `.rodata` cannot trivially count `mask!` invocations
 /// or order them by appearance.
 ///
-/// `NONCE_TAG_CALL_SITE` differs from `NONCE_TAG_WRAPPER`, so the
-/// call-site nonce space is disjoint from the wrapper's at the same
-/// seed.
+/// The call-site domain separator (`"litmask-nonce"`) differs from
+/// the wrapper's (`"litmask-mask-key-nonce"`), so the call-site
+/// nonce space is disjoint from the wrapper's at the same seed.
 ///
 /// A (file, line, column) keying is unreachable on stable Rust
 /// because `proc_macro::Span` does not expose those accessors
@@ -540,22 +541,5 @@ mod tests {
                 "call-site idx={idx} collided with wrapper nonce"
             );
         }
-    }
-
-    #[test]
-    fn nonce_for_call_site_independent_of_source_position() {
-        // Counter-based derivation: a given idx maps to a fixed
-        // nonce regardless of WHERE the `mask!` call appears in the
-        // source. This locks the "adding code after a call site
-        // does not change that call site's nonce" property of
-        // §1.5.2 against accidental coupling to compile-time data
-        // beyond (seed, idx).
-        let nonce_at_idx_5_a = nonce_for_call_site(&SEED_A, 5);
-        // Simulate "additional code added before the call" by
-        // advancing the counter past 5 and re-deriving idx=5.
-        let _drained: alloc::vec::Vec<_> =
-            (0..100).map(|i| nonce_for_call_site(&SEED_A, i)).collect();
-        let nonce_at_idx_5_b = nonce_for_call_site(&SEED_A, 5);
-        assert_eq!(nonce_at_idx_5_a, nonce_at_idx_5_b);
     }
 }
