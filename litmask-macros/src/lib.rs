@@ -12,7 +12,7 @@
 //! - [`unmasked!`] — identity wrapper marking an opt-out literal.
 //! - [`maskfmt!`] — masked format-string template.
 //! - [`weak_mask!`] — XOR-against-wrapper anti-`strings(1)` obfuscation.
-//! - [`mask_all!`] — module-level attribute that rewrites every
+//! - [`macro@mask_all`] — module-level attribute that rewrites every
 //!   masking-eligible literal in the attributed module.
 
 use proc_macro::TokenStream;
@@ -63,7 +63,7 @@ pub fn mask(input: TokenStream) -> TokenStream {
 /// Identity macro that accepts one string, byte string, or C string
 /// literal and expands to that literal unchanged. Used as an explicit
 /// opt-out marker: a literal wrapped in `unmasked!` is left alone by
-/// [`mask_all!`] (which would otherwise rewrite it).
+/// [`macro@mask_all`] (which would otherwise rewrite it).
 ///
 /// Zero runtime overhead: the expansion is the bare literal token,
 /// so the result is `&'static str` / `&'static [u8; N]` /
