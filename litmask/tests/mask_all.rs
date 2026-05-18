@@ -165,7 +165,7 @@ mod include_str_wrapped {
     pub fn fixture() -> String {
         // Shares the fixture file with `mask_all_demo`; path resolves
         // relative to `CARGO_MANIFEST_DIR` (= `litmask/`).
-        include_str!("examples/fixtures/task13_include_str.txt").to_string()
+        include_str!("examples/fixtures/mask_all_include_str.txt").to_string()
     }
 }
 
@@ -175,20 +175,23 @@ fn mask_all_wraps_include_str_in_mask() {
     let contents = include_str_wrapped::fixture();
     // The fixture file content (minus trailing newline normalization)
     // must round-trip through mask!() correctly.
-    assert!(contents.contains("selenium-pangolin-3d8a91-task13"));
+    assert!(contents.contains("selenium-pangolin-3d8a91-mask-all-macro"));
 }
 
 #[mask_all]
 mod concat_wrapped {
     pub fn fixture() -> String {
-        concat!("rhodium-", "lemur-", "5c2a93-task13").to_string()
+        concat!("rhodium-", "lemur-", "5c2a93-mask-all-macro").to_string()
     }
 }
 
 #[test]
 fn mask_all_wraps_concat_in_mask() {
     common::init_once();
-    assert_eq!(concat_wrapped::fixture(), "rhodium-lemur-5c2a93-task13");
+    assert_eq!(
+        concat_wrapped::fixture(),
+        "rhodium-lemur-5c2a93-mask-all-macro"
+    );
 }
 
 // ── format! → maskfmt! ─────────────────────────────────────────
@@ -225,31 +228,16 @@ fn mask_all_rewrites_format_with_named_args() {
 #[mask_all]
 mod panic_message_rewritten {
     pub fn fixture() {
-        panic!("titanium-yak-3a8e57-task13");
+        panic!("titanium-yak-3a8e57-mask-all-macro");
     }
 }
 
 #[test]
 fn mask_all_panic_message_round_trips() {
     common::init_once();
-
-    // Quiet the default panic hook so catch_unwind output doesn't
-    // pollute test logs.
-    let prev_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
-
-    let outcome = std::panic::catch_unwind(panic_message_rewritten::fixture);
-
-    std::panic::set_hook(prev_hook);
-
-    let payload = outcome.expect_err("expected panic");
-    let msg = payload
-        .downcast_ref::<String>()
-        .map(String::as_str)
-        .or_else(|| payload.downcast_ref::<&'static str>().copied())
-        .expect("panic payload is a string");
+    let msg = common::catch_panic_msg(panic_message_rewritten::fixture).expect("expected panic");
     assert!(
-        msg.contains("titanium-yak-3a8e57-task13"),
+        msg.contains("titanium-yak-3a8e57-mask-all-macro"),
         "panic message lost the fixture text; got: {msg:?}",
     );
 }
@@ -268,7 +256,7 @@ mod user_macro_left_alone {
         // `my_user_macro!` is user-defined; mask_all must leave its
         // literal argument intact (would otherwise type-mismatch the
         // `&'static str` return — `mask!()` returns `String`).
-        my_user_macro!("hafnium-quokka-4d3e72-task13")
+        my_user_macro!("hafnium-quokka-4d3e72-mask-all-macro")
     }
 }
 
@@ -277,7 +265,7 @@ fn mask_all_leaves_user_macro_literal_args_intact() {
     common::init_once();
     assert_eq!(
         user_macro_left_alone::fixture(),
-        "hafnium-quokka-4d3e72-task13",
+        "hafnium-quokka-4d3e72-mask-all-macro",
     );
 }
 
@@ -341,16 +329,8 @@ fn mask_all_assert_with_message_round_trips_passing() {
 #[test]
 fn mask_all_assert_eq_with_message_panics_with_message() {
     common::init_once();
-    let prev_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
-    let outcome = std::panic::catch_unwind(assert_with_message_rewritten::fixture_failing);
-    std::panic::set_hook(prev_hook);
-    let payload = outcome.expect_err("expected panic");
-    let msg = payload
-        .downcast_ref::<String>()
-        .map(String::as_str)
-        .or_else(|| payload.downcast_ref::<&'static str>().copied())
-        .expect("panic payload is a string");
+    let msg = common::catch_panic_msg(assert_with_message_rewritten::fixture_failing)
+        .expect("expected panic");
     assert!(
         msg.contains("expected equal, got x=5 y=6"),
         "panic message lost the custom-message text; got: {msg:?}",

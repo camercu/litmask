@@ -238,6 +238,31 @@ fn env_var(key: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| panic!("{key} not set"))
 }
 
+/// Run `f` while suppressing the default panic hook and return the
+/// panic payload (downcast to `String` or `&'static str`) if it
+/// unwound. Returns `None` when `f` completed normally.
+///
+/// Both panic kinds reach the same downcast cascade: `panic!("x")`
+/// captures as `&'static str`; `panic!("x={}", x)` captures as
+/// `String`. Replaces the duplicated take-hook + catch-unwind +
+/// downcast block that otherwise needs to live next to every test
+/// asserting a specific panic message.
+pub fn catch_panic_msg<F>(f: F) -> Option<String>
+where
+    F: FnOnce() + std::panic::UnwindSafe,
+{
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let outcome = std::panic::catch_unwind(f);
+    std::panic::set_hook(prev_hook);
+    let payload = outcome.err()?;
+    payload.downcast_ref::<String>().cloned().or_else(|| {
+        payload
+            .downcast_ref::<&'static str>()
+            .map(|s| (*s).to_string())
+    })
+}
+
 /// Idempotently initialize the runtime against the debug-profile
 /// `litmask.config` so integration tests do not depend on
 /// `LITMASK_UNLOCK_KEY` being set in the test process's environment.

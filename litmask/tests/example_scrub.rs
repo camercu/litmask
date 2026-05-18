@@ -97,25 +97,25 @@ fn maskfmt_fragments_absent_from_binary() {
 fn mask_all_literals_absent_from_binary() {
     common::build_example("mask_all_demo", Profile::Release);
     let path = common::example_path("mask_all_demo", Profile::Release);
-    common::assert_substring_absent(&path, "uranium-walrus-5f8d23-task12");
-    common::assert_substring_absent(&path, "thorium-loris-2a9b41-task12");
-    common::assert_substring_absent(&path, "polonium-dingo-7c4e68-task12");
+    common::assert_substring_absent(&path, "uranium-walrus-5f8d23-mask-all-bare");
+    common::assert_substring_absent(&path, "thorium-loris-2a9b41-mask-all-bare");
+    common::assert_substring_absent(&path, "polonium-dingo-7c4e68-mask-all-bare");
 }
 
 /// `include_str!` and `concat!` invocations inside a `#[mask_all]`
 /// module must be wrapped in `mask!()` so their resulting strings
 /// are absent from binary plaintext. The included-file content
-/// (`selenium-pangolin-3d8a91-task13`) lives only in the fixture
+/// (`selenium-pangolin-3d8a91-mask-all-macro`) lives only in the fixture
 /// file at compile time and would otherwise land in `.rodata`; the
-/// concatenated literal (`rhodium-lemur-5c2a93-task13`) is assembled
+/// concatenated literal (`rhodium-lemur-5c2a93-mask-all-macro`) is assembled
 /// by the `concat!` builtin and would similarly be a single
 /// `.rodata` string.
 #[test]
 fn mask_all_include_str_and_concat_absent_from_binary() {
     common::build_example("mask_all_demo", Profile::Release);
     let path = common::example_path("mask_all_demo", Profile::Release);
-    common::assert_substring_absent(&path, "selenium-pangolin-3d8a91-task13");
-    common::assert_substring_absent(&path, "rhodium-lemur-5c2a93-task13");
+    common::assert_substring_absent(&path, "selenium-pangolin-3d8a91-mask-all-macro");
+    common::assert_substring_absent(&path, "rhodium-lemur-5c2a93-mask-all-macro");
 }
 
 /// `format!(template, args...)` inside `#[mask_all]` is rewritten
@@ -126,7 +126,7 @@ fn mask_all_include_str_and_concat_absent_from_binary() {
 fn mask_all_format_template_absent_from_binary() {
     common::build_example("mask_all_demo", Profile::Release);
     let path = common::example_path("mask_all_demo", Profile::Release);
-    common::assert_substring_absent(&path, "erbium-narwhal-1a4e83-task13");
+    common::assert_substring_absent(&path, "erbium-narwhal-1a4e83-mask-all-macro");
 }
 
 /// Output macros (`println!` etc.) with a literal template inside
@@ -137,7 +137,7 @@ fn mask_all_format_template_absent_from_binary() {
 fn mask_all_println_template_absent_from_binary() {
     common::build_example("mask_all_demo", Profile::Release);
     let path = common::example_path("mask_all_demo", Profile::Release);
-    common::assert_substring_absent(&path, "praseodymium-tapir-9f2c14-task13");
+    common::assert_substring_absent(&path, "praseodymium-tapir-9f2c14-mask-all-macro");
 }
 
 /// `panic!` with a literal message inside `#[mask_all]` is wrapped
@@ -148,7 +148,7 @@ fn mask_all_println_template_absent_from_binary() {
 fn mask_all_panic_message_absent_from_binary() {
     common::build_example("mask_all_demo", Profile::Release);
     let path = common::example_path("mask_all_demo", Profile::Release);
-    common::assert_substring_absent(&path, "rubidium-yak-7a9c54-task13");
+    common::assert_substring_absent(&path, "rubidium-yak-7a9c54-mask-all-macro");
 }
 
 /// `write!`/`writeln!` with a literal template inside `#[mask_all]`
@@ -158,7 +158,7 @@ fn mask_all_panic_message_absent_from_binary() {
 fn mask_all_write_template_absent_from_binary() {
     common::build_example("mask_all_demo", Profile::Release);
     let path = common::example_path("mask_all_demo", Profile::Release);
-    common::assert_substring_absent(&path, "samarium-pika-6e1d35-task13");
+    common::assert_substring_absent(&path, "samarium-pika-6e1d35-mask-all-macro");
 }
 
 /// Qualified macro paths (`std::format!`, `core::dbg!`, etc.) are
@@ -169,7 +169,7 @@ fn mask_all_write_template_absent_from_binary() {
 fn mask_all_qualified_path_template_absent_from_binary() {
     common::build_example("mask_all_demo", Profile::Release);
     let path = common::example_path("mask_all_demo", Profile::Release);
-    common::assert_substring_absent(&path, "ytterbium-finch-4b3a98-task13");
+    common::assert_substring_absent(&path, "ytterbium-finch-4b3a98-mask-all-macro");
 }
 
 /// `assert!` / `debug_assert!` / `assert_eq!` / `assert_ne!` with a
@@ -179,7 +179,7 @@ fn mask_all_qualified_path_template_absent_from_binary() {
 fn mask_all_assert_with_message_absent_from_binary() {
     common::build_example("mask_all_demo", Profile::Release);
     let path = common::example_path("mask_all_demo", Profile::Release);
-    common::assert_substring_absent(&path, "iodine-okapi-9c2e41-task13");
+    common::assert_substring_absent(&path, "iodine-okapi-9c2e41-mask-all-macro");
 }
 
 /// Placeholder names (named args, implicit captures, dynamic-width
