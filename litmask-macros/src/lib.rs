@@ -21,6 +21,7 @@ mod common;
 mod mask;
 mod mask_all;
 mod mask_concat;
+mod mask_env;
 mod mask_fmt;
 mod mask_include_bytes;
 mod mask_include_str;
@@ -125,6 +126,21 @@ pub fn mask_include_bytes(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn mask_concat(input: TokenStream) -> TokenStream {
     mask_concat::expand(input)
+}
+
+/// Mask a build-time environment-variable value at compile time.
+/// Mirrors stdlib `env!`'s must-succeed contract: an unset variable
+/// is a compile error.
+///
+/// # Errors
+///
+/// - Non-string-literal argument: "mask_env! requires a string
+///   literal name".
+/// - Env var unset: "mask_env!: environment variable `<NAME>` is
+///   not set".
+#[proc_macro]
+pub fn mask_env(input: TokenStream) -> TokenStream {
+    mask_env::expand(input)
 }
 
 /// Identity macro that accepts one string, byte string, or C string
