@@ -362,15 +362,18 @@ nonce = first_12_bytes(BLAKE3-keyed-hash(
     || file_len_le || file
     || line_le
     || column_le
-    || plaintext_len_le || plaintext
+    || plaintext
 ))
 ```
 
-where `file` is the call-site source path (`proc_macro::Span::file()`),
-`line` and `column` are the 4-byte little-endian source coordinates
-(`Span::line()` / `Span::column()` truncated to `u32`), `plaintext` is
-the bytes being masked, and `file_len_le` / `plaintext_len_le` are the
-8-byte little-endian byte counts of the two variable-length fields.
+where `file` is the call-site source path
+(`proc_macro::Span::file()` canonicalized to a `CARGO_MANIFEST_DIR`-
+relative form so reproducibility doesn't depend on the absolute
+checkout location), `line` and `column` are the 4-byte
+little-endian source coordinates (`Span::line()` / `Span::column()`
+truncated to `u32`), `plaintext` is the bytes being masked, and
+`file_len_le` is the 8-byte little-endian byte count of the `file`
+field.
 
 **Correctness scope.** ChaCha20-Poly1305 (and AES-256-GCM) require the
 `(key, nonce)` pair to be unique per **distinct plaintext** under a
@@ -419,17 +422,47 @@ same plaintext at the same span share a nonce (and produce identical
 ciphertext — harmless); two `mask!()` calls with different plaintexts
 at the same span receive different nonces (no XOR leak).
 
-**Encoding (canonical, unambiguous).** The two variable-length fields
-(`file`, `plaintext`) are 8-byte length-prefixed so the byte stream
-cannot be ambiguously decoded as a distinct tuple. Without the
-prefix, `(file = "ab", line = 0x01, …)` could share its byte
-representation with `(file = "a", line = 0x6201, …)` because the
-boundary between file and line bytes shifts.
+**Encoding (canonical, unambiguous).** `file` is the only
+non-trailing variable-length field, so its 8-byte length prefix is
+load-bearing: without it, `(file = "ab", line = 0x01, …)` could
+share its byte representation with `(file = "a", line = 0x6201, …)`
+because the boundary between file and line bytes would shift.
+`plaintext` is the trailing field, so any change to its bytes
+changes the hash output directly — a length prefix would be
+defensively redundant.
+
+**File-path canonicalization.** `proc_macro::Span::file()` returns
+whatever path rustc received from cargo, which can be absolute or
+relative depending on workspace layout, `--remap-path-prefix`, and
+CWD. Two checkouts of the same source at different filesystem
+locations would otherwise produce different nonces. Before hashing,
+the proc-macro strips a leading `CARGO_MANIFEST_DIR` prefix from
+`Span::file()` so the keyed bytes describe a manifest-relative
+path. Falls back to the raw path when no prefix match exists; the
+nonce stays correct but the path-stability property is forfeited.
 
 **Seed keying.** The seed-keyed hash is hardening, not a security
 boundary — the nonce ships in plaintext at the head of every blob.
 Keying on the seed prevents source coordinates and plaintext-length
 patterns from appearing as recognizable structure in `.rodata`.
+
+**Threat model: seed compromise.** Because `plaintext` is mixed
+into the keyed hash, an attacker who recovers `seed` (via
+`LITMASK_RNG_SEED` env leakage, the debug-profile
+`target/<profile>/litmask-seed.bin` persistence file, or any
+side-channel that exposes the build seed) can compute the expected
+nonce for a guessed plaintext at known `(file, line, column)` and
+compare to the observed nonce in the binary. A match confirms the
+guess.
+
+This is a known-plaintext **confirmation oracle**, not an AEAD
+break: the ciphertext + tag still resist forgery and decryption
+under the `mask_key` (which is independent of `seed`). The oracle
+is low-bandwidth — the attacker needs a plausible plaintext
+candidate set AND already knows `(file, line, column)`. It only
+matters when the seed has leaked; the seed-confidentiality
+requirement in §1.3 is what blocks this attack, and this note
+reinforces why §1.3 matters.
 
 Properties:
 
@@ -1427,7 +1460,9 @@ nonce derived per §1.5.2.
 
 §2.1.1.8 — Two builds with the same source code, same toolchain, same
 dependencies, and same `LITMASK_RNG_SEED` SHALL produce byte-identical
-ciphertext for each `mask!` invocation.
+ciphertext for each `mask!` invocation. The reproducibility holds across
+filesystem checkouts at different absolute paths because the nonce
+derivation hashes a `CARGO_MANIFEST_DIR`-relative file path (§1.5.2).
 
 §2.1.1.9 — `mask!` SHALL NOT be usable in `const` or `static` initializers.
 The compile error SHALL come from rustc's natural `E0015` diagnostic; the
