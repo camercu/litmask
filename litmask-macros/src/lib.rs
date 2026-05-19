@@ -25,6 +25,7 @@ mod mask_env;
 mod mask_fmt;
 mod mask_include_bytes;
 mod mask_include_str;
+mod mask_option_env;
 mod unmasked;
 mod weak_mask;
 
@@ -141,6 +142,20 @@ pub fn mask_concat(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn mask_env(input: TokenStream) -> TokenStream {
     mask_env::expand(input)
+}
+
+/// Mask a build-time environment-variable value at compile time,
+/// returning `Some(String)` when set and `None::<String>` when
+/// unset. Mirrors stdlib `option_env!`'s contract — the unset case
+/// is a legitimate runtime `None`, not a compile error.
+///
+/// # Errors
+///
+/// - Non-string-literal argument: "mask_option_env! requires a
+///   string literal name".
+#[proc_macro]
+pub fn mask_option_env(input: TokenStream) -> TokenStream {
+    mask_option_env::expand(input)
 }
 
 /// Identity macro that accepts one string, byte string, or C string

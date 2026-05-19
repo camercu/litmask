@@ -1,0 +1,5 @@
+error: mask_option_env! requires a string literal name
+ --> tests/compile/mask_option_env_non_literal.rs:8:46
+  |
+8 |     let _: Option<String> = mask_option_env!(name);
+  |                                              ^^^^
