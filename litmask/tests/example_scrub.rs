@@ -221,6 +221,29 @@ fn mask_all_include_bytes_absent_from_binary() {
     common::assert_substring_absent(&path, "cobalt-narwhal-9c4e72-bytes-fixture");
 }
 
+/// Direct-call invocations of the six dedicated `mask_*!` macros
+/// (not via `#[mask_all]`) MUST mask their plaintext as completely
+/// as the rewrite path. `mask_macros_demo` exercises each macro at
+/// its canonical form; this test pins absence for the three macros
+/// with reliably-distinct fixture phrases. `mask_env!` /
+/// `mask_option_env!` aren't asserted (env-dependent values);
+/// `mask_file!`'s output is unobservable here because
+/// `core::panic::Location::caller()` independently embeds the same
+/// path string at every panic site.
+#[test]
+fn mask_macros_demo_direct_calls_absent_from_binary() {
+    common::build_example("mask_macros_demo", Profile::Release);
+    let path = common::example_path("mask_macros_demo", Profile::Release);
+    // mask_include_str! — file contents.
+    common::assert_substring_absent(&path, "vermilion-axolotl-7e2d4a");
+    // mask_include_bytes! — file bytes.
+    common::assert_substring_absent(&path, "cobalt-narwhal-9c4e72-bytes-fixture");
+    // mask_concat! — concatenated string, including the integer /
+    // float / bool / char stringifications which must all share
+    // the same masked blob.
+    common::assert_substring_absent(&path, "zephyr-quokka-direct");
+}
+
 /// Placeholder names (named args, implicit captures, dynamic-width
 /// refs) MUST NOT appear in the compiled binary. The fixtures below
 /// are unique tokens used as placeholder names in `mask_fmt_demo`;
