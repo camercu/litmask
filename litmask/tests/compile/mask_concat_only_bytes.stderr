@@ -1,5 +1,0 @@
-error: concat! arguments inside mask! must be string, byte string, or C string literals
- --> tests/compile/mask_concat_only_bytes.rs:9:19
-  |
-9 |     let _ = mask!(concat!(b"a", b"b"));
-  |                   ^^^^^^

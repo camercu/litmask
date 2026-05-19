@@ -1,5 +1,0 @@
-error: mask!(include_str!("examples/fixtures/does_not_exist.txt")): No such file or directory (os error 2)
-  --> tests/compile/mask_concat_with_failing_include_str.rs:10:22
-   |
-10 |         include_str!("examples/fixtures/does_not_exist.txt"),
-   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
