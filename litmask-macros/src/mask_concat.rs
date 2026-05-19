@@ -96,10 +96,16 @@ impl MaskConcatArg {
             }
             Self::Env(name_lit, _) => {
                 let name = name_lit.value();
-                std::env::var(&name).map_err(|_| {
+                std::env::var(&name).map_err(|e| {
+                    let detail = match e {
+                        std::env::VarError::NotPresent => "is not set",
+                        std::env::VarError::NotUnicode(_) => {
+                            "is set but its value is not valid UTF-8"
+                        }
+                    };
                     syn::Error::new(
                         name_lit.span(),
-                        format!("mask_concat! env!: environment variable `{name}` is not set"),
+                        format!("mask_concat! env!: environment variable `{name}` {detail}"),
                     )
                 })
             }
