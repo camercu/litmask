@@ -29,6 +29,7 @@ pub const FORBIDDEN_SUBSTRINGS: &[&str] = &[
     "mask_key",
     "unlock_key",
     "ChaCha20-Poly1305",
+    "AEAD encryption",
     "OUT_DIR",
     "locator_b64",
     // Both `weak_mask` and `tamper` would identify a binary as

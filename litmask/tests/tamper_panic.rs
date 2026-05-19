@@ -46,16 +46,18 @@ fn decrypt_panics_on_tampered_blob() {
 /// Scans every file that contributes text to the user binary's
 /// `mask!()` decryption path for `.expect("msg")` and `panic!("msg")`
 /// patterns — the two ways a litmask-specific string would leak into
-/// user binaries. Type construction lives in the proc-macro emission
-/// and the c-string shim rather than in `runtime.rs`, so the scan
-/// spans four files:
+/// user binaries. The scan spans five files:
 ///
 /// - `runtime.rs` — `__decrypt`, `__weak_decode`, lazy-init helpers.
 /// - `litmask/src/lib.rs` — `__decrypt_cstring_call!` shim.
-/// - `litmask-macros/src/mask.rs` — proc-macro emission for `mask!`
-///   (`String::from_utf8(...).unwrap()` and the cstring routing).
+/// - `litmask-macros/src/mask.rs` — proc-macro entry point; emits
+///   the type-construction wrappers, no `.expect` of its own.
 /// - `litmask-macros/src/mask_fmt.rs` — proc-macro emission for
 ///   `mask_fmt!` (`write_fmt` + `format_args!` per placeholder).
+/// - `litmask-macros/src/common.rs` — shared `mask_plaintext`
+///   helper and `OUT_DIR` artifact loader; every `.expect`/`panic!`
+///   here runs at proc-macro expansion time inside rustc, not in
+///   the user binary.
 ///
 /// Each entry pairs a path with an allowlist of substrings whose
 /// containing line executes at PROC-MACRO TIME (inside rustc's
@@ -73,14 +75,7 @@ fn no_custom_panic_messages_in_decryption_path() {
                 r#".expect("missing LITMASK_UNLOCK_KEY")"#,
             ],
         ),
-        (
-            format!("{manifest}/../litmask-macros/src/mask.rs"),
-            vec![
-                // Runs at proc-macro expansion time inside rustc, not
-                // in the user binary.
-                r#".expect("AEAD encryption failed at mask! expansion")"#,
-            ],
-        ),
+        (format!("{manifest}/../litmask-macros/src/mask.rs"), vec![]),
         (
             format!("{manifest}/../litmask-macros/src/mask_fmt.rs"),
             vec![
@@ -88,6 +83,20 @@ fn no_custom_panic_messages_in_decryption_path() {
                 // parser has already validated as all-digits; never
                 // reaches the user binary.
                 r#".expect("all-digits parses as usize")"#,
+            ],
+        ),
+        (
+            format!("{manifest}/../litmask-macros/src/common.rs"),
+            vec![
+                // All four call sites run at proc-macro expansion
+                // time inside rustc — the mask_plaintext helper
+                // loads build artifacts and AEAD-encrypts the
+                // plaintext before emitting tokens. None reaches
+                // the user binary.
+                r#".expect("artifact cache mutex poisoned")"#,
+                r#"panic!("litmask: {name} expected {N} bytes, found {}", bytes.len()))"#,
+                r#".expect("litmask: OUT_DIR not set; did you add a build.rs running litmask_build::emit()?")"#,
+                r#".expect("AEAD encryption failed during litmask macro expansion")"#,
             ],
         ),
     ];
