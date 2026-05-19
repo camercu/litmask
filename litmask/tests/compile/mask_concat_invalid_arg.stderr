@@ -1,0 +1,5 @@
+error: mask_concat! arguments must be string literals or compile-time-resolvable string macros
+ --> tests/compile/mask_concat_invalid_arg.rs:7:34
+  |
+7 |     let _: String = mask_concat!(42);
+  |                                  ^^

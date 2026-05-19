@@ -20,6 +20,7 @@ use proc_macro::TokenStream;
 mod common;
 mod mask;
 mod mask_all;
+mod mask_concat;
 mod mask_fmt;
 mod mask_include_bytes;
 mod mask_include_str;
@@ -101,6 +102,29 @@ pub fn mask_include_str(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn mask_include_bytes(input: TokenStream) -> TokenStream {
     mask_include_bytes::expand(input)
+}
+
+/// Concatenate string literals and the compile-time-resolvable
+/// macros `concat!` / `include_str!` / `env!` at proc-macro time,
+/// then AEAD-encrypt the concatenated string and expand to a
+/// runtime decrypt call returning `String`.
+///
+/// Replaces the prior `mask!(concat!(...))` shim with a direct
+/// grammar that `#[mask_all]` can address by name.
+///
+/// # Errors
+///
+/// - Empty argument list: "mask_concat! requires at least one
+///   argument".
+/// - Argument that is not a string literal / `concat!` /
+///   `include_str!` / `env!`: "mask_concat! arguments must be
+///   string literals or compile-time-resolvable string macros".
+/// - Nested `include_str!` file-read failure or nested `env!` of
+///   an unset variable: propagated as a compile error with the
+///   underlying cause.
+#[proc_macro]
+pub fn mask_concat(input: TokenStream) -> TokenStream {
+    mask_concat::expand(input)
 }
 
 /// Identity macro that accepts one string, byte string, or C string
