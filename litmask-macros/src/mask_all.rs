@@ -449,9 +449,9 @@ fn parse_head_and_template(tokens: &TokenStream2, head_arity: usize) -> Option<H
             input.parse::<syn::Token![,]>()?;
             head_pieces.push(quote! { #head_expr });
         }
-        // Peek to ensure the next token actually IS a string literal
-        // — non-literal templates fall through to `NonLiteralTemplate`
-        // skip emission instead of attempting a rewrite.
+        // Peek to ensure the next token IS a string literal — non-
+        // literal templates make the parser return Err and the caller
+        // silently leaves the macro un-rewritten (no warning).
         let _template: syn::LitStr = input.fork().parse()?;
         let template_and_args: TokenStream2 = input.parse()?;
         let head_tokens = if head_pieces.is_empty() {

@@ -140,7 +140,7 @@ pub(crate) fn mask_plaintext(
 
     let ciphertext_and_tag =
         aead_encrypt(CipherId::ChaCha20Poly1305, &mask_key, &nonce, &plaintext)
-            .expect("AEAD encryption failed at mask! expansion");
+            .expect("AEAD encryption failed during litmask macro expansion");
     // The proc-macro server is a long-lived dylib; build-time key
     // material lingers in process memory if not explicitly cleared.
     // `litmask-build::emit` already zeroizes its copies — mirror

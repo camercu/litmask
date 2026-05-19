@@ -1644,7 +1644,7 @@ invocations, not the implicit panic-site embedding.)
 
 ### §2.2 Iteration 2 — Format string masking (mask_fmt!)
 
-> **Amendment 2026-05-17(b):** Renamed from `mask_fmt!` to `mask_fmt!`
+> **Amendment 2026-05-17(b):** Renamed from `maskfmt!` to `mask_fmt!`
 > for naming consistency with the `mask_*!` family introduced in
 > §2.1.3–§2.1.8. Every requirement and error-message substring below
 > reads `mask_fmt!` (substitute mechanically: trybuild snapshots

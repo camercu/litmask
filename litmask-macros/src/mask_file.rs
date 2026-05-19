@@ -13,8 +13,10 @@ use crate::common::{MaskKind, canonicalize_file_path, mask_plaintext};
 const ARGS_MSG: &str = "mask_file! takes no arguments";
 
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
-    if input.into_iter().next().is_some() {
-        return syn::Error::new(proc_macro2::Span::call_site(), ARGS_MSG)
+    if let Some(tt) = input.into_iter().next() {
+        // Anchor the diagnostic at the offending token so the user
+        // sees the unwanted argument underlined, not the macro name.
+        return syn::Error::new(tt.span().into(), ARGS_MSG)
             .to_compile_error()
             .into();
     }

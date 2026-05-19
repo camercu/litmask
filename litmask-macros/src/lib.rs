@@ -308,10 +308,9 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
 ///   `mask_all!`.
 ///
 /// Warnings are emitted as `deprecated` lints so they surface in
-/// `cargo build` output without changing build success on stable
-/// `#[mask_all]`. Each warning's note includes a tag identifying
-/// the skip kind (`pattern_position`, `const_initializer`,
-/// `static_initializer`, `non_literal_template`,
+/// `cargo build` output without changing build success. Each
+/// warning's note includes a tag identifying the skip kind
+/// (`pattern_position`, `const_initializer`, `static_initializer`,
 /// `unrecognized_macro`) so the user can grep for them.
 ///
 /// # Panics
