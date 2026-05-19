@@ -9,7 +9,6 @@ use std::path::PathBuf;
 
 use proc_macro::TokenStream;
 use syn::LitStr;
-use syn::spanned::Spanned;
 
 use crate::common::{MaskKind, mask_plaintext};
 

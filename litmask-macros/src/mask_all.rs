@@ -139,11 +139,14 @@ enum MacroFamily {
     /// asserts (both operands). The `debug_assert!` family does
     /// **not** route here — see `SkipDiagnostic`.
     AssertWithMessage { head_arity: usize },
-    /// `include_str!` or `concat!` — the entire invocation is wrapped
-    /// in `mask!()`. The wrapped invocation is resolved at proc-macro
-    /// expansion time by `mask!`'s grammar and the resulting bytes
-    /// are masked exactly like a bare literal.
-    IncludeConcat,
+    /// One of the stdlib compile-time-resolving macros rewritten to
+    /// its dedicated `mask_*!` counterpart in `litmask`:
+    /// `include_str!` → `mask_include_str!`, `include_bytes!` →
+    /// `mask_include_bytes!`, `concat!` → `mask_concat!`, `env!` →
+    /// `mask_env!`, `option_env!` → `mask_option_env!`, `file!()` →
+    /// `mask_file!()`. The macro path is swapped; the argument
+    /// tokens flow through unchanged.
+    RewriteToMasked { masked_name: &'static str },
     /// Anything not recognized above. Literal arguments fall through
     /// unmasked and the walker emits a warning per literal so the
     /// user is alerted.
@@ -167,10 +170,8 @@ fn classify_macro(mac: &syn::Macro) -> MacroFamily {
         // decrypt that's discarded — pure cost for no release-
         // binary benefit. Treat the whole debug-assert family as
         // diagnostic-only regardless of the message form.
-        "dbg" | "stringify" | "compile_error" | "cfg" | "file" | "line" | "column"
-        | "module_path" | "debug_assert" | "debug_assert_eq" | "debug_assert_ne" => {
-            MacroFamily::SkipDiagnostic
-        }
+        "dbg" | "stringify" | "compile_error" | "cfg" | "line" | "column" | "module_path"
+        | "debug_assert" | "debug_assert_eq" | "debug_assert_ne" => MacroFamily::SkipDiagnostic,
         "assert" => {
             // assert!(cond) — no message; assert!(cond, msg, ...) — with.
             if count_top_level_args(&mac.tokens) >= 2 {
@@ -191,7 +192,24 @@ fn classify_macro(mac: &syn::Macro) -> MacroFamily {
         "println" | "eprintln" | "print" | "eprint" => MacroFamily::Output,
         "write" | "writeln" => MacroFamily::Write,
         "panic" | "todo" | "unimplemented" | "unreachable" => MacroFamily::Panic,
-        "include_str" | "concat" => MacroFamily::IncludeConcat,
+        "include_str" => MacroFamily::RewriteToMasked {
+            masked_name: "mask_include_str",
+        },
+        "include_bytes" => MacroFamily::RewriteToMasked {
+            masked_name: "mask_include_bytes",
+        },
+        "concat" => MacroFamily::RewriteToMasked {
+            masked_name: "mask_concat",
+        },
+        "env" => MacroFamily::RewriteToMasked {
+            masked_name: "mask_env",
+        },
+        "option_env" => MacroFamily::RewriteToMasked {
+            masked_name: "mask_option_env",
+        },
+        "file" => MacroFamily::RewriteToMasked {
+            masked_name: "mask_file",
+        },
         _ => MacroFamily::UserDefined,
     }
 }
@@ -321,7 +339,9 @@ impl MaskAllWalker {
     fn try_rewrite_macro(&mut self, expr: &Expr) -> Option<Expr> {
         let Expr::Macro(em) = expr else { return None };
         match classify_macro(&em.mac) {
-            MacroFamily::IncludeConcat => Some(wrap_include_or_concat(em)),
+            MacroFamily::RewriteToMasked { masked_name } => {
+                Some(rewrite_to_masked(em, masked_name))
+            }
             MacroFamily::Format => Self::rewrite_template(em, 0, RewriteShape::Replace),
             MacroFamily::Output | MacroFamily::Panic => {
                 Self::rewrite_template(em, 0, RewriteShape::Wrap)
@@ -556,12 +576,23 @@ impl VisitMut for MaskAllWalker {
     }
 }
 
-/// Wrap `include_str!(...)` or `concat!(...)` in `mask!()`. Produces
-/// the literal source form `mask!(include_str!(...))` /
-/// `mask!(concat!(...))`, which `mask!`'s grammar accepts and
-/// resolves at proc-macro expansion time.
-fn wrap_include_or_concat(em: &syn::ExprMacro) -> Expr {
-    syn::parse_quote! { ::litmask::mask!(#em) }
+/// Replace the macro path of `em` with `::litmask::<masked_name>`,
+/// preserving its argument tokens. Used by the `RewriteToMasked`
+/// family to swap stdlib compile-time macros (`include_str!`,
+/// `concat!`, `env!`, etc.) for their dedicated litmask
+/// counterparts.
+fn rewrite_to_masked(em: &syn::ExprMacro, masked_name: &str) -> Expr {
+    let masked_ident = format_ident!("{masked_name}");
+    let path: syn::Path = syn::parse_quote! { ::litmask::#masked_ident };
+    Expr::Macro(syn::ExprMacro {
+        attrs: em.attrs.clone(),
+        mac: syn::Macro {
+            path,
+            bang_token: em.mac.bang_token,
+            delimiter: em.mac.delimiter.clone(),
+            tokens: em.mac.tokens.clone(),
+        },
+    })
 }
 
 /// Return `Some(mask!(literal))` if `expr` is a bare string / byte

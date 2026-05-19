@@ -618,3 +618,75 @@ fn mask_all_leaves_debug_assert_ne_untouched() {
         "debug_assert_ne! panic message lost; got: {msg:?}",
     );
 }
+
+// ── Phase D: stdlib forms rewritten to dedicated mask_*! macros ──
+
+#[mask_all]
+mod include_bytes_rewritten {
+    pub fn fixture() -> Vec<u8> {
+        // mask_all rewrites `include_bytes!(...)` to
+        // `mask_include_bytes!(...)` which returns `Vec<u8>`.
+        include_bytes!("examples/fixtures/binary_blob.bin")
+    }
+}
+
+#[test]
+fn mask_all_rewrites_include_bytes_to_mask_include_bytes() {
+    common::init_once();
+    let bytes = include_bytes_rewritten::fixture();
+    let s = std::str::from_utf8(&bytes).expect("fixture is UTF-8");
+    assert!(s.contains("cobalt-narwhal-9c4e72-bytes-fixture"));
+}
+
+#[mask_all]
+mod env_rewritten {
+    pub fn fixture() -> String {
+        // mask_all rewrites `env!(...)` to `mask_env!(...)`.
+        env!("CARGO_PKG_NAME")
+    }
+}
+
+#[test]
+fn mask_all_rewrites_env_to_mask_env() {
+    common::init_once();
+    assert_eq!(env_rewritten::fixture(), "litmask");
+}
+
+#[mask_all]
+mod option_env_rewritten {
+    pub fn fixture_set() -> Option<String> {
+        option_env!("CARGO_PKG_NAME")
+    }
+
+    pub fn fixture_unset() -> Option<String> {
+        option_env!("LITMASK_TRYBUILD_DEFINITELY_UNSET_X9Z42")
+    }
+}
+
+#[test]
+fn mask_all_rewrites_option_env_to_mask_option_env() {
+    common::init_once();
+    assert_eq!(
+        option_env_rewritten::fixture_set(),
+        Some("litmask".to_string())
+    );
+    assert_eq!(option_env_rewritten::fixture_unset(), None);
+}
+
+#[mask_all]
+mod file_rewritten {
+    pub fn fixture() -> String {
+        // mask_all rewrites `file!()` to `mask_file!()`.
+        file!()
+    }
+}
+
+#[test]
+fn mask_all_rewrites_file_to_mask_file() {
+    common::init_once();
+    let s = file_rewritten::fixture();
+    assert!(
+        s.ends_with("tests/mask_all.rs"),
+        "expected canonicalized path, got {s:?}",
+    );
+}
