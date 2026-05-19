@@ -21,6 +21,7 @@ mod common;
 mod mask;
 mod mask_all;
 mod mask_fmt;
+mod mask_include_bytes;
 mod mask_include_str;
 mod unmasked;
 mod weak_mask;
@@ -82,6 +83,24 @@ pub fn mask(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn mask_include_str(input: TokenStream) -> TokenStream {
     mask_include_str::expand(input)
+}
+
+/// Mask the raw bytes of a file at compile time. The file is read
+/// by the proc-macro relative to the consumer crate's
+/// `CARGO_MANIFEST_DIR`; its bytes are AEAD-encrypted and the macro
+/// expands to a runtime decrypt call returning `Vec<u8>`. The
+/// plaintext bytes never appear in the compiled binary's
+/// `.rodata`.
+///
+/// # Errors
+///
+/// - Non-string-literal argument: "mask_include_bytes! requires a
+///   string literal path".
+/// - File read failure: "mask_include_bytes!: could not read
+///   `<path>`: <reason>".
+#[proc_macro]
+pub fn mask_include_bytes(input: TokenStream) -> TokenStream {
+    mask_include_bytes::expand(input)
 }
 
 /// Identity macro that accepts one string, byte string, or C string

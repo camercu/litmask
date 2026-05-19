@@ -1,0 +1,5 @@
+error: mask_include_bytes! requires a string literal path
+ --> tests/compile/mask_include_bytes_non_literal.rs:9:33
+  |
+9 |     let _ = mask_include_bytes!(path);
+  |                                 ^^^^

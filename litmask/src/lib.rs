@@ -54,7 +54,9 @@ pub use provider::KeyProvider;
 #[cfg(feature = "std")]
 pub use provider::EnvVarProvider;
 
-pub use litmask_macros::{mask, mask_all, mask_fmt, mask_include_str, unmasked, weak_mask};
+pub use litmask_macros::{
+    mask, mask_all, mask_fmt, mask_include_bytes, mask_include_str, unmasked, weak_mask,
+};
 
 /// Internal helper: expand to `include_bytes!(...)` for the embedded
 /// encrypted-`mask_key` wrapper at the caller's `OUT_DIR`. Shared by

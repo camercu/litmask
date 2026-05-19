@@ -43,4 +43,6 @@ fn compile_fixtures() {
     t.compile_fail("tests/compile/mask_all_nested_module_pattern_warning.rs");
     t.compile_fail("tests/compile/mask_include_str_non_literal.rs");
     t.compile_fail("tests/compile/mask_include_str_missing_file.rs");
+    t.compile_fail("tests/compile/mask_include_bytes_non_literal.rs");
+    t.compile_fail("tests/compile/mask_include_bytes_missing_file.rs");
 }
