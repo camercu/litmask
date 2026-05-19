@@ -21,6 +21,7 @@ mod common;
 mod mask;
 mod mask_all;
 mod mask_fmt;
+mod mask_include_str;
 mod unmasked;
 mod weak_mask;
 
@@ -58,6 +59,29 @@ mod weak_mask;
 #[proc_macro]
 pub fn mask(input: TokenStream) -> TokenStream {
     mask::expand(input)
+}
+
+/// Mask the UTF-8 contents of a file at compile time. The file is
+/// read by the proc-macro relative to the consumer crate's
+/// `CARGO_MANIFEST_DIR`; its bytes are AEAD-encrypted into a blob
+/// embedded in the binary, and the macro expands to a runtime
+/// decrypt call returning `String`. The plaintext never appears in
+/// the compiled binary's `.rodata`.
+///
+/// # Errors
+///
+/// - Non-string-literal argument: "mask_include_str! requires a
+///   string literal path".
+/// - File read failure (missing, unreadable, etc.): "mask_include_str!:
+///   could not read `<path>`: <reason>".
+///
+/// # Panics
+///
+/// Same proc-macro-time panic conditions as [`mask!`] for missing
+/// `OUT_DIR`, key/seed files, etc.
+#[proc_macro]
+pub fn mask_include_str(input: TokenStream) -> TokenStream {
+    mask_include_str::expand(input)
 }
 
 /// Identity macro that accepts one string, byte string, or C string
