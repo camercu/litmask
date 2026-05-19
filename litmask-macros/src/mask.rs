@@ -10,17 +10,12 @@ use std::fs;
 use std::path::PathBuf;
 
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
-use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{LitByteStr, LitCStr, LitStr, Token, parse_macro_input};
-use zeroize::Zeroize;
 
-use litmask_internal::{CipherId, KEY_LEN, aead_encrypt, nonce_for_call_site};
-
-use crate::common::{byte_array_token, canonicalize_file_path, load_out_dir_artifact};
+use crate::common::{MaskKind, mask_plaintext};
 
 /// Error text emitted for any `mask!` input that isn't a supported
 /// literal kind or one of the two accepted built-in macro inputs.
@@ -37,47 +32,11 @@ const CONCAT_ARG_MSG: &str =
 /// Implementation of the `#[proc_macro] mask` entry point. Re-exported
 /// at the crate root via a one-line wrapper.
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
-    let kind = parse_macro_input!(input as MaskInput);
-    let mut plaintext = kind.plaintext();
-
-    let mut mask_key = load_out_dir_artifact::<KEY_LEN>("litmask_key.bin");
-    let mut seed = load_out_dir_artifact::<KEY_LEN>("litmask_seed.bin");
-
-    let pm_span = kind.span().unwrap();
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").ok();
-    let file = canonicalize_file_path(pm_span.file(), manifest_dir.as_deref());
-    let line = u32::try_from(pm_span.line()).unwrap_or(u32::MAX);
-    let column = u32::try_from(pm_span.column()).unwrap_or(u32::MAX);
-    let nonce = nonce_for_call_site(&seed, &file, line, column, &plaintext);
-    seed.zeroize();
-
-    let ciphertext_and_tag =
-        aead_encrypt(CipherId::ChaCha20Poly1305, &mask_key, &nonce, &plaintext)
-            .expect("AEAD encryption failed at mask! expansion");
-    // The proc-macro server is a long-lived dylib; build-time key
-    // material lingers in process memory if not explicitly cleared.
-    // `litmask-build::emit` already zeroizes its copies — mirror that
-    // discipline here for every expansion.
-    mask_key.zeroize();
-    plaintext.zeroize();
-
-    let blob: Vec<u8> = [nonce.as_slice(), &ciphertext_and_tag].concat();
-    let blob_lit = byte_array_token(&blob);
-    let blob_len = blob.len();
-    // Hygienic identifier — emitting at `mixed_site` keeps the binding
-    // invisible to the caller's identifier namespace, so a user with
-    // their own `__LITMASK_BLOB` in scope doesn't collide.
-    let blob_ident = syn::Ident::new("__LITMASK_BLOB", proc_macro2::Span::mixed_site());
-    let blob_ref = quote! { #blob_ident };
-    let decrypt_expr = kind.decrypt_expr(&blob_ref, &quote! { ::litmask::__wrapper_bytes!() });
-
-    quote! {
-        {
-            const #blob_ident: &[u8; #blob_len] = &#blob_lit;
-            #decrypt_expr
-        }
-    }
-    .into()
+    let parsed = parse_macro_input!(input as MaskInput);
+    let span = parsed.span();
+    let kind = parsed.mask_kind();
+    let plaintext = parsed.plaintext();
+    mask_plaintext(plaintext, span, kind).into()
 }
 
 /// Parsed `mask!` input. After accepting `include_str!`/`concat!`
@@ -117,37 +76,17 @@ impl MaskInput {
         }
     }
 
-    /// Build the call expression that decrypts the blob to the
-    /// kind-appropriate type. All three arms share the same runtime
-    /// `__decrypt(blob, wrapper) -> Vec<u8>` core; only the
-    /// type-construction wrapper differs. The c-string arm routes
-    /// through a `macro_rules` dispatcher in `litmask` so a
-    /// missing-`std`-feature build surfaces a clear `compile_error!`
-    /// at the user's `mask!(c"...")` site instead of a
+    /// Map literal kind to the `MaskKind` driving `mask_plaintext`'s
+    /// runtime decrypt expression. The c-string arm relies on the
+    /// `__decrypt_cstring_call!` macro_rules dispatcher in
+    /// `litmask::lib.rs`, which surfaces a clean `compile_error!` for
+    /// the `no-std` feature combination instead of a downstream
     /// "`CString` not found" diagnostic.
-    ///
-    /// Panic policy: the str-path `String::from_utf8(...).unwrap()`
-    /// is unreachable under valid inputs — `mask!("...")` only
-    /// accepts UTF-8 string literals, and AEAD authentication
-    /// rejects any tampering that could yield non-UTF-8 bytes. The
-    /// bare `.unwrap()` (no message) keeps litmask-identifying text
-    /// out of compiled binaries. The c-string shim's analogous
-    /// invariant lives in its doc-comment in `litmask::lib.rs`.
-    /// Unwinds in either path land at the user's `mask!(...)` call
-    /// site, not inside the litmask crate.
-    fn decrypt_expr(&self, blob: &TokenStream2, wrapper: &TokenStream2) -> TokenStream2 {
+    fn mask_kind(&self) -> MaskKind {
         match self {
-            Self::Str(_) => quote! {
-                ::litmask::__internal::__String::from_utf8(
-                    ::litmask::__internal::__decrypt(#blob, #wrapper)
-                ).unwrap()
-            },
-            Self::ByteStr(_) => quote! {
-                ::litmask::__internal::__decrypt(#blob, #wrapper)
-            },
-            Self::CStr(_) => quote! {
-                ::litmask::__decrypt_cstring_call!(#blob, #wrapper)
-            },
+            Self::Str(_) => MaskKind::Str,
+            Self::ByteStr(_) => MaskKind::Bytes,
+            Self::CStr(_) => MaskKind::CStr,
         }
     }
 }

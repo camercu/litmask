@@ -11,7 +11,9 @@ use std::sync::{Mutex, OnceLock};
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
+
+use litmask_internal::{CipherId, KEY_LEN, aead_encrypt, nonce_for_call_site};
 
 /// Process-lifetime cache of `OUT_DIR` artifact contents keyed by file
 /// name. `Zeroizing<Vec<u8>>` keeps the type-level signal that the
@@ -89,6 +91,91 @@ pub(crate) fn byte_array_token(bytes: &[u8]) -> TokenStream {
 /// empty, or when no prefix match exists — both cases degrade
 /// gracefully (the nonce remains correct, only the path-stability
 /// property is forfeited).
+/// Return type of a masking macro's runtime expansion. Drives the
+/// decrypt-and-construct expression emitted alongside the encrypted
+/// blob constant.
+#[derive(Clone, Copy)]
+pub(crate) enum MaskKind {
+    /// `String` from UTF-8 bytes — `mask!("text")`, `mask_include_str!`,
+    /// `mask_concat!`, `mask_env!`, `mask_option_env!`'s `Some` branch,
+    /// `mask_file!`.
+    Str,
+    /// `Vec<u8>` from raw bytes — `mask!(b"...")`, `mask_include_bytes!`.
+    Bytes,
+    /// `CString` from UTF-8 bytes (NUL re-added at decode time) —
+    /// `mask!(c"...")`.
+    CStr,
+}
+
+/// Encrypt `plaintext` under the build's `mask_key` keyed on the
+/// `(file, line, column, plaintext)` tuple of `span` (spec §1.5.2),
+/// then emit a `{ const __LITMASK_BLOB = ...; decrypt(...) }` block
+/// that returns a value of the kind-appropriate type at runtime.
+///
+/// All six call-site masking macros (`mask!`, `mask_include_str!`,
+/// `mask_include_bytes!`, `mask_concat!`, `mask_env!`,
+/// `mask_option_env!`, `mask_file!`) share this body once their
+/// input has been resolved at proc-macro time. The helper handles
+/// key/seed loading, nonce derivation, AEAD encryption, secret
+/// zeroization, and the runtime decrypt expression for the
+/// requested return type.
+///
+/// `plaintext` is zeroized on return; callers MUST NOT rely on
+/// reading the buffer afterwards.
+pub(crate) fn mask_plaintext(
+    mut plaintext: Vec<u8>,
+    span: proc_macro2::Span,
+    kind: MaskKind,
+) -> TokenStream {
+    let mut mask_key = load_out_dir_artifact::<KEY_LEN>("litmask_key.bin");
+    let mut seed = load_out_dir_artifact::<KEY_LEN>("litmask_seed.bin");
+
+    let pm_span = span.unwrap();
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").ok();
+    let file = canonicalize_file_path(pm_span.file(), manifest_dir.as_deref());
+    let line = u32::try_from(pm_span.line()).unwrap_or(u32::MAX);
+    let column = u32::try_from(pm_span.column()).unwrap_or(u32::MAX);
+    let nonce = nonce_for_call_site(&seed, &file, line, column, &plaintext);
+    seed.zeroize();
+
+    let ciphertext_and_tag =
+        aead_encrypt(CipherId::ChaCha20Poly1305, &mask_key, &nonce, &plaintext)
+            .expect("AEAD encryption failed at mask! expansion");
+    // The proc-macro server is a long-lived dylib; build-time key
+    // material lingers in process memory if not explicitly cleared.
+    // `litmask-build::emit` already zeroizes its copies — mirror
+    // that discipline here for every expansion.
+    mask_key.zeroize();
+    plaintext.zeroize();
+
+    let blob: Vec<u8> = [nonce.as_slice(), &ciphertext_and_tag].concat();
+    let blob_lit = byte_array_token(&blob);
+    let blob_len = blob.len();
+    let blob_ident = syn::Ident::new("__LITMASK_BLOB", proc_macro2::Span::mixed_site());
+    let wrapper = quote! { ::litmask::__wrapper_bytes!() };
+    let decrypt_expr = match kind {
+        MaskKind::Str => quote! {
+            ::litmask::__internal::__String::from_utf8(
+                ::litmask::__internal::__decrypt(#blob_ident, #wrapper)
+            )
+            .unwrap()
+        },
+        MaskKind::Bytes => quote! {
+            ::litmask::__internal::__decrypt(#blob_ident, #wrapper)
+        },
+        MaskKind::CStr => quote! {
+            ::litmask::__decrypt_cstring_call!(#blob_ident, #wrapper)
+        },
+    };
+
+    quote! {
+        {
+            const #blob_ident: &[u8; #blob_len] = &#blob_lit;
+            #decrypt_expr
+        }
+    }
+}
+
 pub(crate) fn canonicalize_file_path(raw_file: String, manifest_dir: Option<&str>) -> String {
     let Some(dir) = manifest_dir else {
         return raw_file;
