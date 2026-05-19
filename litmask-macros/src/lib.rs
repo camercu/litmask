@@ -22,6 +22,7 @@ mod mask;
 mod mask_all;
 mod mask_concat;
 mod mask_env;
+mod mask_file;
 mod mask_fmt;
 mod mask_include_bytes;
 mod mask_include_str;
@@ -156,6 +157,28 @@ pub fn mask_env(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn mask_option_env(input: TokenStream) -> TokenStream {
     mask_option_env::expand(input)
+}
+
+/// Mask the call site's source-file path at compile time. The
+/// proc-macro reads `proc_macro::Span::call_site().file()`,
+/// canonicalizes it relative to the consumer crate's
+/// `CARGO_MANIFEST_DIR` for reproducibility across checkouts at
+/// different absolute filesystem locations, AEAD-encrypts the
+/// result, and expands to a runtime decrypt call returning
+/// `String`.
+///
+/// The raw source path never appears in the compiled binary's
+/// `.rodata`. Note: `core::panic::Location::caller()` independently
+/// embeds source paths at every panic site (`.unwrap()`,
+/// `.expect("...")`, etc.); `mask_file!` masks only its own
+/// explicit invocations, not the implicit panic-site embedding.
+///
+/// # Errors
+///
+/// - Non-empty argument list: "mask_file! takes no arguments".
+#[proc_macro]
+pub fn mask_file(input: TokenStream) -> TokenStream {
+    mask_file::expand(input)
 }
 
 /// Identity macro that accepts one string, byte string, or C string

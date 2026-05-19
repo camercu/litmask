@@ -55,8 +55,8 @@ pub use provider::KeyProvider;
 pub use provider::EnvVarProvider;
 
 pub use litmask_macros::{
-    mask, mask_all, mask_concat, mask_env, mask_fmt, mask_include_bytes, mask_include_str,
-    mask_option_env, unmasked, weak_mask,
+    mask, mask_all, mask_concat, mask_env, mask_file, mask_fmt, mask_include_bytes,
+    mask_include_str, mask_option_env, unmasked, weak_mask,
 };
 
 /// Internal helper: expand to `include_bytes!(...)` for the embedded
