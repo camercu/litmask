@@ -151,7 +151,7 @@ This table SHALL appear in the README and in the crate-level rustdoc:
 | Tamper detection | No | No | Yes (AEAD authentication) |
 | Per-string nonces | Compile-time random (no auth) | None | Per-build deterministic, authenticated |
 | Key model | Compile-time random per build | Single env var | Layered: `mask_key` + `unlock_key`, multiple providers |
-| Format string masking | Separate `fmtools` crate | None | Built-in `maskfmt!` with single-evaluation semantics |
+| Format string masking | Separate `fmtools` crate | None | Built-in `mask_fmt!` with single-evaluation semantics |
 | Module-level masking | None | None | `#[mask_all]` with deep substitution |
 | Hardware binding | None | None | Yes (post-build rebind via `litmask-cli`) |
 | Multiple literal types (str/bytes/cstr) | str only | str only | All three |
@@ -411,7 +411,7 @@ macro-expansion pass visited first. This matters for two reasons:
 `proc_macro::Span::file()`, `Span::line()`, and `Span::column()` were
 stabilized in Rust 1.88, the workspace's pinned toolchain.
 
-**Why plaintext is also keyed.** `maskfmt!` synthesizes multiple
+**Why plaintext is also keyed.** `mask_fmt!` synthesizes multiple
 `mask!()` calls inside a single `quote!{}` expansion — one per
 template fragment — and `quote!`'s default span propagation makes
 those calls share a `(file, line, column)` triple. Distinct
@@ -737,9 +737,16 @@ most consistent recoverable state:
 
 ```rust
 mask!(literal)              // dispatches on literal kind
-maskfmt!(literal_template, args...)
+mask_fmt!(template, args...) // formerly mask_fmt! — renamed per
+                             // Amendment 2026-05-17(b)
 unmasked!(literal)          // explicit opt-out, returns literal unchanged
 weak_mask!(literal)         // XOR-with-wrapper obfuscation; weaker than mask!
+mask_include_str!("path")   // file contents → masked String
+mask_include_bytes!("path") // file contents → masked Vec<u8>
+mask_concat!(args...)       // compile-time concat → masked String
+mask_env!("VAR")            // build-time env var → masked String
+mask_option_env!("VAR")     // build-time env var → masked Option<String>
+mask_file!()                // current source path → masked String
 #[mask_all]                 // module-level deep rewriting
 #[mask_all(strict)]         // upgrades skip warnings to errors
 ```
@@ -760,34 +767,56 @@ site (cached in a `OnceLock`).
 - Byte string literal (`b"\x..."`, raw byte) → returns `Vec<u8>`
 - C string literal (`c"text"`, Rust 1.77+) → returns `CString`
 
-> **Amendment 2026-05-10:** `mask!` additionally accepts two specific
-> built-in macro invocations as inputs and resolves them at proc-macro
-> time before applying the normal masking pipeline:
-> - `mask!(include_str!(<path>))` — the proc-macro reads `<path>` via
->   `std::fs::read_to_string` and registers the file as a build
->   dependency via `proc_macro::tracked_path::path(<path>)` so cargo
->   reruns the build when the file changes. The resulting `String` is
->   masked exactly as if it had been written as a bare string literal.
->   Return type is `String`.
-> - `mask!(concat!(<args>...))` — the proc-macro recursively evaluates
->   each `<arg>`, which must itself be a string literal, byte literal,
->   C-string literal, or a further `concat!`/`include_str!` invocation.
->   The concatenation is computed at proc-macro time. Return type
->   matches the unified literal kind per Rust's normal `concat!`
->   inference rules; mixed kinds are rejected at proc-macro time with
->   the substring "concat! arguments inside mask! must be string,
->   byte string, or C string literals".
->
-> All other non-literal inputs to `mask!` continue to fail with the
-> §1.9.6 error message. Rationale: macro expansion in Rust is
-> inside-out, so wrapping `mask!` around `include_str!` or `concat!`
-> would otherwise leave `mask!` parsing the unexpanded inner token
-> tree, which is not a literal — making the natural `#[mask_all]`
-> rewrite (§2.3.2.5) impossible. Resolving these two specific
-> built-ins at proc-macro time keeps the user-facing API a single
-> `mask!` macro and lets `#[mask_all]` emit the natural form.
+> **Amendment 2026-05-10:** _Obsoleted by Amendment 2026-05-17(b)._
+> Previously `mask!` accepted `mask!(include_str!(...))` and
+> `mask!(concat!(...))` as inputs resolved at proc-macro time. That
+> whitelist is removed; the dedicated `mask_include_str!` and
+> `mask_concat!` macros (§2.1.3, §2.1.5) replace it.
 
-`maskfmt!` accepts string literal templates only. Non-literal templates produce
+> **Amendment 2026-05-17(b):** A dedicated family of compile-time-
+> resolving masking macros replaces the prior `mask!(include_str!(...))`
+> / `mask!(concat!(...))` whitelist. Each new macro takes the same
+> input as its stdlib counterpart but encrypts the result before
+> emission, eliminating the metadata leak of the unmasked form. The
+> new public macros are:
+>
+> - `mask_include_str!("path")` → `String` — §2.1.3
+> - `mask_include_bytes!("path")` → `Vec<u8>` — §2.1.4
+> - `mask_concat!(args...)` → `String` — §2.1.5
+> - `mask_env!("VAR")` → `String` (compile_error if unset) — §2.1.6
+> - `mask_option_env!("VAR")` → `Option<String>` — §2.1.7
+> - `mask_file!()` → `String` — §2.1.8
+>
+> Additionally:
+>
+> - `mask_fmt!` is renamed to `mask_fmt!` for naming consistency with
+>   the new mask_* family. The bare `mask_fmt!` name SHALL NOT exist
+>   in the public API. Every spec reference to `mask_fmt!` reads
+>   `mask_fmt!`.
+> - `mask!` SHALL NOT accept macro invocations as input. The
+>   §2.1.1.14 whitelist of `include_str!` / `concat!` is removed. Any
+>   `mask!(<macro>!(...))` form is rejected with the [INVALID_LITERAL_MSG]
+>   error from §1.9.6.
+> - `#[mask_all]`'s substitution table (§2.3.2) rewrites the
+>   unmasked stdlib forms (`include_str!`, `include_bytes!`,
+>   `concat!`, `env!`, `option_env!`, `file!`) to their dedicated
+>   `mask_*!` counterparts.
+>
+> The dropped scope considered during refinement: `mask_cfg!`
+> (because stdlib `cfg!()` resolves to a compile-time bool with no
+> `.rodata` residue — masking the bool adds runtime cost for zero
+> metadata reduction) and `mask_module_path!` (because
+> `proc_macro::Span` does not expose a `module_path()` accessor on
+> stable Rust, making proc-macro-time resolution unreachable). Both
+> would have been pure API parallels without functional benefit.
+>
+> Rationale for dedicated macros over the prior `mask!(<macro>!(...))`
+> shim: macro expansion in Rust is inside-out, so the shim required
+> `mask!` to re-implement the stdlib macros at proc-macro time. The
+> dedicated forms collapse that two-step expansion into one and
+> simplify `#[mask_all]`'s rewrite logic.
+
+`mask_fmt!` accepts string literal templates only. Non-literal templates produce
 a compile error directing users toward `mask!` for runtime-decrypted strings.
 
 `unmasked!` accepts any of the above literal kinds and returns them unchanged
@@ -1035,9 +1064,18 @@ error message:
 
 | Situation | Required content |
 |---|---|
-| `maskfmt!` non-literal template | "maskfmt! requires a string literal template at the call site; use `mask!` to decrypt a runtime string" |
+| `mask_fmt!` non-literal template | "mask_fmt! requires a string literal template at the call site; use `mask!` to decrypt a runtime string" |
 | `mask!` invalid literal type | "mask! accepts string, byte string, or C string literals" |
-| `mask!(concat!(...))` with non-literal arg | "concat! arguments inside mask! must be string, byte string, or C string literals" |
+| `mask_include_str!` non-literal path | "mask_include_str! requires a string literal path" |
+| `mask_include_str!` file-read failure | "mask_include_str!: could not read" |
+| `mask_include_bytes!` non-literal path | "mask_include_bytes! requires a string literal path" |
+| `mask_include_bytes!` file-read failure | "mask_include_bytes!: could not read" |
+| `mask_concat!` invalid argument | "mask_concat! arguments must be string literals or compile-time-resolvable string macros" |
+| `mask_concat!` empty argument list | "mask_concat! requires at least one argument" |
+| `mask_env!` non-literal name | "mask_env! requires a string literal name" |
+| `mask_env!` unset env var | "mask_env!: environment variable `<NAME>` is not set" |
+| `mask_option_env!` non-literal name | "mask_option_env! requires a string literal name" |
+| `mask_file!` non-empty input | "mask_file! takes no arguments" |
 
 `mask!` rejections in `const` / `static` initializer and pattern
 positions fall through to rustc's natural diagnostics
@@ -1238,7 +1276,7 @@ listed as out-of-scope in §1.1.3.
 #### §1.12.1 Stability commitments
 
 Stable surface (semver-protected):
-- `mask!`, `maskfmt!`, `unmasked!` macros
+- `mask!`, `mask_fmt!`, `unmasked!` macros
 - `#[mask_all]` attribute and substitution table (additions allowed; removals
   breaking)
 - `KeyProvider` trait
@@ -1345,7 +1383,7 @@ carefully:
    context-sensitive (literal templates only; non-literal templates are left
    unchanged with literal arguments masked recursively).
 
-2. **`maskfmt!` named-argument single-evaluation semantics.** Every named
+2. **`mask_fmt!` named-argument single-evaluation semantics.** Every named
    argument MUST be bound to a `let` in the rewritten code so that
    side-effecting expressions evaluate exactly once. This is the most subtle
    correctness requirement in the parser. Implicit captures (Rust 2021
@@ -1424,36 +1462,20 @@ value of type `CString` containing the literal's bytes followed by a NUL
 terminator.
 
 §2.1.1.5 — `mask!` SHALL produce a compile error when given a literal of any
-other type (e.g., integer, float, bool, char) or a non-literal expression,
-EXCEPT for the two built-in macro invocations whitelisted in §2.1.1.14.
+other type (e.g., integer, float, bool, char), a non-literal expression, or
+any macro invocation. (Amendment 2026-05-17(b) removes the §2.1.1.14
+whitelist; use the dedicated `mask_include_str!` / `mask_concat!` /
+`mask_env!` macros instead.)
 
 §2.1.1.6 — The compile error message for invalid literal types SHALL include
 the substring "mask! accepts string, byte string, or C string literals".
 
-§2.1.1.14 — *(added by Amendment 2026-05-10)* `mask!` SHALL additionally
-accept the following two built-in macro invocations as inputs and resolve
-them at proc-macro time before applying the masking pipeline:
-
-- `mask!(include_str!(<path>))` — the proc-macro SHALL read `<path>` via
-  `std::fs::read_to_string`, register the file as a build dependency via
-  `proc_macro::tracked_path::path(<path>)`, and mask the resulting `String`
-  exactly as if it had been written as a bare string literal at the call
-  site. Return type is `String`. Path resolution follows the same rules as
-  the standard `include_str!` macro (relative to the file containing the
-  invocation).
-- `mask!(concat!(<args>...))` — the proc-macro SHALL recursively evaluate
-  each `<arg>`. Each argument MUST itself be a string literal, byte
-  literal, C-string literal, or a further `concat!`/`include_str!`
-  invocation. The concatenation SHALL be computed at proc-macro time.
-  Return type follows Rust's normal `concat!` inference rules. Mixed
-  literal kinds within a single `concat!` SHALL produce a compile error
-  with the substring "concat! arguments inside mask! must be string,
-  byte string, or C string literals".
-
-These two whitelisted forms exist so that `#[mask_all]`'s rewrite of
-`include_str!` and `concat!` (§2.3.2.5) is realizable; macro expansion
-is otherwise inside-out and `mask!` would receive unexpanded token
-trees rather than literals.
+§2.1.1.14 — _**Obsoleted by Amendment 2026-05-17(b).**_ Previously
+`mask!` accepted `mask!(include_str!(<path>))` and `mask!(concat!(<args>...))`
+as inputs resolved at proc-macro time. That whitelist is removed; the
+dedicated `mask_include_str!` (§2.1.3) and `mask_concat!` (§2.1.5) macros
+replace it. `mask!` accepts only the three literal kinds enumerated in
+§2.1.1.1–§2.1.1.4.
 
 §2.1.1.7 — Each `mask!` invocation SHALL produce ciphertext using a unique
 nonce derived per §1.5.2.
@@ -1499,17 +1521,145 @@ literal and SHALL expand to that literal unchanged.
 §2.1.2.4 — `unmasked!` SHALL produce no runtime overhead beyond the literal it
 contains.
 
-### §2.2 Iteration 2 — Format string masking (maskfmt!)
+#### §2.1.3 mask_include_str! macro
+
+§2.1.3.1 — `mask_include_str!(<path>)` SHALL accept a single string-literal
+argument naming a UTF-8 file path. The path SHALL be resolved relative to the
+consumer crate's `CARGO_MANIFEST_DIR`.
+
+§2.1.3.2 — The macro SHALL read the file at proc-macro time, AEAD-encrypt
+its contents per §1.5.2, and expand to a runtime decrypt call returning a
+value of type `String`.
+
+§2.1.3.3 — Non-string-literal argument SHALL produce a compile error
+containing the substring "mask_include_str! requires a string literal
+path".
+
+§2.1.3.4 — File-read failure at proc-macro time SHALL produce a compile
+error containing the substring "mask_include_str!: could not read".
+
+§2.1.3.5 — File contents SHALL be absent from the compiled binary's
+plaintext (`strings` output) under the same scrub policy as bare
+`mask!()` invocations.
+
+#### §2.1.4 mask_include_bytes! macro
+
+§2.1.4.1 — `mask_include_bytes!(<path>)` SHALL accept a single string-
+literal argument naming a file path. Path resolution mirrors §2.1.3.1.
+
+§2.1.4.2 — The macro SHALL read the file at proc-macro time as raw
+bytes (no UTF-8 validation), AEAD-encrypt the bytes per §1.5.2, and
+expand to a runtime decrypt call returning a value of type `Vec<u8>`.
+
+§2.1.4.3 — Non-string-literal argument SHALL produce a compile error
+containing the substring "mask_include_bytes! requires a string literal
+path".
+
+§2.1.4.4 — File-read failure at proc-macro time SHALL produce a compile
+error containing the substring "mask_include_bytes!: could not read".
+
+§2.1.4.5 — File contents SHALL be absent from the compiled binary's
+plaintext under the standard scrub policy.
+
+#### §2.1.5 mask_concat! macro
+
+§2.1.5.1 — `mask_concat!(<args>...)` SHALL accept a comma-separated
+non-empty list of arguments. Each argument MUST be one of:
+
+- A string literal (`"…"`, `r"…"`, `r#"…"#`).
+- A further `concat!(<args>...)` invocation.
+- A `include_str!(<path>)` invocation.
+- A `env!(<name>)` invocation (build-time-required env var, panics at
+  proc-macro time if unset).
+
+§2.1.5.2 — The macro SHALL recursively resolve all arguments at
+proc-macro time, concatenate the resulting strings, AEAD-encrypt the
+concatenated value per §1.5.2, and expand to a runtime decrypt call
+returning a value of type `String`.
+
+§2.1.5.3 — Arguments not matching §2.1.5.1 SHALL produce a compile
+error containing the substring "mask_concat! arguments must be string
+literals or compile-time-resolvable string macros".
+
+§2.1.5.4 — An empty argument list (`mask_concat!()`) SHALL produce a
+compile error containing the substring "mask_concat! requires at least
+one argument".
+
+§2.1.5.5 — A nested `env!` that references an unset env var SHALL
+surface the env's failure (compile error containing the substring
+"env!: environment variable") to the user.
+
+#### §2.1.6 mask_env! macro
+
+§2.1.6.1 — `mask_env!(<name>)` SHALL accept a single string-literal
+argument naming a build-time environment variable.
+
+§2.1.6.2 — At proc-macro time, the macro SHALL read the named env var
+from the build environment. When set, the macro SHALL AEAD-encrypt
+the value and expand to a runtime decrypt call returning a value of
+type `String`.
+
+§2.1.6.3 — When the named env var is unset at proc-macro time, the
+macro SHALL produce a compile error containing the substring
+"mask_env!: environment variable `<NAME>` is not set" where
+`<NAME>` is the exact literal text the user passed.
+
+§2.1.6.4 — Non-string-literal argument SHALL produce a compile error
+containing the substring "mask_env! requires a string literal name".
+
+#### §2.1.7 mask_option_env! macro
+
+§2.1.7.1 — `mask_option_env!(<name>)` SHALL accept a single string-
+literal argument naming a build-time environment variable.
+
+§2.1.7.2 — At proc-macro time, the macro SHALL read the named env var.
+When set, expand to a runtime expression returning `Some(<masked
+String>)`. When unset, expand to a runtime expression returning
+`None::<String>` with no embedded ciphertext.
+
+§2.1.7.3 — `mask_option_env!` SHALL NOT produce a compile error for an
+unset env var. The unset case is a legitimate runtime `None`, mirroring
+stdlib `option_env!`'s contract.
+
+§2.1.7.4 — Non-string-literal argument SHALL produce a compile error
+containing the substring "mask_option_env! requires a string literal
+name".
+
+#### §2.1.8 mask_file! macro
+
+§2.1.8.1 — `mask_file!()` SHALL accept no arguments. Any input tokens
+SHALL produce a compile error containing the substring "mask_file!
+takes no arguments".
+
+§2.1.8.2 — At proc-macro time, the macro SHALL read
+`proc_macro::Span::call_site().file()`, canonicalize the path per
+§1.5.2's `CARGO_MANIFEST_DIR`-stripping rule, AEAD-encrypt the result,
+and expand to a runtime decrypt call returning a value of type `String`.
+
+§2.1.8.3 — The raw source path SHALL be absent from the compiled
+binary's plaintext under the standard scrub policy. (Caveat:
+`core::panic::Location::caller()` independently embeds source paths at
+panic sites; `mask_file!` masks only its own explicit user-written
+invocations, not the implicit panic-site embedding.)
+
+### §2.2 Iteration 2 — Format string masking (mask_fmt!)
+
+> **Amendment 2026-05-17(b):** Renamed from `mask_fmt!` to `mask_fmt!`
+> for naming consistency with the `mask_*!` family introduced in
+> §2.1.3–§2.1.8. Every requirement and error-message substring below
+> reads `mask_fmt!` (substitute mechanically: trybuild snapshots
+> regenerate, all integration tests update, no behavior change). The
+> bare `mask_fmt!` name SHALL NOT exist in the public API.
 
 #### §2.2.1 Acceptance criteria
 
-§2.2.1.1 — `maskfmt!` SHALL accept a string literal template as its first
+§2.2.1.1 — `mask_fmt!` SHALL accept a string literal template as its first
 argument, followed by zero or more format arguments matching `format!`'s
 signature.
 
-§2.2.1.2 — `maskfmt!` SHALL return a value of type `String`.
+§2.2.1.2 — `mask_fmt!` SHALL return a value of type `String`.
 
-§2.2.1.3 — `maskfmt!` SHALL produce a compile error when its first argument is
+§2.2.1.3 — `mask_fmt!` SHALL produce a compile error when its first argument is
 not a string literal.
 
 §2.2.1.4 — The compile error for non-literal templates SHALL include the
@@ -1543,17 +1693,17 @@ supported with positional rewriting.
 
 §2.2.2.7 — Debug formatting (`{:?}`, `{:#?}`) SHALL be supported.
 
-§2.2.2.8 — The output of `maskfmt!(template, args...)` SHALL be identical to
+§2.2.2.8 — The output of `mask_fmt!(template, args...)` SHALL be identical to
 the output of `format!(template, args...)` for all supported format
 features.
 
 #### §2.2.3 Equivalent format! semantics
 
-§2.2.3.1 — `maskfmt!` SHALL NOT introduce observable differences from
+§2.2.3.1 — `mask_fmt!` SHALL NOT introduce observable differences from
 `format!` in argument evaluation order, evaluation count, or panicking
 behavior.
 
-§2.2.3.2 — `maskfmt!` SHALL pass through `format!`'s compile-time format
+§2.2.3.2 — `mask_fmt!` SHALL pass through `format!`'s compile-time format
 argument checking (placeholder count vs. argument count, type compatibility).
 
 ### §2.3 Iteration 3 — Module-level masking
@@ -1572,7 +1722,7 @@ without modification:
 - Pattern positions (match arms, `if let`, `while let`)
 - `const` and `static` initializers
 - Attribute strings (`#[doc = "..."]`, `#[cfg(...)]`, etc.)
-- Inside `mask!`, `maskfmt!`, or `unmasked!` invocations
+- Inside `mask!`, `mask_fmt!`, or `unmasked!` invocations
 
 §2.3.1.4 — `#[mask_all]` SHALL emit a compile-time warning for each literal
 it skips, identifying the file, line, and reason for the skip.
@@ -1615,7 +1765,7 @@ expand after attribute proc-macros).
 `mask!(literal)`.
 
 §2.3.2.2 — `format!(template, args...)` SHALL be rewritten as follows:
-- If `template` is a string literal: rewrite to `maskfmt!(template, args...)`.
+- If `template` is a string literal: rewrite to `mask_fmt!(template, args...)`.
 - If `template` is not a string literal: leave `format!` unchanged;
   recursively mask any string-literal arguments in `args...`. Emit a
   compile-time warning identifying the unmasked template.
@@ -1623,7 +1773,7 @@ expand after attribute proc-macros).
 §2.3.2.3 — Output macros (`println!`, `eprintln!`, `print!`, `eprint!`,
 `write!`, `writeln!`) SHALL be rewritten as follows:
 - If their template is a string literal: rewrite to
-  `{ let __s = maskfmt!(template, args...); <original_macro>("{}", __s) }`,
+  `{ let __s = mask_fmt!(template, args...); <original_macro>("{}", __s) }`,
   preserving the original return type and side effects.
 - If their template is not a string literal: leave the macro unchanged;
   recursively mask any string-literal arguments. Emit a compile-time warning.
@@ -1634,15 +1784,33 @@ form) SHALL be rewritten analogously to §2.3.2.3, wrapping the masked format
 result in a literal `"{}"` template when the original template is a literal;
 otherwise left unchanged with literal arguments masked recursively.
 
-§2.3.2.5 — `include_str!` and `concat!` SHALL be wrapped: the entire macro
-invocation result is wrapped in `mask!()` so the resulting string is masked.
+§2.3.2.5 — _**Revised by Amendment 2026-05-17(b).**_ The following
+stdlib macros SHALL be rewritten to their dedicated `mask_*!`
+counterparts (§2.1.3–§2.1.8):
 
-> **Amendment 2026-05-10:** The wrapping produces the literal source
-> form `mask!(include_str!(<args>))` and `mask!(concat!(<args>))`
-> respectively. These forms are accepted by `mask!`'s extended grammar
-> per §2.1.1.14 and resolved at proc-macro time. No companion
-> `mask_internal!` macro is introduced; the user-facing API remains a
-> single `mask!`.
+| Original | Rewritten to |
+|---|---|
+| `include_str!(<path>)` | `mask_include_str!(<path>)` |
+| `include_bytes!(<path>)` | `mask_include_bytes!(<path>)` |
+| `concat!(<args>...)` | `mask_concat!(<args>...)` |
+| `env!(<name>)` | `mask_env!(<name>)` |
+| `option_env!(<name>)` | `mask_option_env!(<name>)` |
+| `file!()` | `mask_file!()` |
+
+`#[mask_all]` SHALL emit these rewrites directly; no intermediate
+`mask!(...)` wrapping is required.
+
+Excluded from rewriting:
+
+- `cfg!(<predicate>)` — stdlib `cfg!()` resolves to a compile-time
+  `bool` with no `.rodata` residue, so masking adds runtime cost
+  for zero metadata reduction.
+- `module_path!()` — `proc_macro::Span` does not expose a
+  `module_path()` accessor on stable Rust, so proc-macro-time
+  resolution is unreachable; the macro is left as-is. The
+  `core::panic::Location::caller()` machinery embeds source paths
+  at panic sites by rustc's own emission, outside the proc-macro's
+  reach — `mask_file!` documents this caveat (§2.1.8.3).
 
 §2.3.2.6 — `dbg!`, `stringify!`, `assert_eq!`/`assert_ne!` (without custom
 message) SHALL be skipped without modification.
@@ -2028,7 +2196,7 @@ verify the following testable assertions:
 `KeyProvider`.
 
 §2.12.1.6 — Fuzz targets (§1.10.4) SHALL include `parse_format_template`
-(maskfmt parser) and `locator_scan` (CLI scanner). CI SHALL run each for at
+(mask_fmt parser) and `locator_scan` (CLI scanner). CI SHALL run each for at
 least 10 seconds per PR. Fuzz corpora SHALL be committed to the repository
 and grow from CI findings.
 
