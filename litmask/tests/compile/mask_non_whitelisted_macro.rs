@@ -1,6 +1,7 @@
-//! `mask!` accepts only `include_str!` and `concat!` as nested macro
-//! invocations; any other macro must fall through to the standard
-//! rejection.
+//! `mask!` rejects any macro invocation as input per spec
+//! Amendment 2026-05-17(b). The earlier `include_str!` / `concat!`
+//! whitelist is removed; users wanting those forms invoke
+//! `mask_include_str!` or `mask_concat!` directly.
 
 use litmask::mask;
 

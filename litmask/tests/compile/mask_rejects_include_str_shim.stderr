@@ -1,0 +1,5 @@
+error: mask! accepts string, byte string, or C string literals
+ --> tests/compile/mask_rejects_include_str_shim.rs:8:27
+  |
+8 |     let _: String = mask!(include_str!("examples/fixtures/quote.txt"));
+  |                           ^^^^^^^^^^^

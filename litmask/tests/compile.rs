@@ -46,4 +46,6 @@ fn compile_fixtures() {
     t.compile_fail("tests/compile/mask_env_unset.rs");
     t.compile_fail("tests/compile/mask_option_env_non_literal.rs");
     t.compile_fail("tests/compile/mask_file_with_args.rs");
+    t.compile_fail("tests/compile/mask_rejects_include_str_shim.rs");
+    t.compile_fail("tests/compile/mask_rejects_concat_shim.rs");
 }

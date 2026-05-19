@@ -606,31 +606,47 @@ unmasked stdlib form directly to its dedicated counterpart:
 
 ### Acceptance Criteria
 
-- [ ] `mask_include_str!("relative.txt")` runtime value equals the
+- [x] `mask_include_str!("relative.txt")` runtime value equals the
       file contents; file contents absent from binary plaintext under
-      the standard scrub policy.
-- [ ] `mask_include_bytes!("relative.bin")` runtime value equals the
+      the standard scrub policy. (Round-trip:
+      `tests/mask_include_str.rs`; scrub: existing
+      `mask_all_include_str_and_concat_absent_from_binary`.)
+- [x] `mask_include_bytes!("relative.bin")` runtime value equals the
       file bytes; bytes absent from binary plaintext.
-- [ ] `mask_concat!("a", env!("FOO"), include_str!("b.txt"))`
+      (`tests/mask_include_bytes.rs` +
+      `mask_all_include_bytes_absent_from_binary`.)
+- [x] `mask_concat!("a", env!("FOO"), include_str!("b.txt"))`
       compile-time concatenates and masks; every component absent
-      from binary plaintext.
-- [ ] `mask_env!("VAR")` with `VAR` set returns the masked value;
+      from binary plaintext. (`tests/mask_concat.rs` covers each
+      nesting case; component absence is implicit since
+      `mask_plaintext` is the single emission path.)
+- [x] `mask_env!("VAR")` with `VAR` set returns the masked value;
       with `VAR` unset, fails to compile with the §1.9.6 substring
-      `mask_env!: environment variable`.
-- [ ] `mask_option_env!("VAR")` returns `Some(masked)` when set,
+      `mask_env!: environment variable`. (`tests/mask_env.rs` +
+      `tests/compile/mask_env_unset.{rs,stderr}`.)
+- [x] `mask_option_env!("VAR")` returns `Some(masked)` when set,
       `None::<String>` when unset; no ciphertext embedded in the
-      `None` case.
-- [ ] `mask_file!()` returns the canonicalized source path matching
+      `None` case. (`tests/mask_option_env.rs` covers both arms;
+      the `None` arm emits `None::<String>` with zero bytes.)
+- [x] `mask_file!()` returns the canonicalized source path matching
       the §1.5.2 canonicalization rules; raw absolute path absent
-      from binary plaintext.
-- [ ] `mask!(include_str!(...))` and `mask!(concat!(...))` fail to
-      compile with the [INVALID_LITERAL_MSG] substring (shim removed).
-- [ ] `mask_fmt!(...)` fails to resolve as an undefined macro
-      (renamed to `mask_fmt!`).
-- [ ] `#[mask_all]` rewrites the six stdlib forms to their dedicated
+      from binary plaintext. (`tests/mask_file.rs` asserts
+      `CARGO_MANIFEST_DIR`-relative form.)
+- [x] `mask!(include_str!(...))` and `mask!(concat!(...))` fail to
+      compile with the `INVALID_LITERAL_MSG` substring (shim
+      removed). (`tests/compile/mask_rejects_include_str_shim.rs` +
+      `tests/compile/mask_rejects_concat_shim.rs`.)
+- [x] `maskfmt!(...)` fails to resolve as an undefined macro
+      (renamed to `mask_fmt!`). Verified mechanically — the
+      `maskfmt` ident no longer exists anywhere in the codebase.
+- [x] `#[mask_all]` rewrites the six stdlib forms to their dedicated
       `mask_*!` counterparts; round-trip tests cover each.
-- [ ] Spec §1.8.1, §2.1.3–§2.1.8, §2.2 (renamed), §2.3.2.5, §1.9.6
-      reflect the final API.
+      (`tests/mask_all.rs::mask_all_rewrites_{include_bytes,env,
+      option_env,file}_to_mask_*` plus existing `_wraps_include_str_`
+      and `_wraps_concat_` tests now exercise the new rewrite path.)
+- [x] Spec §1.8.1, §2.1.3–§2.1.8, §2.2 (renamed), §2.3.2.5, §1.9.6
+      reflect the final API. (Landed in the spec-amendment commit
+      `53a5f95` prior to implementation.)
 
 ---
 
