@@ -43,3 +43,27 @@ fn mask_concat_nested_env_var() {
     let s: String = mask_concat!("crate=", env!("CARGO_PKG_NAME"));
     assert_eq!(s, "crate=litmask");
 }
+
+#[test]
+fn mask_concat_accepts_every_stdlib_literal_kind() {
+    // Mirror stdlib `concat!` grammar: string + integer + float +
+    // bool + char + nested concat / include_str / env. Each
+    // primitive literal is stringified at proc-macro time.
+    common::init_once();
+    let s: String = mask_concat!("s=", "abc", " i=", 42, " f=", 2.5, " b=", true, " c=", 'X');
+    assert_eq!(s, "s=abc i=42 f=2.5 b=true c=X");
+}
+
+#[test]
+fn mask_concat_integer_only() {
+    common::init_once();
+    let s: String = mask_concat!(7);
+    assert_eq!(s, "7");
+}
+
+#[test]
+fn mask_concat_negative_integer() {
+    common::init_once();
+    let s: String = mask_concat!("n=", -3);
+    assert_eq!(s, "n=-3");
+}

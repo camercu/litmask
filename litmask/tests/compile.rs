@@ -42,6 +42,7 @@ fn compile_fixtures() {
     t.compile_fail("tests/compile/mask_include_bytes_missing_file.rs");
     t.compile_fail("tests/compile/mask_concat_empty.rs");
     t.compile_fail("tests/compile/mask_concat_invalid_arg.rs");
+    t.compile_fail("tests/compile/mask_concat_rejects_unmasked.rs");
     t.compile_fail("tests/compile/mask_env_non_literal.rs");
     t.compile_fail("tests/compile/mask_env_unset.rs");
     t.compile_fail("tests/compile/mask_option_env_non_literal.rs");

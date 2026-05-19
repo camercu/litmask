@@ -1,8 +1,10 @@
-//! `mask_concat!` rejects arguments that aren't string literals or
-//! compile-time-resolvable string macros per spec §2.1.5.3.
+//! `mask_concat!` rejects arguments that aren't string / integer /
+//! float / bool / char literals (or one of the three accepted nested
+//! macros). Byte-string literals are rejected, matching stdlib
+//! `concat!`'s grammar.
 
 use litmask::mask_concat;
 
 fn main() {
-    let _: String = mask_concat!(42);
+    let _: String = mask_concat!("prefix-", b"bytes");
 }
