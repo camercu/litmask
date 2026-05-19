@@ -39,17 +39,21 @@ mod weak_mask;
 /// - `mask!(c"...")` returns `CString`. Requires the `litmask` crate's
 ///   `std` feature — `CString` is std-only.
 ///
-/// `mask!` additionally accepts two built-in macro invocations as
-/// inputs, resolved at proc-macro time:
+/// `mask!` accepts ONLY the three literal kinds above. For file
+/// inclusion, concatenation, environment variables, or the source
+/// path, use the dedicated companions: [`macro@mask_include_str`],
+/// [`macro@mask_include_bytes`], [`macro@mask_concat`],
+/// [`macro@mask_env`], [`macro@mask_option_env`], [`macro@mask_file`].
 ///
-/// - `mask!(include_str!("path"))` reads the file at proc-macro time
-///   and masks its contents. Paths are resolved relative to
-///   `CARGO_MANIFEST_DIR`. Edits to the file do not currently trigger
-///   automatic rebuilds; touch a source file or `cargo clean` to pick
-///   them up.
-/// - `mask!(concat!(args...))` flattens each argument at proc-macro
-///   time. All arguments must be string literals; mixed literal kinds
-///   are rejected at compile time.
+/// # Errors
+///
+/// - Non-literal input (including macro invocations such as
+///   `include_str!`, `concat!`, `env!`, or user-defined macros):
+///   `mask! accepts string, byte string, or C string literals`.
+/// - Use in `const` / `static` initializers: rustc's natural `E0015`
+///   (`mask!()` returns a runtime value).
+/// - Use in pattern positions (`match` arm, `if let`, `while let`):
+///   rustc's natural "expected pattern" diagnostic.
 ///
 /// # Panics
 ///
@@ -73,6 +77,22 @@ pub fn mask(input: TokenStream) -> TokenStream {
 /// decrypt call returning `String`. The plaintext never appears in
 /// the compiled binary's `.rodata`.
 ///
+/// # Rebuild on file change
+///
+/// Cargo does NOT automatically rebuild when the included file
+/// changes on disk — proc-macros read files via `std::fs` outside
+/// of rustc's normal dependency-tracking. Workarounds:
+///
+/// - `cargo clean` (heavy).
+/// - Touch any source file in the consumer crate to invalidate the
+///   incremental cache.
+/// - Have the consumer crate's `build.rs` print
+///   `cargo:rerun-if-changed=PATH` for the included file.
+///
+/// Stdlib `include_str!` is rebuild-tracked by the compiler because
+/// it's a compiler builtin; `proc_macro::tracked_path::path` is the
+/// stable-future equivalent but remains nightly-only.
+///
 /// # Errors
 ///
 /// - Non-string-literal argument: `mask_include_str! requires a
@@ -95,6 +115,12 @@ pub fn mask_include_str(input: TokenStream) -> TokenStream {
 /// expands to a runtime decrypt call returning `Vec<u8>`. The
 /// plaintext bytes never appear in the compiled binary's
 /// `.rodata`.
+///
+/// # Rebuild on file change
+///
+/// Same caveat as [`macro@mask_include_str`]: cargo does not auto-
+/// rebuild when the included file changes. See that macro's
+/// rustdoc for the workaround options.
 ///
 /// # Errors
 ///
@@ -272,15 +298,45 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
 ///   `cfg!(debug_assertions)`, so masking would only add a
 ///   `.rodata` blob and a runtime decrypt that's never observed in
 ///   shipping binaries.
-/// - `include_str!(...)` and `concat!(...)` are wrapped in `mask!()`
-///   so their compile-time-resolved strings are masked.
-/// - `dbg!`, `stringify!`, `compile_error!`, `cfg!`, `file!`,
-///   `line!`, `column!`, `module_path!`, the no-message forms of
-///   `assert!` / `assert_eq!` / `assert_ne!`, and **all** forms of
-///   the `debug_assert!` family are recognized as diagnostic-only
-///   and skipped silently — their literals either serve compile-
-///   time / developer-facing purposes that never reach shipping
-///   binaries, or are dead-code-eliminated in release builds.
+/// - The following stdlib macros are rewritten to their dedicated
+///   masking counterparts (the macro path is swapped; arguments
+///   flow through unchanged):
+///
+///   | Original | Rewritten to |
+///   |---|---|
+///   | `include_str!` | [`macro@mask_include_str`] |
+///   | `include_bytes!` | [`macro@mask_include_bytes`] |
+///   | `concat!` | [`macro@mask_concat`] |
+///   | `env!` | [`macro@mask_env`] |
+///   | `option_env!` | [`macro@mask_option_env`] |
+///   | `file!()` | [`macro@mask_file`] |
+///
+/// - `dbg!`, `stringify!`, `compile_error!`, `cfg!`, `line!`,
+///   `column!`, `module_path!`, the no-message forms of `assert!` /
+///   `assert_eq!` / `assert_ne!`, and **all** forms of the
+///   `debug_assert!` family are recognized as diagnostic-only and
+///   skipped silently — their literals either serve compile-time /
+///   developer-facing purposes that never reach shipping binaries,
+///   or are dead-code-eliminated in release builds.
+///
+/// # Return-type side effects
+///
+/// The macro rewrites above SHIFT return types compared to the
+/// stdlib originals, because masked values are runtime-decrypted
+/// and therefore must be owned rather than `&'static`:
+///
+/// | Original return type | Rewritten return type |
+/// |---|---|
+/// | `&'static str` (`file!`, `env!`, `include_str!`) | `String` |
+/// | `Option<&'static str>` (`option_env!`) | `Option<String>` |
+/// | `&'static [u8; N]` (`include_bytes!`) | `Vec<u8>` |
+/// | `&'static str` (`concat!`) | `String` |
+///
+/// User code that takes the original `&'static` form (e.g.,
+/// `let p: &'static str = file!();` or pattern-matching the static
+/// shape) will not compile under `#[mask_all]`. Wrap the call site
+/// with `unmasked!(file!())` to opt that one position out of the
+/// rewrite and keep the stdlib return type.
 /// - Qualified macro paths (`std::format!`, `core::dbg!`, etc.) are
 ///   recognized by matching the last path segment.
 ///
