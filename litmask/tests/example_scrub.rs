@@ -211,6 +211,16 @@ fn mask_all_todo_unimplemented_unreachable_messages_absent_from_binary() {
     common::assert_substring_absent(&path, "ruthenium-loris-3c8e74-mask-all-macro");
 }
 
+/// `include_bytes!(...)` inside `#[mask_all]` is rewritten to
+/// `mask_include_bytes!`, so the file bytes (a unique UTF-8
+/// phrase) must be absent from the binary plaintext.
+#[test]
+fn mask_all_include_bytes_absent_from_binary() {
+    common::build_example("mask_all_demo", Profile::Release);
+    let path = common::example_path("mask_all_demo", Profile::Release);
+    common::assert_substring_absent(&path, "cobalt-narwhal-9c4e72-bytes-fixture");
+}
+
 /// Placeholder names (named args, implicit captures, dynamic-width
 /// refs) MUST NOT appear in the compiled binary. The fixtures below
 /// are unique tokens used as placeholder names in `mask_fmt_demo`;

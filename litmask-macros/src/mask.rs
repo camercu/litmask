@@ -66,7 +66,7 @@ impl MaskInput {
 
     /// Map literal kind to the `MaskKind` driving `mask_plaintext`'s
     /// runtime decrypt expression. The c-string arm relies on the
-    /// `__decrypt_cstring_call!` macro_rules dispatcher in
+    /// `__decrypt_cstring_call!` `macro_rules` dispatcher in
     /// `litmask::lib.rs`, which surfaces a clean `compile_error!` for
     /// the `no-std` feature combination instead of a downstream
     /// "`CString` not found" diagnostic.

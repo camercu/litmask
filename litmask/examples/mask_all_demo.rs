@@ -124,6 +124,18 @@ mod demo {
         if std::env::var_os("LITMASK_DEMO_UNREACH").is_some() {
             unreachable!("ruthenium-loris-3c8e74-mask-all-macro: invariant violated");
         }
+
+        // `include_bytes!(...)` is rewritten to `mask_include_bytes!`,
+        // so the file's raw bytes never appear in `.rodata`.
+        let raw_bytes = include_bytes!("examples/fixtures/binary_blob.bin");
+        let raw_str = std::str::from_utf8(&raw_bytes).unwrap();
+        println!("bytes_fixture={raw_str}");
+
+        // `file!()` is rewritten to `mask_file!()` so the source path
+        // (which would otherwise land verbatim in `.rodata`) is
+        // masked.
+        let path: String = file!();
+        println!("file_path_len={}", path.len());
     }
 }
 

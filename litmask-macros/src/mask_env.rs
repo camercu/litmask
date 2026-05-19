@@ -20,16 +20,13 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         }
     };
     let name = name_lit.value();
-    let value = match std::env::var(&name) {
-        Ok(v) => v,
-        Err(_) => {
-            return syn::Error::new(
-                name_lit.span(),
-                format!("mask_env!: environment variable `{name}` is not set"),
-            )
-            .to_compile_error()
-            .into();
-        }
+    let Ok(value) = std::env::var(&name) else {
+        return syn::Error::new(
+            name_lit.span(),
+            format!("mask_env!: environment variable `{name}` is not set"),
+        )
+        .to_compile_error()
+        .into();
     };
     mask_plaintext(value.into_bytes(), name_lit.span(), MaskKind::Str).into()
 }

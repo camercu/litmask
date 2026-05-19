@@ -20,14 +20,11 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         }
     };
     let name = name_lit.value();
-    let expansion = match std::env::var(&name) {
-        Ok(v) => {
-            let masked = mask_plaintext(v.into_bytes(), name_lit.span(), MaskKind::Str);
-            quote! { ::core::option::Option::Some(#masked) }
-        }
-        Err(_) => quote! {
-            ::core::option::Option::<::litmask::__internal::__String>::None
-        },
+    let expansion = if let Ok(v) = std::env::var(&name) {
+        let masked = mask_plaintext(v.into_bytes(), name_lit.span(), MaskKind::Str);
+        quote! { ::core::option::Option::Some(#masked) }
+    } else {
+        quote! { ::core::option::Option::<::litmask::__internal::__String>::None }
     };
     expansion.into()
 }

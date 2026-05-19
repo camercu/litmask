@@ -75,10 +75,10 @@ pub fn mask(input: TokenStream) -> TokenStream {
 ///
 /// # Errors
 ///
-/// - Non-string-literal argument: "mask_include_str! requires a
-///   string literal path".
-/// - File read failure (missing, unreadable, etc.): "mask_include_str!:
-///   could not read `<path>`: <reason>".
+/// - Non-string-literal argument: `mask_include_str! requires a
+///   string literal path`.
+/// - File read failure (missing, unreadable, etc.):
+///   `mask_include_str!: could not read PATH: REASON`.
 ///
 /// # Panics
 ///
@@ -98,10 +98,10 @@ pub fn mask_include_str(input: TokenStream) -> TokenStream {
 ///
 /// # Errors
 ///
-/// - Non-string-literal argument: "mask_include_bytes! requires a
-///   string literal path".
-/// - File read failure: "mask_include_bytes!: could not read
-///   `<path>`: <reason>".
+/// - Non-string-literal argument: `mask_include_bytes! requires a
+///   string literal path`.
+/// - File read failure: `mask_include_bytes!: could not read PATH:
+///   REASON`.
 #[proc_macro]
 pub fn mask_include_bytes(input: TokenStream) -> TokenStream {
     mask_include_bytes::expand(input)
@@ -117,11 +117,11 @@ pub fn mask_include_bytes(input: TokenStream) -> TokenStream {
 ///
 /// # Errors
 ///
-/// - Empty argument list: "mask_concat! requires at least one
-///   argument".
+/// - Empty argument list: `mask_concat! requires at least one
+///   argument`.
 /// - Argument that is not a string literal / `concat!` /
-///   `include_str!` / `env!`: "mask_concat! arguments must be
-///   string literals or compile-time-resolvable string macros".
+///   `include_str!` / `env!`: `mask_concat! arguments must be
+///   string literals or compile-time-resolvable string macros`.
 /// - Nested `include_str!` file-read failure or nested `env!` of
 ///   an unset variable: propagated as a compile error with the
 ///   underlying cause.
@@ -136,10 +136,10 @@ pub fn mask_concat(input: TokenStream) -> TokenStream {
 ///
 /// # Errors
 ///
-/// - Non-string-literal argument: "mask_env! requires a string
-///   literal name".
-/// - Env var unset: "mask_env!: environment variable `<NAME>` is
-///   not set".
+/// - Non-string-literal argument: `mask_env! requires a string
+///   literal name`.
+/// - Env var unset: `mask_env!: environment variable NAME is not
+///   set`.
 #[proc_macro]
 pub fn mask_env(input: TokenStream) -> TokenStream {
     mask_env::expand(input)
@@ -152,8 +152,8 @@ pub fn mask_env(input: TokenStream) -> TokenStream {
 ///
 /// # Errors
 ///
-/// - Non-string-literal argument: "mask_option_env! requires a
-///   string literal name".
+/// - Non-string-literal argument: `mask_option_env! requires a
+///   string literal name`.
 #[proc_macro]
 pub fn mask_option_env(input: TokenStream) -> TokenStream {
     mask_option_env::expand(input)
@@ -175,7 +175,7 @@ pub fn mask_option_env(input: TokenStream) -> TokenStream {
 ///
 /// # Errors
 ///
-/// - Non-empty argument list: "mask_file! takes no arguments".
+/// - Non-empty argument list: `mask_file! takes no arguments`.
 #[proc_macro]
 pub fn mask_file(input: TokenStream) -> TokenStream {
     mask_file::expand(input)
