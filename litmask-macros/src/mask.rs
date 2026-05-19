@@ -20,7 +20,7 @@ use zeroize::Zeroize;
 
 use litmask_internal::{CipherId, KEY_LEN, aead_encrypt, nonce_for_call_site};
 
-use crate::common::{byte_array_token, load_out_dir_artifact};
+use crate::common::{byte_array_token, canonicalize_file_path, load_out_dir_artifact};
 
 /// Error text emitted for any `mask!` input that isn't a supported
 /// literal kind or one of the two accepted built-in macro inputs.
@@ -44,7 +44,8 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let mut seed = load_out_dir_artifact::<KEY_LEN>("litmask_seed.bin");
 
     let pm_span = kind.span().unwrap();
-    let file = pm_span.file();
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").ok();
+    let file = canonicalize_file_path(pm_span.file(), manifest_dir.as_deref());
     let line = u32::try_from(pm_span.line()).unwrap_or(u32::MAX);
     let column = u32::try_from(pm_span.column()).unwrap_or(u32::MAX);
     let nonce = nonce_for_call_site(&seed, &file, line, column, &plaintext);

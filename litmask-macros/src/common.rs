@@ -68,3 +68,100 @@ fn read_out_dir_file(name: &str) -> Zeroizing<Vec<u8>> {
 pub(crate) fn byte_array_token(bytes: &[u8]) -> TokenStream {
     quote! { [ #(#bytes),* ] }
 }
+
+/// Strip the consumer crate's `CARGO_MANIFEST_DIR` prefix from a
+/// `proc_macro::Span::file()` result so the nonce derivation in
+/// §1.5.2 sees a path that's stable across checkouts of the same
+/// source at different absolute filesystem locations.
+///
+/// `Span::file()` returns whatever rustc received — typically an
+/// absolute path under the consumer crate. Two CI runs that clone
+/// the repo to `/work/abc` vs `/work/def` would otherwise produce
+/// different nonces for the same `mask!()` call, breaking
+/// reproducibility (§2.1.1.8).
+///
+/// The strip is path-aware: a prefix only matches at a directory
+/// boundary, so `manifest_dir = "/foo/bar"` does not strip
+/// `/foo/bar2/src/lib.rs`. Handles both unix and Windows separators
+/// since `Span::file()` mirrors the host's path style.
+///
+/// Returns `raw_file` unchanged when `manifest_dir` is `None` /
+/// empty, or when no prefix match exists — both cases degrade
+/// gracefully (the nonce remains correct, only the path-stability
+/// property is forfeited).
+pub(crate) fn canonicalize_file_path(raw_file: String, manifest_dir: Option<&str>) -> String {
+    let Some(dir) = manifest_dir else {
+        return raw_file;
+    };
+    if dir.is_empty() {
+        return raw_file;
+    }
+    for sep in ['/', '\\'] {
+        let mut prefix = String::with_capacity(dir.len() + 1);
+        prefix.push_str(dir);
+        prefix.push(sep);
+        if let Some(rest) = raw_file.strip_prefix(&prefix) {
+            return rest.to_string();
+        }
+    }
+    raw_file
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonicalize_strips_unix_manifest_dir_prefix() {
+        let result = canonicalize_file_path(
+            "/users/alice/repo/src/lib.rs".to_string(),
+            Some("/users/alice/repo"),
+        );
+        assert_eq!(result, "src/lib.rs");
+    }
+
+    #[test]
+    fn canonicalize_strips_windows_manifest_dir_prefix() {
+        let result = canonicalize_file_path(
+            r"C:\Users\alice\repo\src\lib.rs".to_string(),
+            Some(r"C:\Users\alice\repo"),
+        );
+        assert_eq!(result, r"src\lib.rs");
+    }
+
+    #[test]
+    fn canonicalize_returns_path_unchanged_when_no_prefix_match() {
+        let result =
+            canonicalize_file_path("/other/path/lib.rs".to_string(), Some("/users/alice/repo"));
+        assert_eq!(result, "/other/path/lib.rs");
+    }
+
+    #[test]
+    fn canonicalize_returns_path_unchanged_when_no_env_var() {
+        let result = canonicalize_file_path("/some/path/lib.rs".to_string(), None);
+        assert_eq!(result, "/some/path/lib.rs");
+    }
+
+    #[test]
+    fn canonicalize_returns_path_unchanged_when_manifest_dir_empty() {
+        let result = canonicalize_file_path("src/lib.rs".to_string(), Some(""));
+        assert_eq!(result, "src/lib.rs");
+    }
+
+    #[test]
+    fn canonicalize_returns_path_unchanged_when_no_trailing_separator() {
+        // raw_file equals manifest_dir with no separator after; the
+        // strip MUST fail rather than produce an empty string.
+        let result =
+            canonicalize_file_path("/users/alice/repo".to_string(), Some("/users/alice/repo"));
+        assert_eq!(result, "/users/alice/repo");
+    }
+
+    #[test]
+    fn canonicalize_does_not_strip_partial_prefix() {
+        // manifest_dir prefix matches a sibling directory name —
+        // MUST NOT strip ("/foo/bar" is not a prefix of "/foo/bar2").
+        let result = canonicalize_file_path("/foo/bar2/src/lib.rs".to_string(), Some("/foo/bar"));
+        assert_eq!(result, "/foo/bar2/src/lib.rs");
+    }
+}
