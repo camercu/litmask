@@ -1,8 +1,8 @@
 error[E0277]: the trait bound `str: LowerHex` is not satisfied
-  --> tests/compile/maskfmt_type_incompatible_spec.rs:10:13
+  --> tests/compile/mask_fmt_type_incompatible_spec.rs:10:13
    |
-10 |     let _ = maskfmt!("{:x}", "not a number");
-   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `LowerHex` is not implemented for `str`
+10 |     let _ = mask_fmt!("{:x}", "not a number");
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `LowerHex` is not implemented for `str`
    |
    = help: the following other types implement trait `LowerHex`:
              &T

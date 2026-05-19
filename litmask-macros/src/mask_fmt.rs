@@ -1,4 +1,4 @@
-//! `maskfmt!` proc-macro: format-string template whose literal fragments
+//! `mask_fmt!` proc-macro: format-string template whose literal fragments
 //! are individually masked via [`crate::mask::expand`] and spliced with
 //! the formatted arguments at runtime.
 //!
@@ -17,15 +17,15 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{Expr, LitStr, Token, parse_macro_input};
 
-/// Error text emitted when `maskfmt!`'s template argument is not a
+/// Error text emitted when `mask_fmt!`'s template argument is not a
 /// string literal. Single source of truth — change here and
 /// regenerate trybuild snapshots with `TRYBUILD=overwrite`.
-const MASKFMT_NON_LITERAL_MSG: &str = "maskfmt! requires a string literal template at the call site; use `mask!` to decrypt a runtime string";
+const MASKFMT_NON_LITERAL_MSG: &str = "mask_fmt! requires a string literal template at the call site; use `mask!` to decrypt a runtime string";
 
-/// Implementation of the `#[proc_macro] maskfmt` entry point.
+/// Implementation of the `#[proc_macro] mask_fmt` entry point.
 ///
 /// Supports positional placeholders (`{}`, `{N}`), named arguments
-/// (`maskfmt!("{x}", x = e)`), implicit captures (`{var}` where `var`
+/// (`mask_fmt!("{x}", x = e)`), implicit captures (`{var}` where `var`
 /// is a local in scope), and dynamic width/precision (`{:>w$}`,
 /// `{:.p$}`).
 ///
@@ -42,13 +42,13 @@ const MASKFMT_NON_LITERAL_MSG: &str = "maskfmt! requires a string literal templa
 /// (missing `OUT_DIR`, unreadable build artifact, AEAD failure).
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let parsed = parse_macro_input!(input as MaskfmtInput);
-    match maskfmt_expand(&parsed) {
+    match mask_fmt_expand(&parsed) {
         Ok(ts) => ts.into(),
         Err(e) => e.to_compile_error().into(),
     }
 }
 
-/// Parsed `maskfmt!(...)` input — the literal template plus the
+/// Parsed `mask_fmt!(...)` input — the literal template plus the
 /// raw argument list, which may mix positional exprs and `name = expr`
 /// named-argument forms.
 struct MaskfmtInput {
@@ -83,7 +83,7 @@ type NamedArg = (syn::Ident, Expr);
 /// - Each name appears at most once across the named-args list.
 ///   Without this check, a duplicate silently shadows the earlier
 ///   binding in the internal layout and surfaces as a stray
-///   `unused variable: maskfmt_arg_N` later — a diagnostic that
+///   `unused variable: mask_fmt_arg_N` later — a diagnostic that
 ///   points at proc-macro-generated identifiers and confuses the
 ///   caller.
 fn split_args(args: &Punctuated<Expr, Token![,]>) -> syn::Result<(Vec<Expr>, Vec<NamedArg>)> {
@@ -95,7 +95,7 @@ fn split_args(args: &Punctuated<Expr, Token![,]>) -> syn::Result<(Vec<Expr>, Vec
                 return Err(syn::Error::new(
                     name.span(),
                     format!(
-                        "duplicate named argument `{prev}` in maskfmt! (each name may appear at most once)",
+                        "duplicate named argument `{prev}` in mask_fmt! (each name may appear at most once)",
                     ),
                 ));
             }
@@ -104,7 +104,7 @@ fn split_args(args: &Punctuated<Expr, Token![,]>) -> syn::Result<(Vec<Expr>, Vec
             if !named.is_empty() {
                 return Err(syn::Error::new(
                     expr.span(),
-                    "positional arguments must precede named arguments in maskfmt!",
+                    "positional arguments must precede named arguments in mask_fmt!",
                 ));
             }
             positional.push(expr.clone());
@@ -157,11 +157,11 @@ struct ParsedPlaceholder {
     spec_raw: String,
 }
 
-fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
+fn mask_fmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
     let template_span = parsed.template.span();
     let template_value = parsed.template.value();
     let (fragments, placeholders) =
-        parse_maskfmt_template(&template_value).map_err(|m| syn::Error::new(template_span, m))?;
+        parse_mask_fmt_template(&template_value).map_err(|m| syn::Error::new(template_span, m))?;
 
     let (positional, named) = split_args(&parsed.args)?;
     let positional_count = positional.len();
@@ -173,13 +173,18 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
     let resolved = resolve_placeholders(&placeholders, &mut bindings, template_span)?;
     check_unused_positionals(&resolved, positional_count, template_span)?;
 
-    // `mixed_site` hygiene on the LHS keeps each `maskfmt_arg_<i>`
+    // `mixed_site` hygiene on the LHS keeps each `mask_fmt_arg_<i>`
     // binding isolated from the caller's namespace — required because
     // implicit captures emit the user's bare identifier on the RHS
-    // (e.g. `let maskfmt_arg_3 = &var;`) and call_site resolution there
+    // (e.g. `let mask_fmt_arg_3 = &var;`) and call_site resolution there
     // would otherwise risk capturing our own LHS name.
     let arg_idents: Vec<syn::Ident> = (0..bindings.total())
-        .map(|i| syn::Ident::new(&format!("maskfmt_arg_{i}"), proc_macro2::Span::mixed_site()))
+        .map(|i| {
+            syn::Ident::new(
+                &format!("mask_fmt_arg_{i}"),
+                proc_macro2::Span::mixed_site(),
+            )
+        })
         .collect();
     let arg_bindings: Vec<TokenStream2> = bindings
         .binding_exprs(&positional, &named)
@@ -192,7 +197,7 @@ fn maskfmt_expand(parsed: &MaskfmtInput) -> syn::Result<TokenStream2> {
     // scope cannot collide with it. Built once and reused at the
     // declaration site, every fragment/placeholder write, and the
     // tail expression.
-    let out_ident = syn::Ident::new("maskfmt_out", proc_macro2::Span::mixed_site());
+    let out_ident = syn::Ident::new("mask_fmt_out", proc_macro2::Span::mixed_site());
 
     // Each placeholder's `format_args!` template + ref list is
     // identical between the runtime write and the compile-time
@@ -259,7 +264,7 @@ fn check_unused_positionals(
             return Err(syn::Error::new(
                 template_span,
                 format!(
-                    "positional argument {i} is never used (give it a placeholder or remove it from the maskfmt! call)",
+                    "positional argument {i} is never used (give it a placeholder or remove it from the mask_fmt! call)",
                 ),
             ));
         }
@@ -367,7 +372,7 @@ impl Bindings {
                     return Err(syn::Error::new(
                         span,
                         format!(
-                            "positional argument {k} not provided to maskfmt! (only {} given)",
+                            "positional argument {k} not provided to mask_fmt! (only {} given)",
                             self.positional_count,
                         ),
                     ));
@@ -393,7 +398,7 @@ impl Bindings {
                     syn::Error::new(
                         span,
                         format!(
-                            "`{name}` is not a valid Rust identifier and cannot be used as a maskfmt! implicit-capture placeholder",
+                            "`{name}` is not a valid Rust identifier and cannot be used as a mask_fmt! implicit-capture placeholder",
                         ),
                     )
                 })?;
@@ -525,7 +530,7 @@ fn rewrite_spec_refs(spec: &str, resolved: &[usize]) -> String {
 /// Walk the user's template once, emitting alternating literal
 /// fragments and parsed placeholders. The result invariant is
 /// `fragments.len() == placeholders.len() + 1`.
-fn parse_maskfmt_template(s: &str) -> Result<(Vec<String>, Vec<ParsedPlaceholder>), String> {
+fn parse_mask_fmt_template(s: &str) -> Result<(Vec<String>, Vec<ParsedPlaceholder>), String> {
     let mut fragments = vec![String::new()];
     let mut placeholders: Vec<ParsedPlaceholder> = Vec::new();
     let mut next_auto = 0_usize;
@@ -549,7 +554,7 @@ fn parse_maskfmt_template(s: &str) -> Result<(Vec<String>, Vec<ParsedPlaceholder
                     fragments.last_mut().unwrap().push('}');
                 } else {
                     return Err(
-                        "unmatched `}` in maskfmt! template; use `}}` to print a literal `}`"
+                        "unmatched `}` in mask_fmt! template; use `}}` to print a literal `}`"
                             .to_string(),
                     );
                 }
@@ -591,7 +596,7 @@ fn consume_placeholder_header(
         }
         if !is_token_char(c) {
             return Err(format!(
-                "unexpected `{c}` inside `{{...}}` placeholder in maskfmt! template",
+                "unexpected `{c}` inside `{{...}}` placeholder in mask_fmt! template",
             ));
         }
         header.push(c);
@@ -604,13 +609,13 @@ fn resolve_value_ref(header: &str, next_auto: &mut usize) -> Result<TemplateRef,
     if header.is_empty() {
         let i = *next_auto;
         *next_auto = next_auto.checked_add(1).ok_or_else(|| {
-            "too many auto-positional placeholders in maskfmt! template".to_string()
+            "too many auto-positional placeholders in mask_fmt! template".to_string()
         })?;
         Ok(TemplateRef::Positional(i))
     } else if header.chars().all(|c| c.is_ascii_digit()) {
         let i = header
             .parse::<usize>()
-            .map_err(|_| "invalid positional index in maskfmt! template".to_string())?;
+            .map_err(|_| "invalid positional index in mask_fmt! template".to_string())?;
         Ok(TemplateRef::Positional(i))
     } else {
         Ok(TemplateRef::Named(header.to_string()))
@@ -630,7 +635,7 @@ fn consume_placeholder_spec(
     match chars.next() {
         Some(':') => {}
         Some('}') => return Ok((String::new(), Vec::new())),
-        _ => return Err("unclosed `{...}` placeholder in maskfmt! template".to_string()),
+        _ => return Err("unclosed `{...}` placeholder in mask_fmt! template".to_string()),
     }
 
     let mut spec_raw = String::new();
@@ -638,13 +643,13 @@ fn consume_placeholder_spec(
     let mut token = String::new();
     loop {
         let Some(c) = chars.next() else {
-            return Err("unclosed `{...}` placeholder in maskfmt! template".to_string());
+            return Err("unclosed `{...}` placeholder in mask_fmt! template".to_string());
         };
         match c {
             '}' => break,
             '{' => {
                 return Err(
-                    "nested `{` inside maskfmt! placeholder spec; use `<name>$` for dynamic width / precision"
+                    "nested `{` inside mask_fmt! placeholder spec; use `<name>$` for dynamic width / precision"
                         .to_string(),
                 );
             }

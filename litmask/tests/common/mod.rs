@@ -100,7 +100,7 @@ pub fn config_path(profile: Profile) -> PathBuf {
 /// own fingerprint cache already skips a recompile for an
 /// up-to-date binary, but each `cargo build` invocation still pays
 /// ~100–500ms of startup (process spawn + manifest parse +
-/// dep-graph walk). The `example_scrub` test file builds `maskfmt_demo`
+/// dep-graph walk). The `example_scrub` test file builds `mask_fmt_demo`
 /// three times across separate `#[test]`s; memoizing here shaves a
 /// few seconds off the integration-test wall time without changing
 /// semantics — within one test-binary process, building an example

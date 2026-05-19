@@ -1,4 +1,4 @@
-//! Integration tests for `maskfmt!`. Covers positional placeholders,
+//! Integration tests for `mask_fmt!`. Covers positional placeholders,
 //! named arguments, implicit captures, and dynamic width/precision.
 //!
 //! Each round-trip test asserts the produced `String` byte-equals
@@ -7,31 +7,31 @@
 
 mod common;
 
-use litmask::maskfmt;
+use litmask::mask_fmt;
 
 #[test]
-fn maskfmt_basic_positional_round_trips() {
+fn mask_fmt_basic_positional_round_trips() {
     common::init_once();
-    let s = maskfmt!("x={}, y={:.2}", 1, 2.5);
+    let s = mask_fmt!("x={}, y={:.2}", 1, 2.5);
     assert_eq!(s, format!("x={}, y={:.2}", 1, 2.5));
     assert_eq!(s, "x=1, y=2.50");
 }
 
 #[test]
-fn maskfmt_debug_specifier_matches_format() {
+fn mask_fmt_debug_specifier_matches_format() {
     common::init_once();
     let v = vec![1, 2, 3];
-    let plain = maskfmt!("v={:?}", v);
+    let plain = mask_fmt!("v={:?}", v);
     assert_eq!(plain, format!("v={:?}", vec![1, 2, 3]));
 
-    let pretty = maskfmt!("v={:#?}", vec![1, 2, 3]);
+    let pretty = mask_fmt!("v={:#?}", vec![1, 2, 3]);
     assert_eq!(pretty, format!("v={:#?}", vec![1, 2, 3]));
 }
 
 #[test]
-fn maskfmt_hex_specifiers_match_format() {
+fn mask_fmt_hex_specifiers_match_format() {
     common::init_once();
-    let s = maskfmt!("hex={:#x} bin={:#b} oct={:#o}", 255u32, 255u32, 255u32);
+    let s = mask_fmt!("hex={:#x} bin={:#b} oct={:#o}", 255u32, 255u32, 255u32);
     assert_eq!(
         s,
         format!("hex={:#x} bin={:#b} oct={:#o}", 255u32, 255u32, 255u32)
@@ -39,51 +39,51 @@ fn maskfmt_hex_specifiers_match_format() {
 }
 
 #[test]
-fn maskfmt_padded_specifier_matches_format() {
+fn mask_fmt_padded_specifier_matches_format() {
     common::init_once();
-    let s = maskfmt!("[{:>10}] [{:<10}] [{:^10}]", "rt", "lt", "ctr");
+    let s = mask_fmt!("[{:>10}] [{:<10}] [{:^10}]", "rt", "lt", "ctr");
     assert_eq!(s, format!("[{:>10}] [{:<10}] [{:^10}]", "rt", "lt", "ctr"));
 }
 
 #[test]
-fn maskfmt_precision_specifier_matches_format() {
+fn mask_fmt_precision_specifier_matches_format() {
     common::init_once();
-    let s = maskfmt!("pi={:.5}", std::f64::consts::PI);
+    let s = mask_fmt!("pi={:.5}", std::f64::consts::PI);
     assert_eq!(s, format!("pi={:.5}", std::f64::consts::PI));
 }
 
 #[test]
-fn maskfmt_explicit_positional_indices_match_format() {
+fn mask_fmt_explicit_positional_indices_match_format() {
     common::init_once();
-    let s = maskfmt!("{1} {0} {1}", "a", "b");
+    let s = mask_fmt!("{1} {0} {1}", "a", "b");
     assert_eq!(s, format!("{1} {0} {1}", "a", "b"));
     assert_eq!(s, "b a b");
 }
 
 #[test]
-fn maskfmt_literal_braces_round_trip() {
+fn mask_fmt_literal_braces_round_trip() {
     common::init_once();
-    let s = maskfmt!("{{escaped}} and {} live together", "real");
+    let s = mask_fmt!("{{escaped}} and {} live together", "real");
     assert_eq!(s, format!("{{escaped}} and {} live together", "real"));
     assert_eq!(s, "{escaped} and real live together");
 }
 
 #[test]
-fn maskfmt_no_args_returns_template_text() {
+fn mask_fmt_no_args_returns_template_text() {
     common::init_once();
-    let s = maskfmt!("static text only");
+    let s = mask_fmt!("static text only");
     assert_eq!(s, "static text only");
 }
 
 #[test]
-fn maskfmt_empty_template_returns_empty_string() {
+fn mask_fmt_empty_template_returns_empty_string() {
     common::init_once();
-    let s = maskfmt!("");
+    let s = mask_fmt!("");
     assert!(s.is_empty());
 }
 
 #[test]
-fn maskfmt_evaluates_each_argument_exactly_once() {
+fn mask_fmt_evaluates_each_argument_exactly_once() {
     common::init_once();
     let calls = std::cell::Cell::new(0u32);
     let bump = || {
@@ -91,7 +91,7 @@ fn maskfmt_evaluates_each_argument_exactly_once() {
         calls.get()
     };
     // bump() returns 1, 2, 3 in left-to-right order — same as format!.
-    let s = maskfmt!("{} {} {}", bump(), bump(), bump());
+    let s = mask_fmt!("{} {} {}", bump(), bump(), bump());
     assert_eq!(calls.get(), 3, "each positional arg evaluated exactly once");
     assert_eq!(s, "1 2 3");
 }
@@ -102,14 +102,14 @@ fn maskfmt_evaluates_each_argument_exactly_once() {
 /// if referenced multiple times in the template. Matches `format!`'s
 /// single-evaluation guarantee for named args.
 #[test]
-fn maskfmt_named_arg_evaluates_exactly_once() {
+fn mask_fmt_named_arg_evaluates_exactly_once() {
     common::init_once();
     let calls = std::cell::Cell::new(0u32);
     let bump = || {
         calls.set(calls.get() + 1);
         calls.get()
     };
-    let s = maskfmt!("{x} {x}", x = bump());
+    let s = mask_fmt!("{x} {x}", x = bump());
     assert_eq!(
         calls.get(),
         1,
@@ -121,10 +121,10 @@ fn maskfmt_named_arg_evaluates_exactly_once() {
 /// A placeholder `{var}` with no corresponding named arg resolves
 /// to the local `var` already in scope at the call site.
 #[test]
-fn maskfmt_implicit_capture_reads_local() {
+fn mask_fmt_implicit_capture_reads_local() {
     common::init_once();
     let var = 7;
-    let s = maskfmt!("{var}");
+    let s = mask_fmt!("{var}");
     assert_eq!(s, "7");
     assert_eq!(s, format!("{var}"));
 }
@@ -132,9 +132,9 @@ fn maskfmt_implicit_capture_reads_local() {
 /// Dynamic width `{:>w$}` resolves `w` against the named arg with
 /// the same name, producing identical output to `format!`.
 #[test]
-fn maskfmt_dynamic_width_matches_format() {
+fn mask_fmt_dynamic_width_matches_format() {
     common::init_once();
-    let s = maskfmt!("{:>w$}", "hi", w = 5);
+    let s = mask_fmt!("{:>w$}", "hi", w = 5);
     assert_eq!(s, format!("{:>w$}", "hi", w = 5));
     assert_eq!(s, "   hi");
 }
@@ -142,10 +142,10 @@ fn maskfmt_dynamic_width_matches_format() {
 /// Dynamic precision `{:.p$}` resolves `p` against the named arg
 /// with the same name, producing identical output to `format!`.
 #[test]
-fn maskfmt_dynamic_precision_matches_format() {
+fn mask_fmt_dynamic_precision_matches_format() {
     common::init_once();
     let pi = std::f64::consts::PI;
-    let s = maskfmt!("{:.p$}", pi, p = 3);
+    let s = mask_fmt!("{:.p$}", pi, p = 3);
     assert_eq!(s, format!("{:.p$}", pi, p = 3));
     assert_eq!(s, "3.142");
 }
@@ -153,10 +153,10 @@ fn maskfmt_dynamic_precision_matches_format() {
 /// Dynamic width via implicit capture (no named-arg declaration;
 /// `w` is a local in scope).
 #[test]
-fn maskfmt_dynamic_width_implicit_capture_matches_format() {
+fn mask_fmt_dynamic_width_implicit_capture_matches_format() {
     common::init_once();
     let w = 8;
-    let s = maskfmt!("{:>w$}", "x");
+    let s = mask_fmt!("{:>w$}", "x");
     assert_eq!(s, format!("{:>w$}", "x"));
     assert_eq!(s, "       x");
 }
@@ -164,9 +164,9 @@ fn maskfmt_dynamic_width_implicit_capture_matches_format() {
 /// Mixed positional + named placeholders produce identical output
 /// to `format!` for the same input.
 #[test]
-fn maskfmt_named_and_positional_mix_matches_format() {
+fn mask_fmt_named_and_positional_mix_matches_format() {
     common::init_once();
-    let s = maskfmt!("{x} {} {y}", "pos", x = 1, y = 2);
+    let s = mask_fmt!("{x} {} {y}", "pos", x = 1, y = 2);
     assert_eq!(s, format!("{x} {} {y}", "pos", x = 1, y = 2));
     assert_eq!(s, "1 pos 2");
 }
@@ -175,10 +175,10 @@ fn maskfmt_named_and_positional_mix_matches_format() {
 /// `format!` — the reference is borrowed, the local stays usable
 /// after the call.
 #[test]
-fn maskfmt_implicit_capture_borrows_non_copy() {
+fn mask_fmt_implicit_capture_borrows_non_copy() {
     common::init_once();
     let var = String::from("hello");
-    let s = maskfmt!("{var}!");
+    let s = mask_fmt!("{var}!");
     assert_eq!(s, "hello!");
     // `var` still usable — the implicit capture took it by reference.
     assert_eq!(var.len(), 5);

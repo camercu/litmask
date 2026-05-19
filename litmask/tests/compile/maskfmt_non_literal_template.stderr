@@ -1,5 +1,0 @@
-error: maskfmt! requires a string literal template at the call site; use `mask!` to decrypt a runtime string
-  --> tests/compile/maskfmt_non_literal_template.rs:10:22
-   |
-10 |     let _ = maskfmt!(template, 1);
-   |                      ^^^^^^^^

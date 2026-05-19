@@ -194,7 +194,7 @@ fn mask_all_wraps_concat_in_mask() {
     );
 }
 
-// ── format! → maskfmt! ─────────────────────────────────────────
+// ── format! → mask_fmt! ─────────────────────────────────────────
 
 #[mask_all]
 mod format_macro_rewritten {

@@ -10,7 +10,7 @@
 //!
 //! - [`mask!`] — AEAD-encrypt a literal at compile time.
 //! - [`unmasked!`] — identity wrapper marking an opt-out literal.
-//! - [`maskfmt!`] — masked format-string template.
+//! - [`mask_fmt!`] — masked format-string template.
 //! - [`weak_mask!`] — XOR-against-wrapper anti-`strings(1)` obfuscation.
 //! - [`macro@mask_all`] — module-level attribute that rewrites every
 //!   masking-eligible literal in the attributed module.
@@ -20,7 +20,7 @@ use proc_macro::TokenStream;
 mod common;
 mod mask;
 mod mask_all;
-mod maskfmt;
+mod mask_fmt;
 mod unmasked;
 mod weak_mask;
 
@@ -80,7 +80,7 @@ pub fn unmasked(input: TokenStream) -> TokenStream {
 /// compiled binary — the template text never does.
 ///
 /// Supports positional placeholders (`{}`, `{N}`), named arguments
-/// (`maskfmt!("{x}", x = e)`), implicit captures (`{var}` where
+/// (`mask_fmt!("{x}", x = e)`), implicit captures (`{var}` where
 /// `var` is a local in scope), and dynamic width/precision
 /// (`{:>w$}`, `{:.p$}`). Placeholder names are rewritten to
 /// positional references at proc-macro time so the names never
@@ -88,7 +88,7 @@ pub fn unmasked(input: TokenStream) -> TokenStream {
 ///
 /// # Compile errors
 ///
-/// - Non-literal template — `maskfmt!` cannot mask a runtime-built
+/// - Non-literal template — `mask_fmt!` cannot mask a runtime-built
 ///   format string; use [`mask!`] for that case.
 /// - Positional argument with no matching placeholder, or
 ///   placeholder index out of range — mirrors `format!`'s
@@ -100,8 +100,8 @@ pub fn unmasked(input: TokenStream) -> TokenStream {
 /// Inherits [`mask!`]'s expansion-time panic policy (missing
 /// `OUT_DIR`, unreadable build artifact, AEAD failure).
 #[proc_macro]
-pub fn maskfmt(input: TokenStream) -> TokenStream {
-    maskfmt::expand(input)
+pub fn mask_fmt(input: TokenStream) -> TokenStream {
+    mask_fmt::expand(input)
 }
 
 /// Obfuscate a string literal at compile time using XOR against the
@@ -131,11 +131,11 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
 /// masking-eligible literal in the attributed module. Each direct
 /// string-shaped literal becomes a [`mask!`] call, and common
 /// formatting / output / panic / assert macros are rewritten to use
-/// [`maskfmt!`] for their templates.
+/// [`mask_fmt!`] for their templates.
 ///
 /// Recognized macro families:
 ///
-/// - `format!(lit, ...)` → `maskfmt!(lit, ...)`
+/// - `format!(lit, ...)` → `mask_fmt!(lit, ...)`
 /// - `println!` / `eprintln!` / `print!` / `eprint!` with a literal
 ///   template are wrapped so the masked formatted result is written
 ///   through the original macro.
@@ -170,7 +170,7 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
 /// - The literal initializes a `const` or `static` — `mask!()`
 ///   returns a runtime value and cannot be evaluated at compile
 ///   time.
-/// - The literal is an argument to `mask!` / `maskfmt!` /
+/// - The literal is an argument to `mask!` / `mask_fmt!` /
 ///   `unmasked!` / `weak_mask!` — the user has already chosen
 ///   explicitly.
 /// - The literal is an argument to a recognized diagnostic-only
