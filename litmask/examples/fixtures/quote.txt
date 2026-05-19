@@ -1,1 +1,1 @@
-vermilion-axolotl-7e2d4a — task-7 include_str fixture
+vermilion-axolotl-7e2d4a — high-entropy fixture for include_str round-trip and binary-scrub absence assertions
