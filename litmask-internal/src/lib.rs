@@ -331,10 +331,11 @@ pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
 /// expansion and would race under parallelization.
 ///
 /// **Encoding.** `line` and `column` are 4-byte little-endian.
-/// `file` and `plaintext` are length-prefixed with 8-byte
-/// little-endian byte counts so the canonical byte stream is
-/// unambiguous — two distinct tuples cannot share an input
-/// encoding by accident-of-concatenation.
+/// `file` carries an 8-byte little-endian length prefix so its
+/// byte stream cannot be ambiguously decoded as a distinct tuple
+/// whose file/line boundary lies elsewhere. `plaintext` is the
+/// trailing variable-length field, so any change to its bytes
+/// changes the hash output directly — no length prefix needed.
 ///
 /// **Seed keying.** The seed-keyed hash is hardening, not a
 /// security boundary: the nonce ships in plaintext at the head of
@@ -360,7 +361,6 @@ pub fn nonce_for_call_site(
     hasher.update(file.as_bytes());
     hasher.update(&line.to_le_bytes());
     hasher.update(&column.to_le_bytes());
-    hasher.update(&(plaintext.len() as u64).to_le_bytes());
     hasher.update(plaintext);
     let digest = hasher.finalize();
     let mut out = [0u8; NONCE_LEN];
