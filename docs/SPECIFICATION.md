@@ -1445,6 +1445,28 @@ design content.
 
 ### §2.1 Iteration 1 — Core masking primitives
 
+#### §2.1.0 Design principle: mirror stdlib grammar
+
+Each `mask_*!` macro introduced in §2.1.3–§2.1.8 SHALL accept the
+same input grammar as its stdlib counterpart insofar as the
+masking semantics permit. Grammar parity gives users a drop-in
+substitution at the call site: rewriting `env!("FOO")` to
+`mask_env!("FOO")` requires no other source change.
+
+Return types SHALL shift from `&'static`-bound forms to runtime-
+owned forms (`String`, `Vec<u8>`, `Option<String>`) because masked
+values are decrypted at runtime and cannot inhabit `'static`
+storage. This is the only intentional API divergence from the
+stdlib counterparts; spec §2.3.2.5 documents the corresponding
+type-shift caveat for `#[mask_all]` rewrites.
+
+Extensions to the stdlib grammar (e.g., accepting non-string
+literals in `mask_concat!`, accepting the optional second-arg
+custom error message in `mask_env!`) are tracked in the per-macro
+subsections and are justified by this principle: the goal is a
+strict superset where possible, a strict subset only where masking
+demands it.
+
 #### §2.1.1 mask! macro
 
 §2.1.1.1 — `mask!` SHALL accept a single string literal, byte string literal,
@@ -1564,21 +1586,34 @@ plaintext under the standard scrub policy.
 #### §2.1.5 mask_concat! macro
 
 §2.1.5.1 — `mask_concat!(<args>...)` SHALL accept a comma-separated
-non-empty list of arguments. Each argument MUST be one of:
+non-empty list of arguments. The grammar mirrors stdlib `concat!`
+per §2.1.0: each argument MUST be one of:
 
-- A string literal (`"…"`, `r"…"`, `r#"…"#`).
-- A further `concat!(<args>...)` invocation.
-- A `include_str!(<path>)` invocation.
-- A `env!(<name>)` invocation (build-time-required env var, panics at
-  proc-macro time if unset).
+- A string literal (`"…"`, `r"…"`, `r#"…"#`) — value used verbatim.
+- An integer literal (`42`, `7u32`) — stringified via `base10_digits()`.
+- A float literal (`2.5`, `0.0f64`) — stringified via `base10_digits()`.
+- A bool literal (`true`, `false`) — stringified to `"true"` /
+  `"false"`.
+- A char literal (`'a'`, `'\n'`) — stringified to the character's
+  UTF-8 form.
+- A unary-negated numeric literal (`-3`, `-2.5`) — stringified with a
+  leading `-`.
+- A further `concat!(<args>...)` invocation — recursively resolved.
+- An `include_str!(<path>)` invocation — file contents.
+- An `env!(<name>)` invocation — build-time-required env var.
+
+Byte-string (`b"..."`), C-string (`c"..."`), and byte (`b'X'`)
+literals SHALL be rejected, mirroring stdlib `concat!`'s grammar.
 
 §2.1.5.2 — The macro SHALL recursively resolve all arguments at
 proc-macro time, concatenate the resulting strings, AEAD-encrypt the
 concatenated value per §1.5.2, and expand to a runtime decrypt call
 returning a value of type `String`.
 
-§2.1.5.3 — Arguments not matching §2.1.5.1 SHALL produce a compile
-error containing the substring "mask_concat! arguments must be string
+§2.1.5.3 — Arguments not matching §2.1.5.1 — including
+`unmasked!(...)` (which by intent opts OUT of masking, the logical
+opposite of `mask_concat!`'s job) — SHALL produce a compile error
+containing the substring "mask_concat! arguments must be string
 literals or compile-time-resolvable string macros".
 
 §2.1.5.4 — An empty argument list (`mask_concat!()`) SHALL produce a
@@ -1587,12 +1622,19 @@ one argument".
 
 §2.1.5.5 — A nested `env!` that references an unset env var SHALL
 surface the env's failure (compile error containing the substring
-"env!: environment variable") to the user.
+"env!: environment variable") to the user. A nested `env!` whose
+value is set but is not valid UTF-8 SHALL produce a compile error
+containing the substring "is set but its value is not valid UTF-8".
 
 #### §2.1.6 mask_env! macro
 
-§2.1.6.1 — `mask_env!(<name>)` SHALL accept a single string-literal
-argument naming a build-time environment variable.
+§2.1.6.1 — `mask_env!` SHALL accept one or two string-literal
+arguments, mirroring stdlib `env!`'s grammar per §2.1.0:
+
+- `mask_env!("NAME")` — read env var `NAME` at proc-macro time.
+- `mask_env!("NAME", "custom error message")` — same as above; the
+  second arg is used as the compile-error text when `NAME` is
+  unset. When `NAME` is set, the second arg is ignored.
 
 §2.1.6.2 — At proc-macro time, the macro SHALL read the named env var
 from the build environment. When set, the macro SHALL AEAD-encrypt
@@ -1600,12 +1642,20 @@ the value and expand to a runtime decrypt call returning a value of
 type `String`.
 
 §2.1.6.3 — When the named env var is unset at proc-macro time, the
-macro SHALL produce a compile error containing the substring
+macro SHALL produce a compile error. The error text SHALL be the
+custom second-arg message when provided, otherwise the substring
 "mask_env!: environment variable `<NAME>` is not set" where
 `<NAME>` is the exact literal text the user passed.
 
-§2.1.6.4 — Non-string-literal argument SHALL produce a compile error
-containing the substring "mask_env! requires a string literal name".
+§2.1.6.4 — When the named env var is set but its value is not valid
+UTF-8, the macro SHALL produce a compile error containing the
+substring "mask_env!: environment variable `<NAME>` is set but its
+value is not valid UTF-8". Distinct from §2.1.6.3 so users can tell
+the two failure modes apart.
+
+§2.1.6.5 — Non-string-literal argument (or extra arguments beyond
+the two-arg form) SHALL produce a compile error containing the
+substring "mask_env! requires a string literal name".
 
 #### §2.1.7 mask_option_env! macro
 
