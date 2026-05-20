@@ -9,10 +9,10 @@
 //! mask configuration errors in `litmask.config` and key files.
 //!
 //! Callers that need zero-on-drop semantics for decoded secret bytes
-//! (the unlock-key parse path, the LITMASK_RNG_SEED decoder) wrap the
-//! returned `Vec<u8>` in `zeroize::Zeroizing` at the call site. The
-//! wrapper is a runtime-crate concern; this module stays minimal so
-//! the build crate can use it without a `zeroize` dependency.
+//! (the unlock-key parse path, the `LITMASK_RNG_SEED` decoder) wrap
+//! the returned `Vec<u8>` in `zeroize::Zeroizing` at the call site.
+//! The wrapper is a runtime-crate concern; this module stays minimal
+//! so the build crate can use it without a `zeroize` dependency.
 
 use base64ct::{Base64UrlUnpadded, Encoding};
 
