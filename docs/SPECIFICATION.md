@@ -1058,26 +1058,42 @@ and emits their own message.
 #### §1.9.6 Compile-time error message requirements
 
 Compile-time errors from the proc-macro do NOT appear in the compiled binary
-and MAY use full English text. Specific situations require specific message
-content. "Include the substring" in these requirements means substring
-containment — implementations MAY add formatting, context, or adjacent
-content, provided the required substring appears verbatim within the emitted
-error message:
+and MAY use full English text. Every compile error emitted by a litmask
+proc-macro SHALL include both:
 
-| Situation | Required content |
+1. The invoking macro's name with `!` suffix (`mask!`, `mask_format!`,
+   `mask_include_str!`, `mask_include_bytes!`, `mask_concat!`, `mask_env!`,
+   `mask_option_env!`, `mask_file!`, `unmasked!`, `weak_mask!`).
+2. One of the closed failure tags below, identifying the rejection reason.
+   The tag SHALL appear verbatim as a hyphen-separated lowercase substring
+   so downstream tooling can pattern-match on `<macro>! <tag>`.
+
+| Tag | Situation |
 |---|---|
-| `mask_format!` non-literal template | "mask_format! requires a string literal template at the call site; use `mask!` to decrypt a runtime string" |
-| `mask!` invalid literal type | "mask! accepts string, byte string, or C string literals" |
-| `mask_include_str!` non-literal path | "mask_include_str! requires a string literal path" |
-| `mask_include_str!` file-read failure | "mask_include_str!: could not read" |
-| `mask_include_bytes!` non-literal path | "mask_include_bytes! requires a string literal path" |
-| `mask_include_bytes!` file-read failure | "mask_include_bytes!: could not read" |
-| `mask_concat!` invalid argument | "mask_concat! arguments must be string literals or compile-time-resolvable string macros" |
-| `mask_concat!` empty argument list | "mask_concat! requires at least one argument" |
-| `mask_env!` non-literal name | "mask_env! requires a string literal name" |
-| `mask_env!` unset env var | "mask_env!: environment variable `<NAME>` is not set" |
-| `mask_option_env!` non-literal name | "mask_option_env! requires a string literal name" |
-| `mask_file!` non-empty input | "mask_file! takes no arguments" |
+| `non-literal` | Argument required to be a string literal was not one. Covers `mask!`'s non-literal input, `mask_format!`'s non-literal template, `mask_include_str!` / `mask_include_bytes!` non-literal path, `mask_env!` / `mask_option_env!` non-literal name. |
+| `read-failure` | Path-taking macro (`mask_include_str!`, `mask_include_bytes!`) could not read the referenced file. |
+| `unset` | `mask_env!` was given a name that resolves to no environment variable. (`mask_option_env!`'s unset case is a runtime `None`, not a compile error.) |
+| `unicode-failure` | Environment-variable value is set but not valid UTF-8. |
+| `invalid-arg` | `mask_concat!` was passed an argument that is not a string literal or a compile-time-resolvable string macro. |
+| `empty-args` | `mask_concat!` was given no arguments. |
+| `args-not-allowed` | `mask_file!` was given any argument (the macro takes none). |
+| `duplicate-name` | `mask_format!` was given the same named argument twice. |
+| `positional-after-named` | `mask_format!` was given a positional argument after a named one. |
+| `positional-unused` | `mask_format!` was given a positional argument never referenced by any placeholder. |
+| `positional-out-of-range` | `mask_format!` template references positional index `N` but fewer than `N + 1` positional arguments were provided. |
+| `invalid-placeholder` | `mask_format!` placeholder header is not a valid Rust identifier (e.g. starts with a digit). |
+| `template-syntax` | `mask_format!` template has malformed `{...}` syntax (unmatched brace, nested `{`, unclosed placeholder, etc.). |
+
+Implementations MAY add adjacent context (paths, values, hints) to the
+emitted text — only the macro name and the tag are normative. Specific
+message wording is implementation-defined and MAY evolve across releases
+without a spec amendment, provided every emitted error continues to carry
+both the macro name and one of the tags above.
+
+Trybuild fixtures snapshot the exact text emitted by the current
+implementation; they are the implementation's regression net, not a
+re-statement of this spec rule. Snapshot regeneration on wording changes
+is mechanical (`TRYBUILD=overwrite`) and does not require a spec PR.
 
 `mask!` rejections in `const` / `static` initializer and pattern
 positions fall through to rustc's natural diagnostics
@@ -1114,6 +1130,21 @@ for the behavioral contract and the amendment below for rationale.
 > rejection by snapshotting the natural diagnostic. The spec's only
 > contract here is that the code MUST fail to compile in these
 > positions — see §2.1.1.9 / §2.1.1.10.
+
+> **Amendment 2026-05-20:** §1.9.6's exact-substring table is replaced
+> with a uniform rule: every error MUST include the macro name with
+> `!` suffix and a closed-set failure tag (`non-literal`, `read-failure`,
+> `unset`, `unicode-failure`, `invalid-arg`, `empty-args`,
+> `args-not-allowed`, `duplicate-name`, `positional-after-named`,
+> `positional-unused`, `positional-out-of-range`, `invalid-placeholder`,
+> `template-syntax`). Wording is implementation-defined; trybuild
+> fixtures are the regression net. Rationale: the prior substring lock
+> coupled spec prose to implementation strings — every error-message
+> tweak required a spec PR, every new `mask_*!` macro required a new
+> row. Compile errors never reach the user binary (§1.9.6 paragraph
+> one) so there is no security argument for fixing the prose. The
+> macro-name + tag pair preserves grep-stability for downstream
+> tooling while letting implementation evolve freely.
 
 #### §1.9.7 Sysexits.h exit code mapping
 
