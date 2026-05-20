@@ -1,4 +1,4 @@
-error: mask_env!: environment variable `LITMASK_TRYBUILD_DEFINITELY_UNSET_X9Z42` is not set
+error: mask_env! unset: environment variable `LITMASK_TRYBUILD_DEFINITELY_UNSET_X9Z42` is not set
  --> tests/compile/mask_env_unset.rs:8:31
   |
 8 |     let _: String = mask_env!("LITMASK_TRYBUILD_DEFINITELY_UNSET_X9Z42");

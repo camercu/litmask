@@ -17,10 +17,11 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{Expr, LitStr, Token, parse_macro_input};
 
-/// Error text emitted when `mask_format!`'s template argument is not a
-/// string literal. Single source of truth — change here and
-/// regenerate trybuild snapshots with `TRYBUILD=overwrite`.
-const MASK_FORMAT_NON_LITERAL_MSG: &str = "mask_format! requires a string literal template at the call site; use `mask!` to decrypt a runtime string";
+use crate::common::{FailTag, compile_error};
+
+const MACRO_NAME: &str = "mask_format";
+const NON_LITERAL_DETAIL: &str =
+    "requires a string literal template at the call site; use `mask!` to decrypt a runtime string";
 
 /// Implementation of the `#[proc_macro] mask_format` entry point.
 ///
@@ -31,10 +32,10 @@ const MASK_FORMAT_NON_LITERAL_MSG: &str = "mask_format! requires a string litera
 ///
 /// # Compile errors
 ///
-/// - Non-literal template — see [`MASK_FORMAT_NON_LITERAL_MSG`].
-/// - Positional argument after a named argument → typed error.
-/// - Out-of-range positional index → typed error.
-/// - Unused positional argument → typed error (mirrors `format!`).
+/// All errors carry the macro-name + tag pair from spec §1.9.6:
+/// `non-literal`, `duplicate-name`, `positional-after-named`,
+/// `positional-out-of-range`, `positional-unused`,
+/// `invalid-placeholder`, or `template-syntax`.
 ///
 /// # Panics
 ///
@@ -59,7 +60,12 @@ struct MaskFormatInput {
 impl Parse for MaskFormatInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         if !input.peek(LitStr) {
-            return Err(syn::Error::new(input.span(), MASK_FORMAT_NON_LITERAL_MSG));
+            return Err(compile_error(
+                input.span(),
+                MACRO_NAME,
+                FailTag::NonLiteral,
+                NON_LITERAL_DETAIL,
+            ));
         }
         let template: LitStr = input.parse()?;
         let args = if input.is_empty() {
@@ -92,19 +98,21 @@ fn split_args(args: &Punctuated<Expr, Token![,]>) -> syn::Result<(Vec<Expr>, Vec
     for expr in args {
         if let Some((name, value)) = as_named_arg(expr) {
             if let Some((prev, _)) = named.iter().find(|(n, _)| n == &name) {
-                return Err(syn::Error::new(
+                return Err(compile_error(
                     name.span(),
-                    format!(
-                        "duplicate named argument `{prev}` in mask_format! (each name may appear at most once)",
-                    ),
+                    MACRO_NAME,
+                    FailTag::DuplicateName,
+                    &format!("named argument `{prev}` appears more than once"),
                 ));
             }
             named.push((name, value));
         } else {
             if !named.is_empty() {
-                return Err(syn::Error::new(
+                return Err(compile_error(
                     expr.span(),
-                    "positional arguments must precede named arguments in mask_format!",
+                    MACRO_NAME,
+                    FailTag::PositionalAfterNamed,
+                    "positional arguments must precede named arguments",
                 ));
             }
             positional.push(expr.clone());
@@ -161,7 +169,7 @@ fn mask_format_expand(parsed: &MaskFormatInput) -> syn::Result<TokenStream2> {
     let template_span = parsed.template.span();
     let template_value = parsed.template.value();
     let (fragments, placeholders) = parse_mask_format_template(&template_value)
-        .map_err(|m| syn::Error::new(template_span, m))?;
+        .map_err(|m| compile_error(template_span, MACRO_NAME, FailTag::TemplateSyntax, &m))?;
 
     let (positional, named) = split_args(&parsed.args)?;
     let positional_count = positional.len();
@@ -261,10 +269,12 @@ fn check_unused_positionals(
     }
     for (i, &was_used) in used.iter().enumerate() {
         if !was_used {
-            return Err(syn::Error::new(
+            return Err(compile_error(
                 template_span,
-                format!(
-                    "positional argument {i} is never used (give it a placeholder or remove it from the mask_format! call)",
+                MACRO_NAME,
+                FailTag::PositionalUnused,
+                &format!(
+                    "positional argument {i} is never referenced (give it a placeholder or remove it from the call)",
                 ),
             ));
         }
@@ -369,10 +379,12 @@ impl Bindings {
         match r {
             TemplateRef::Positional(k) => {
                 if *k >= self.positional_count {
-                    return Err(syn::Error::new(
+                    return Err(compile_error(
                         span,
-                        format!(
-                            "positional argument {k} not provided to mask_format! (only {} given)",
+                        MACRO_NAME,
+                        FailTag::PositionalOutOfRange,
+                        &format!(
+                            "positional argument {k} not provided (only {} given)",
                             self.positional_count,
                         ),
                     ));
@@ -395,10 +407,12 @@ impl Bindings {
                 // headers surface as a typed compile error instead of
                 // a proc-macro panic.
                 let ident: syn::Ident = syn::parse_str(name).map_err(|_| {
-                    syn::Error::new(
+                    compile_error(
                         span,
-                        format!(
-                            "`{name}` is not a valid Rust identifier and cannot be used as a mask_format! implicit-capture placeholder",
+                        MACRO_NAME,
+                        FailTag::InvalidPlaceholder,
+                        &format!(
+                            "`{name}` is not a valid Rust identifier and cannot be used as an implicit-capture placeholder",
                         ),
                     )
                 })?;

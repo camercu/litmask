@@ -1,4 +1,4 @@
-error: positional argument 1 is never used (give it a placeholder or remove it from the mask_format! call)
+error: mask_format! positional-unused: positional argument 1 is never referenced (give it a placeholder or remove it from the call)
  --> tests/compile/mask_format_too_many_args.rs:9:26
   |
 9 |     let _ = mask_format!("{}", "used", "unused");

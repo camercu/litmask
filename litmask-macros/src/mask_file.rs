@@ -8,17 +8,22 @@
 
 use proc_macro::TokenStream;
 
-use crate::common::{MaskKind, canonicalize_file_path, mask_plaintext};
+use crate::common::{FailTag, MaskKind, canonicalize_file_path, compile_error, mask_plaintext};
 
-const ARGS_MSG: &str = "mask_file! takes no arguments";
+const MACRO_NAME: &str = "mask_file";
 
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
     if let Some(tt) = input.into_iter().next() {
         // Anchor the diagnostic at the offending token so the user
         // sees the unwanted argument underlined, not the macro name.
-        return syn::Error::new(tt.span().into(), ARGS_MSG)
-            .to_compile_error()
-            .into();
+        return compile_error(
+            tt.span().into(),
+            MACRO_NAME,
+            FailTag::ArgsNotAllowed,
+            "takes no arguments",
+        )
+        .to_compile_error()
+        .into();
     }
     let pm_span = proc_macro::Span::call_site();
     let raw_file = pm_span.file();

@@ -1,4 +1,4 @@
-error: positional argument 1 not provided to mask_format! (only 1 given)
+error: mask_format! positional-out-of-range: positional argument 1 not provided (only 1 given)
  --> tests/compile/mask_format_too_few_args.rs:7:26
   |
 7 |     let _ = mask_format!("{} {} {}", "only-one");

@@ -1,4 +1,4 @@
-error: unmasked! accepts string, byte string, or C string literals
+error: unmasked! non-literal: accepts string, byte string, or C string literals
  --> tests/compile/unmasked_non_literal_expr.rs:8:23
   |
 8 |     let _ = unmasked!(s);

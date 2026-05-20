@@ -11,9 +11,89 @@ use std::sync::{Mutex, OnceLock};
 
 use proc_macro2::TokenStream;
 use quote::quote;
+use syn::LitStr;
 use zeroize::{Zeroize, Zeroizing};
 
 use litmask_internal::{CipherId, KEY_LEN, aead_encrypt, nonce_for_call_site};
+
+/// Closed set of failure tags from spec §1.9.6. Every litmask compile
+/// error carries the invoking macro name plus one of these tags so
+/// downstream tooling can pattern-match `<macro>! <tag>` without
+/// depending on prose wording.
+#[derive(Clone, Copy)]
+pub(crate) enum FailTag {
+    NonLiteral,
+    ReadFailure,
+    Unset,
+    UnicodeFailure,
+    InvalidArg,
+    EmptyArgs,
+    ArgsNotAllowed,
+    DuplicateName,
+    PositionalAfterNamed,
+    PositionalUnused,
+    PositionalOutOfRange,
+    InvalidPlaceholder,
+    TemplateSyntax,
+}
+
+impl FailTag {
+    fn slug(self) -> &'static str {
+        match self {
+            Self::NonLiteral => "non-literal",
+            Self::ReadFailure => "read-failure",
+            Self::Unset => "unset",
+            Self::UnicodeFailure => "unicode-failure",
+            Self::InvalidArg => "invalid-arg",
+            Self::EmptyArgs => "empty-args",
+            Self::ArgsNotAllowed => "args-not-allowed",
+            Self::DuplicateName => "duplicate-name",
+            Self::PositionalAfterNamed => "positional-after-named",
+            Self::PositionalUnused => "positional-unused",
+            Self::PositionalOutOfRange => "positional-out-of-range",
+            Self::InvalidPlaceholder => "invalid-placeholder",
+            Self::TemplateSyntax => "template-syntax",
+        }
+    }
+}
+
+/// Construct a `syn::Error` matching the §1.9.6 format
+/// `<macro_name>! <tag>: <detail>` (detail omitted when empty).
+/// The single emission path keeps every litmask compile error
+/// consistent without forcing callers to remember the exact wire
+/// shape.
+pub(crate) fn compile_error(
+    span: proc_macro2::Span,
+    macro_name: &str,
+    tag: FailTag,
+    detail: &str,
+) -> syn::Error {
+    let msg = if detail.is_empty() {
+        format!("{macro_name}! {}", tag.slug())
+    } else {
+        format!("{macro_name}! {}: {detail}", tag.slug())
+    };
+    syn::Error::new(span, msg)
+}
+
+/// Parse a `proc_macro::TokenStream` as a single `LitStr` argument,
+/// or return a §1.9.6 `non-literal` compile error. Used by every
+/// path-or-name-shaped mask_*! macro that takes one string literal.
+pub(crate) fn require_lit_str(
+    input: proc_macro::TokenStream,
+    macro_name: &str,
+    detail: &str,
+) -> Result<LitStr, syn::Error> {
+    match syn::parse::<LitStr>(input) {
+        Ok(lit) => Ok(lit),
+        Err(e) => Err(compile_error(
+            e.span(),
+            macro_name,
+            FailTag::NonLiteral,
+            detail,
+        )),
+    }
+}
 
 /// Process-lifetime cache of `OUT_DIR` artifact contents keyed by file
 /// name. `Zeroizing<Vec<u8>>` keeps the type-level signal that the

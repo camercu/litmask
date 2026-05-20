@@ -16,18 +16,23 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{LitStr, Token, parse_macro_input};
 
-use crate::common::{MaskKind, mask_plaintext};
+use crate::common::{FailTag, MaskKind, compile_error, mask_plaintext};
 
-const EMPTY_MSG: &str = "mask_concat! requires at least one argument";
-const INVALID_MSG: &str =
-    "mask_concat! arguments must be string literals or compile-time-resolvable string macros";
+const MACRO_NAME: &str = "mask_concat";
+const INVALID_DETAIL: &str =
+    "arguments must be string literals or compile-time-resolvable string macros";
 
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let MaskConcatArgs(args) = parse_macro_input!(input as MaskConcatArgs);
     if args.is_empty() {
-        return syn::Error::new(proc_macro2::Span::call_site(), EMPTY_MSG)
-            .to_compile_error()
-            .into();
+        return compile_error(
+            proc_macro2::Span::call_site(),
+            MACRO_NAME,
+            FailTag::EmptyArgs,
+            "requires at least one argument",
+        )
+        .to_compile_error()
+        .into();
     }
     let span = args.first().expect("non-empty").span();
     let mut acc = String::new();
@@ -81,32 +86,39 @@ impl MaskConcatArg {
             Self::IncludeStr(path_lit, _) => {
                 let path_str = path_lit.value();
                 let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR").ok_or_else(|| {
-                    syn::Error::new(
+                    compile_error(
                         path_lit.span(),
-                        "mask_concat! include_str!: CARGO_MANIFEST_DIR not set",
+                        MACRO_NAME,
+                        FailTag::ReadFailure,
+                        "nested include_str!: CARGO_MANIFEST_DIR not set",
                     )
                 })?;
                 let resolved = PathBuf::from(manifest_dir).join(&path_str);
                 fs::read_to_string(&resolved).map_err(|e| {
-                    syn::Error::new(
+                    compile_error(
                         path_lit.span(),
-                        format!("mask_concat! include_str!: could not read `{path_str}`: {e}"),
+                        MACRO_NAME,
+                        FailTag::ReadFailure,
+                        &format!("nested include_str!: could not read `{path_str}`: {e}"),
                     )
                 })
             }
             Self::Env(name_lit, _) => {
                 let name = name_lit.value();
                 std::env::var(&name).map_err(|e| {
-                    let detail = match e {
-                        std::env::VarError::NotPresent => "is not set",
-                        std::env::VarError::NotUnicode(_) => {
-                            "is set but its value is not valid UTF-8"
-                        }
+                    let (tag, detail) = match e {
+                        std::env::VarError::NotPresent => (
+                            FailTag::Unset,
+                            format!("nested env!: environment variable `{name}` is not set"),
+                        ),
+                        std::env::VarError::NotUnicode(_) => (
+                            FailTag::UnicodeFailure,
+                            format!(
+                                "nested env!: environment variable `{name}` is set but its value is not valid UTF-8"
+                            ),
+                        ),
                     };
-                    syn::Error::new(
-                        name_lit.span(),
-                        format!("mask_concat! env!: environment variable `{name}` {detail}"),
-                    )
+                    compile_error(name_lit.span(), MACRO_NAME, tag, &detail)
                 })
             }
         }
@@ -117,7 +129,7 @@ impl Parse for MaskConcatArg {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         // Macro-invocation arms (recursive into stdlib-equivalent
         // compile-time-resolvable forms). `unmasked!`, user macros,
-        // and any other macro path fall through to INVALID_MSG.
+        // and any other macro path fall through to invalid_arg.
         if input.peek(syn::Ident) && input.peek2(Token![!]) {
             let mac: syn::Macro = input.parse()?;
             let name = mac.path.get_ident().map(syn::Ident::to_string);
@@ -129,37 +141,34 @@ impl Parse for MaskConcatArg {
                     Ok(Self::Concat(args, span))
                 }
                 Some("include_str") => {
-                    let lit: LitStr = mac
-                        .parse_body()
-                        .map_err(|e| syn::Error::new(e.span(), INVALID_MSG))?;
+                    let lit: LitStr = mac.parse_body().map_err(|e| invalid_arg(e.span()))?;
                     Ok(Self::IncludeStr(lit, span))
                 }
                 Some("env") => {
-                    let lit: LitStr = mac
-                        .parse_body()
-                        .map_err(|e| syn::Error::new(e.span(), INVALID_MSG))?;
+                    let lit: LitStr = mac.parse_body().map_err(|e| invalid_arg(e.span()))?;
                     Ok(Self::Env(lit, span))
                 }
-                _ => Err(syn::Error::new(span, INVALID_MSG)),
+                _ => Err(invalid_arg(span)),
             };
         }
         // Anything else: parse as an expression and check it's a
         // stdlib-`concat!`-style primitive literal (string, int,
         // float, bool, char, or unary-negated numeric).
-        let expr: syn::Expr = input
-            .parse()
-            .map_err(|e| syn::Error::new(e.span(), INVALID_MSG))?;
+        let expr: syn::Expr = input.parse().map_err(|e| invalid_arg(e.span()))?;
         let span = expr.span();
-        let value =
-            resolve_expr_literal(&expr).ok_or_else(|| syn::Error::new(span, INVALID_MSG))?;
+        let value = resolve_expr_literal(&expr).ok_or_else(|| invalid_arg(span))?;
         Ok(Self::Resolved(value, span))
     }
+}
+
+fn invalid_arg(span: proc_macro2::Span) -> syn::Error {
+    compile_error(span, MACRO_NAME, FailTag::InvalidArg, INVALID_DETAIL)
 }
 
 /// Stringify the supported primitive-literal expressions accepted by
 /// stdlib `concat!`. Returns `None` for anything else (paths, calls,
 /// byte/cstr literals, etc.) so the caller can surface
-/// [`INVALID_MSG`].
+/// [`INVALID_DETAIL`].
 fn resolve_expr_literal(expr: &syn::Expr) -> Option<String> {
     match expr {
         syn::Expr::Lit(lit_expr) => match &lit_expr.lit {

@@ -4,20 +4,15 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::LitStr;
 
-use crate::common::{MaskKind, mask_plaintext};
+use crate::common::{MaskKind, mask_plaintext, require_lit_str};
 
-const NON_LITERAL_MSG: &str = "mask_option_env! requires a string literal name";
+const MACRO_NAME: &str = "mask_option_env";
 
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
-    let name_lit: LitStr = match syn::parse(input) {
+    let name_lit = match require_lit_str(input, MACRO_NAME, "requires a string literal name") {
         Ok(lit) => lit,
-        Err(e) => {
-            return syn::Error::new(e.span(), NON_LITERAL_MSG)
-                .to_compile_error()
-                .into();
-        }
+        Err(e) => return e.to_compile_error().into(),
     };
     let name = name_lit.value();
     let expansion = if let Ok(v) = std::env::var(&name) {

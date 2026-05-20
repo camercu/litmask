@@ -1,4 +1,4 @@
-error: mask_file! takes no arguments
+error: mask_file! args-not-allowed: takes no arguments
  --> tests/compile/mask_file_with_args.rs:6:32
   |
 6 |     let _: String = mask_file!(42);

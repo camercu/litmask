@@ -9,6 +9,10 @@ use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::{LitByteStr, LitCStr, LitStr, parse_macro_input};
 
+use crate::common::{FailTag, compile_error};
+
+const MACRO_NAME: &str = "unmasked";
+
 /// Implementation of the `#[proc_macro] unmasked` entry point.
 ///
 /// Zero runtime overhead: the expansion is the bare literal token,
@@ -51,9 +55,11 @@ impl Parse for UnmaskedInput {
         if input.peek(LitCStr) {
             return input.parse().map(Self::CStr);
         }
-        Err(syn::Error::new(
+        Err(compile_error(
             input.span(),
-            "unmasked! accepts string, byte string, or C string literals",
+            MACRO_NAME,
+            FailTag::NonLiteral,
+            "accepts string, byte string, or C string literals",
         ))
     }
 }

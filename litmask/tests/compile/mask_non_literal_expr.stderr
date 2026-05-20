@@ -1,4 +1,4 @@
-error: mask! accepts string, byte string, or C string literals
+error: mask! non-literal: accepts string, byte string, or C string literals
  --> tests/compile/mask_non_literal_expr.rs:9:19
   |
 9 |     let _ = mask!(s);

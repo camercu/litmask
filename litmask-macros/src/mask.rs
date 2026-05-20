@@ -13,12 +13,10 @@ use proc_macro::TokenStream;
 use syn::parse::{Parse, ParseStream};
 use syn::{LitByteStr, LitCStr, LitStr, parse_macro_input};
 
-use crate::common::{MaskKind, mask_plaintext};
+use crate::common::{FailTag, MaskKind, compile_error, mask_plaintext};
 
-/// Error text emitted for any `mask!` input that isn't a supported
-/// literal kind. Single source of truth — change here and regenerate
-/// trybuild snapshots with `TRYBUILD=overwrite`.
-const INVALID_LITERAL_MSG: &str = "mask! accepts string, byte string, or C string literals";
+const MACRO_NAME: &str = "mask";
+const INVALID_LITERAL_DETAIL: &str = "accepts string, byte string, or C string literals";
 
 /// Implementation of the `#[proc_macro] mask` entry point. Re-exported
 /// at the crate root via a one-line wrapper.
@@ -90,6 +88,11 @@ impl Parse for MaskInput {
         if input.peek(LitCStr) {
             return input.parse().map(Self::CStr);
         }
-        Err(syn::Error::new(input.span(), INVALID_LITERAL_MSG))
+        Err(compile_error(
+            input.span(),
+            MACRO_NAME,
+            FailTag::NonLiteral,
+            INVALID_LITERAL_DETAIL,
+        ))
     }
 }

@@ -11,9 +11,10 @@ use proc_macro::TokenStream;
 use syn::parse::{Parse, ParseStream};
 use syn::{LitStr, Token, parse_macro_input};
 
-use crate::common::{MaskKind, mask_plaintext};
+use crate::common::{FailTag, MaskKind, compile_error, mask_plaintext};
 
-const NON_LITERAL_MSG: &str = "mask_env! requires a string literal name";
+const MACRO_NAME: &str = "mask_env";
+const NON_LITERAL_DETAIL: &str = "requires a string literal name";
 
 struct MaskEnvInput {
     name: LitStr,
@@ -22,26 +23,39 @@ struct MaskEnvInput {
 
 impl Parse for MaskEnvInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let name: LitStr = input
-            .parse()
-            .map_err(|e| syn::Error::new(e.span(), NON_LITERAL_MSG))?;
+        let name: LitStr = input.parse().map_err(|e| {
+            compile_error(
+                e.span(),
+                MACRO_NAME,
+                FailTag::NonLiteral,
+                NON_LITERAL_DETAIL,
+            )
+        })?;
         let custom_msg = if input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
             // Allow trailing comma after the name: `mask_env!("X",)`.
             if input.is_empty() {
                 None
             } else {
-                Some(
-                    input
-                        .parse::<LitStr>()
-                        .map_err(|e| syn::Error::new(e.span(), NON_LITERAL_MSG))?,
-                )
+                Some(input.parse::<LitStr>().map_err(|e| {
+                    compile_error(
+                        e.span(),
+                        MACRO_NAME,
+                        FailTag::NonLiteral,
+                        NON_LITERAL_DETAIL,
+                    )
+                })?)
             }
         } else {
             None
         };
         if !input.is_empty() {
-            return Err(syn::Error::new(input.span(), NON_LITERAL_MSG));
+            return Err(compile_error(
+                input.span(),
+                MACRO_NAME,
+                FailTag::NonLiteral,
+                NON_LITERAL_DETAIL,
+            ));
         }
         Ok(Self { name, custom_msg })
     }
@@ -53,17 +67,26 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     match std::env::var(&name_value) {
         Ok(value) => mask_plaintext(value.into_bytes(), name.span(), MaskKind::Str).into(),
         Err(VarError::NotPresent) => {
-            let msg = match &custom_msg {
-                Some(m) => m.value(),
-                None => format!("mask_env!: environment variable `{name_value}` is not set"),
+            let err = match &custom_msg {
+                // A user-supplied custom message replaces the prose
+                // entirely (mirrors stdlib `env!`'s contract). The
+                // §1.9.6 macro-name + tag prefix is still emitted so
+                // tooling can pattern-match on `mask_env! unset:`.
+                Some(m) => compile_error(name.span(), MACRO_NAME, FailTag::Unset, &m.value()),
+                None => compile_error(
+                    name.span(),
+                    MACRO_NAME,
+                    FailTag::Unset,
+                    &format!("environment variable `{name_value}` is not set"),
+                ),
             };
-            syn::Error::new(name.span(), msg).to_compile_error().into()
+            err.to_compile_error().into()
         }
-        Err(VarError::NotUnicode(_)) => syn::Error::new(
+        Err(VarError::NotUnicode(_)) => compile_error(
             name.span(),
-            format!(
-                "mask_env!: environment variable `{name_value}` is set but its value is not valid UTF-8"
-            ),
+            MACRO_NAME,
+            FailTag::UnicodeFailure,
+            &format!("environment variable `{name_value}` is set but its value is not valid UTF-8"),
         )
         .to_compile_error()
         .into(),

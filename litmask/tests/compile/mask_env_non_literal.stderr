@@ -1,4 +1,4 @@
-error: mask_env! requires a string literal name
+error: mask_env! non-literal: requires a string literal name
  --> tests/compile/mask_env_non_literal.rs:7:31
   |
 7 |     let _: String = mask_env!(name);

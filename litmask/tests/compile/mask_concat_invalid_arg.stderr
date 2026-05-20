@@ -1,4 +1,4 @@
-error: mask_concat! arguments must be string literals or compile-time-resolvable string macros
+error: mask_concat! invalid-arg: arguments must be string literals or compile-time-resolvable string macros
  --> tests/compile/mask_concat_invalid_arg.rs:9:45
   |
 9 |     let _: String = mask_concat!("prefix-", b"bytes");

@@ -8,21 +8,15 @@ use std::fs;
 use std::path::PathBuf;
 
 use proc_macro::TokenStream;
-use syn::LitStr;
 
-use crate::common::{MaskKind, mask_plaintext};
+use crate::common::{FailTag, MaskKind, compile_error, mask_plaintext, require_lit_str};
 
-const NON_LITERAL_MSG: &str = "mask_include_bytes! requires a string literal path";
-const READ_FAILURE_PREFIX: &str = "mask_include_bytes!: could not read";
+const MACRO_NAME: &str = "mask_include_bytes";
 
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
-    let path_lit: LitStr = match syn::parse(input) {
+    let path_lit = match require_lit_str(input, MACRO_NAME, "requires a string literal path") {
         Ok(lit) => lit,
-        Err(e) => {
-            return syn::Error::new(e.span(), NON_LITERAL_MSG)
-                .to_compile_error()
-                .into();
-        }
+        Err(e) => return e.to_compile_error().into(),
     };
     let path_str = path_lit.value();
     let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR")
@@ -31,9 +25,11 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let content = match fs::read(&resolved) {
         Ok(c) => c,
         Err(e) => {
-            return syn::Error::new(
+            return compile_error(
                 path_lit.span(),
-                format!("{READ_FAILURE_PREFIX} `{path_str}`: {e}"),
+                MACRO_NAME,
+                FailTag::ReadFailure,
+                &format!("could not read `{path_str}`: {e}"),
             )
             .to_compile_error()
             .into();

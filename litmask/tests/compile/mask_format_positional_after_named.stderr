@@ -1,4 +1,4 @@
-error: positional arguments must precede named arguments in mask_format!
+error: mask_format! positional-after-named: positional arguments must precede named arguments
   --> tests/compile/mask_format_positional_after_named.rs:10:48
    |
 10 |     let _ = mask_format!("{} {x}", "a", x = 1, "b");

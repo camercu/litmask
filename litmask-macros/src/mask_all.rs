@@ -29,15 +29,21 @@ use syn::spanned::Spanned;
 use syn::visit_mut::{self, VisitMut};
 use syn::{Expr, ExprLit, Item, ItemConst, ItemStatic, Lit, Pat, Stmt, parse_macro_input};
 
+use crate::common::{FailTag, compile_error};
+
+const MACRO_NAME: &str = "mask_all";
+
 /// Implementation of the `#[proc_macro_attribute] mask_all` entry
 /// point. The attribute applies only to module items; other targets
 /// produce a typed compile error naming the constraint.
 pub(crate) fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let parsed = parse_macro_input!(item as Item);
     let Item::Mod(mut module) = parsed else {
-        return syn::Error::new(
+        return compile_error(
             parsed.span(),
-            "#[mask_all] applies only to module items (e.g. `#[mask_all] mod foo { ... }`)",
+            MACRO_NAME,
+            FailTag::InvalidArg,
+            "applies only to module items (e.g. `#[mask_all] mod foo { ... }`)",
         )
         .to_compile_error()
         .into();

@@ -1,4 +1,4 @@
-error: mask_format! requires a string literal template at the call site; use `mask!` to decrypt a runtime string
+error: mask_format! non-literal: requires a string literal template at the call site; use `mask!` to decrypt a runtime string
   --> tests/compile/mask_format_non_literal_template.rs:10:26
    |
 10 |     let _ = mask_format!(template, 1);

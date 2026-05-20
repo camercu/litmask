@@ -1,4 +1,4 @@
-error: #[mask_all] applies only to module items (e.g. `#[mask_all] mod foo { ... }`)
+error: mask_all! invalid-arg: applies only to module items (e.g. `#[mask_all] mod foo { ... }`)
  --> tests/compile/mask_all_non_module_target.rs:9:1
   |
 9 | fn not_a_module() {
