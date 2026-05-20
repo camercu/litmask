@@ -318,6 +318,10 @@ pub fn xor_cycle(input: &[u8], key: &[u8]) -> alloc::vec::Vec<u8> {
 #[must_use]
 pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
     let digest = blake3::keyed_hash(seed, NONCE_TAG_WRAPPER);
+    // BLAKE3 emits a 32-byte digest; NONCE_LEN (12) cannot exceed that.
+    // The slice would panic if a future BLAKE3 API change shortened
+    // the output below NONCE_LEN.
+    debug_assert!(digest.as_bytes().len() >= NONCE_LEN);
     let mut out = [0u8; NONCE_LEN];
     out.copy_from_slice(&digest.as_bytes()[..NONCE_LEN]);
     out
@@ -379,6 +383,7 @@ pub fn nonce_for_call_site(
     hasher.update(&column.to_le_bytes());
     hasher.update(plaintext);
     let digest = hasher.finalize();
+    debug_assert!(digest.as_bytes().len() >= NONCE_LEN);
     let mut out = [0u8; NONCE_LEN];
     out.copy_from_slice(&digest.as_bytes()[..NONCE_LEN]);
     out

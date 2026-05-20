@@ -419,6 +419,13 @@ impl Bindings {
                 let idx = self.base_for_implicit + self.implicit.len();
                 self.implicit_idx.insert(name.clone(), idx);
                 self.implicit.push(ident);
+                // Invariant: every resolved index addresses a slot in
+                // the binding table layout (positional | named |
+                // implicit). The arithmetic above plus the push guarantee
+                // this, but the assertion catches future drift in the
+                // layout-arithmetic if someone changes `base_for_implicit`
+                // without updating `total()`.
+                debug_assert!(idx < self.total());
                 Ok(idx)
             }
         }
@@ -577,6 +584,11 @@ fn parse_mask_format_template(s: &str) -> Result<(Vec<String>, Vec<ParsedPlaceho
         }
     }
 
+    // Contract: fragments interleave with placeholders, with one extra
+    // fragment at the end (possibly empty). Every push of a placeholder
+    // is followed by a fresh fragment; callers rely on this to walk the
+    // two lists in lockstep.
+    debug_assert_eq!(fragments.len(), placeholders.len() + 1);
     Ok((fragments, placeholders))
 }
 

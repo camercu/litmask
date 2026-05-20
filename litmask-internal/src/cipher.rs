@@ -97,6 +97,11 @@ pub fn decrypt_blob(
         .split_first_chunk::<NONCE_LEN>()
         .filter(|(_, body)| body.len() >= TAG_LEN)
         .ok_or(DecryptError::BlobTooShort)?;
+    // The filter above guarantees `body` is at least TAG_LEN; assert
+    // this so future changes to the split that drop the filter trip
+    // a test-time panic instead of silently feeding a too-short body
+    // to the AEAD primitive.
+    debug_assert!(body.len() >= TAG_LEN);
     aead_decrypt(CipherId::ChaCha20Poly1305, mask_key, nonce, body).map_err(DecryptError::from)
 }
 

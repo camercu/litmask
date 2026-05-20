@@ -14,7 +14,7 @@ use quote::quote;
 use syn::LitStr;
 use zeroize::{Zeroize, Zeroizing};
 
-use litmask_internal::{CipherId, KEY_LEN, aead_encrypt, nonce_for_call_site};
+use litmask_internal::{CipherId, KEY_LEN, NONCE_LEN, TAG_LEN, aead_encrypt, nonce_for_call_site};
 
 /// Closed set of failure tags from spec §1.9.6. Every litmask compile
 /// error carries the invoking macro name plus one of these tags so
@@ -308,6 +308,13 @@ fn mask_plaintext(mut plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKin
     let blob: Vec<u8> = [nonce.as_slice(), &ciphertext_and_tag].concat();
     let blob_lit = byte_array_token(&blob);
     let blob_len = blob.len();
+    // Wire-format contract: every blob is `nonce (NONCE_LEN) ||
+    // ciphertext (plaintext.len()) || tag (TAG_LEN)`. plaintext was
+    // zeroized above, but its prior length equals blob_len - NONCE_LEN
+    // - TAG_LEN; assert the relationship so future changes to the
+    // concat shape trip a test-time panic.
+    debug_assert!(blob_len >= NONCE_LEN + TAG_LEN);
+    debug_assert_eq!(blob_len, NONCE_LEN + ciphertext_and_tag.len());
     let blob_ident = syn::Ident::new("__LITMASK_BLOB", proc_macro2::Span::mixed_site());
     let wrapper = quote! { ::litmask::__wrapper_bytes!() };
     let decrypt_expr = match kind {
