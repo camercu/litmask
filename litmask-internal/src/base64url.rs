@@ -101,4 +101,28 @@ mod tests {
         assert!(!out.contains('+'));
         assert!(!out.contains('/'));
     }
+
+    proptest::proptest! {
+        // Round-trip across the full byte-length space catches alignment
+        // edge cases (sub-byte boundaries at lengths 1/2/3 mod 3) that
+        // enumerated tests miss.
+        #[test]
+        fn proptest_decode_of_encode_returns_input(bytes in proptest::collection::vec(proptest::num::u8::ANY, 0..=256)) {
+            let encoded = encode(&bytes);
+            let decoded = decode(&encoded).expect("encoder output must decode");
+            proptest::prop_assert_eq!(decoded, bytes);
+            proptest::prop_assert!(!encoded.contains('='));
+        }
+
+        #[test]
+        fn proptest_encode_of_decode_returns_input(bytes in proptest::collection::vec(proptest::num::u8::ANY, 0..=256)) {
+            // Canonicalize via the encoder so the input string is
+            // guaranteed-valid base64url; proptest of arbitrary strings
+            // would mostly hit DecodeError::Invalid and test nothing.
+            let canonical = encode(&bytes);
+            let decoded = decode(&canonical).expect("canonical encoding decodes");
+            let re_encoded = encode(&decoded);
+            proptest::prop_assert_eq!(re_encoded, canonical);
+        }
+    }
 }

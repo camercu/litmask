@@ -649,4 +649,43 @@ mod tests {
             );
         }
     }
+
+    proptest::proptest! {
+        // xor_cycle is its own inverse — applying twice with the same
+        // key recovers the original. Underpins weak_mask!'s decode
+        // semantics; a regression here would silently corrupt every
+        // weak_mask!() output.
+        #[test]
+        fn proptest_xor_cycle_self_inverse(
+            input in proptest::collection::vec(proptest::num::u8::ANY, 0..=512),
+            key in proptest::collection::vec(proptest::num::u8::ANY, 1..=64),
+        ) {
+            let encoded = xor_cycle(&input, &key);
+            let decoded = xor_cycle(&encoded, &key);
+            proptest::prop_assert_eq!(decoded, input);
+        }
+
+        // assemble_wrapper / parse_wrapper round-trip preserves every
+        // header field plus the body. The wire format has only one
+        // FormatVersion and CipherId today, so the variant axis is
+        // single-valued; the value comes from broad coverage of nonce
+        // and body byte combinations.
+        #[test]
+        fn proptest_wrapper_assemble_parse_round_trip(
+            nonce in proptest::array::uniform12(proptest::num::u8::ANY),
+            body in proptest::array::uniform::<_, WRAPPER_BODY_LEN>(proptest::num::u8::ANY),
+        ) {
+            let wrapper = assemble_wrapper(
+                FormatVersion::CURRENT,
+                CipherId::ChaCha20Poly1305,
+                &nonce,
+                &body,
+            );
+            let parsed = parse_wrapper(&wrapper).expect("assembled wrappers always parse");
+            proptest::prop_assert_eq!(parsed.version, FormatVersion::V1);
+            proptest::prop_assert_eq!(parsed.cipher, CipherId::ChaCha20Poly1305);
+            proptest::prop_assert_eq!(parsed.nonce, &nonce);
+            proptest::prop_assert_eq!(parsed.body, &body);
+        }
+    }
 }

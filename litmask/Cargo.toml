@@ -37,6 +37,7 @@ zeroize = { version = "1", features = ["derive"] }
 litmask-build.workspace = true
 
 [dev-dependencies]
+proptest = "1"
 regex = "1"
 trybuild = "1"
 

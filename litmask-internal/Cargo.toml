@@ -17,5 +17,8 @@ chacha20poly1305 = { version = "0.10", default-features = false, features = [
 ] }
 zeroize = { version = "1", default-features = false, features = ["alloc"] }
 
+[dev-dependencies]
+proptest = "1"
+
 [lints]
 workspace = true

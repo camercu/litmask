@@ -138,4 +138,38 @@ mod tests {
         assert!(dbg.contains("REDACTED"));
         assert!(!dbg.contains("ca"));
     }
+
+    use proptest::strategy::Strategy as _;
+
+    proptest::proptest! {
+        // Any 32-byte key encoded via the shared codec must round-trip
+        // through the public parser unchanged. Catches future drift
+        // between base64url::encode and from_base64url's accepted
+        // alphabet / length policy.
+        #[test]
+        fn proptest_from_base64url_round_trips_random_keys(
+            bytes in proptest::array::uniform32(proptest::num::u8::ANY),
+        ) {
+            let encoded = crate::internal::base64url::encode(&bytes);
+            let key = UnlockKey::from_base64url(&encoded).expect("32-byte key must parse");
+            proptest::prop_assert_eq!(key.as_bytes(), &bytes);
+        }
+
+        // Inputs whose decoded length is anything other than KEY_LEN
+        // must surface as InvalidFormat. Generating via the codec
+        // guarantees the candidate input is valid base64url, so the
+        // failure mode under test is specifically the length check,
+        // not the alphabet check.
+        #[test]
+        fn proptest_from_base64url_rejects_wrong_length(
+            bytes in proptest::collection::vec(proptest::num::u8::ANY, 0..=64)
+                .prop_filter("must not be exactly KEY_LEN", |v| v.len() != KEY_LEN),
+        ) {
+            let encoded = crate::internal::base64url::encode(&bytes);
+            proptest::prop_assert!(matches!(
+                UnlockKey::from_base64url(&encoded),
+                Err(KeyError::InvalidFormat),
+            ));
+        }
+    }
 }

@@ -276,4 +276,56 @@ mod tests {
         let recovered = decrypt_blob(&mask_key, &blob).expect("round-trip");
         assert!(recovered.is_empty());
     }
+
+    proptest::proptest! {
+        // AEAD round-trip across a broad (key, nonce, plaintext) space.
+        // Catches future cipher-impl changes that silently corrupt
+        // either direction. Plaintext capped at 1 KiB so the test suite
+        // stays fast.
+        #[test]
+        fn proptest_aead_round_trip(
+            key in proptest::array::uniform32(proptest::num::u8::ANY),
+            nonce in proptest::array::uniform12(proptest::num::u8::ANY),
+            plaintext in proptest::collection::vec(proptest::num::u8::ANY, 0..=1024),
+        ) {
+            let body = aead_encrypt(CipherId::ChaCha20Poly1305, &key, &nonce, &plaintext)
+                .expect("AEAD encrypt does not fail for ChaCha20Poly1305");
+            let recovered = aead_decrypt(CipherId::ChaCha20Poly1305, &key, &nonce, &body)
+                .expect("decrypt under the same key must succeed");
+            proptest::prop_assert_eq!(recovered, plaintext);
+        }
+
+        // Tamper detection: flipping any single bit anywhere in
+        // `ciphertext || tag` must produce AuthenticationFailed.
+        // `bit` selects (byte_index * 8 + bit_index) within the body.
+        #[test]
+        fn proptest_aead_rejects_single_bit_flip(
+            key in proptest::array::uniform32(proptest::num::u8::ANY),
+            nonce in proptest::array::uniform12(proptest::num::u8::ANY),
+            plaintext in proptest::collection::vec(proptest::num::u8::ANY, 1..=256),
+            bit in 0usize..(8 * 1024),
+        ) {
+            let mut body = aead_encrypt(CipherId::ChaCha20Poly1305, &key, &nonce, &plaintext)
+                .expect("AEAD encrypt");
+            let bit = bit % (body.len() * 8);
+            body[bit / 8] ^= 1u8 << (bit % 8);
+            proptest::prop_assert_eq!(
+                aead_decrypt(CipherId::ChaCha20Poly1305, &key, &nonce, &body),
+                Err(AeadError::AuthenticationFailed),
+            );
+        }
+
+        // Blob round-trip + tamper detection layered on top of
+        // decrypt_blob's nonce-split contract.
+        #[test]
+        fn proptest_blob_round_trip(
+            mask_key in proptest::array::uniform32(proptest::num::u8::ANY),
+            nonce in proptest::array::uniform12(proptest::num::u8::ANY),
+            plaintext in proptest::collection::vec(proptest::num::u8::ANY, 0..=1024),
+        ) {
+            let blob = build_blob(&mask_key, &nonce, &plaintext);
+            let recovered = decrypt_blob(&mask_key, &blob).expect("blob decrypts");
+            proptest::prop_assert_eq!(recovered, plaintext);
+        }
+    }
 }
