@@ -127,9 +127,10 @@ impl MaskConcatArg {
 
 impl Parse for MaskConcatArg {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        // Macro-invocation arms (recursive into stdlib-equivalent
-        // compile-time-resolvable forms). `unmasked!`, user macros,
-        // and any other macro path fall through to invalid_arg.
+        // Only the three stdlib compile-time-resolving forms are
+        // recursed into. `unmasked!` and any user-defined macro are
+        // rejected so the concatenated output cannot silently
+        // include text that bypassed the masking pipeline.
         if input.peek(syn::Ident) && input.peek2(Token![!]) {
             let mac: syn::Macro = input.parse()?;
             let name = mac.path.get_ident().map(syn::Ident::to_string);
@@ -167,8 +168,8 @@ fn invalid_arg(span: proc_macro2::Span) -> syn::Error {
 
 /// Stringify the supported primitive-literal expressions accepted by
 /// stdlib `concat!`. Returns `None` for anything else (paths, calls,
-/// byte/cstr literals, etc.) so the caller can surface
-/// [`INVALID_DETAIL`].
+/// byte/cstr literals, etc.) so the caller can surface the standard
+/// `invalid-arg` rejection via [`invalid_arg`].
 fn resolve_expr_literal(expr: &syn::Expr) -> Option<String> {
     match expr {
         syn::Expr::Lit(lit_expr) => match &lit_expr.lit {

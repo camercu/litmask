@@ -28,11 +28,8 @@ impl UnlockKey {
     /// Returns [`KeyError::InvalidFormat`] for malformed encoding or
     /// wrong length.
     pub fn from_base64url(input: &str) -> Result<Self, KeyError> {
-        // Zeroize the decoded heap buffer on return so the plaintext
-        // key material does not linger after the fixed-size array is
-        // populated. The shared codec returns a bare Vec<u8> so the
-        // build crate doesn't pull in zeroize; the wipe-on-drop wrap
-        // is a runtime-crate concern applied here at the boundary.
+        // Plaintext key bytes MUST NOT linger on the heap after the
+        // fixed-size array is populated.
         let decoded =
             Zeroizing::new(base64url::decode(input).map_err(|_| KeyError::InvalidFormat)?);
         let bytes: [u8; KEY_LEN] = decoded

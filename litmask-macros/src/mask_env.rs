@@ -23,39 +23,24 @@ struct MaskEnvInput {
 
 impl Parse for MaskEnvInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let name: LitStr = input.parse().map_err(|e| {
-            compile_error(
-                e.span(),
-                MACRO_NAME,
-                FailTag::NonLiteral,
-                NON_LITERAL_DETAIL,
-            )
-        })?;
+        let non_literal = |span: proc_macro2::Span| {
+            compile_error(span, MACRO_NAME, FailTag::NonLiteral, NON_LITERAL_DETAIL)
+        };
+        let name: LitStr = input.parse().map_err(|e| non_literal(e.span()))?;
         let custom_msg = if input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
-            // Allow trailing comma after the name: `mask_env!("X",)`.
+            // Trailing comma after the name (`mask_env!("X",)`) is
+            // legal and produces no custom message.
             if input.is_empty() {
                 None
             } else {
-                Some(input.parse::<LitStr>().map_err(|e| {
-                    compile_error(
-                        e.span(),
-                        MACRO_NAME,
-                        FailTag::NonLiteral,
-                        NON_LITERAL_DETAIL,
-                    )
-                })?)
+                Some(input.parse::<LitStr>().map_err(|e| non_literal(e.span()))?)
             }
         } else {
             None
         };
         if !input.is_empty() {
-            return Err(compile_error(
-                input.span(),
-                MACRO_NAME,
-                FailTag::NonLiteral,
-                NON_LITERAL_DETAIL,
-            ));
+            return Err(non_literal(input.span()));
         }
         Ok(Self { name, custom_msg })
     }
