@@ -1181,6 +1181,13 @@ no claims against out-of-scope attacker capabilities).
       compile under that configuration)
 - [ ] No documentation surface promises resistance to out-of-scope
       capabilities listed in §1.1.3
+- [ ] `mask!` rustdoc explains the `String` return type and the
+      `&'static str` ergonomics workaround: if a call site needs
+      `&str` rather than an owned `String`, either bind once
+      (`let s: &str = &MASKED;`) or use `weak_mask!` when the
+      threat model permits the weaker guarantees (no AEAD,
+      plaintext cached for program lifetime). Cross-reference
+      §2.1.0's stdlib-mirroring caveat for the return-type shift.
 
 ---
 
