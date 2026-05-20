@@ -1,5 +1,0 @@
-error: positional argument 1 is never used (give it a placeholder or remove it from the mask_fmt! call)
- --> tests/compile/mask_fmt_too_many_args.rs:9:23
-  |
-9 |     let _ = mask_fmt!("{}", "used", "unused");
-  |                       ^^^^

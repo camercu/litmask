@@ -4,8 +4,8 @@
 //! originates inside our generated check, locking the contract
 //! that we do per-placeholder type validation.
 
-use litmask::mask_fmt;
+use litmask::mask_format;
 
 fn main() {
-    let _ = mask_fmt!("{:x}", "not a number");
+    let _ = mask_format!("{:x}", "not a number");
 }

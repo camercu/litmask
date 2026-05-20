@@ -151,7 +151,7 @@ This table SHALL appear in the README and in the crate-level rustdoc:
 | Tamper detection | No | No | Yes (AEAD authentication) |
 | Per-string nonces | Compile-time random (no auth) | None | Per-build deterministic, authenticated |
 | Key model | Compile-time random per build | Single env var | Layered: `mask_key` + `unlock_key`, multiple providers |
-| Format string masking | Separate `fmtools` crate | None | Built-in `mask_fmt!` with single-evaluation semantics |
+| Format string masking | Separate `fmtools` crate | None | Built-in `mask_format!` with single-evaluation semantics |
 | Module-level masking | None | None | `#[mask_all]` with deep substitution |
 | Hardware binding | None | None | Yes (post-build rebind via `litmask-cli`) |
 | Multiple literal types (str/bytes/cstr) | str only | str only | All three |
@@ -411,7 +411,7 @@ macro-expansion pass visited first. This matters for two reasons:
 `proc_macro::Span::file()`, `Span::line()`, and `Span::column()` were
 stabilized in Rust 1.88, the workspace's pinned toolchain.
 
-**Why plaintext is also keyed.** `mask_fmt!` synthesizes multiple
+**Why plaintext is also keyed.** `mask_format!` synthesizes multiple
 `mask!()` calls inside a single `quote!{}` expansion — one per
 template fragment — and `quote!`'s default span propagation makes
 those calls share a `(file, line, column)` triple. Distinct
@@ -737,8 +737,8 @@ most consistent recoverable state:
 
 ```rust
 mask!(literal)              // dispatches on literal kind
-mask_fmt!(template, args...) // formerly mask_fmt! — renamed per
-                             // Amendment 2026-05-17(b)
+mask_format!(template, args...) // formerly mask_fmt! — renamed per
+                             // Amendment 2026-05-20
 unmasked!(literal)          // explicit opt-out, returns literal unchanged
 weak_mask!(literal)         // XOR-with-wrapper obfuscation; weaker than mask!
 mask_include_str!("path")   // file contents → masked String
@@ -789,10 +789,12 @@ site (cached in a `OnceLock`).
 >
 > Additionally:
 >
-> - `mask_fmt!` is renamed to `mask_fmt!` for naming consistency with
->   the new mask_* family. The bare `mask_fmt!` name SHALL NOT exist
->   in the public API. Every spec reference to `mask_fmt!` reads
->   `mask_fmt!`.
+> - `maskfmt!` is renamed to `mask_fmt!` for naming consistency with
+>   the new mask_* family. The bare `maskfmt!` name SHALL NOT exist
+>   in the public API. Every spec reference to `maskfmt!` reads
+>   `mask_fmt!`. _(Superseded by Amendment 2026-05-20: `mask_fmt!`
+>   is renamed again to `mask_format!`; the chain of renames is
+>   `maskfmt!` → `mask_fmt!` → `mask_format!`.)_
 > - `mask!` SHALL NOT accept macro invocations as input. The
 >   §2.1.1.14 whitelist of `include_str!` / `concat!` is removed. Any
 >   `mask!(<macro>!(...))` form is rejected with the [INVALID_LITERAL_MSG]
@@ -816,7 +818,7 @@ site (cached in a `OnceLock`).
 > dedicated forms collapse that two-step expansion into one and
 > simplify `#[mask_all]`'s rewrite logic.
 
-`mask_fmt!` accepts string literal templates only. Non-literal templates produce
+`mask_format!` accepts string literal templates only. Non-literal templates produce
 a compile error directing users toward `mask!` for runtime-decrypted strings.
 
 `unmasked!` accepts any of the above literal kinds and returns them unchanged
@@ -1064,7 +1066,7 @@ error message:
 
 | Situation | Required content |
 |---|---|
-| `mask_fmt!` non-literal template | "mask_fmt! requires a string literal template at the call site; use `mask!` to decrypt a runtime string" |
+| `mask_format!` non-literal template | "mask_format! requires a string literal template at the call site; use `mask!` to decrypt a runtime string" |
 | `mask!` invalid literal type | "mask! accepts string, byte string, or C string literals" |
 | `mask_include_str!` non-literal path | "mask_include_str! requires a string literal path" |
 | `mask_include_str!` file-read failure | "mask_include_str!: could not read" |
@@ -1276,7 +1278,7 @@ listed as out-of-scope in §1.1.3.
 #### §1.12.1 Stability commitments
 
 Stable surface (semver-protected):
-- `mask!`, `mask_fmt!`, `unmasked!` macros
+- `mask!`, `mask_format!`, `unmasked!` macros
 - `#[mask_all]` attribute and substitution table (additions allowed; removals
   breaking)
 - `KeyProvider` trait
@@ -1383,7 +1385,7 @@ carefully:
    context-sensitive (literal templates only; non-literal templates are left
    unchanged with literal arguments masked recursively).
 
-2. **`mask_fmt!` named-argument single-evaluation semantics.** Every named
+2. **`mask_format!` named-argument single-evaluation semantics.** Every named
    argument MUST be bound to a `let` in the rewritten code so that
    side-effecting expressions evaluate exactly once. This is the most subtle
    correctness requirement in the parser. Implicit captures (Rust 2021
@@ -1692,24 +1694,29 @@ binary's plaintext under the standard scrub policy. (Caveat:
 panic sites; `mask_file!` masks only its own explicit user-written
 invocations, not the implicit panic-site embedding.)
 
-### §2.2 Iteration 2 — Format string masking (mask_fmt!)
+### §2.2 Iteration 2 — Format string masking (mask_format!)
 
 > **Amendment 2026-05-17(b):** Renamed from `maskfmt!` to `mask_fmt!`
 > for naming consistency with the `mask_*!` family introduced in
-> §2.1.3–§2.1.8. Every requirement and error-message substring below
-> reads `mask_fmt!` (substitute mechanically: trybuild snapshots
-> regenerate, all integration tests update, no behavior change). The
-> bare `mask_fmt!` name SHALL NOT exist in the public API.
+> §2.1.3–§2.1.8. (Superseded by Amendment 2026-05-20 — see below.)
+>
+> **Amendment 2026-05-20:** Renamed from `mask_fmt!` to `mask_format!`
+> to mirror the `mask_<stdlib_macro>` convention per §2.1.0: stdlib's
+> macro is `format!`, so the masked counterpart spells out `format`.
+> Every requirement and error-message substring below reads
+> `mask_format!` (trybuild snapshots regenerate, integration tests
+> update mechanically — no behavior change). The bare `mask_fmt!`
+> name SHALL NOT exist in the public API.
 
 #### §2.2.1 Acceptance criteria
 
-§2.2.1.1 — `mask_fmt!` SHALL accept a string literal template as its first
+§2.2.1.1 — `mask_format!` SHALL accept a string literal template as its first
 argument, followed by zero or more format arguments matching `format!`'s
 signature.
 
-§2.2.1.2 — `mask_fmt!` SHALL return a value of type `String`.
+§2.2.1.2 — `mask_format!` SHALL return a value of type `String`.
 
-§2.2.1.3 — `mask_fmt!` SHALL produce a compile error when its first argument is
+§2.2.1.3 — `mask_format!` SHALL produce a compile error when its first argument is
 not a string literal.
 
 §2.2.1.4 — The compile error for non-literal templates SHALL include the
@@ -1743,17 +1750,17 @@ supported with positional rewriting.
 
 §2.2.2.7 — Debug formatting (`{:?}`, `{:#?}`) SHALL be supported.
 
-§2.2.2.8 — The output of `mask_fmt!(template, args...)` SHALL be identical to
+§2.2.2.8 — The output of `mask_format!(template, args...)` SHALL be identical to
 the output of `format!(template, args...)` for all supported format
 features.
 
 #### §2.2.3 Equivalent format! semantics
 
-§2.2.3.1 — `mask_fmt!` SHALL NOT introduce observable differences from
+§2.2.3.1 — `mask_format!` SHALL NOT introduce observable differences from
 `format!` in argument evaluation order, evaluation count, or panicking
 behavior.
 
-§2.2.3.2 — `mask_fmt!` SHALL pass through `format!`'s compile-time format
+§2.2.3.2 — `mask_format!` SHALL pass through `format!`'s compile-time format
 argument checking (placeholder count vs. argument count, type compatibility).
 
 ### §2.3 Iteration 3 — Module-level masking
@@ -1772,7 +1779,7 @@ without modification:
 - Pattern positions (match arms, `if let`, `while let`)
 - `const` and `static` initializers
 - Attribute strings (`#[doc = "..."]`, `#[cfg(...)]`, etc.)
-- Inside `mask!`, `mask_fmt!`, or `unmasked!` invocations
+- Inside `mask!`, `mask_format!`, or `unmasked!` invocations
 
 §2.3.1.4 — `#[mask_all]` SHALL emit a compile-time warning for each literal
 it skips, identifying the file, line, and reason for the skip.
@@ -1815,7 +1822,7 @@ expand after attribute proc-macros).
 `mask!(literal)`.
 
 §2.3.2.2 — `format!(template, args...)` SHALL be rewritten as follows:
-- If `template` is a string literal: rewrite to `mask_fmt!(template, args...)`.
+- If `template` is a string literal: rewrite to `mask_format!(template, args...)`.
 - If `template` is not a string literal: leave `format!` unchanged;
   recursively mask any string-literal arguments in `args...`. Emit a
   compile-time warning identifying the unmasked template.
@@ -1823,7 +1830,7 @@ expand after attribute proc-macros).
 §2.3.2.3 — Output macros (`println!`, `eprintln!`, `print!`, `eprint!`,
 `write!`, `writeln!`) SHALL be rewritten as follows:
 - If their template is a string literal: rewrite to
-  `{ let __s = mask_fmt!(template, args...); <original_macro>("{}", __s) }`,
+  `{ let __s = mask_format!(template, args...); <original_macro>("{}", __s) }`,
   preserving the original return type and side effects.
 - If their template is not a string literal: leave the macro unchanged;
   recursively mask any string-literal arguments. Emit a compile-time warning.
@@ -2246,7 +2253,7 @@ verify the following testable assertions:
 `KeyProvider`.
 
 §2.12.1.6 — Fuzz targets (§1.10.4) SHALL include `parse_format_template`
-(mask_fmt parser) and `locator_scan` (CLI scanner). CI SHALL run each for at
+(mask_format parser) and `locator_scan` (CLI scanner). CI SHALL run each for at
 least 10 seconds per PR. Fuzz corpora SHALL be committed to the repository
 and grow from CI findings.
 

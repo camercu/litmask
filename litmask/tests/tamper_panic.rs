@@ -52,8 +52,8 @@ fn decrypt_panics_on_tampered_blob() {
 /// - `litmask/src/lib.rs` — `__decrypt_cstring_call!` shim.
 /// - `litmask-macros/src/mask.rs` — proc-macro entry point; emits
 ///   the type-construction wrappers, no `.expect` of its own.
-/// - `litmask-macros/src/mask_fmt.rs` — proc-macro emission for
-///   `mask_fmt!` (`write_fmt` + `format_args!` per placeholder).
+/// - `litmask-macros/src/mask_format.rs` — proc-macro emission for
+///   `mask_format!` (`write_fmt` + `format_args!` per placeholder).
 /// - `litmask-macros/src/common.rs` — shared `mask_plaintext`
 ///   helper and `OUT_DIR` artifact loader; every `.expect`/`panic!`
 ///   here runs at proc-macro expansion time inside rustc, not in
@@ -77,7 +77,7 @@ fn no_custom_panic_messages_in_decryption_path() {
         ),
         (format!("{manifest}/../litmask-macros/src/mask.rs"), vec![]),
         (
-            format!("{manifest}/../litmask-macros/src/mask_fmt.rs"),
+            format!("{manifest}/../litmask-macros/src/mask_format.rs"),
             vec![
                 // Runs at proc-macro expansion time on a string the
                 // parser has already validated as all-digits; never

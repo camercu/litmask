@@ -1,4 +1,4 @@
-//! Helpers shared across the `mask`, `weak_mask`, `mask_fmt`, and
+//! Helpers shared across the `mask`, `weak_mask`, `mask_format`, and
 //! `unmasked` macros: `OUT_DIR` artifact loading + byte-array token
 //! emission. Each per-macro module owns its own input grammar and
 //! expansion logic; this module owns the small set of utilities that

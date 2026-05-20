@@ -1,5 +1,0 @@
-error: positional arguments must precede named arguments in mask_fmt!
-  --> tests/compile/mask_fmt_positional_after_named.rs:10:45
-   |
-10 |     let _ = mask_fmt!("{} {x}", "a", x = 1, "b");
-   |                                             ^^^

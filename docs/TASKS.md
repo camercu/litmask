@@ -395,13 +395,13 @@ explicit opt-out marker.
 
 ---
 
-## Task 10: `mask_fmt!` basic — literal template, positional args (AFK)
+## Task 10: `mask_format!` basic — literal template, positional args (AFK)
 
 **Implements:** §2.2.1.1–§2.2.1.4, §2.2.2.1, §2.2.2.5, §2.2.2.7,
 §2.2.2.8, §2.2.3.1, §2.2.3.2
 **Blocked by:** Task 5
 
-`mask_fmt!(template_literal, args...)` parses the template, masks each
+`mask_format!(template_literal, args...)` parses the template, masks each
 static fragment between placeholders individually under the same
 encryption as `mask!`, preserves format specifications verbatim
 (`{:>10}`, `{:.3}`, `{:#x}`, `{:?}`, `{:#?}`), splices positional args
@@ -411,21 +411,21 @@ required by §1.9.6.
 
 ### Acceptance Criteria
 
-- [x] `mask_fmt!("x={}, y={:.2}", 1, 2.5)` returns `"x=1, y=2.50"`
-- [x] Output of `mask_fmt!(t, args...)` byte-equals output of `format!(t,
+- [x] `mask_format!("x={}, y={:.2}", 1, 2.5)` returns `"x=1, y=2.50"`
+- [x] Output of `mask_format!(t, args...)` byte-equals output of `format!(t,
       args...)` across debug, hex, padded, and precision specifiers
-- [x] `mask_fmt!(some_var, 1)` fails compilation with the substring
-      `mask_fmt! requires a string literal template at the call site`
+- [x] `mask_format!(some_var, 1)` fails compilation with the substring
+      `mask_format! requires a string literal template at the call site`
 - [x] Strings check shows template fragments are not present in plaintext
 
 ---
 
-## Task 11: `mask_fmt!` named args + implicit captures (AFK)
+## Task 11: `mask_format!` named args + implicit captures (AFK)
 
 **Implements:** §2.2.2.2, §2.2.2.3, §2.2.2.4, §2.2.2.6
 **Blocked by:** Task 10
 
-Named arguments (`mask_fmt!("{x}", x = expr)`) are rewritten to introduce
+Named arguments (`mask_format!("{x}", x = expr)`) are rewritten to introduce
 a `let` binding before the runtime `format!` call so each `expr`
 evaluates exactly once, then referenced positionally. Implicit-capture
 placeholders (Rust 2021 `{var}` with no corresponding named argument) are
@@ -437,10 +437,10 @@ appear anywhere in the compiled binary.
 ### Acceptance Criteria
 
 - [x] GIVEN a side-effecting expression `e` that increments a counter,
-      WHEN `mask_fmt!("{x} {x}", x = e)` is evaluated, THEN the counter
+      WHEN `mask_format!("{x} {x}", x = e)` is evaluated, THEN the counter
       increments exactly once
-- [x] `let var = 7; mask_fmt!("{var}")` returns `"7"`
-- [x] `mask_fmt!("{:>w$}", "hi", w = 5)` returns `"   hi"`
+- [x] `let var = 7; mask_format!("{var}")` returns `"7"`
+- [x] `mask_format!("{:>w$}", "hi", w = 5)` returns `"   hi"`
 - [x] Strings check shows no placeholder name (`x`, `var`, etc.) present
       in plaintext
 - [x] Output matches `format!` byte-for-byte for all named/implicit cases
@@ -457,7 +457,7 @@ its AST and rewrites bare string / byte string / C string literal
 expressions to `mask!(literal)`. Recurses into nested modules,
 functions, blocks, and closures. Skips literals in pattern positions,
 `const`/`static` initializers, attribute arguments, and inside
-`mask!`/`mask_fmt!`/`unmasked!` invocations. Skips `dbg!`, `stringify!`,
+`mask!`/`mask_format!`/`unmasked!` invocations. Skips `dbg!`, `stringify!`,
 `assert_eq!`/`assert_ne!` (no-message form). Each skip emits a
 compile-time warning naming file, line, and reason via the
 **ghost-deprecation hack** decided in the spec amendments: an injected
@@ -487,11 +487,11 @@ a v2 candidate.
 **Blocked by:** Task 12, Task 11
 
 `#[mask_all]` recognizes and rewrites macro families per §2.3.2:
-- `format!(lit, ...)` → `mask_fmt!(lit, ...)`; non-literal template:
+- `format!(lit, ...)` → `mask_format!(lit, ...)`; non-literal template:
   warn, mask literal args recursively
 - `println!`/`eprintln!`/`print!`/`eprint!`/`write!`/`writeln!` with
   literal template: rewrite to
-  `{ let __s = mask_fmt!(t, args...); <macro>("{}", __s) }`
+  `{ let __s = mask_format!(t, args...); <macro>("{}", __s) }`
 - Panic family (`panic!`, `todo!`, `unimplemented!`, `unreachable!`,
   `assert!`/`assert_eq!`/`assert_ne!` with custom message form):
   analogous wrapping with `"{}"` template. The `debug_assert!`
@@ -533,12 +533,12 @@ plaintext under `#[mask_all]`:
   not descend into a macro invocation's `mac.tokens`, so the walker
   cannot see and rewrite literals nested inside arbitrary macro
   bodies. Workaround: wrap each literal manually with `mask!()` /
-  `mask_fmt!()` / `unmasked!()`.
+  `mask_format!()` / `unmasked!()`.
 - **Literals inside `format_args!` invocations.** `format_args!`
   returns `core::fmt::Arguments<'_>` (a borrowed view, not a
-  `String`), so it cannot be swapped for `mask_fmt!` (which returns
+  `String`), so it cannot be swapped for `mask_format!` (which returns
   `String`). Treated as `UserDefined` and warned on. Workaround:
-  rewrite the call to a `format!` (rewritten to `mask_fmt!`) and
+  rewrite the call to a `format!` (rewritten to `mask_format!`) and
   thread the resulting `String` through manually.
 - **`include_str!(...)` / `include_bytes!(...)` / `env!(...)` /
   `option_env!(...)` were rewritten via the `mask!(include_str!(...))`
@@ -554,6 +554,12 @@ plaintext under `#[mask_all]`:
 **Implements:** spec §1.8.1 (revised), §2.1.3–§2.1.8, §2.2 (renamed),
 §2.3.2.5 (revised), §1.9.6 (revised) — all per Amendment 2026-05-17(b)
 **Blocked by:** Task 13
+
+> **Follow-up rename (2026-05-20):** `mask_fmt!` was subsequently
+> renamed to `mask_format!` per spec §2.1.0 (mirror stdlib macro
+> names). Below, every "mask_format!" reference reflects today's
+> canonical name; the historical chain is `maskfmt!` → `mask_fmt!`
+> → `mask_format!`.
 
 Six new dedicated masking macros replace the prior
 `mask!(include_str!(...))` / `mask!(concat!(...))` shim path with a
@@ -587,10 +593,12 @@ unmasked stdlib form directly to its dedicated counterpart:
    invocation as argument fails with the §1.9.6 invalid-literal
    substring. Migration: replace with `mask_include_str!` /
    `mask_concat!`.
-2. `maskfmt!` is **renamed** to `mask_fmt!`. The bare `maskfmt!` name
-   no longer exists. Migration: search-and-replace `maskfmt!` →
-   `mask_fmt!` across all sources, trybuild fixtures, examples, and
-   spec text (spec already updated per Amendment 2026-05-17(b)).
+2. `maskfmt!` is **renamed** to `mask_fmt!` (subsequently renamed
+   again to `mask_format!` on 2026-05-20 — see follow-up note above).
+   The bare `maskfmt!` name no longer exists. Migration: search-and-
+   replace `maskfmt!` → `mask_fmt!` across all sources, trybuild
+   fixtures, examples, and spec text (spec already updated per
+   Amendment 2026-05-17(b)).
 
 **Out of scope (with rationale):**
 
@@ -637,8 +645,9 @@ unmasked stdlib form directly to its dedicated counterpart:
       removed). (`tests/compile/mask_rejects_include_str_shim.rs` +
       `tests/compile/mask_rejects_concat_shim.rs`.)
 - [x] `maskfmt!(...)` fails to resolve as an undefined macro
-      (renamed to `mask_fmt!`). Verified mechanically — the
-      `maskfmt` ident no longer exists anywhere in the codebase.
+      (renamed to `mask_fmt!`, then to `mask_format!` on 2026-05-20).
+      Verified mechanically — the `maskfmt` ident no longer exists
+      anywhere in the codebase.
 - [x] `#[mask_all]` rewrites the six stdlib forms to their dedicated
       `mask_*!` counterparts; round-trip tests cover each.
       (`tests/mask_all.rs::mask_all_rewrites_{include_bytes,env,
@@ -1081,7 +1090,7 @@ but do not alter the input domain
 
 Add `cargo-fuzz` to `.tool-versions`, `shell.nix`, and CI tooling. Create
 `litmask/fuzz/` with two fuzz targets: `parse_format_template` (the
-`mask_fmt!` parser) and `locator_scan` (the CLI scanner). Seed corpora
+`mask_format!` parser) and `locator_scan` (the CLI scanner). Seed corpora
 committed under `litmask/fuzz/corpus/<target>/`. CI runs each for ≥10s
 per PR and uploads any new crashes as artifacts.
 

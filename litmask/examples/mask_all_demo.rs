@@ -38,7 +38,7 @@ mod demo {
         println!("included ={}", included.trim());
         println!("assembled={assembled}");
 
-        // `format!` with a literal template becomes `mask_fmt!`,
+        // `format!` with a literal template becomes `mask_format!`,
         // masking each fragment between placeholders. The
         // high-entropy phrase below must be absent from the binary.
         let n = 7;
@@ -46,7 +46,7 @@ mod demo {
         println!("formatted={formatted}");
 
         // `println!` with a literal template is wrapped so the
-        // formatted result flows through `mask_fmt!` first; the
+        // formatted result flows through `mask_format!` first; the
         // template fragment must be absent from the binary.
         let m = 99;
         println!("praseodymium-tapir-9f2c14-mask-all-macro={m}");
@@ -61,7 +61,7 @@ mod demo {
         }
 
         // `write!`/`writeln!` with a literal template — the template
-        // moves into `mask_fmt!`, the original macro is re-emitted
+        // moves into `mask_format!`, the original macro is re-emitted
         // with a `"{}"` placeholder over the masked result. Writer
         // (first arg) stays positional.
         let mut buf = String::new();
@@ -99,7 +99,7 @@ mod demo {
 
         // The remaining `Output` family (`eprintln!`, `print!`,
         // `eprint!`) shares the println rewrite path. Each fixture
-        // template fragment lands in `mask_fmt!` and the surrounding
+        // template fragment lands in `mask_format!` and the surrounding
         // macro is re-emitted with a `"{}"` placeholder.
         let err_n = 1;
         eprintln!("zirconium-marten-1b8d47-mask-all-macro={err_n}");

@@ -27,7 +27,7 @@ const EXAMPLES: &[&str] = &[
     "weak_mask_demo",
     "byte_cstr_demo",
     "include_str_demo",
-    "mask_fmt_demo",
+    "mask_format_demo",
     "mask_all_demo",
 ];
 
@@ -74,14 +74,14 @@ fn include_str_fixture_absent_from_binary() {
     common::assert_substring_absent(&path, "vermilion-axolotl-7e2d4a");
 }
 
-/// `mask_fmt!` must mask the literal fragments between placeholders
+/// `mask_format!` must mask the literal fragments between placeholders
 /// so the template text never appears in plaintext. Each fragment
 /// phrase is lexically unusual to make the absence assertion
 /// precise.
 #[test]
-fn mask_fmt_fragments_absent_from_binary() {
-    common::build_example("mask_fmt_demo", Profile::Release);
-    let path = common::example_path("mask_fmt_demo", Profile::Release);
+fn mask_format_fragments_absent_from_binary() {
+    common::build_example("mask_format_demo", Profile::Release);
+    let path = common::example_path("mask_format_demo", Profile::Release);
     common::assert_substring_absent(&path, "saffron-koala-2b8e1c");
     common::assert_substring_absent(&path, "amber-otter-4f3d27");
     common::assert_substring_absent(&path, "indigo-marmot-7a3e8b");
@@ -119,7 +119,7 @@ fn mask_all_include_str_and_concat_absent_from_binary() {
 }
 
 /// `format!(template, args...)` inside `#[mask_all]` is rewritten
-/// to `mask_fmt!(template, args...)` when `template` is a string
+/// to `mask_format!(template, args...)` when `template` is a string
 /// literal. The literal-fragment text must be absent from binary
 /// plaintext.
 #[test]
@@ -131,7 +131,7 @@ fn mask_all_format_template_absent_from_binary() {
 
 /// Output macros (`println!` etc.) with a literal template inside
 /// `#[mask_all]` are wrapped so the formatted result flows through
-/// `mask_fmt!` first; the template fragment must be absent from
+/// `mask_format!` first; the template fragment must be absent from
 /// binary plaintext.
 #[test]
 fn mask_all_println_template_absent_from_binary() {
@@ -152,7 +152,7 @@ fn mask_all_panic_message_absent_from_binary() {
 }
 
 /// `write!`/`writeln!` with a literal template inside `#[mask_all]`
-/// are wrapped via `mask_fmt!` so the literal text is masked while
+/// are wrapped via `mask_format!` so the literal text is masked while
 /// the writer side-effect is preserved.
 #[test]
 fn mask_all_write_template_absent_from_binary() {
@@ -246,12 +246,12 @@ fn mask_macros_demo_direct_calls_absent_from_binary() {
 
 /// Placeholder names (named args, implicit captures, dynamic-width
 /// refs) MUST NOT appear in the compiled binary. The fixtures below
-/// are unique tokens used as placeholder names in `mask_fmt_demo`;
+/// are unique tokens used as placeholder names in `mask_format_demo`;
 /// their absence locks the proc-macro's positional rewriting.
 #[test]
-fn mask_fmt_placeholder_names_absent_from_binary() {
-    common::build_example("mask_fmt_demo", Profile::Release);
-    let path = common::example_path("mask_fmt_demo", Profile::Release);
+fn mask_format_placeholder_names_absent_from_binary() {
+    common::build_example("mask_format_demo", Profile::Release);
+    let path = common::example_path("mask_format_demo", Profile::Release);
     // Named arg.
     common::assert_substring_absent(&path, "vermilion_finch_5c2e9a");
     // Implicit-capture local name.

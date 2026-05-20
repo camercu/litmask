@@ -1,0 +1,5 @@
+error: `1abc` is not a valid Rust identifier and cannot be used as a mask_format! implicit-capture placeholder
+  --> tests/compile/mask_format_invalid_placeholder_name.rs:10:26
+   |
+10 |     let _ = mask_format!("{1abc}");
+   |                          ^^^^^^^^

@@ -1,5 +1,0 @@
-error: positional argument 1 not provided to mask_fmt! (only 1 given)
- --> tests/compile/mask_fmt_too_few_args.rs:7:23
-  |
-7 |     let _ = mask_fmt!("{} {} {}", "only-one");
-  |                       ^^^^^^^^^^

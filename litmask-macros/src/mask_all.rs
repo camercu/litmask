@@ -1,6 +1,6 @@
 //! `#[mask_all]` proc-macro attribute: walks the AST of an attributed
 //! module and rewrites string-shaped literals into the appropriate
-//! `mask!` / `mask_fmt!` form so that the plaintext never lands in the
+//! `mask!` / `mask_format!` form so that the plaintext never lands in the
 //! compiled binary.
 //!
 //! The walker tracks a small context bitset that gates rewriting:
@@ -12,7 +12,7 @@
 //! - Inside attribute arguments: skip implicitly — `VisitMut` walks
 //!   attribute meta items as token streams, not expressions, so they
 //!   never reach the rewrite path.
-//! - Inside `mask!` / `mask_fmt!` / `unmasked!` / `weak_mask!`: skip;
+//! - Inside `mask!` / `mask_format!` / `unmasked!` / `weak_mask!`: skip;
 //!   the user has already made an explicit choice.
 //! - Inside `dbg!` / `stringify!` / `assert_eq!` / `assert_ne!` (no
 //!   custom message form): skip; the literal is used for diagnostic
@@ -106,7 +106,7 @@ impl SkipReason {
 /// the custom-message form).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MacroFamily {
-    /// `mask!`, `mask_fmt!`, `unmasked!`, `weak_mask!` — explicit user
+    /// `mask!`, `mask_format!`, `unmasked!`, `weak_mask!` — explicit user
     /// choice; never rewritten, never warned.
     SkipExplicit,
     /// `dbg!`, `stringify!`, `compile_error!`, `cfg!`, `file!`,
@@ -119,17 +119,17 @@ enum MacroFamily {
     /// masking their messages would add a `.rodata` blob and a
     /// runtime decrypt that's never observed in shipping binaries.
     SkipDiagnostic,
-    /// `format!` — rewritten to `mask_fmt!`.
+    /// `format!` — rewritten to `mask_format!`.
     Format,
     /// `println!`, `eprintln!`, `print!`, `eprint!` — wrapped via
-    /// `mask_fmt!` and re-emitted with a `"{}"` placeholder for the
+    /// `mask_format!` and re-emitted with a `"{}"` placeholder for the
     /// formatted result.
     Output,
     /// `write!`, `writeln!` — like [`Output`] but the writer occupies
     /// the first argument; the template starts at argument index 1.
     Write,
     /// `panic!`, `todo!`, `unimplemented!`, `unreachable!` — wrapped
-    /// via `mask_fmt!`, preserving the unwinding behavior.
+    /// via `mask_format!`, preserving the unwinding behavior.
     Panic,
     /// `assert!` with a custom-message argument, or `assert_eq!` /
     /// `assert_ne!` with the equivalent custom-message form. The
@@ -162,7 +162,7 @@ fn classify_macro(mac: &syn::Macro) -> MacroFamily {
         return MacroFamily::UserDefined;
     };
     match name.as_str() {
-        "mask" | "mask_fmt" | "unmasked" | "weak_mask" => MacroFamily::SkipExplicit,
+        "mask" | "mask_format" | "unmasked" | "weak_mask" => MacroFamily::SkipExplicit,
         // `debug_assert!` / `_eq!` / `_ne!` expand to
         // `if cfg!(debug_assertions) { assert!(...) }`; release
         // builds dead-code-eliminate the body, so masking the
@@ -246,7 +246,7 @@ fn count_top_level_args(tokens: &TokenStream2) -> usize {
 #[allow(clippy::struct_field_names)]
 #[derive(Default)]
 struct MaskAllWalker {
-    /// Depth inside a `SkipExplicit` (`mask!` / `mask_fmt!` /
+    /// Depth inside a `SkipExplicit` (`mask!` / `mask_format!` /
     /// `unmasked!` / `weak_mask!`) or `SkipDiagnostic` (`dbg!` /
     /// `stringify!` / bare `assert*!` family / `compile_error!` /
     /// `cfg!` / `file!` / `line!` / `column!` / `module_path!`)
@@ -363,7 +363,7 @@ impl MaskAllWalker {
     /// Generic rewriter for "head, template, args..." macros:
     /// - parses the body as `(head_exprs[..head_arity], template,
     ///   rest)`,
-    /// - if the template parses as a `LitStr`, emits a `mask_fmt!`-
+    /// - if the template parses as a `LitStr`, emits a `mask_format!`-
     ///   based rewrite,
     /// - otherwise returns `None` silently — an empty body
     ///   (`panic!()`), a non-literal template (`format!(my_tmpl,
@@ -375,7 +375,7 @@ impl MaskAllWalker {
     ///
     /// `shape` controls the outer form:
     /// - `RewriteShape::Replace`: the entire invocation becomes a
-    ///   single `mask_fmt!(...)` call (used for `format!`).
+    ///   single `mask_format!(...)` call (used for `format!`).
     /// - `RewriteShape::Wrap`: the invocation becomes a block that
     ///   binds the masked string and calls the original macro with
     ///   the head positions followed by `"{}", __s` (used for
@@ -400,7 +400,7 @@ impl MaskAllWalker {
         let s = mixed_site_s();
         let rewritten: Expr = match shape {
             RewriteShape::Replace => syn::parse_quote! {
-                ::litmask::mask_fmt!(#template_and_args)
+                ::litmask::mask_format!(#template_and_args)
             },
             RewriteShape::Wrap => {
                 let head_prefix = if head_tokens.is_empty() {
@@ -409,7 +409,7 @@ impl MaskAllWalker {
                     quote! { #head_tokens, }
                 };
                 syn::parse_quote! {{
-                    let #s = ::litmask::mask_fmt!(#template_and_args);
+                    let #s = ::litmask::mask_format!(#template_and_args);
                     #macro_name!(#head_prefix "{}", #s)
                 }}
             }
@@ -420,9 +420,9 @@ impl MaskAllWalker {
 
 #[derive(Clone, Copy)]
 enum RewriteShape {
-    /// Replace the entire invocation with a `mask_fmt!(...)` call.
+    /// Replace the entire invocation with a `mask_format!(...)` call.
     Replace,
-    /// Wrap as `{ let __s = mask_fmt!(...); <macro>(<head>, "{}", __s) }`.
+    /// Wrap as `{ let __s = mask_format!(...); <macro>(<head>, "{}", __s) }`.
     Wrap,
 }
 

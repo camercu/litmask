@@ -312,9 +312,9 @@ pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
 /// followed by the call site's `file` path, `line`, `column`, and
 /// the `plaintext` being encrypted — all keyed on `seed`.
 ///
-/// **Why include plaintext.** `mask_fmt!` synthesizes one `mask!()`
+/// **Why include plaintext.** `mask_format!` synthesizes one `mask!()`
 /// per template fragment with all fragments routed through the
-/// `mask_fmt!` invocation's span, so the `(file, line, column)`
+/// `mask_format!` invocation's span, so the `(file, line, column)`
 /// triple alone is not unique across mask invocations within a
 /// single proc-macro expansion. Mixing the plaintext into the
 /// keyed hash guarantees that two `mask!()` calls with distinct
@@ -561,9 +561,9 @@ mod tests {
     #[test]
     fn nonce_for_call_site_changes_with_plaintext() {
         // Multiple synthesized `mask!()` calls can share the same
-        // (file, line, column) — e.g., `mask_fmt!` emits one
+        // (file, line, column) — e.g., `mask_format!` emits one
         // `mask!()` per template fragment with all fragments
-        // routed through the `mask_fmt!` invocation's span.
+        // routed through the `mask_format!` invocation's span.
         // Distinct plaintexts at the same span MUST get distinct
         // nonces; otherwise two ciphertexts share `(key, nonce)`
         // and their XOR leaks plaintext.
