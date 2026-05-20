@@ -26,6 +26,7 @@ extern crate alloc;
 use chacha20poly1305::aead::{Aead, generic_array::GenericArray};
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
 
+pub mod base64url;
 pub mod cipher;
 
 /// Length of every symmetric key in bytes. ChaCha20-Poly1305 and

@@ -38,7 +38,6 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-mod base64url;
 mod error;
 mod key;
 mod provider;

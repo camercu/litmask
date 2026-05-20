@@ -28,7 +28,6 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use base64ct::{Base64UrlUnpadded, Encoding};
 use rand_chacha::ChaCha20Rng;
 // `Rng` is the rand_core 0.10 renaming of the former `RngCore`; it
 // provides `fill_bytes` for any seedable RNG. `getrandom::fill` is the
@@ -38,7 +37,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 use litmask_internal::{
     CipherId, FormatVersion, KEY_LEN, NONCE_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN, aead_encrypt,
-    assemble_wrapper, nonce_for_wrapper,
+    assemble_wrapper, base64url, nonce_for_wrapper,
 };
 
 const CONFIG_HEADER: &str = "\
@@ -76,7 +75,7 @@ pub fn emit() {
     // generated seed. Print it via `cargo:warning=` so it lands in
     // the developer's terminal output even when stderr is captured.
     if profile == Profile::Release && seed_source == SeedSource::Fresh {
-        let encoded = Base64UrlUnpadded::encode_string(&seed);
+        let encoded = base64url::encode(&seed);
         println!(
             "cargo:warning=litmask: release build generated a fresh RNG seed. Capture this value for reproducible rebuilds: LITMASK_RNG_SEED={encoded}",
         );
@@ -257,7 +256,7 @@ fn source_seed_with_env_and_profile(
 fn decode_env_seed(raw: &OsString) -> [u8; KEY_LEN] {
     let text = raw.to_str().expect("LITMASK_RNG_SEED must be valid UTF-8");
     let mut decoded = Zeroizing::new(
-        Base64UrlUnpadded::decode_vec(text).expect("LITMASK_RNG_SEED must be base64url-encoded"),
+        base64url::decode(text).expect("LITMASK_RNG_SEED must be base64url-encoded"),
     );
     let seed = <[u8; KEY_LEN]>::try_from(decoded.as_slice())
         .expect("LITMASK_RNG_SEED must decode to exactly 32 bytes");
@@ -281,8 +280,8 @@ fn profile_dir_of(out_dir: &Path) -> PathBuf {
 }
 
 fn write_config(path: &Path, unlock_key: &[u8; KEY_LEN], wrapper: &[u8; WRAPPER_LEN]) {
-    let unlock_key_text = Base64UrlUnpadded::encode_string(unlock_key);
-    let locator_text = Base64UrlUnpadded::encode_string(&wrapper[..NONCE_LEN]);
+    let unlock_key_text = base64url::encode(unlock_key);
+    let locator_text = base64url::encode(&wrapper[..NONCE_LEN]);
 
     let body = format!(
         "{CONFIG_HEADER}\nunlock_key = \"{unlock_key_text}\"\nlocator = \"{locator_text}\"\nlength = {WRAPPER_LEN}\n"
@@ -391,7 +390,7 @@ mod tests {
         fs::write(persist_path(&dir), canned_persist).expect("seed file");
 
         let canned_env = [0xCDu8; KEY_LEN];
-        let encoded: OsString = Base64UrlUnpadded::encode_string(&canned_env).into();
+        let encoded: OsString = base64url::encode(&canned_env).into();
 
         let (seed, source) =
             source_seed_with_env_and_profile(dir.path(), Some(encoded), Profile::Debug);
@@ -426,7 +425,7 @@ mod tests {
         // PARENT: spawn self with the env set + marker.
         let dir = TempDir::new().expect("tempdir");
         let canned = [0xCDu8; KEY_LEN];
-        let encoded = Base64UrlUnpadded::encode_string(&canned);
+        let encoded = base64url::encode(&canned);
 
         let exe = std::env::current_exe().expect("current_exe");
         let output = std::process::Command::new(&exe)

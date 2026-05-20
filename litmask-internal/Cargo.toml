@@ -10,6 +10,7 @@ publish.workspace = true
 include = ["src/**/*"]
 
 [dependencies]
+base64ct = { version = "1", features = ["alloc"] }
 blake3 = { version = "1", default-features = false }
 chacha20poly1305 = { version = "0.10", default-features = false, features = [
   "alloc",

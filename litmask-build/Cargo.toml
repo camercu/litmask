@@ -11,7 +11,6 @@ include = ["src/**/*"]
 
 [dependencies]
 litmask-internal.workspace = true
-base64ct = { version = "1", features = ["alloc"] }
 rand_chacha = "0.10"
 rand_core = "0.10"
 getrandom = "0.4"
