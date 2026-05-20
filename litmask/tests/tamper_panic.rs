@@ -88,15 +88,17 @@ fn no_custom_panic_messages_in_decryption_path() {
         (
             format!("{manifest}/../litmask-macros/src/common.rs"),
             vec![
-                // All four call sites run at proc-macro expansion
-                // time inside rustc — the mask_plaintext helper
-                // loads build artifacts and AEAD-encrypts the
-                // plaintext before emitting tokens. None reaches
-                // the user binary.
+                // All call sites run at proc-macro expansion time
+                // inside rustc — the mask_plaintext helper loads
+                // build artifacts and AEAD-encrypts the plaintext
+                // before emitting tokens, and read_lit_str_path
+                // resolves path-shaped macro arguments against
+                // CARGO_MANIFEST_DIR. None reaches the user binary.
                 r#".expect("artifact cache mutex poisoned")"#,
                 r#"panic!("litmask: {name} expected {N} bytes, found {}", bytes.len()))"#,
                 r#".expect("litmask: OUT_DIR not set; did you add a build.rs running litmask_build::emit()?")"#,
                 r#".expect("AEAD encryption failed during litmask macro expansion")"#,
+                r#"panic!("{macro_name}!: CARGO_MANIFEST_DIR not set")"#,
             ],
         ),
     ];

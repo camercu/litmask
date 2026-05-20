@@ -95,6 +95,48 @@ pub(crate) fn require_lit_str(
     }
 }
 
+/// Parse `input` as a single-string-literal path argument, resolve it
+/// against the consumer crate's `CARGO_MANIFEST_DIR`, and read the
+/// file via `reader`. Returns the parsed `LitStr` (for span-preserving
+/// downstream emission) plus the read content on success.
+///
+/// `reader` decides the read shape: pass `std::fs::read_to_string` for
+/// `mask_include_str!` (UTF-8 validated at proc-macro time) or
+/// `std::fs::read` for `mask_include_bytes!` (raw bytes). The signature
+/// preserves UTF-8 fail-fast semantics — invalid UTF-8 in an
+/// `include_str!`-shaped file fails the compile, not the user's
+/// runtime.
+///
+/// Error detail echoes the user's literal path, not the resolved
+/// absolute path, so trybuild snapshots stay portable and local FS
+/// layout doesn't leak into diagnostics.
+///
+/// # Panics
+///
+/// Panics at proc-macro expansion time if `CARGO_MANIFEST_DIR` is unset.
+/// Cargo always sets this for user crates; an unset value indicates a
+/// build invoked outside cargo's normal envelope.
+pub(crate) fn read_lit_str_path<T>(
+    input: proc_macro::TokenStream,
+    macro_name: &'static str,
+    reader: impl FnOnce(&std::path::Path) -> std::io::Result<T>,
+) -> Result<(LitStr, T), syn::Error> {
+    let path_lit = require_lit_str(input, macro_name, "requires a string literal path")?;
+    let path_str = path_lit.value();
+    let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR")
+        .unwrap_or_else(|| panic!("{macro_name}!: CARGO_MANIFEST_DIR not set"));
+    let resolved = PathBuf::from(manifest_dir).join(&path_str);
+    let content = reader(&resolved).map_err(|e| {
+        compile_error(
+            path_lit.span(),
+            macro_name,
+            FailTag::ReadFailure,
+            &format!("could not read `{path_str}`: {e}"),
+        )
+    })?;
+    Ok((path_lit, content))
+}
+
 /// Process-lifetime cache of `OUT_DIR` artifact contents keyed by file
 /// name. `Zeroizing<Vec<u8>>` keeps the type-level signal that the
 /// cached buffers carry secret material (`litmask_key.bin`,

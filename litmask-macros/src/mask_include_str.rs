@@ -5,38 +5,16 @@
 //! `mask!(include_str!(...))` shim's behaviour.
 
 use std::fs;
-use std::path::PathBuf;
 
 use proc_macro::TokenStream;
 
-use crate::common::{FailTag, compile_error, mask_str, require_lit_str};
+use crate::common::{mask_str, read_lit_str_path};
 
 const MACRO_NAME: &str = "mask_include_str";
 
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
-    let path_lit = match require_lit_str(input, MACRO_NAME, "requires a string literal path") {
-        Ok(lit) => lit,
-        Err(e) => return e.to_compile_error().into(),
-    };
-    let path_str = path_lit.value();
-    let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR")
-        .expect("mask_include_str!: CARGO_MANIFEST_DIR not set");
-    let resolved = PathBuf::from(manifest_dir).join(&path_str);
-    // Error detail echoes the user's literal path, not the resolved
-    // absolute path, so trybuild snapshots stay portable and local FS
-    // layout doesn't leak into diagnostics.
-    let content = match fs::read_to_string(&resolved) {
-        Ok(c) => c,
-        Err(e) => {
-            return compile_error(
-                path_lit.span(),
-                MACRO_NAME,
-                FailTag::ReadFailure,
-                &format!("could not read `{path_str}`: {e}"),
-            )
-            .to_compile_error()
-            .into();
-        }
-    };
-    mask_str(path_lit.span(), content.into_bytes()).into()
+    match read_lit_str_path(input, MACRO_NAME, |p| fs::read_to_string(p)) {
+        Ok((path_lit, content)) => mask_str(path_lit.span(), content.into_bytes()).into(),
+        Err(e) => e.to_compile_error().into(),
+    }
 }
