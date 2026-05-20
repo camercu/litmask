@@ -1,9 +1,12 @@
-//! Demonstrates `mask_include_str!(...)`.
+//! `mask_include_str!("path")` reads the file at compile time and
+//! masks its contents. Use for embedded config templates, baked-in
+//! prompts, or any string payload too large for a literal.
 //!
-//! Paths are resolved relative to `CARGO_MANIFEST_DIR`. The fixture
-//! uses a lexically unusual phrase so the integration test that
-//! asserts it is absent from the compiled binary cannot
-//! false-positive against std / dependency text.
+//! Path is resolved relative to `CARGO_MANIFEST_DIR`. Edits to the
+//! included file do NOT auto-rebuild on stable Rust — see the
+//! macro's rustdoc for the workaround.
+//!
+//! Verify masking via the strings/grep recipe in `hello_world.rs`.
 
 use litmask::mask_include_str;
 

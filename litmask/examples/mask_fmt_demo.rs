@@ -1,11 +1,15 @@
-//! Demonstrates `mask_fmt!`. The fragment phrases between placeholders
-//! plus the unique placeholder names exercised below are unique
-//! enough that the integration test scrub can assert they are absent
-//! from the compiled release binary.
+//! `mask_fmt!` — masked `format!`. Each literal fragment between
+//! placeholders is encrypted separately; placeholder names never
+//! land in the binary.
+//!
+//! Verify masking via the strings/grep recipe in `hello_world.rs`.
 
 use litmask::mask_fmt;
 
 fn main() {
+    // ── Realistic usage ──
+    // The static fragments (`saffron-...` and `amber-...`) are
+    // masked; the runtime values are spliced in at format time.
     let user_id = 42;
     let amount = 99.95;
     let s = mask_fmt!(
@@ -15,23 +19,22 @@ fn main() {
     );
     println!("{s}");
 
-    // Named arg: the binary must not carry the placeholder name
-    // `vermilion_finch_5c2e9a`.
+    // ── Placeholder-name probes ──
+    // The unusual identifier names below double as scrub fixtures:
+    // the example_scrub test asserts they're absent from the
+    // compiled binary, proving `mask_fmt!` rewrites named /
+    // implicit-capture / dynamic-width references to positional
+    // form before emission.
     let named = mask_fmt!(
         "indigo-marmot-7a3e8b={vermilion_finch_5c2e9a}",
         vermilion_finch_5c2e9a = 1u32,
     );
     println!("{named}");
 
-    // Implicit capture: the binary must not carry the local name
-    // `cobalt_terrapin_4b6f12`, which we capture against
-    // `{cobalt_terrapin_4b6f12}` in the template.
     let cobalt_terrapin_4b6f12 = "ok";
     let captured = mask_fmt!("crimson-bobcat-9d1c47={cobalt_terrapin_4b6f12}");
     println!("{captured}");
 
-    // Dynamic width: the binary must not carry the dynamic-ref name
-    // `magenta_lemur_3e8a14`.
     let dynamic = mask_fmt!(
         "ochre-hedgehog-2f5d8e={:>magenta_lemur_3e8a14$}",
         "x",

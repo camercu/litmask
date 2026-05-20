@@ -1,17 +1,27 @@
-//! Minimal end-to-end example: mask a public-domain fixture string
-//! and print the decrypted plaintext at runtime.
+//! Minimal end-to-end example: mask a string at compile time,
+//! decrypt at runtime.
 //!
-//! The fixture is Mark Twain (d. 1910, US public domain). It is
-//! lexically unusual enough that a `strings` grep for the substring
-//! is unlikely to false-positive against std / dependency text.
-//!
-//! Run with `LITMASK_UNLOCK_KEY` set to the value found in
-//! `target/<profile>/litmask.config`:
+//! Without `mask!`, the Twain quotation below would land verbatim
+//! in the compiled binary's `.rodata` and be recoverable by
+//! `strings(1)`. With `mask!`, it's AEAD-encrypted at compile time
+//! and decrypted on first access. Prove it to yourself:
 //!
 //! ```sh
-//! LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' target/debug/litmask.config) \
-//!     cargo run --example hello_world
+//! cargo build --release --example hello_world
+//! strings target/release/examples/hello_world | grep "greatly exaggerated"
+//! # (no output — the plaintext is absent from the binary)
+//!
+//! LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' target/release/litmask.config) \
+//!     cargo run --release --example hello_world
+//! # prints the decrypted quotation at runtime
 //! ```
+//!
+//! The fixture is Mark Twain (d. 1910, US public domain), chosen so
+//! the `strings` grep above can't false-positive against std or
+//! dependency text. Every example in this directory uses the same
+//! verify-via-strings recipe; the build requires a `build.rs`
+//! calling `litmask_build::emit()` — see the workspace `build.rs`
+//! for the canonical setup.
 
 use litmask::mask;
 
