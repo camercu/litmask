@@ -45,6 +45,18 @@ const HEADER_LEN: usize = 2 + NONCE_LEN;
 /// Total wrapper byte count: header + 32-byte encrypted `mask_key` + tag.
 pub const WRAPPER_LEN: usize = HEADER_LEN + KEY_LEN + TAG_LEN;
 
+// Compile-time guards on wire-format invariants. These relationships
+// are load-bearing — `assemble_wrapper` / `parse_wrapper` index into a
+// `[u8; WRAPPER_LEN]` assuming HEADER_LEN bytes of header followed by
+// WRAPPER_BODY_LEN bytes of `ciphertext || tag`. A future tweak that
+// breaks the math (adding a header byte, changing TAG_LEN) silently
+// misaligns every wrapper read; these `const _` blocks fail the build
+// instead.
+const _: () = assert!(HEADER_LEN == 2 + NONCE_LEN);
+const _: () = assert!(WRAPPER_LEN == HEADER_LEN + KEY_LEN + TAG_LEN);
+const _: () = assert!(NONCE_LEN < HEADER_LEN);
+const _: () = assert!(WRAPPER_LEN > HEADER_LEN);
+
 /// BLAKE3 domain separator for per-call-site nonces.
 const NONCE_TAG_CALL_SITE: &[u8] = b"litmask-nonce";
 
@@ -138,6 +150,9 @@ impl TryFrom<u8> for CipherId {
 /// Length of the AEAD body that follows the wrapper header: 32 bytes
 /// of `mask_key` ciphertext + 16 bytes of authentication tag.
 pub const WRAPPER_BODY_LEN: usize = KEY_LEN + TAG_LEN;
+
+const _: () = assert!(WRAPPER_BODY_LEN == KEY_LEN + TAG_LEN);
+const _: () = assert!(WRAPPER_LEN == HEADER_LEN + WRAPPER_BODY_LEN);
 
 /// A parsed wrapper, decomposed into its typed header fields plus
 /// borrowed nonce and `ciphertext || tag` body.
