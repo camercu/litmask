@@ -5,6 +5,8 @@
 //! time (in the build-script helper) and at proc-macro expansion time;
 //! the runtime crate decrypts only.
 
+use zeroize::Zeroizing;
+
 use crate::{
     AeadError, CipherId, KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, WrapperParseError, aead_decrypt,
     parse_wrapper,
@@ -59,7 +61,16 @@ pub fn decrypt_wrapper(
         WrapperParseError::UnknownFormatVersion(_) => DecryptError::UnsupportedFormat,
         WrapperParseError::UnknownCipherId(_) => DecryptError::UnsupportedCipher,
     })?;
-    let plaintext = aead_decrypt(parsed.cipher, unlock_key, parsed.nonce, parsed.body)?;
+    // The intermediate Vec carries the recovered mask key in plaintext.
+    // Wrap in Zeroizing so the heap buffer wipes when this function
+    // returns — without it, the 32 plaintext bytes would linger in the
+    // allocator until the slot is reused.
+    let plaintext = Zeroizing::new(aead_decrypt(
+        parsed.cipher,
+        unlock_key,
+        parsed.nonce,
+        parsed.body,
+    )?);
     plaintext
         .as_slice()
         .try_into()
