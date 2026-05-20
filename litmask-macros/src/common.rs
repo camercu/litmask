@@ -171,20 +171,63 @@ pub(crate) fn byte_array_token(bytes: &[u8]) -> TokenStream {
 /// empty, or when no prefix match exists — both cases degrade
 /// gracefully (the nonce remains correct, only the path-stability
 /// property is forfeited).
+pub(crate) fn canonicalize_file_path(raw_file: String, manifest_dir: Option<&str>) -> String {
+    let Some(dir) = manifest_dir else {
+        return raw_file;
+    };
+    if dir.is_empty() {
+        return raw_file;
+    }
+    for sep in ['/', '\\'] {
+        let mut prefix = String::with_capacity(dir.len() + 1);
+        prefix.push_str(dir);
+        prefix.push(sep);
+        if let Some(rest) = raw_file.strip_prefix(&prefix) {
+            return rest.to_string();
+        }
+    }
+    raw_file
+}
+
 /// Return type of a masking macro's runtime expansion. Drives the
 /// decrypt-and-construct expression emitted alongside the encrypted
-/// blob constant.
+/// blob constant. Private to this module — callers select via the
+/// typed [`mask_str`] / [`mask_bytes`] / [`mask_cstr`] helpers.
 #[derive(Clone, Copy)]
-pub(crate) enum MaskKind {
-    /// `String` from UTF-8 bytes — `mask!("text")`, `mask_include_str!`,
-    /// `mask_concat!`, `mask_env!`, `mask_option_env!`'s `Some` branch,
-    /// `mask_file!`.
+enum MaskKind {
+    /// `String` from UTF-8 bytes.
     Str,
-    /// `Vec<u8>` from raw bytes — `mask!(b"...")`, `mask_include_bytes!`.
+    /// `Vec<u8>` from raw bytes.
     Bytes,
-    /// `CString` from UTF-8 bytes (NUL re-added at decode time) —
-    /// `mask!(c"...")`.
+    /// `CString` from UTF-8 bytes (NUL re-added at decode time).
     CStr,
+}
+
+/// AEAD-encrypt `plaintext` under the build's `mask_key` and emit a
+/// runtime decrypt expression returning `String` (UTF-8). Used by
+/// every masking macro whose output is a string: `mask!("text")`,
+/// `mask_include_str!`, `mask_concat!`, `mask_env!`,
+/// `mask_option_env!`'s `Some` branch, `mask_file!`,
+/// `mask_format!`'s per-fragment masking.
+pub(crate) fn mask_str(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
+    mask_plaintext(plaintext, span, MaskKind::Str)
+}
+
+/// AEAD-encrypt `plaintext` and emit a runtime decrypt expression
+/// returning `Vec<u8>`. Used by `mask!(b"...")` and
+/// `mask_include_bytes!`.
+pub(crate) fn mask_bytes(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
+    mask_plaintext(plaintext, span, MaskKind::Bytes)
+}
+
+/// AEAD-encrypt `plaintext` and emit a runtime decrypt expression
+/// returning `CString` (NUL re-added at decode time). Used by
+/// `mask!(c"...")`. The NUL terminator is dropped from `plaintext`
+/// before encryption and reconstituted via `__decrypt_cstring_call!`
+/// at the user's call site; that macro emits a `compile_error!`
+/// under `--no-default-features`.
+pub(crate) fn mask_cstr(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
+    mask_plaintext(plaintext, span, MaskKind::CStr)
 }
 
 /// Encrypt `plaintext` under the build's `mask_key` keyed on the
@@ -192,21 +235,13 @@ pub(crate) enum MaskKind {
 /// then emit a `{ const __LITMASK_BLOB = ...; decrypt(...) }` block
 /// that returns a value of the kind-appropriate type at runtime.
 ///
-/// All six call-site masking macros (`mask!`, `mask_include_str!`,
-/// `mask_include_bytes!`, `mask_concat!`, `mask_env!`,
-/// `mask_option_env!`, `mask_file!`) share this body once their
-/// input has been resolved at proc-macro time. The helper handles
-/// key/seed loading, nonce derivation, AEAD encryption, secret
-/// zeroization, and the runtime decrypt expression for the
-/// requested return type.
+/// Shared body for every call-site masking macro. Handles key/seed
+/// loading, nonce derivation, AEAD encryption, secret zeroization,
+/// and the runtime decrypt expression for the requested return type.
 ///
 /// `plaintext` is zeroized on return; callers MUST NOT rely on
 /// reading the buffer afterwards.
-pub(crate) fn mask_plaintext(
-    mut plaintext: Vec<u8>,
-    span: proc_macro2::Span,
-    kind: MaskKind,
-) -> TokenStream {
+fn mask_plaintext(mut plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKind) -> TokenStream {
     let mut mask_key = load_out_dir_artifact::<KEY_LEN>("litmask_key.bin");
     let mut seed = load_out_dir_artifact::<KEY_LEN>("litmask_seed.bin");
 
@@ -254,24 +289,6 @@ pub(crate) fn mask_plaintext(
             #decrypt_expr
         }
     }
-}
-
-pub(crate) fn canonicalize_file_path(raw_file: String, manifest_dir: Option<&str>) -> String {
-    let Some(dir) = manifest_dir else {
-        return raw_file;
-    };
-    if dir.is_empty() {
-        return raw_file;
-    }
-    for sep in ['/', '\\'] {
-        let mut prefix = String::with_capacity(dir.len() + 1);
-        prefix.push_str(dir);
-        prefix.push(sep);
-        if let Some(rest) = raw_file.strip_prefix(&prefix) {
-            return rest.to_string();
-        }
-    }
-    raw_file
 }
 
 #[cfg(test)]

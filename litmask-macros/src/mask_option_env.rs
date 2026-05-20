@@ -5,7 +5,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
 
-use crate::common::{MaskKind, mask_plaintext, require_lit_str};
+use crate::common::{mask_str, require_lit_str};
 
 const MACRO_NAME: &str = "mask_option_env";
 
@@ -16,7 +16,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     };
     let name = name_lit.value();
     let expansion = if let Ok(v) = std::env::var(&name) {
-        let masked = mask_plaintext(v.into_bytes(), name_lit.span(), MaskKind::Str);
+        let masked = mask_str(name_lit.span(), v.into_bytes());
         quote! { ::core::option::Option::Some(#masked) }
     } else {
         quote! { ::core::option::Option::<::litmask::__internal::__String>::None }

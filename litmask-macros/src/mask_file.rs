@@ -8,7 +8,7 @@
 
 use proc_macro::TokenStream;
 
-use crate::common::{FailTag, MaskKind, canonicalize_file_path, compile_error, mask_plaintext};
+use crate::common::{FailTag, canonicalize_file_path, compile_error, mask_str};
 
 const MACRO_NAME: &str = "mask_file";
 
@@ -29,10 +29,5 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let raw_file = pm_span.file();
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").ok();
     let file = canonicalize_file_path(raw_file, manifest_dir.as_deref());
-    mask_plaintext(
-        file.into_bytes(),
-        proc_macro2::Span::call_site(),
-        MaskKind::Str,
-    )
-    .into()
+    mask_str(proc_macro2::Span::call_site(), file.into_bytes()).into()
 }

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use proc_macro::TokenStream;
 
-use crate::common::{FailTag, MaskKind, compile_error, mask_plaintext, require_lit_str};
+use crate::common::{FailTag, compile_error, mask_bytes, require_lit_str};
 
 const MACRO_NAME: &str = "mask_include_bytes";
 
@@ -35,5 +35,5 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
             .into();
         }
     };
-    mask_plaintext(content, path_lit.span(), MaskKind::Bytes).into()
+    mask_bytes(path_lit.span(), content).into()
 }

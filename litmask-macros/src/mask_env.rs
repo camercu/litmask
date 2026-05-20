@@ -11,7 +11,7 @@ use proc_macro::TokenStream;
 use syn::parse::{Parse, ParseStream};
 use syn::{LitStr, Token, parse_macro_input};
 
-use crate::common::{FailTag, MaskKind, compile_error, mask_plaintext};
+use crate::common::{FailTag, compile_error, mask_str};
 
 const MACRO_NAME: &str = "mask_env";
 const NON_LITERAL_DETAIL: &str = "requires a string literal name";
@@ -65,7 +65,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let MaskEnvInput { name, custom_msg } = parse_macro_input!(input as MaskEnvInput);
     let name_value = name.value();
     match std::env::var(&name_value) {
-        Ok(value) => mask_plaintext(value.into_bytes(), name.span(), MaskKind::Str).into(),
+        Ok(value) => mask_str(name.span(), value.into_bytes()).into(),
         Err(VarError::NotPresent) => {
             let err = match &custom_msg {
                 // A user-supplied custom message replaces the prose

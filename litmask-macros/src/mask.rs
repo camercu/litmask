@@ -13,68 +13,44 @@ use proc_macro::TokenStream;
 use syn::parse::{Parse, ParseStream};
 use syn::{LitByteStr, LitCStr, LitStr, parse_macro_input};
 
-use crate::common::{FailTag, MaskKind, compile_error, mask_plaintext};
+use crate::common::{FailTag, compile_error, mask_bytes, mask_cstr, mask_str};
 
 const MACRO_NAME: &str = "mask";
 const INVALID_LITERAL_DETAIL: &str = "accepts string, byte string, or C string literals";
 
 /// Implementation of the `#[proc_macro] mask` entry point. Re-exported
 /// at the crate root via a one-line wrapper.
+///
+/// Dispatches to a per-literal-kind helper from
+/// [`crate::common`]. The c-string arm relies on the
+/// `__decrypt_cstring_call!` `macro_rules` dispatcher in
+/// `litmask::lib.rs`, which surfaces a clean `compile_error!` for
+/// the `no-std` feature combination instead of a downstream
+/// "`CString` not found" diagnostic.
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let parsed = parse_macro_input!(input as MaskInput);
-    let span = parsed.span();
-    let kind = parsed.mask_kind();
-    let plaintext = parsed.plaintext();
-    mask_plaintext(plaintext, span, kind).into()
+    match parsed {
+        // `LitCStr::value` returns a `CString`; into_bytes() drops the
+        // NUL terminator. We re-add the NUL at decode time via
+        // `CString::new` so the encrypted blob holds only the payload,
+        // not the terminator.
+        MaskInput::Str(lit) => mask_str(lit.span(), lit.value().into_bytes()),
+        MaskInput::ByteStr(lit) => mask_bytes(lit.span(), lit.value()),
+        MaskInput::CStr(lit) => mask_cstr(lit.span(), lit.value().into_bytes()),
+    }
+    .into()
 }
 
 /// Parsed `mask!` input: one of the three accepted literal kinds.
+/// The per-literal span is preserved through `quote!` interpolation,
+/// so a `mask!()` invocation synthesized by `#[mask_all]` carries the
+/// user's source span (not the attribute's), even when several
+/// synthesized calls share an outer span — the per-literal span gives
+/// the most granular `(file, line, column)` available.
 enum MaskInput {
     Str(LitStr),
     ByteStr(LitByteStr),
     CStr(LitCStr),
-}
-
-impl MaskInput {
-    /// `proc_macro2::Span` of the underlying literal. Preserved
-    /// through `quote!` interpolation, so a `mask!()` invocation
-    /// synthesized by `#[mask_all]` carries the user's source span
-    /// (not the attribute's), even when several synthesized calls
-    /// share an outer span — the per-literal span gives the most
-    /// granular `(file, line, column)` available.
-    fn span(&self) -> proc_macro2::Span {
-        match self {
-            Self::Str(lit) => lit.span(),
-            Self::ByteStr(lit) => lit.span(),
-            Self::CStr(lit) => lit.span(),
-        }
-    }
-
-    fn plaintext(&self) -> Vec<u8> {
-        match self {
-            Self::Str(lit) => lit.value().into_bytes(),
-            Self::ByteStr(lit) => lit.value(),
-            // `LitCStr::value` returns a `CString`; into_bytes() drops
-            // the NUL terminator. We re-add the NUL at decode time via
-            // `CString::new` so the encrypted blob holds only the
-            // payload, not the terminator.
-            Self::CStr(lit) => lit.value().into_bytes(),
-        }
-    }
-
-    /// Map literal kind to the `MaskKind` driving `mask_plaintext`'s
-    /// runtime decrypt expression. The c-string arm relies on the
-    /// `__decrypt_cstring_call!` `macro_rules` dispatcher in
-    /// `litmask::lib.rs`, which surfaces a clean `compile_error!` for
-    /// the `no-std` feature combination instead of a downstream
-    /// "`CString` not found" diagnostic.
-    fn mask_kind(&self) -> MaskKind {
-        match self {
-            Self::Str(_) => MaskKind::Str,
-            Self::ByteStr(_) => MaskKind::Bytes,
-            Self::CStr(_) => MaskKind::CStr,
-        }
-    }
 }
 
 impl Parse for MaskInput {

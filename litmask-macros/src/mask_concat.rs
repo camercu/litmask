@@ -16,7 +16,7 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{LitStr, Token, parse_macro_input};
 
-use crate::common::{FailTag, MaskKind, compile_error, mask_plaintext};
+use crate::common::{FailTag, compile_error, mask_str};
 
 const MACRO_NAME: &str = "mask_concat";
 const INVALID_DETAIL: &str =
@@ -42,7 +42,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
             Err(e) => return e.to_compile_error().into(),
         }
     }
-    mask_plaintext(acc.into_bytes(), span, MaskKind::Str).into()
+    mask_str(span, acc.into_bytes()).into()
 }
 
 struct MaskConcatArgs(Punctuated<MaskConcatArg, Token![,]>);
