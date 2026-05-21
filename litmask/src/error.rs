@@ -39,6 +39,10 @@ pub enum KeyError {
     /// The unlock-key source is unavailable (env var unset, file
     /// missing, etc.).
     NotFound,
+    /// The unlock-key source exists but is not readable by the
+    /// current process (file mode disallows read access, ACL denial,
+    /// etc.).
+    Permission,
     /// The unlock-key bytes are malformed (wrong length, bad
     /// encoding).
     InvalidFormat,
@@ -48,6 +52,7 @@ impl fmt::Display for KeyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let tag = match self {
             Self::NotFound => "not_found",
+            Self::Permission => "permission",
             Self::InvalidFormat => "invalid_format",
         };
         f.write_str(tag)

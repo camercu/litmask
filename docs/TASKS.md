@@ -711,18 +711,18 @@ runs.
 
 ### Acceptance Criteria
 
-- [ ] GIVEN a file with a base64url-encoded 32-byte key, WHEN
+- [x] GIVEN a file with a base64url-encoded 32-byte key, WHEN
       `FileProvider::new(path).unlock_key()`, THEN returns `Ok(UnlockKey)`
       with the expected bytes
-- [ ] Missing file → `Err(KeyError::NotFound)`
-- [ ] File mode 000 → `Err(KeyError::Permission)`
-- [ ] File contents not 32 decoded bytes → `Err(KeyError::InvalidFormat)`
-- [ ] `Counted<T>` zeroize-tracking test confirms the file-buffer
+- [x] Missing file → `Err(KeyError::NotFound)`
+- [x] File mode 000 → `Err(KeyError::Permission)`
+- [x] File contents not 32 decoded bytes → `Err(KeyError::InvalidFormat)`
+- [x] `Counted<T>` zeroize-tracking test confirms the file-buffer
       zeroize path runs exactly once after the provider returns
-- [ ] Raw-encoding variant accepts a 32-byte raw file
-- [ ] `litmask/examples/file_provider.rs` builds and runs end-to-end
+- [x] Raw-encoding variant accepts a 32-byte raw file
+- [x] `litmask/examples/file_provider.rs` builds and runs end-to-end
       against a generated key file
-- [ ] Rustdoc on `FileProvider` includes the TOCTOU caveat
+- [x] Rustdoc on `FileProvider` includes the TOCTOU caveat
 
 ---
 
