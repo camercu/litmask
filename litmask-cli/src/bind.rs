@@ -32,28 +32,16 @@ use std::path::{Path, PathBuf};
 use aes_gcm::{Aes256Gcm, Nonce as AesNonce};
 use chacha20poly1305::aead::{Aead as _, KeyInit as _, generic_array::GenericArray};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChaNonce};
-use litmask_internal::{HW_ID_DERIVATION_CONTEXT, base64url};
+// Wire-format constants and the hw-id derivation context are imported
+// from `litmask_internal` so the CLI shares a single canonical source
+// with the runtime crate. A drift here would silently break bind ↔
+// runtime interop: every freshly bound binary would fail to unlock.
+use litmask_internal::{
+    CIPHER_AES_256_GCM, CIPHER_CHACHA20_POLY1305, CIPHER_OFFSET, FORMAT_V1, HEADER_LEN,
+    HW_ID_DERIVATION_CONTEXT, KEY_LEN, NONCE_LEN, NONCE_OFFSET, TAG_LEN, VERSION_OFFSET,
+    WRAPPER_LEN, base64url,
+};
 use zeroize::Zeroizing;
-
-// ── Wire-format constants (§1.7.3) ──────────────────────────
-
-const VERSION_OFFSET: usize = 0;
-const CIPHER_OFFSET: usize = 1;
-const NONCE_OFFSET: usize = 2;
-const NONCE_LEN: usize = 12;
-const HEADER_LEN: usize = 2 + NONCE_LEN;
-const KEY_LEN: usize = 32;
-const TAG_LEN: usize = 16;
-const WRAPPER_LEN: usize = HEADER_LEN + KEY_LEN + TAG_LEN;
-
-const CIPHER_CHACHA20_POLY1305: u8 = 0x01;
-const CIPHER_AES_256_GCM: u8 = 0x02;
-const FORMAT_V1: u8 = 0x01;
-
-// `HW_ID_DERIVATION_CONTEXT` is imported from `litmask_internal` so
-// the CLI and the runtime `HardwareIdProvider` share a single
-// canonical string. A drift would silently break bind ↔ runtime
-// interop: every freshly bound binary would fail to unlock.
 
 // ── Functional core: bind planner ────────────────────────────
 

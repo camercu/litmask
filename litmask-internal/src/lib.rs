@@ -85,11 +85,37 @@ pub const TAG_LEN: usize = 16;
 /// symbol — Cargo's incremental rebuild catches any rename.
 pub const HW_ID_DERIVATION_CONTEXT: &str = "litmask 2026-05-20 HardwareIdProvider derivation";
 
+/// Byte offset of the format-version byte (§1.7.3) inside a wrapper.
+pub const VERSION_OFFSET: usize = 0;
+
+/// Byte offset of the cipher-id byte (§1.7.3) inside a wrapper.
+pub const CIPHER_OFFSET: usize = 1;
+
+/// Byte offset where the AEAD nonce starts inside a wrapper.
+pub const NONCE_OFFSET: usize = 2;
+
 /// 1-byte version + 1-byte cipher id + 12-byte nonce.
-const HEADER_LEN: usize = 2 + NONCE_LEN;
+pub const HEADER_LEN: usize = 2 + NONCE_LEN;
 
 /// Total wrapper byte count: header + 32-byte encrypted `mask_key` + tag.
 pub const WRAPPER_LEN: usize = HEADER_LEN + KEY_LEN + TAG_LEN;
+
+/// On-the-wire byte representing [`FormatVersion::V1`] — the only
+/// version current builds produce. Re-exposed as a `u8` constant so
+/// downstream consumers (notably `litmask-cli` whose dual-cipher
+/// dispatch needs compile-time literals for `match` arms) don't
+/// have to write `FormatVersion::V1.to_byte()` at every call site.
+pub const FORMAT_V1: u8 = 0x01;
+
+/// On-the-wire byte representing [`CipherId::ChaCha20Poly1305`].
+/// Mirrors `CipherId::ChaCha20Poly1305 as u8`; exposed as a free
+/// constant so `match cipher_byte` arms in downstream crates can
+/// pattern-match without the discriminant cast.
+pub const CIPHER_CHACHA20_POLY1305: u8 = 0x01;
+
+/// On-the-wire byte representing [`CipherId::Aes256Gcm`].
+/// Companion of [`CIPHER_CHACHA20_POLY1305`].
+pub const CIPHER_AES_256_GCM: u8 = 0x02;
 
 // Compile-time guards on wire-format invariants. These relationships
 // are load-bearing — `assemble_wrapper` / `parse_wrapper` index into a
@@ -102,6 +128,22 @@ const _: () = assert!(HEADER_LEN == 2 + NONCE_LEN);
 const _: () = assert!(WRAPPER_LEN == HEADER_LEN + KEY_LEN + TAG_LEN);
 const _: () = assert!(NONCE_LEN < HEADER_LEN);
 const _: () = assert!(WRAPPER_LEN > HEADER_LEN);
+// Offset constants are load-bearing for the wrapper layout
+// (§1.7.3) AND for every downstream byte-pattern match (litmask-cli
+// dispatches on `wrapper[CIPHER_OFFSET]`). Pin the three offsets so
+// a future header-byte addition reorders them only after the
+// matching wire-format version bump.
+const _: () = assert!(VERSION_OFFSET == 0);
+const _: () = assert!(CIPHER_OFFSET == 1);
+const _: () = assert!(NONCE_OFFSET == 2);
+const _: () = assert!(NONCE_OFFSET + NONCE_LEN == HEADER_LEN);
+// Discriminant constants must equal their `CipherId` / `FormatVersion`
+// counterparts. A future variant rename or discriminant swap would
+// break the byte-level match arms in downstream crates without
+// touching the enum — this guard catches the drift at compile time.
+const _: () = assert!(FORMAT_V1 == FormatVersion::V1 as u8);
+const _: () = assert!(CIPHER_CHACHA20_POLY1305 == CipherId::ChaCha20Poly1305 as u8);
+const _: () = assert!(CIPHER_AES_256_GCM == CipherId::Aes256Gcm as u8);
 
 /// BLAKE3 domain separator for per-call-site nonces.
 const NONCE_TAG_CALL_SITE: &[u8] = b"litmask-nonce";
