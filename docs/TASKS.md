@@ -779,14 +779,14 @@ doubles as a "do not do this in production" cautionary fixture).
 
 ### Acceptance Criteria
 
-- [ ] `StaticProvider::new(k).unlock_key()` returns `Ok(k')` with `k' == k`
-- [ ] Successive calls return identical keys
-- [ ] `init_with(StaticProvider::new(k))` succeeds when `k` matches the
+- [x] `StaticProvider::new(k).unlock_key()` returns `Ok(k')` with `k' == k`
+- [x] Successive calls return identical keys
+- [x] `init_with(StaticProvider::new(k))` succeeds when `k` matches the
       build's `unlock_key`
-- [ ] Rustdoc on `StaticProvider` contains the FOR-TESTS-ONLY warning
+- [x] Rustdoc on `StaticProvider` contains the FOR-TESTS-ONLY warning
       (verified by a doctest that intentionally references the warning
       text, or by `cargo doc` inspection in CI)
-- [ ] `litmask/examples/static_provider.rs` builds and runs end-to-end
+- [x] `litmask/examples/static_provider.rs` builds and runs end-to-end
 
 ---
 

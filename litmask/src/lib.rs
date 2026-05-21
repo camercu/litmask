@@ -48,7 +48,7 @@ pub(crate) use litmask_internal as internal;
 pub use error::{InitError, KeyError};
 pub use key::UnlockKey;
 pub use litmask_internal::KEY_LEN;
-pub use provider::KeyProvider;
+pub use provider::{KeyProvider, StaticProvider};
 
 #[cfg(feature = "std")]
 pub use provider::{EnvVarProvider, FileProvider, KeyEncoding};
