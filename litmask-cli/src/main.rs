@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 mod bind;
+mod config;
 mod inspect;
 
 /// `EX_USAGE` (64): argument-parsing or operator-input failure.

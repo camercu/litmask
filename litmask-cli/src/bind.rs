@@ -130,7 +130,7 @@ pub(crate) fn plan_bind(
     let Ok(salt) = decode_salt(salt_b64) else {
         return BindOutcome::SaltInvalid;
     };
-    let Ok(parsed_config) = parse_config(config_text) else {
+    let Ok(parsed_config) = crate::config::parse(config_text) else {
         return BindOutcome::ConfigMalformed;
     };
 
@@ -218,25 +218,6 @@ pub(crate) fn plan_bind(
     BindOutcome::Success(Commit {
         new_binary_bytes,
         new_config_text,
-    })
-}
-
-struct ParsedConfig {
-    unlock_key: [u8; KEY_LEN],
-    locator: [u8; NONCE_LEN],
-}
-
-fn parse_config(config_text: &str) -> Result<ParsedConfig, ()> {
-    let table: toml::Table = config_text.parse().map_err(|_| ())?;
-    let unlock_key_text = table.get("unlock_key").and_then(|v| v.as_str()).ok_or(())?;
-    let locator_text = table.get("locator").and_then(|v| v.as_str()).ok_or(())?;
-    let unlock_key_bytes = Zeroizing::new(base64url::decode(unlock_key_text).map_err(|_| ())?);
-    let unlock_key: [u8; KEY_LEN] = unlock_key_bytes.as_slice().try_into().map_err(|_| ())?;
-    let locator_bytes = base64url::decode(locator_text).map_err(|_| ())?;
-    let locator: [u8; NONCE_LEN] = locator_bytes.try_into().map_err(|_| ())?;
-    Ok(ParsedConfig {
-        unlock_key,
-        locator,
     })
 }
 

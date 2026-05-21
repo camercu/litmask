@@ -17,7 +17,7 @@
 use std::fs;
 use std::path::Path;
 
-use litmask_internal::base64url;
+use crate::config;
 
 /// Wrapper-locator length (§1.7.3): the wrapper's first 12 bytes —
 /// header byte 0 + cipher byte + the first 10 bytes of the nonce.
@@ -60,7 +60,7 @@ impl Outcome {
 /// Pure functional core: classify a binary against the locator
 /// recorded in a config. No I/O, no globals, deterministic.
 pub(crate) fn plan(config_text: &str, binary_bytes: &[u8]) -> Outcome {
-    let Ok(locator) = parse_locator(config_text) else {
+    let Ok(locator) = config::parse_locator_only(config_text) else {
         return Outcome::ConfigMalformed;
     };
     match count_occurrences(binary_bytes, &locator) {
@@ -103,17 +103,6 @@ impl ShellError {
     }
 }
 
-fn parse_locator(config_text: &str) -> Result<[u8; LOCATOR_LEN], ()> {
-    // `toml::Value::from_str` parses a single value, not a TOML
-    // document — so the leading `#` comment in `litmask.config`
-    // would cause it to bail with "expected nothing". Use the
-    // document-level Table parser instead.
-    let table: toml::Table = config_text.parse().map_err(|_| ())?;
-    let s = table.get("locator").and_then(|v| v.as_str()).ok_or(())?;
-    let bytes = base64url::decode(s).map_err(|_| ())?;
-    bytes.try_into().map_err(|_| ())
-}
-
 /// Count non-overlapping occurrences of `needle` in `haystack`.
 /// `windows(N)` slides one byte at a time so adjacent occurrences
 /// (impossible for a 12-byte random locator in practice, but a
@@ -132,6 +121,7 @@ fn count_occurrences(haystack: &[u8], needle: &[u8; LOCATOR_LEN]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use litmask_internal::base64url;
 
     const LOCATOR: [u8; LOCATOR_LEN] = [0xCDu8; LOCATOR_LEN];
 
@@ -183,38 +173,16 @@ mod tests {
 
     // ── plan: config-malformation paths ───────────────────────
 
+    /// Single round-trip from `plan` to confirm `ConfigMalformed`
+    /// flows from the shared parser into the outcome. Exhaustive
+    /// branch coverage of the parser's reject cases lives in
+    /// `crate::config::tests`; duplicating them here would
+    /// re-assert the same `config::parse_locator_only` contract
+    /// through a thin wrapper.
     #[test]
-    fn plan_missing_locator_field_yields_config_malformed() {
-        let cfg = "unlock_key = \"placeholder\"\nlength = 62\n";
+    fn plan_propagates_config_malformed_from_shared_parser() {
+        let cfg = "unlock_key = \"placeholder\"\nlength = 62\n"; // no locator
         assert_eq!(plan(cfg, &[0u8; 1024]), Outcome::ConfigMalformed);
-    }
-
-    #[test]
-    fn plan_locator_not_string_yields_config_malformed() {
-        let cfg = "locator = 42\nlength = 62\n";
-        assert_eq!(plan(cfg, &[0u8; 1024]), Outcome::ConfigMalformed);
-    }
-
-    #[test]
-    fn plan_locator_bad_base64url_yields_config_malformed() {
-        let cfg = "locator = \"not valid base64!!!\"\nlength = 62\n";
-        assert_eq!(plan(cfg, &[0u8; 1024]), Outcome::ConfigMalformed);
-    }
-
-    #[test]
-    fn plan_locator_wrong_length_yields_config_malformed() {
-        // 16 bytes (24 base64url chars) instead of 12.
-        let too_long = [0xCDu8; 16];
-        let cfg = format!("locator = \"{}\"\n", base64url::encode(&too_long));
-        assert_eq!(plan(&cfg, &[0u8; 1024]), Outcome::ConfigMalformed);
-    }
-
-    #[test]
-    fn plan_non_toml_garbage_yields_config_malformed() {
-        assert_eq!(
-            plan("this is not toml at all", &[]),
-            Outcome::ConfigMalformed
-        );
     }
 
     // ── Outcome.exit_code / stdout_tag pairings ────────────────
