@@ -923,14 +923,14 @@ English explanations. Tags align with the examples in §1.9.3.
 
 ### Acceptance Criteria
 
-- [ ] `format!("{}", InitError::KeyProvider(KeyError::NotFound))` ==
+- [x] `format!("{}", InitError::KeyProvider(KeyError::NotFound))` ==
       `"key_provider:not_found"`
-- [ ] `format!("{}", InitError::KeyProvider(KeyError::Permission))` ==
+- [x] `format!("{}", InitError::KeyProvider(KeyError::Permission))` ==
       `"key_provider:permission"`
-- [ ] `format!("{}", InitError::Decryption)` == `"decryption_failed"`
-- [ ] `format!("{}", InitError::UnsupportedFormat)` == `"unsupported_format"`
-- [ ] `format!("{}", InitError::UnsupportedCipher)` == `"unsupported_cipher"`
-- [ ] No English tag strings (e.g., "the key was not found") appear in
+- [x] `format!("{}", InitError::Decryption)` == `"decryption_failed"`
+- [x] `format!("{}", InitError::UnsupportedFormat)` == `"unsupported_format"`
+- [x] `format!("{}", InitError::UnsupportedCipher)` == `"unsupported_cipher"`
+- [x] No English tag strings (e.g., "the key was not found") appear in
       Display output
 
 ---

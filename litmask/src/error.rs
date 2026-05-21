@@ -70,7 +70,7 @@ impl fmt::Display for InitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::KeyProvider(e) => write!(f, "key_provider:{e}"),
-            Self::Decryption => f.write_str("decryption"),
+            Self::Decryption => f.write_str("decryption_failed"),
             Self::UnsupportedFormat => f.write_str("unsupported_format"),
             Self::UnsupportedCipher => f.write_str("unsupported_cipher"),
         }
@@ -181,11 +181,61 @@ mod tests {
     }
 
     #[test]
-    fn decryption_variant_display_tag_is_terse_and_non_identifying() {
+    fn decryption_variant_display_tag_is_decryption_failed() {
         // Display contributes to operator-facing error logs; the tag
         // must be short and free of litmask-specific vocabulary to
         // satisfy the minimal-plaintext aim of the error surface.
-        assert_eq!(format!("{}", InitError::Decryption), "decryption");
+        // §1.9.3 normatively pins the tag at `"decryption_failed"`.
+        assert_eq!(format!("{}", InitError::Decryption), "decryption_failed");
+    }
+
+    #[test]
+    fn key_provider_permission_display_tag() {
+        assert_eq!(
+            format!("{}", InitError::KeyProvider(KeyError::Permission)),
+            "key_provider:permission",
+        );
+    }
+
+    #[test]
+    fn unsupported_format_display_tag() {
+        assert_eq!(
+            format!("{}", InitError::UnsupportedFormat),
+            "unsupported_format",
+        );
+    }
+
+    #[test]
+    fn unsupported_cipher_display_tag() {
+        assert_eq!(
+            format!("{}", InitError::UnsupportedCipher),
+            "unsupported_cipher",
+        );
+    }
+
+    #[test]
+    fn display_tags_contain_no_english_explanation_substrings() {
+        // The minimal-plaintext goal of the error surface rules out
+        // English phrases that would identify failure semantics in
+        // a leaked log line. Pin the absence of canonical English
+        // terms across every variant.
+        let cases = [
+            InitError::KeyProvider(KeyError::NotFound),
+            InitError::KeyProvider(KeyError::Permission),
+            InitError::KeyProvider(KeyError::InvalidFormat),
+            InitError::Decryption,
+            InitError::UnsupportedFormat,
+            InitError::UnsupportedCipher,
+        ];
+        for err in &cases {
+            let rendered = format!("{err}");
+            for english in ["the ", " was ", " is ", " key ", " was not ", "failed to "] {
+                assert!(
+                    !rendered.contains(english),
+                    "Display for {err:?} contains English fragment {english:?}: {rendered}",
+                );
+            }
+        }
     }
 
     #[test]
