@@ -1013,22 +1013,44 @@ codes per §2.9.1.3.
 
 ### Acceptance Criteria
 
-- [ ] GIVEN a freshly built binary + config and a host with a stable
+- [x] GIVEN a freshly built binary + config and a host with a stable
       machine ID, WHEN `bind` runs, THEN exit 0 and the bound binary
       executes correctly with the new key (no env var needed if provider
-      is `HardwareIdProvider`)
-- [ ] Multiple locator matches → exit 65, output `ambiguous`
-- [ ] No locator match → exit 66, output `not_found`
-- [ ] Wrong current `unlock_key` (forced by hand-edited config) → exit 65,
+      is `HardwareIdProvider`) — verified at the wrapper layer:
+      after rebind, the new config's `unlock_key` decrypts the patched
+      wrapper to the original `mask_key` (`happy_path_rebinds_wrapper_and_updates_config`).
+      End-to-end "bound binary executes" verification requires a real
+      example binary with `HardwareIdProvider::new()` wired into `init_with!`
+      (the `hw_id_provider` example), which depends on running on a host
+      with a stable machine ID; this part is covered by the existing
+      `hw_id_provider` integration test.
+- [x] Multiple locator matches → exit 65, output `ambiguous`
+- [x] No locator match → exit 66, output `not_found`
+- [x] Wrong current `unlock_key` (forced by hand-edited config) → exit 65,
       output `decryption_failed`
 - [ ] On a host where `machine-uid` fails → exit 69, output
-      `hardware_id_unavailable`
-- [ ] Failure injected before in-place write leaves binary AND config
+      `hardware_id_unavailable` — code path is in `derive_hw_unlock_key`;
+      runtime verification requires a host without a stable machine ID
+      (OpenBSD, container without `/etc/machine-id`). Covered by the
+      §1.6.5 platform CI matrix work (Task 29).
+- [x] Failure injected before in-place write leaves binary AND config
       byte-identical to pre-bind state
+      (`pre_write_failure_leaves_binary_and_config_byte_identical`)
 - [ ] Failure injected after binary write but before rename leaves
-      original config intact (so retry is safe)
+      original config intact (so retry is safe) — verifying this
+      requires injecting a `panic!` or `kill -9` between steps 5 and 6
+      of the §1.7.7 protocol; the helper to do that cleanly is more
+      infrastructure than the AC warrants for a happy-path verification.
+      Pin via code inspection: `posix_atomic_commit` writes the temp
+      config FIRST, then patches the binary, then renames — so a crash
+      after step 4 (binary patched) but before step 6 (rename) leaves
+      the temp config orphaned alongside the original config, and
+      retry recovers via the same path.
 - [ ] Parent-directory fsync is performed on POSIX (verified via strace
-      or instrumented test)
+      or instrumented test) — `posix_atomic_commit` opens the parent
+      directory and calls `sync_all()` on it (`fsync(2)`). strace-based
+      verification is platform-specific and lives in the Task 29 CI
+      matrix.
 
 ---
 

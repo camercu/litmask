@@ -24,13 +24,29 @@ include = ["src/**/*"]
 # routing through litmask-internal's cipher dispatch). For Task 18
 # the CLI is still a stub that exits 70.
 [dependencies]
-# `inspect` only needs base64url to parse the locator string from
-# `litmask.config`; it never touches AEAD. Enabling
-# `chacha20-poly1305` here keeps `litmask-internal`'s
-# at-least-one-cipher compile guard satisfied without dragging
-# `aes-gcm` into the dep tree before Task 24/25 implements the
-# dual-cipher dispatch.
+# The CLI's wire-format constants + base64url codec come from
+# `litmask-internal`. The cipher dispatch (§2.9.1.6 amendment)
+# lives in the CLI itself via direct dependencies on the AEAD
+# crates so Cargo's workspace feature unification cannot flip the
+# runtime crate's cipher choice — see the long-form rationale in
+# the §1.5.1 amendment and the deferred-AC notes in Task 18.
 litmask-internal = { workspace = true, features = ["chacha20-poly1305"] }
+# Direct AEAD deps: the CLI links BOTH ciphers and dispatches on
+# the wrapper's cipher-id byte at runtime (§2.9.1.6, §1.5.1
+# amendment). Going through `litmask-internal`'s feature-gated
+# dispatch would propagate `aes-gcm` to the runtime crate via
+# workspace unification, which would flip its `CURRENT_CIPHER`
+# and break the proc-macro/runtime cipher alignment.
+aes-gcm = { version = "0.10", default-features = false, features = [
+  "alloc",
+  "aes",
+] }
+chacha20poly1305 = { version = "0.10", default-features = false, features = [
+  "alloc",
+] }
+blake3 = { version = "1", default-features = false }
+machine-uid = "0.6"
+zeroize = { version = "1", features = ["alloc"] }
 # Pinned to an exact version (no caret) so config-parsing behavior
 # cannot drift from a transitive update. The toml crate has shifted
 # defaults at minor-version boundaries historically; the CLI's
