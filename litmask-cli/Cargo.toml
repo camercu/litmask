@@ -45,6 +45,12 @@ chacha20poly1305 = { version = "0.10", default-features = false, features = [
   "alloc",
 ] }
 blake3 = { version = "1", default-features = false }
+# `derive` enables the `#[derive(Parser)]` macro that drives the
+# CLI's argument schema. `clap` is the de-facto Rust CLI parser
+# (used by cargo itself); pulling it in eliminates the hand-rolled
+# parser's edge cases (--help, --version, --flag=value, GNU-typical
+# ordering) without reinventing them.
+clap = { version = "4", features = ["derive"] }
 machine-uid = "0.6"
 zeroize = { version = "1", features = ["alloc"] }
 # Pinned to an exact version (no caret) so config-parsing behavior
