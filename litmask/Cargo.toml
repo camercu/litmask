@@ -23,10 +23,17 @@ std = []
 # is the natural invocation. Task 23 may attach real content to it
 # (e.g., once_cell::race::OnceBox under no_std).
 alloc = []
+# Pulls in `machine-uid` for `HardwareIdProvider` (§2.5.4, §1.6.5).
+# Opt-in only: the dependency adds platform-specific code paths and a
+# transitive `winreg`/`uuid` graph on Windows, which downstream users
+# without a hardware-bound deployment have no reason to compile.
+hw-id = ["dep:machine-uid"]
 
 [dependencies]
 litmask-internal.workspace = true
 litmask-macros.workspace = true
+blake3 = { version = "1", default-features = false }
+machine-uid = { version = "0.6", optional = true }
 once_cell = { version = "1", default-features = false, features = [
   "race",
   "alloc",
@@ -35,6 +42,15 @@ zeroize = { version = "1", features = ["derive"] }
 
 [build-dependencies]
 litmask-build.workspace = true
+
+# `hw_id_provider` exercises HardwareIdProvider, which only exists
+# under the `hw-id` feature. Pinning it via `required-features` means
+# `cargo build --examples` (no features) skips it cleanly instead of
+# failing with E0432 / E0599, and `cargo run --example hw_id_provider
+# --features hw-id` resolves correctly.
+[[example]]
+name = "hw_id_provider"
+required-features = ["hw-id"]
 
 [dev-dependencies]
 proptest = "1"

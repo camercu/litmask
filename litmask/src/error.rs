@@ -2,6 +2,14 @@
 
 use core::fmt;
 
+/// Boxed error inside [`KeyError::Provider`]. `Send + Sync` so callers
+/// can propagate provider failures across threads (logging the error
+/// in a different task than the one that constructed it); `'static`
+/// so the box is owning (no borrowed inner). The bound is reified
+/// here so the same alias is shared between the type signature and
+/// every constructor / matcher.
+pub(crate) type ProviderError = alloc::boxed::Box<dyn core::error::Error + Send + Sync + 'static>;
+
 /// Errors surfaced by [`crate::init!`] / [`crate::init_with!`].
 #[non_exhaustive]
 #[derive(Debug)]
@@ -46,20 +54,39 @@ pub enum KeyError {
     /// The unlock-key bytes are malformed (wrong length, bad
     /// encoding).
     InvalidFormat,
+    /// The provider's upstream dependency failed (e.g. `machine-uid`
+    /// could not read a stable machine identifier on this host).
+    /// Carries the upstream error inside a
+    /// `Box<dyn core::error::Error + Send + Sync + 'static>` so the
+    /// cause survives propagation across thread / async boundaries.
+    Provider(ProviderError),
 }
 
 impl fmt::Display for KeyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let tag = match self {
-            Self::NotFound => "not_found",
-            Self::Permission => "permission",
-            Self::InvalidFormat => "invalid_format",
-        };
-        f.write_str(tag)
+        match self {
+            Self::NotFound => f.write_str("not_found"),
+            Self::Permission => f.write_str("permission"),
+            Self::InvalidFormat => f.write_str("invalid_format"),
+            // Display delegates to the inner cause so operators see
+            // upstream context (machine-uid's reason for failure)
+            // rather than just a generic tag. The `Display` impl on
+            // `InitError::KeyProvider(KeyError::Provider(_))` still
+            // surfaces the canonical `key_provider:provider:<inner>`
+            // chain.
+            Self::Provider(inner) => write!(f, "provider:{inner}"),
+        }
     }
 }
 
-impl core::error::Error for KeyError {}
+impl core::error::Error for KeyError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            Self::Provider(inner) => Some(inner.as_ref()),
+            Self::NotFound | Self::Permission | Self::InvalidFormat => None,
+        }
+    }
+}
 
 impl From<KeyError> for InitError {
     fn from(e: KeyError) -> Self {

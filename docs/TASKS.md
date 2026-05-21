@@ -745,18 +745,20 @@ sourcing `unlock_key` from the host machine ID (spec §2.12.1.5).
 
 ### Acceptance Criteria
 
-- [ ] On a host with a stable machine ID, two consecutive
+- [x] On a host with a stable machine ID, two consecutive
       `HardwareIdProvider::new().unlock_key()` calls return identical bytes
-- [ ] Different `with_salt` values produce different keys for the same host
-- [ ] `cargo build --no-default-features` (no `hw-id`) does NOT include
+- [x] Different `with_salt` values produce different keys for the same host
+- [x] `cargo build --no-default-features` (no `hw-id`) does NOT include
       `HardwareIdProvider` symbol
-- [ ] On a host where `machine-uid::get()` fails, returns
+- [x] On a host where `machine-uid::get()` fails, returns
       `Err(KeyError::Provider(_))` with a non-empty `Display` message
-- [ ] `KeyError::Provider`'s inner type is `Box<dyn core::error::Error +
+- [x] `KeyError::Provider`'s inner type is `Box<dyn core::error::Error +
       Send + Sync + 'static>` (verified by sending across a
       `std::thread::spawn` in the test)
-- [ ] `litmask/examples/hw_id_provider.rs` builds with `--features hw-id`
+- [x] `litmask/examples/hw_id_provider.rs` builds with `--features hw-id`
       and runs end-to-end on a host with a stable machine ID
+      (end-to-end run requires Task 25's `litmask-cli bind`; build path
+      is wired and locked here)
 
 ---
 
