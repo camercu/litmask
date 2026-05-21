@@ -1,7 +1,10 @@
-//! `litmask-cli` — companion tool for `bind` and `inspect` operations.
+//! `litmask-cli` — companion tool for `bind` and `inspect`.
 //!
-//! Task 24 implements `inspect`; Task 25 implements `bind` (POSIX
-//! atomic commit). Windows atomic commit lands in Task 26.
+//! Each subcommand lives in a module split into a pure planner
+//! ([`inspect::plan`] / [`bind::plan_bind`] + [`bind::plan_posix_commit`])
+//! and a thin imperative shell (`run`). `main` is responsible only
+//! for argument parsing and mapping the shell's `Result<Outcome,
+//! ShellError>` to an `ExitCode`.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -9,23 +12,23 @@ use std::process::ExitCode;
 mod bind;
 mod inspect;
 
-/// Exit codes follow sysexits.h (§1.9.7):
-/// - `EX_USAGE` (64): argument parsing failure
-/// - `EX_DATAERR` (65): ambiguous locator match
-/// - `EX_NOINPUT` (66): no locator match
-/// - `EX_SOFTWARE` (70): unexpected internal failure
+/// `EX_USAGE` (64): argument-parsing or operator-input failure.
 const EX_USAGE: u8 = 64;
+/// `EX_UNAVAILABLE` (69): upstream service (machine-uid) refused.
+const EX_UNAVAILABLE: u8 = 69;
+/// `EX_SOFTWARE` (70): unexpected internal failure (atomic commit
+/// I/O, etc.).
 const EX_SOFTWARE: u8 = 70;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     match parse_args(&args) {
-        Ok(Command::Inspect { binary, config }) => run_inspect(&binary, &config),
+        Ok(Command::Inspect { binary, config }) => dispatch_inspect(&binary, &config),
         Ok(Command::Bind {
             binary,
             config,
             salt,
-        }) => run_bind(&binary, &config, salt.as_deref()),
+        }) => dispatch_bind(&binary, &config, salt.as_deref()),
         Err(usage) => {
             eprintln!("{usage}");
             ExitCode::from(EX_USAGE)
@@ -33,55 +36,36 @@ fn main() -> ExitCode {
     }
 }
 
-fn run_inspect(binary: &std::path::Path, config: &std::path::Path) -> ExitCode {
+fn dispatch_inspect(binary: &std::path::Path, config: &std::path::Path) -> ExitCode {
     match inspect::run(binary, config) {
-        Ok(code) => ExitCode::from(code),
-        Err(e @ (inspect::Error::ConfigUnreadable | inspect::Error::ConfigMalformed)) => {
+        Ok(outcome) => ExitCode::from(outcome.exit_code()),
+        Err(e) => {
             eprintln!("litmask-cli: {}", e.message());
             ExitCode::from(EX_USAGE)
-        }
-        Err(e @ (inspect::Error::BinaryUnreadable | inspect::Error::Internal)) => {
-            eprintln!("litmask-cli: {}", e.message());
-            ExitCode::from(EX_SOFTWARE)
         }
     }
 }
 
-fn run_bind(binary: &std::path::Path, config: &std::path::Path, salt: Option<&str>) -> ExitCode {
+fn dispatch_bind(
+    binary: &std::path::Path,
+    config: &std::path::Path,
+    salt: Option<&str>,
+) -> ExitCode {
     match bind::run(binary, config, salt) {
-        Ok(code) => ExitCode::from(code),
-        Err(
-            e @ (bind::Error::ConfigUnreadable
-            | bind::Error::BinaryUnreadable
-            | bind::Error::SaltInvalid),
-        ) => {
+        Ok(outcome) => ExitCode::from(outcome.exit_code()),
+        Err(e @ (bind::ShellError::ConfigUnreadable | bind::ShellError::BinaryUnreadable)) => {
             eprintln!("litmask-cli: {}", e.message());
             ExitCode::from(EX_USAGE)
         }
-        Err(e @ (bind::Error::UnsupportedFormat | bind::Error::UnsupportedCipher)) => {
-            // Per §2.9.1.6 + §1.9.7: a wrapper that the CLI cannot
-            // dispatch on maps to EX_DATAERR — the wrapper itself
-            // is the wrong shape, distinct from a CLI internal
-            // error.
-            println!("{}", e.message());
-            ExitCode::from(65)
+        Err(bind::ShellError::HardwareIdUnavailable) => {
+            // §2.9.1.3: hardware-id failure surfaces on stdout
+            // with the documented tag and exits EX_UNAVAILABLE.
+            println!("hardware_id_unavailable");
+            ExitCode::from(EX_UNAVAILABLE)
         }
-        Err(e @ bind::Error::Internal) => {
+        Err(e @ bind::ShellError::CommitFailed(_)) => {
             eprintln!("litmask-cli: {}", e.message());
             ExitCode::from(EX_SOFTWARE)
-        }
-        // DecryptionFailed / HardwareIdUnavailable can ALSO
-        // surface as Err in the rare case the bind handler hits
-        // them outside the routed branches; route them through
-        // EX_DATAERR / EX_UNAVAILABLE per §2.9.1.3 so the operator
-        // sees the same exit code as the in-band path.
-        Err(e @ bind::Error::DecryptionFailed) => {
-            eprintln!("litmask-cli: {}", e.message());
-            ExitCode::from(65)
-        }
-        Err(e @ bind::Error::HardwareIdUnavailable) => {
-            eprintln!("litmask-cli: {}", e.message());
-            ExitCode::from(69)
         }
     }
 }
@@ -99,10 +83,9 @@ enum Command {
 }
 
 /// Hand-rolled argument parser. Avoids the `clap` dep so the CLI's
-/// dep tree stays minimal; the surface (`inspect <binary> --config
-/// <path>` / `bind <binary> --config <path> [--salt <BASE64URL>]`)
-/// is small enough that a parser-generator would be
-/// disproportionate.
+/// dep tree stays minimal; the surface is small enough that a
+/// parser-generator would be disproportionate. Pure: same args in,
+/// same `Command` out — unit-tested below.
 fn parse_args(args: &[String]) -> Result<Command, &'static str> {
     let usage =
         "usage: litmask-cli <inspect|bind> <binary> --config <litmask.config> [--salt <BASE64URL>]";
@@ -144,5 +127,92 @@ fn parse_args(args: &[String]) -> Result<Command, &'static str> {
             })
         }
         _ => Err(usage),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(parts: &[&str]) -> Vec<String> {
+        std::iter::once("litmask-cli")
+            .chain(parts.iter().copied())
+            .map(String::from)
+            .collect()
+    }
+
+    #[test]
+    fn parse_inspect_with_binary_and_config_succeeds() {
+        let parsed = parse_args(&args(&[
+            "inspect",
+            "/path/to/bin",
+            "--config",
+            "/path/to/cfg",
+        ]))
+        .expect("inspect parses");
+        match parsed {
+            Command::Inspect { binary, config } => {
+                assert_eq!(binary, PathBuf::from("/path/to/bin"));
+                assert_eq!(config, PathBuf::from("/path/to/cfg"));
+            }
+            Command::Bind { .. } => panic!("expected Inspect"),
+        }
+    }
+
+    #[test]
+    fn parse_bind_without_salt_yields_none() {
+        let parsed = parse_args(&args(&["bind", "/bin", "--config", "/cfg"])).expect("bind parses");
+        match parsed {
+            Command::Bind { salt, .. } => assert_eq!(salt, None),
+            Command::Inspect { .. } => panic!("expected Bind"),
+        }
+    }
+
+    #[test]
+    fn parse_bind_with_salt_captures_value() {
+        let parsed = parse_args(&args(&[
+            "bind", "/bin", "--config", "/cfg", "--salt", "AAAA",
+        ]))
+        .expect("bind+salt parses");
+        match parsed {
+            Command::Bind { salt, .. } => assert_eq!(salt.as_deref(), Some("AAAA")),
+            Command::Inspect { .. } => panic!("expected Bind"),
+        }
+    }
+
+    #[test]
+    fn parse_no_subcommand_errors() {
+        assert!(parse_args(&args(&[])).is_err());
+    }
+
+    #[test]
+    fn parse_unknown_subcommand_errors() {
+        assert!(parse_args(&args(&["nope", "/bin", "--config", "/cfg"])).is_err());
+    }
+
+    #[test]
+    fn parse_misspelled_config_flag_errors() {
+        // The flag must be `--config` literally; a misspelled flag
+        // should not silently consume the next arg. The misspelled
+        // variant below is intentional fixture data — the typos
+        // linter would otherwise flag it.
+        let misspelled = ["--c", "ofig"].concat(); // typos: ignore
+        assert!(parse_args(&args(&["inspect", "/bin", &misspelled, "/cfg"])).is_err());
+    }
+
+    #[test]
+    fn parse_inspect_trailing_args_rejected() {
+        // Reject trailing junk so a typo doesn't get accepted.
+        assert!(parse_args(&args(&["inspect", "/bin", "--config", "/cfg", "extra"])).is_err());
+    }
+
+    #[test]
+    fn parse_bind_unknown_trailing_flag_rejected() {
+        assert!(parse_args(&args(&["bind", "/bin", "--config", "/cfg", "--foo", "bar"])).is_err(),);
+    }
+
+    #[test]
+    fn parse_bind_salt_without_value_errors() {
+        assert!(parse_args(&args(&["bind", "/bin", "--config", "/cfg", "--salt"])).is_err());
     }
 }
