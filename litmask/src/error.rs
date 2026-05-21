@@ -22,6 +22,39 @@ pub enum InitError {
     Decryption,
 }
 
+impl InitError {
+    /// Sysexits.h-compatible exit code (§1.9.7). Mapping:
+    ///
+    /// | Variant | Code | Name |
+    /// |---|---|---|
+    /// | `KeyProvider(NotFound)` | 78 | `EX_CONFIG` |
+    /// | `KeyProvider(Permission)` | 77 | `EX_NOPERM` |
+    /// | `KeyProvider(InvalidFormat)` | 65 | `EX_DATAERR` |
+    /// | `KeyProvider(Provider(_))` | 69 | `EX_UNAVAILABLE` |
+    /// | `Decryption` | 65 | `EX_DATAERR` |
+    ///
+    /// The numeric constants are inline literals — no `sysexits`
+    /// crate dependency. The mapping mirrors the table in §1.9.7
+    /// verbatim; future variants (`UnsupportedFormat` /
+    /// `UnsupportedCipher`, landing in Task 21) MUST extend this match.
+    #[must_use]
+    // `match_same_arms` would collapse `InvalidFormat` and
+    // `Decryption` into a single arm because both map to 65. They
+    // are independent ACs in §1.9.7 — keeping the arms separate
+    // lets a future spec change adjust one without disturbing the
+    // other, and the source layout still mirrors the §1.9.7 table.
+    #[allow(clippy::match_same_arms)]
+    pub fn sysexit_code(&self) -> i32 {
+        match self {
+            Self::KeyProvider(KeyError::NotFound) => 78,
+            Self::KeyProvider(KeyError::Permission) => 77,
+            Self::KeyProvider(KeyError::InvalidFormat) => 65,
+            Self::KeyProvider(KeyError::Provider(_)) => 69,
+            Self::Decryption => 65,
+        }
+    }
+}
+
 impl fmt::Display for InitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -149,5 +182,50 @@ mod tests {
         // require carrying a non-Send error around.
         use core::error::Error;
         assert!(InitError::Decryption.source().is_none());
+    }
+
+    // ── sysexit_code mapping (§1.9.7) ─────────────────────────
+
+    #[test]
+    fn sysexit_code_key_provider_not_found_is_ex_config_78() {
+        assert_eq!(
+            InitError::KeyProvider(KeyError::NotFound).sysexit_code(),
+            78,
+        );
+    }
+
+    #[test]
+    fn sysexit_code_key_provider_permission_is_ex_noperm_77() {
+        assert_eq!(
+            InitError::KeyProvider(KeyError::Permission).sysexit_code(),
+            77,
+        );
+    }
+
+    #[test]
+    fn sysexit_code_key_provider_invalid_format_is_ex_dataerr_65() {
+        assert_eq!(
+            InitError::KeyProvider(KeyError::InvalidFormat).sysexit_code(),
+            65,
+        );
+    }
+
+    #[test]
+    fn sysexit_code_key_provider_provider_inner_is_ex_unavailable_69() {
+        // Boxed provider error → EX_UNAVAILABLE. The inner type
+        // could carry rich detail; the exit code stays the same
+        // regardless of the inner so the caller's exit-code matcher
+        // does not have to inspect Box<dyn Error>.
+        let inner: alloc::boxed::Box<dyn core::error::Error + Send + Sync + 'static> =
+            alloc::boxed::Box::new(core::fmt::Error);
+        assert_eq!(
+            InitError::KeyProvider(KeyError::Provider(inner)).sysexit_code(),
+            69,
+        );
+    }
+
+    #[test]
+    fn sysexit_code_decryption_is_ex_dataerr_65() {
+        assert_eq!(InitError::Decryption.sysexit_code(), 65);
     }
 }

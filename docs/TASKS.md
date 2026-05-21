@@ -879,14 +879,16 @@ are inline literals — no external crate dependency.
 
 ### Acceptance Criteria
 
-- [ ] `InitError::KeyProvider(KeyError::NotFound).sysexit_code()` == 78
-- [ ] `InitError::KeyProvider(KeyError::Permission).sysexit_code()` == 77
-- [ ] `InitError::KeyProvider(KeyError::InvalidFormat).sysexit_code()` == 65
-- [ ] `InitError::KeyProvider(KeyError::Provider(_)).sysexit_code()` == 69
-- [ ] `InitError::Decryption.sysexit_code()` == 65
-- [ ] `InitError::UnsupportedFormat.sysexit_code()` == 70
-- [ ] `InitError::UnsupportedCipher.sysexit_code()` == 70
-- [ ] `cargo tree` shows no `sysexits` crate dependency
+- [x] `InitError::KeyProvider(KeyError::NotFound).sysexit_code()` == 78
+- [x] `InitError::KeyProvider(KeyError::Permission).sysexit_code()` == 77
+- [x] `InitError::KeyProvider(KeyError::InvalidFormat).sysexit_code()` == 65
+- [x] `InitError::KeyProvider(KeyError::Provider(_)).sysexit_code()` == 69
+- [x] `InitError::Decryption.sysexit_code()` == 65
+- [ ] `InitError::UnsupportedFormat.sysexit_code()` == 70 — DEFERRED to
+      Task 21 (variant lands there)
+- [ ] `InitError::UnsupportedCipher.sysexit_code()` == 70 — DEFERRED to
+      Task 21 (variant lands there)
+- [x] `cargo tree` shows no `sysexits` crate dependency
 
 ---
 
