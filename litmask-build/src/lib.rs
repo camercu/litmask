@@ -74,11 +74,8 @@ pub fn emit() {
     // only way to reproduce the build later is to capture the
     // generated seed. Print it via `cargo:warning=` so it lands in
     // the developer's terminal output even when stderr is captured.
-    if profile == Profile::Release && seed_source == SeedSource::Fresh {
-        let encoded = base64url::encode(&seed);
-        println!(
-            "cargo:warning=litmask: release build generated a fresh RNG seed. Capture this value for reproducible rebuilds: LITMASK_RNG_SEED={encoded}",
-        );
+    if let Some(warning) = fresh_release_warning(&seed, profile, &seed_source) {
+        println!("{warning}");
     }
 
     let artifacts = BuildArtifacts::derive(&seed);
@@ -270,6 +267,28 @@ fn decode_env_seed(raw: &OsString) -> [u8; KEY_LEN] {
         .expect("LITMASK_RNG_SEED must decode to exactly 32 bytes");
     decoded.zeroize();
     seed
+}
+
+/// Produce the `cargo:warning=...` line that release-profile builds
+/// emit when no `LITMASK_RNG_SEED` was supplied. Returns `None` for
+/// every other (profile, source) combination so debug builds and
+/// env-driven release builds stay silent. Extracted as a pure
+/// function so unit tests can pin the exact text — the spec calls
+/// out the warning channel as the only release-profile recovery
+/// path for reproducible rebuilds, so the string format is
+/// normative.
+fn fresh_release_warning(
+    seed: &[u8; KEY_LEN],
+    profile: Profile,
+    source: &SeedSource,
+) -> Option<String> {
+    if profile != Profile::Release || *source != SeedSource::Fresh {
+        return None;
+    }
+    let encoded = base64url::encode(seed);
+    Some(format!(
+        "cargo:warning=litmask: release build generated a fresh RNG seed. Capture this value for reproducible rebuilds: LITMASK_RNG_SEED={encoded}",
+    ))
 }
 
 fn write_secret(path: &Path, contents: &[u8]) {
@@ -515,5 +534,111 @@ mod tests {
         let recovered =
             decrypt_wrapper(&artifacts.unlock_key, &artifacts.wrapper).expect("round-trip");
         assert_eq!(recovered, artifacts.mask_key);
+    }
+
+    /// AC4: the build script must never emit a `cargo:` directive
+    /// that sets a `LITMASK_*` env var on the downstream rustc
+    /// invocation. Such a directive (the rustc-env subform of
+    /// cargo's metadata channel) would leak the seed into every
+    /// consumer's build environment AND log it at cargo's
+    /// `--verbose` setting. Reassemble the needle from fragments at
+    /// runtime so this test's own source does not trip the
+    /// static-grep below.
+    #[test]
+    fn no_cargo_directive_setting_litmask_env_emitted() {
+        let src = include_str!("lib.rs");
+        let needle = ["cargo:rustc", "env=LITMASK"].join("-");
+        assert!(
+            !src.contains(&needle),
+            "litmask-build must never set LITMASK_* via the cargo rustc-env \
+             metadata channel; that would inject secrets into downstream rustc \
+             invocations",
+        );
+    }
+
+    /// AC5: `litmask.config` MUST begin with a `#`-prefixed comment
+    /// block describing the file's purpose and warning that it
+    /// contains a secret. Operators read this file in the deployment
+    /// pipeline; the header is their first line of defense against
+    /// accidental commit / log exposure.
+    #[test]
+    fn litmask_config_starts_with_hash_comment_block_warning_about_secret() {
+        let dir = TempDir::new().expect("tempdir");
+        let config_path = dir.path().join("litmask.config");
+        write_config(&config_path, &[0u8; KEY_LEN], &[0u8; WRAPPER_LEN]);
+        let body = fs::read_to_string(&config_path).expect("read");
+        let first_line = body.lines().next().expect("non-empty config");
+        assert!(
+            first_line.starts_with('#'),
+            "first line must begin with `#`, got: {first_line:?}",
+        );
+        // The block must explicitly warn that the file holds a
+        // secret — without that warning, operators reading just the
+        // first line might miss the implication.
+        assert!(
+            body.lines()
+                .take_while(|l| l.starts_with('#'))
+                .any(|l| l.to_ascii_lowercase().contains("secret")),
+            "comment block must mention 'secret' (case-insensitive); got:\n{body}",
+        );
+    }
+
+    /// AC3: in release profile with a freshly-generated seed, the
+    /// build script MUST emit a `cargo:warning=` line carrying the
+    /// base64url-encoded seed so the developer can capture it for
+    /// reproducible rebuilds.
+    #[test]
+    fn fresh_release_emits_warning_with_seed_value() {
+        let seed = [0x77u8; KEY_LEN];
+        let warning = fresh_release_warning(&seed, Profile::Release, &SeedSource::Fresh)
+            .expect("release+fresh must emit a warning");
+        assert!(warning.starts_with("cargo:warning="));
+        let encoded = base64url::encode(&seed);
+        assert!(
+            warning.contains(&encoded),
+            "warning must include the encoded seed; got: {warning}",
+        );
+        assert!(
+            warning.contains("LITMASK_RNG_SEED"),
+            "warning must name the env var to set; got: {warning}",
+        );
+    }
+
+    /// Negative coverage for the warning: every (profile, source)
+    /// combination that ISN'T release+fresh must stay silent. A
+    /// debug-profile warning would surface the seed to terminal
+    /// every build (noisy); an env-driven release-profile warning
+    /// would also fire even though the seed is already known.
+    #[test]
+    fn warning_silent_for_non_release_or_non_fresh_combinations() {
+        let seed = [0x88u8; KEY_LEN];
+        assert!(fresh_release_warning(&seed, Profile::Debug, &SeedSource::Fresh).is_none());
+        assert!(fresh_release_warning(&seed, Profile::Debug, &SeedSource::Env).is_none());
+        assert!(fresh_release_warning(&seed, Profile::Debug, &SeedSource::Persist).is_none());
+        assert!(fresh_release_warning(&seed, Profile::Release, &SeedSource::Env).is_none());
+        assert!(fresh_release_warning(&seed, Profile::Release, &SeedSource::Persist).is_none());
+    }
+
+    /// AC1: identical source + toolchain + deps + `LITMASK_RNG_SEED`
+    /// → byte-identical per-string ciphertext. The build crate's
+    /// `derive` was already pinned for byte-identical wrapper output
+    /// under the same seed; this test extends that pin through the
+    /// env-var ingestion path so the full env-decoded seed →
+    /// wrapper bytes pipeline is locked.
+    #[test]
+    fn identical_env_seed_produces_byte_identical_wrappers() {
+        let canned = [0x99u8; KEY_LEN];
+        let encoded: OsString = base64url::encode(&canned).into();
+        let dir_a = TempDir::new().expect("tempdir a");
+        let dir_b = TempDir::new().expect("tempdir b");
+        let (seed_a, _) =
+            source_seed_with_env_and_profile(dir_a.path(), Some(encoded.clone()), Profile::Release);
+        let (seed_b, _) =
+            source_seed_with_env_and_profile(dir_b.path(), Some(encoded), Profile::Release);
+        assert_eq!(seed_a, seed_b);
+        assert_eq!(
+            BuildArtifacts::derive(&seed_a).wrapper,
+            BuildArtifacts::derive(&seed_b).wrapper,
+        );
     }
 }

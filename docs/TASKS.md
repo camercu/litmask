@@ -854,16 +854,16 @@ fresh). Writes a deployer-facing comment block at the top of
 
 ### Acceptance Criteria
 
-- [ ] GIVEN identical source + toolchain + deps + `LITMASK_RNG_SEED`,
+- [x] GIVEN identical source + toolchain + deps + `LITMASK_RNG_SEED`,
       WHEN building twice, THEN the per-string ciphertext bytes are
       byte-identical
-- [ ] In debug profile without env var, second build reuses
+- [x] In debug profile without env var, second build reuses
       `target/litmask-seed`
-- [ ] In release profile without env var, fresh seed each build and
+- [x] In release profile without env var, fresh seed each build and
       seed value is printed via `cargo:warning=`
-- [ ] No `cargo:rustc-env=LITMASK_*` directive ever emitted (grep test on
+- [x] No `cargo:rustc-env=LITMASK_*` directive ever emitted (grep test on
       build script output)
-- [ ] `litmask.config` first lines are a `#`-prefixed comment block
+- [x] `litmask.config` first lines are a `#`-prefixed comment block
       describing purpose and warning the file is secret
 
 ---
