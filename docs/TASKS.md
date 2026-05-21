@@ -986,12 +986,14 @@ parsing behavior cannot drift from a transitive update.
 
 ### Acceptance Criteria
 
-- [ ] Single match → exit 0, prints `verified`
-- [ ] Multiple matches → exit 65, prints `ambiguous:<count>`
-- [ ] No match → exit 66, prints `not_found`
-- [ ] Binary file unchanged after invocation (mtime / sha256 match)
-- [ ] Argument parsing errors → exit 64
-- [ ] `Cargo.toml` for `litmask-cli` pins `toml` at an exact version
+- [x] Single match → exit 0, prints `verified`
+- [x] Multiple matches → exit 65, prints `ambiguous:<count>`
+- [x] No match → exit 66, prints `not_found`
+- [x] Binary file unchanged after invocation (mtime / sha256 match)
+- [x] Argument parsing errors → exit 64
+- [x] `Cargo.toml` for `litmask-cli` pins `toml` at an exact version
+      (`toml = "=1.1.2"`; spec said `=0.8.x` but that crate version is
+      retired — we pin the current minor at task time)
 
 ---
 

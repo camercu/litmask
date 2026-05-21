@@ -24,7 +24,23 @@ include = ["src/**/*"]
 # routing through litmask-internal's cipher dispatch). For Task 18
 # the CLI is still a stub that exits 70.
 [dependencies]
-litmask-internal.workspace = true
+# `inspect` only needs base64url to parse the locator string from
+# `litmask.config`; it never touches AEAD. Enabling
+# `chacha20-poly1305` here keeps `litmask-internal`'s
+# at-least-one-cipher compile guard satisfied without dragging
+# `aes-gcm` into the dep tree before Task 24/25 implements the
+# dual-cipher dispatch.
+litmask-internal = { workspace = true, features = ["chacha20-poly1305"] }
+# Pinned to an exact version (no caret) so config-parsing behavior
+# cannot drift from a transitive update. The toml crate has shifted
+# defaults at minor-version boundaries historically; the CLI's
+# `inspect` and `bind` flows depend on a stable parse for
+# `litmask.config`, so we lock to a known-good version. Bump
+# deliberately when validating the new behavior.
+toml = "=1.1.2"
+
+[dev-dependencies]
+tempfile = "3"
 
 [[bin]]
 name = "litmask-cli"

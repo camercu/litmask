@@ -402,6 +402,8 @@ name = "litmask-cli"
 version = "0.5.0"
 dependencies = [
  "litmask-internal",
+ "tempfile",
+ "toml",
 ]
 
 [[package]]
