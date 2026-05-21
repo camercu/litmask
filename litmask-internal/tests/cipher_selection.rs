@@ -54,7 +54,15 @@ fn aes_gcm_rejects_wrong_key() {
 fn both_ciphers_compile_simultaneously_for_cli_dispatch() {
     // litmask-cli enables both ciphers and dispatches at runtime
     // based on the wrapper's cipher-id byte. Pin that the helpers
-    // accept either CipherId without re-compilation.
+    // accept either CipherId without re-compilation AND that the
+    // on-the-wire discriminants stay locked. The single-cipher
+    // tests above each cover one direction (0x01 OR 0x02); a
+    // swap of the discriminants would pass both of those but
+    // break the CLI's dispatch — this dual-feature test is the
+    // only place that catches it.
+    assert_eq!(CipherId::ChaCha20Poly1305.to_byte(), 0x01);
+    assert_eq!(CipherId::Aes256Gcm.to_byte(), 0x02);
+
     let key = [0x55u8; KEY_LEN];
     let nonce = [0x66u8; NONCE_LEN];
     let plaintext = b"dual-cipher CLI mode";

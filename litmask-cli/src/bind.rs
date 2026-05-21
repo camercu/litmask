@@ -814,58 +814,81 @@ mod tests {
     fn plan_posix_commit_emits_six_ops_in_spec_order() {
         let plan = plan_posix_commit(
             Path::new("/path/to/binary"),
-            vec![0xEFu8; 100],
+            b"new binary bytes".to_vec(),
             Path::new("/path/to/litmask.config"),
-            "config".to_string(),
+            "new config text".to_string(),
         );
         // 5 fs ops + 1 best-effort parent fsync.
         assert_eq!(plan.len(), 6);
 
-        // Step 2 — WriteFile(tempfile in same dir as config).
-        match &plan[0] {
-            Operation::WriteFile { path, bytes: _ } => {
-                assert_eq!(path.parent(), Some(Path::new("/path/to")));
-                let name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .expect("temp path file_name str");
-                // Case sensitivity is fine here — we generated
-                // the suffix ourselves and want byte-exact match.
-                #[allow(clippy::case_sensitive_file_extension_comparisons)]
-                let ok = name.contains(".bind-") && name.ends_with(".tmp");
-                assert!(ok, "tempfile name shape mismatch: {path:?}");
-            }
-            other => panic!("step 2 must be WriteFile, got {other:?}"),
-        }
+        // Locate the temp-config path from the plan; subsequent
+        // step assertions reference it by value so a swap with
+        // the binary path is caught by path-equality (the two
+        // WriteFile variants are otherwise structurally
+        // identical and a name-shape heuristic alone leaves the
+        // swap detectable only via incidental string content).
+        let Operation::WriteFile {
+            path: temp_path,
+            bytes: temp_bytes,
+        } = &plan[0]
+        else {
+            panic!("step 2 must be WriteFile(temp_config), got {:?}", plan[0]);
+        };
+        assert_eq!(temp_path.parent(), Some(Path::new("/path/to")));
+        let temp_name = temp_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("temp path file_name str");
+        // Case sensitivity is fine here — we generated the suffix
+        // ourselves and want byte-exact match.
+        #[allow(clippy::case_sensitive_file_extension_comparisons)]
+        let temp_name_ok = temp_name.contains(".bind-") && temp_name.ends_with(".tmp");
+        assert!(temp_name_ok, "tempfile name shape mismatch: {temp_path:?}",);
+        assert_eq!(
+            temp_bytes.as_slice(),
+            b"new config text",
+            "step 2 must carry the new config text bytes",
+        );
 
-        // Step 3 — FsyncFile(tempfile).
+        // Step 3 — FsyncFile points at the SAME tempfile written
+        // in step 2 (not just any path under the same parent —
+        // identity equality catches a planner bug that targeted
+        // a sibling).
         match &plan[1] {
-            Operation::FsyncFile { path } => {
-                assert_eq!(path.parent(), Some(Path::new("/path/to")));
-            }
-            other => panic!("step 3 must be FsyncFile, got {other:?}"),
+            Operation::FsyncFile { path } => assert_eq!(path, temp_path),
+            other => panic!("step 3 must be FsyncFile(temp), got {other:?}"),
         }
 
-        // Step 4 — WriteFile(binary).
+        // Step 4 — WriteFile targets the binary by path equality
+        // AND carries the binary bytes verbatim. A planner bug
+        // swapping `plan[0]` and `plan[2]` fails this assert
+        // because the temp-config bytes ≠ the binary bytes (and
+        // because the temp path ≠ the binary path above).
         match &plan[2] {
             Operation::WriteFile { path, bytes } => {
                 assert_eq!(path, Path::new("/path/to/binary"));
-                assert_eq!(bytes.len(), 100);
+                assert_eq!(
+                    bytes.as_slice(),
+                    b"new binary bytes",
+                    "step 4 must carry the new binary bytes",
+                );
             }
-            other => panic!("step 4 must be WriteFile binary, got {other:?}"),
+            other => panic!("step 4 must be WriteFile(binary), got {other:?}"),
         }
 
-        // Step 5 — FsyncFile(binary).
+        // Step 5 — FsyncFile on the binary by path equality.
         match &plan[3] {
             Operation::FsyncFile { path } => assert_eq!(path, Path::new("/path/to/binary")),
-            other => panic!("step 5 must be FsyncFile binary, got {other:?}"),
+            other => panic!("step 5 must be FsyncFile(binary), got {other:?}"),
         }
 
-        // Step 6 — Rename(tempfile → config).
+        // Step 6 — Rename from the SAME tempfile in step 2 to the
+        // documented config path. Identity equality on `from`
+        // catches a planner bug that renamed a different sibling.
         match &plan[4] {
             Operation::Rename { from, to } => {
+                assert_eq!(from, temp_path, "rename must consume the step-2 tempfile");
                 assert_eq!(to, Path::new("/path/to/litmask.config"));
-                assert_eq!(from.parent(), Some(Path::new("/path/to")));
             }
             other => panic!("step 6 must be Rename, got {other:?}"),
         }
