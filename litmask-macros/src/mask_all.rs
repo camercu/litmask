@@ -42,7 +42,7 @@ const MACRO_NAME: &str = "mask_all";
 /// ghost-deprecation skip warnings to hard `compile_error!` items so
 /// every unmasked literal forces an explicit `unmasked!()` opt-out.
 pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let strict = match parse_attr_strict(attr.clone().into()) {
+    let strict = match parse_attr_strict(attr.into()) {
         Ok(s) => s,
         Err(err) => return err.to_compile_error().into(),
     };
@@ -568,15 +568,13 @@ impl MaskAllWalker {
         head_arity: usize,
         shape: RewriteShape,
     ) -> Option<Expr> {
-        match Self::rewrite_template(em, head_arity, shape) {
-            Some(rewritten) => Some(rewritten),
-            None => {
-                if has_non_literal_template(&em.mac.tokens, head_arity) {
-                    self.skipped.push(SkipReason::NonLiteralTemplate);
-                }
-                None
-            }
+        if let Some(rewritten) = Self::rewrite_template(em, head_arity, shape) {
+            return Some(rewritten);
         }
+        if has_non_literal_template(&em.mac.tokens, head_arity) {
+            self.skipped.push(SkipReason::NonLiteralTemplate);
+        }
+        None
     }
 
     /// Generic rewriter for "head, template, args..." macros:
