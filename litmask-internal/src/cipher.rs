@@ -54,17 +54,27 @@ pub fn decrypt_wrapper(
     unlock_key: &[u8; KEY_LEN],
     wrapper: &[u8; WRAPPER_LEN],
 ) -> Result<[u8; KEY_LEN], DecryptError> {
-    // parse_wrapper rejects any byte that doesn't decode to a known
-    // FormatVersion / CipherId variant, so a successful parse already
-    // means the header is one this build supports.
     let parsed = parse_wrapper(wrapper).map_err(|e| match e {
         WrapperParseError::UnknownFormatVersion(_) => DecryptError::UnsupportedFormat,
         WrapperParseError::UnknownCipherId(_) => DecryptError::UnsupportedCipher,
     })?;
-    // The intermediate Vec carries the recovered mask key in plaintext.
-    // Wrap in Zeroizing so the heap buffer wipes when this function
-    // returns — without it, the 32 plaintext bytes would linger in the
-    // allocator until the slot is reused.
+    // In single-cipher (runtime) builds, the wrapper's cipher byte
+    // must equal the build's compiled cipher. Without this gate,
+    // a fabricated wrapper with cipher id 0x02 against a chacha-
+    // only runtime would silently fall through to AEAD decrypt and
+    // surface as `AuthenticationFailed` — losing the §2.7.1
+    // diagnostic that distinguishes "wrong cipher" from "wrong
+    // key". Dual-cipher builds (litmask-cli) accept either byte
+    // because `CURRENT_CIPHER` is absent in that cfg.
+    #[cfg(any(
+        all(feature = "chacha20-poly1305", not(feature = "aes-gcm")),
+        all(feature = "aes-gcm", not(feature = "chacha20-poly1305")),
+    ))]
+    {
+        if parsed.cipher != crate::CURRENT_CIPHER {
+            return Err(DecryptError::UnsupportedCipher);
+        }
+    }
     let plaintext = Zeroizing::new(aead_decrypt(
         parsed.cipher,
         unlock_key,

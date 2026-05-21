@@ -100,9 +100,19 @@ pub fn __init_with_wrapper<P: KeyProvider>(
         Err(cipher::DecryptError::AuthenticationFailed) => {
             return Err(InitError::Decryption);
         }
-        // UnsupportedFormat / UnsupportedCipher have no dedicated
-        // `InitError` variants yet; panic with no message to avoid
-        // embedding litmask-identifying text in the binary.
+        Err(cipher::DecryptError::UnsupportedFormat) => {
+            return Err(InitError::UnsupportedFormat);
+        }
+        Err(cipher::DecryptError::UnsupportedCipher) => {
+            return Err(InitError::UnsupportedCipher);
+        }
+        // `BlobTooShort` cannot reach this branch — `WRAPPER_LEN`
+        // is fixed at the type level, so the wrapper is always
+        // exactly long enough. A panic here would be a soundness
+        // bug in `decrypt_wrapper`, which the typed `WRAPPER_LEN`
+        // shape rules out at the call site; we keep the bare
+        // `panic!()` (no message) for compile-time exhaustiveness
+        // without leaking identifier text into the binary.
         Err(_) => panic!(),
     };
     cell::try_set(MaskKey::new(mask_key_bytes));

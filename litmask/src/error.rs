@@ -20,6 +20,16 @@ pub enum InitError {
     /// decryption — indistinguishable from the cryptographic
     /// standpoint between a wrong `unlock_key` and a tampered wrapper.
     Decryption,
+    /// The wrapper's format-version byte does not match a version
+    /// this build supports. Detected before AEAD decryption so a
+    /// tampered version byte cannot be silently swallowed as
+    /// [`Self::Decryption`] (§2.7.1, §1.12.2).
+    UnsupportedFormat,
+    /// The wrapper's cipher-id byte does not match the cipher this
+    /// build was compiled with. Detected before AEAD decryption so
+    /// a mismatched cipher byte produces a typed diagnostic instead
+    /// of a generic auth-failure (§2.7.1, §1.12.2).
+    UnsupportedCipher,
 }
 
 impl InitError {
@@ -51,6 +61,7 @@ impl InitError {
             Self::KeyProvider(KeyError::InvalidFormat) => 65,
             Self::KeyProvider(KeyError::Provider(_)) => 69,
             Self::Decryption => 65,
+            Self::UnsupportedFormat | Self::UnsupportedCipher => 70,
         }
     }
 }
@@ -60,6 +71,8 @@ impl fmt::Display for InitError {
         match self {
             Self::KeyProvider(e) => write!(f, "key_provider:{e}"),
             Self::Decryption => f.write_str("decryption"),
+            Self::UnsupportedFormat => f.write_str("unsupported_format"),
+            Self::UnsupportedCipher => f.write_str("unsupported_cipher"),
         }
     }
 }
@@ -68,7 +81,7 @@ impl core::error::Error for InitError {
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
         match self {
             Self::KeyProvider(e) => Some(e),
-            Self::Decryption => None,
+            Self::Decryption | Self::UnsupportedFormat | Self::UnsupportedCipher => None,
         }
     }
 }
@@ -227,5 +240,15 @@ mod tests {
     #[test]
     fn sysexit_code_decryption_is_ex_dataerr_65() {
         assert_eq!(InitError::Decryption.sysexit_code(), 65);
+    }
+
+    #[test]
+    fn sysexit_code_unsupported_format_is_ex_software_70() {
+        assert_eq!(InitError::UnsupportedFormat.sysexit_code(), 70);
+    }
+
+    #[test]
+    fn sysexit_code_unsupported_cipher_is_ex_software_70() {
+        assert_eq!(InitError::UnsupportedCipher.sysexit_code(), 70);
     }
 }

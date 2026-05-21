@@ -884,10 +884,8 @@ are inline literals — no external crate dependency.
 - [x] `InitError::KeyProvider(KeyError::InvalidFormat).sysexit_code()` == 65
 - [x] `InitError::KeyProvider(KeyError::Provider(_)).sysexit_code()` == 69
 - [x] `InitError::Decryption.sysexit_code()` == 65
-- [ ] `InitError::UnsupportedFormat.sysexit_code()` == 70 — DEFERRED to
-      Task 21 (variant lands there)
-- [ ] `InitError::UnsupportedCipher.sysexit_code()` == 70 — DEFERRED to
-      Task 21 (variant lands there)
+- [x] `InitError::UnsupportedFormat.sysexit_code()` == 70
+- [x] `InitError::UnsupportedCipher.sysexit_code()` == 70
 - [x] `cargo tree` shows no `sysexits` crate dependency
 
 ---
@@ -904,14 +902,14 @@ attempting decryption, returning `InitError::UnsupportedFormat` or
 
 ### Acceptance Criteria
 
-- [ ] GIVEN a fabricated wrapper with format byte `0x99`, WHEN `init()`,
+- [x] GIVEN a fabricated wrapper with format byte `0x99`, WHEN `init()`,
       THEN returns `Err(InitError::UnsupportedFormat)`
-- [ ] GIVEN a wrapper with cipher id `0x02` and runtime built without
+- [x] GIVEN a wrapper with cipher id `0x02` and runtime built without
       `aes-gcm`, WHEN `init()`, THEN returns
       `Err(InitError::UnsupportedCipher)`
-- [ ] Format/cipher checks happen before AEAD decryption (so a tampered
+- [x] Format/cipher checks happen before AEAD decryption (so a tampered
       cipher-id byte does not surface as `Decryption`)
-- [ ] Matching format + cipher continues to succeed
+- [x] Matching format + cipher continues to succeed
 
 ---
 
