@@ -1,4 +1,4 @@
-error: use of deprecated constant `fixture::__litmask_skips::_LITMASK_SKIP_0`: litmask: skipped literal: pattern_position
+error: use of deprecated constant `fixture::__litmask_skips::_LITMASK_SKIP_0`: litmask: skipped literal at $DIR/tests/compile/mask_all_pattern_warning.rs:15: pattern_position
   --> tests/compile/mask_all_pattern_warning.rs:11:1
    |
 11 | #[mask_all]

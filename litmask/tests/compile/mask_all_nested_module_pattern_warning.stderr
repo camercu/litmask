@@ -1,4 +1,4 @@
-error: use of deprecated constant `fixture::inner::__litmask_skips::_LITMASK_SKIP_0`: litmask: skipped literal: pattern_position
+error: use of deprecated constant `fixture::inner::__litmask_skips::_LITMASK_SKIP_0`: litmask: skipped literal at $DIR/tests/compile/mask_all_nested_module_pattern_warning.rs:22: pattern_position
   --> tests/compile/mask_all_nested_module_pattern_warning.rs:17:1
    |
 17 | #[mask_all]

@@ -1,4 +1,4 @@
-error: litmask: skipped literal: pattern_position
+error: litmask: skipped literal at $DIR/tests/compile/mask_all_strict_pattern_error.rs:12: pattern_position
  --> tests/compile/mask_all_strict_pattern_error.rs:8:1
   |
 8 | #[mask_all(strict)]

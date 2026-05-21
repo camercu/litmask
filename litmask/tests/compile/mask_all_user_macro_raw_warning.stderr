@@ -1,4 +1,4 @@
-error: use of deprecated constant `fixture::__litmask_skips::_LITMASK_SKIP_0`: litmask: skipped literal: unrecognized_macro
+error: use of deprecated constant `fixture::__litmask_skips::_LITMASK_SKIP_0`: litmask: skipped literal at $DIR/tests/compile/mask_all_user_macro_raw_warning.rs:20: unrecognized_macro
   --> tests/compile/mask_all_user_macro_raw_warning.rs:17:1
    |
 17 | #[mask_all]

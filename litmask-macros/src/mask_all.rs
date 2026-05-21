@@ -115,10 +115,11 @@ fn process_module(m: &mut syn::ItemMod, strict: bool) {
     items.extend(walker.diagnostic_items());
 }
 
-/// Reason tag for one skipped literal. Lives in the
-/// `#[deprecated(note = "...")]` text so the user can grep cargo's
-/// warning stream for the skip kind. The note string is fully
-/// preformatted per variant so emission doesn't allocate.
+/// Reason tag for one skipped literal. The full diagnostic note
+/// (per spec §2.3.1.4 amendment 2026-05-10) is
+/// `litmask: skipped literal at <file>:<line>: <reason>` — see
+/// [`SkipRecord::note`]. This enum carries the reason only; the
+/// file/line travels alongside it in a [`SkipRecord`].
 #[derive(Clone, Copy)]
 enum SkipReason {
     PatternPosition,
@@ -139,14 +140,54 @@ enum SkipReason {
 }
 
 impl SkipReason {
-    fn note(self) -> &'static str {
+    fn tag(self) -> &'static str {
         match self {
-            Self::PatternPosition => "litmask: skipped literal: pattern_position",
-            Self::ConstInitializer => "litmask: skipped literal: const_initializer",
-            Self::StaticInitializer => "litmask: skipped literal: static_initializer",
-            Self::UnrecognizedMacro => "litmask: skipped literal: unrecognized_macro",
-            Self::NonLiteralTemplate => "litmask: skipped literal: non_literal_template",
+            Self::PatternPosition => "pattern_position",
+            Self::ConstInitializer => "const_initializer",
+            Self::StaticInitializer => "static_initializer",
+            Self::UnrecognizedMacro => "unrecognized_macro",
+            Self::NonLiteralTemplate => "non_literal_template",
         }
+    }
+}
+
+/// One skipped literal: reason + the source location of the
+/// literal itself (file and line, captured from the literal's
+/// span at push time). The diagnostic note is normatively
+/// `litmask: skipped literal at <file>:<line>: <reason>` per
+/// §2.3.1.4 amendment 2026-05-10; the file/line in the note
+/// identifies the *literal*, not the auto-generated
+/// `#[deprecated]` const or `compile_error!()` item that carries
+/// it. File paths are stripped of the consumer crate's
+/// `CARGO_MANIFEST_DIR` prefix so the diagnostic text stays
+/// stable across hosts and build environments.
+#[derive(Clone)]
+struct SkipRecord {
+    reason: SkipReason,
+    file: String,
+    line: usize,
+}
+
+impl SkipRecord {
+    /// Build a record from a literal's `proc_macro2::Span`. The
+    /// path is canonicalized against `CARGO_MANIFEST_DIR` (read
+    /// from the proc-macro's environment) so absolute build-host
+    /// paths don't leak into the diagnostic text.
+    fn from_span(reason: SkipReason, span: proc_macro2::Span) -> Self {
+        let pm_span = span.unwrap();
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").ok();
+        let file = crate::common::canonicalize_file_path(pm_span.file(), manifest_dir.as_deref());
+        let line = pm_span.line();
+        Self { reason, file, line }
+    }
+
+    fn note(&self) -> String {
+        format!(
+            "litmask: skipped literal at {file}:{line}: {tag}",
+            file = self.file,
+            line = self.line,
+            tag = self.reason.tag(),
+        )
     }
 }
 
@@ -445,7 +486,7 @@ struct MaskAllWalker {
     /// over without rewriting. Translated to ghost-deprecation
     /// items (or `compile_error!` items under `strict`) in
     /// `diagnostic_items()` after the walk completes.
-    skipped: Vec<SkipReason>,
+    skipped: Vec<SkipRecord>,
 }
 
 impl MaskAllWalker {
@@ -547,8 +588,11 @@ impl MaskAllWalker {
                 self.rewrite_or_warn(em, head_arity, RewriteShape::Wrap)
             }
             MacroFamily::UserDefined => {
-                for _ in 0..count_string_literal_tokens(&em.mac.tokens) {
-                    self.skipped.push(SkipReason::UnrecognizedMacro);
+                for lit_span in string_literal_spans(&em.mac.tokens) {
+                    self.skipped.push(SkipRecord::from_span(
+                        SkipReason::UnrecognizedMacro,
+                        lit_span,
+                    ));
                 }
                 None
             }
@@ -572,7 +616,10 @@ impl MaskAllWalker {
             return Some(rewritten);
         }
         if has_non_literal_template(&em.mac.tokens, head_arity) {
-            self.skipped.push(SkipReason::NonLiteralTemplate);
+            self.skipped.push(SkipRecord::from_span(
+                SkipReason::NonLiteralTemplate,
+                em.mac.path.span(),
+            ));
         }
         None
     }
@@ -733,7 +780,8 @@ impl VisitMut for MaskAllWalker {
             return;
         };
         if let Some(reason) = self.current_skip_reason() {
-            self.skipped.push(reason);
+            self.skipped
+                .push(SkipRecord::from_span(reason, expr.span()));
         } else if self.skip_macro_depth == 0 {
             *expr = rewritten;
         }
@@ -819,7 +867,10 @@ impl VisitMut for MaskAllWalker {
         if let Pat::Lit(pat_lit) = pat
             && matches!(pat_lit.lit, Lit::Str(_) | Lit::ByteStr(_) | Lit::CStr(_))
         {
-            self.skipped.push(SkipReason::PatternPosition);
+            self.skipped.push(SkipRecord::from_span(
+                SkipReason::PatternPosition,
+                pat_lit.lit.span(),
+            ));
         }
     }
 }
@@ -860,33 +911,39 @@ fn maybe_rewrite_string_literal(expr: &Expr) -> Option<Expr> {
     Some(syn::parse2(tokens).expect("emitted mask!(literal) parses as Expr"))
 }
 
-/// Count string-shaped literal token-trees in `tokens`, recursing
-/// into groups (parens / brackets / braces). Used to emit one
-/// `UnrecognizedMacro` warning per string literal argument to a
-/// user-defined macro. The recursion is intentional: a literal
-/// nested inside an inner expression of a user-defined macro is
-/// still data the walker cannot mask and still warrants a warning.
+/// Collect the spans of every string-shaped literal token-tree in
+/// `tokens`, recursing into groups (parens / brackets / braces).
+/// Used to emit one `UnrecognizedMacro` skip per string literal
+/// argument to a user-defined macro, each carrying the literal's
+/// own source location.
 ///
 /// Each `TokenTree::Literal` is routed through `syn::parse2::<Lit>`
 /// so raw forms (`r"..."`, `br"..."`, `cr"..."`) classify uniformly
-/// with their quoted counterparts.
-fn count_string_literal_tokens(tokens: &TokenStream2) -> usize {
-    let mut count = 0;
+/// with their quoted counterparts. The literal's own span is
+/// preserved through the parse so the resulting [`SkipRecord`]
+/// points at the literal, not at the macro path.
+fn string_literal_spans(tokens: &TokenStream2) -> Vec<proc_macro2::Span> {
+    let mut out = Vec::new();
+    collect_string_literal_spans(tokens, &mut out);
+    out
+}
+
+fn collect_string_literal_spans(tokens: &TokenStream2, out: &mut Vec<proc_macro2::Span>) {
     for tt in tokens.clone() {
         match tt {
             proc_macro2::TokenTree::Literal(lit) => {
+                let span = lit.span();
                 let ts = TokenStream2::from(proc_macro2::TokenTree::Literal(lit));
                 if let Ok(parsed) = syn::parse2::<Lit>(ts)
                     && matches!(parsed, Lit::Str(_) | Lit::ByteStr(_) | Lit::CStr(_))
                 {
-                    count += 1;
+                    out.push(span);
                 }
             }
             proc_macro2::TokenTree::Group(g) => {
-                count += count_string_literal_tokens(&g.stream());
+                collect_string_literal_spans(&g.stream(), out);
             }
             _ => {}
         }
     }
-    count
 }

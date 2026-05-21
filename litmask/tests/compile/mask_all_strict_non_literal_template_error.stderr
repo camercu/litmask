@@ -1,4 +1,4 @@
-error: litmask: skipped literal: non_literal_template
+error: litmask: skipped literal at $DIR/tests/compile/mask_all_strict_non_literal_template_error.rs:12: non_literal_template
  --> tests/compile/mask_all_strict_non_literal_template_error.rs:9:1
   |
 9 | #[mask_all(strict)]

@@ -1,4 +1,4 @@
-error: use of deprecated constant `fixture::__litmask_skips::_LITMASK_SKIP_0`: litmask: skipped literal: const_initializer
+error: use of deprecated constant `fixture::__litmask_skips::_LITMASK_SKIP_0`: litmask: skipped literal at $DIR/tests/compile/mask_all_const_initializer_warning.rs:13: const_initializer
   --> tests/compile/mask_all_const_initializer_warning.rs:11:1
    |
 11 | #[mask_all]
