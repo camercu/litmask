@@ -672,13 +672,13 @@ must be either covered by the substitution table or marked with
 
 ### Acceptance Criteria
 
-- [ ] GIVEN a `#[mask_all(strict)]` module containing a bare literal in a
+- [x] GIVEN a `#[mask_all(strict)]` module containing a bare literal in a
       pattern position, WHEN compiled, THEN compilation FAILS
-- [ ] GIVEN the same module after wrapping the literal with `unmasked!()`,
+- [x] GIVEN the same module after wrapping the literal with `unmasked!()`,
       WHEN compiled, THEN compilation succeeds
-- [ ] `#[mask_all(strict)]` with `format!(non_literal_template, ...)`
+- [x] `#[mask_all(strict)]` with `format!(non_literal_template, ...)`
       fails compilation
-- [ ] `#[mask_all]` (non-strict) variant is unchanged: still warns
+- [x] `#[mask_all]` (non-strict) variant is unchanged: still warns
 
 ---
 

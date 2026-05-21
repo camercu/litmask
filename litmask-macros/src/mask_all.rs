@@ -36,7 +36,16 @@ const MACRO_NAME: &str = "mask_all";
 /// Implementation of the `#[proc_macro_attribute] mask_all` entry
 /// point. The attribute applies only to module items; other targets
 /// produce a typed compile error naming the constraint.
-pub(crate) fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
+///
+/// Attribute argument grammar: `#[mask_all]` (empty) or
+/// `#[mask_all(strict)]`. Strict mode (§2.3.3.1) upgrades the
+/// ghost-deprecation skip warnings to hard `compile_error!` items so
+/// every unmasked literal forces an explicit `unmasked!()` opt-out.
+pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let strict = match parse_attr_strict(attr.clone().into()) {
+        Ok(s) => s,
+        Err(err) => return err.to_compile_error().into(),
+    };
     let parsed = parse_macro_input!(item as Item);
     let Item::Mod(mut module) = parsed else {
         return compile_error(
@@ -48,33 +57,62 @@ pub(crate) fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
         .to_compile_error()
         .into();
     };
-    process_module(&mut module);
+    process_module(&mut module, strict);
     quote! { #module }.into()
 }
 
+/// Parse the attribute argument list. Accepts an empty arg list or
+/// the bare `strict` keyword; any other token shape yields a typed
+/// compile error so the user sees a specific diagnostic instead of
+/// silent acceptance of an unknown flag.
+fn parse_attr_strict(attr: TokenStream2) -> syn::Result<bool> {
+    use syn::parse::Parser as _;
+    let parser = |input: syn::parse::ParseStream| -> syn::Result<bool> {
+        if input.is_empty() {
+            return Ok(false);
+        }
+        let ident: syn::Ident = input.parse()?;
+        if ident == "strict" && input.is_empty() {
+            return Ok(true);
+        }
+        Err(syn::Error::new(
+            ident.span(),
+            "mask_all: invalid_arg: only `strict` is supported \
+             (e.g. `#[mask_all(strict)]`)",
+        ))
+    };
+    parser.parse2(attr)
+}
+
 /// Walk and rewrite one module's items with a fresh `MaskAllWalker`,
-/// then emit that module's `__litmask_skips` submodule (if any skips
-/// fired) into its own item list. Recurses explicitly into nested
-/// `mod` items so each module gets its own walker and its own skip
-/// anchor namespace — pooling all skips at the outer mod would
-/// shift diagnostic paths up one level for every nested literal.
+/// then emit that module's diagnostic items (deprecation anchors or
+/// `compile_error!` calls under strict) into its own item list.
+/// Recurses explicitly into nested `mod` items so each module gets
+/// its own walker and its own skip anchor namespace — pooling all
+/// skips at the outer mod would shift diagnostic paths up one level
+/// for every nested literal. The strict flag propagates unchanged
+/// into nested modules: an outer `#[mask_all(strict)]` applies to
+/// every literal in every descendant module of the attributed mod.
 ///
 /// `mod foo;` file-module forms have `content == None`; the items
 /// live in a separate file the proc-macro never sees, so the module
 /// passes through untouched.
-fn process_module(m: &mut syn::ItemMod) {
+fn process_module(m: &mut syn::ItemMod, strict: bool) {
     let Some((_, items)) = m.content.as_mut() else {
         return;
     };
-    let mut walker = MaskAllWalker::default();
+    let mut walker = MaskAllWalker {
+        strict,
+        ..MaskAllWalker::default()
+    };
     for item in items.iter_mut() {
         if let Item::Mod(child) = item {
-            process_module(child);
+            process_module(child, strict);
         } else {
             walker.visit_item_mut(item);
         }
     }
-    items.extend(walker.warning_items());
+    items.extend(walker.diagnostic_items());
 }
 
 /// Reason tag for one skipped literal. Lives in the
@@ -91,6 +129,13 @@ enum SkipReason {
     /// families). The literal is left alone and a warning fires per
     /// occurrence.
     UnrecognizedMacro,
+    /// One of the `format!` / output / write / panic /
+    /// `assert*!`-with-message macros was invoked with a non-`LitStr`
+    /// template (e.g., `format!(concat!(...), ...)`). The walker
+    /// cannot mask the template bytes, so the macro is left
+    /// unchanged and a warning fires per occurrence (§2.3.2.2–
+    /// §2.3.2.4).
+    NonLiteralTemplate,
 }
 
 impl SkipReason {
@@ -100,6 +145,7 @@ impl SkipReason {
             Self::ConstInitializer => "litmask: skipped literal: const_initializer",
             Self::StaticInitializer => "litmask: skipped literal: static_initializer",
             Self::UnrecognizedMacro => "litmask: skipped literal: unrecognized_macro",
+            Self::NonLiteralTemplate => "litmask: skipped literal: non_literal_template",
         }
     }
 }
@@ -392,9 +438,13 @@ struct MaskAllWalker {
     /// Depth inside a `Pat` (match arm pattern, `if let`,
     /// `while let`, `let` LHS pattern).
     pattern_depth: usize,
+    /// `#[mask_all(strict)]` (§2.3.3.1): every skip becomes a hard
+    /// `compile_error!` instead of a ghost-deprecation warning.
+    strict: bool,
     /// Skip reasons collected for each literal the walker passed
     /// over without rewriting. Translated to ghost-deprecation
-    /// items in `warning_items()` after the walk completes.
+    /// items (or `compile_error!` items under `strict`) in
+    /// `diagnostic_items()` after the walk completes.
     skipped: Vec<SkipReason>,
 }
 
@@ -425,16 +475,29 @@ impl MaskAllWalker {
         }
     }
 
-    /// Build a hidden submodule housing one `#[deprecated]` const per
-    /// skip plus a synthetic anchor fn that references each. Rustc's
-    /// `deprecated` lint fires once per reference, surfacing each
-    /// skip as a "use of deprecated constant" line in cargo output.
-    /// The submodule (`__litmask_skips`) scopes the consts so they
-    /// don't pollute the user-visible identifier namespace of the
-    /// attributed module.
-    fn warning_items(&self) -> Vec<syn::Item> {
+    /// Translate collected skip reasons into module-level diagnostic
+    /// items. In the default (non-strict) mode, emit a hidden
+    /// `__litmask_skips` submodule of `#[deprecated]` consts whose
+    /// `deprecated` lint surfaces each skip as a warning. In strict
+    /// mode (§2.3.3.1), each skip becomes a `compile_error!` item
+    /// instead — the build fails with one error per unmasked
+    /// literal, forcing the user to either mask it or wrap it in
+    /// `unmasked!()` (§2.3.3.2).
+    fn diagnostic_items(&self) -> Vec<syn::Item> {
         if self.skipped.is_empty() {
             return Vec::new();
+        }
+        if self.strict {
+            return self
+                .skipped
+                .iter()
+                .map(|reason| {
+                    let note = reason.note();
+                    syn::parse_quote! {
+                        ::core::compile_error!(#note);
+                    }
+                })
+                .collect();
         }
         let mut const_items: Vec<TokenStream2> = Vec::with_capacity(self.skipped.len());
         let mut anchor_refs: Vec<TokenStream2> = Vec::with_capacity(self.skipped.len());
@@ -475,13 +538,13 @@ impl MaskAllWalker {
             MacroFamily::RewriteToMasked { masked_name } => {
                 Some(rewrite_to_masked(em, masked_name))
             }
-            MacroFamily::Format => Self::rewrite_template(em, 0, RewriteShape::Replace),
+            MacroFamily::Format => self.rewrite_or_warn(em, 0, RewriteShape::Replace),
             MacroFamily::Output | MacroFamily::Panic => {
-                Self::rewrite_template(em, 0, RewriteShape::Wrap)
+                self.rewrite_or_warn(em, 0, RewriteShape::Wrap)
             }
-            MacroFamily::Write => Self::rewrite_template(em, 1, RewriteShape::Wrap),
+            MacroFamily::Write => self.rewrite_or_warn(em, 1, RewriteShape::Wrap),
             MacroFamily::AssertWithMessage { head_arity } => {
-                Self::rewrite_template(em, head_arity, RewriteShape::Wrap)
+                self.rewrite_or_warn(em, head_arity, RewriteShape::Wrap)
             }
             MacroFamily::UserDefined => {
                 for _ in 0..count_string_literal_tokens(&em.mac.tokens) {
@@ -490,6 +553,29 @@ impl MaskAllWalker {
                 None
             }
             MacroFamily::SkipExplicit | MacroFamily::SkipDiagnostic => None,
+        }
+    }
+
+    /// Try to rewrite a "head, template, args..." macro via
+    /// [`Self::rewrite_template`]. If the macro's template arg is
+    /// not a `LitStr` (e.g., `format!(concat!(...), ...)`), record
+    /// a `NonLiteralTemplate` skip so the macro shows up as a
+    /// warning in non-strict mode and a hard error under
+    /// `#[mask_all(strict)]` (§2.3.2.2–§2.3.2.4, §2.3.3.1).
+    fn rewrite_or_warn(
+        &mut self,
+        em: &syn::ExprMacro,
+        head_arity: usize,
+        shape: RewriteShape,
+    ) -> Option<Expr> {
+        match Self::rewrite_template(em, head_arity, shape) {
+            Some(rewritten) => Some(rewritten),
+            None => {
+                if has_non_literal_template(&em.mac.tokens, head_arity) {
+                    self.skipped.push(SkipReason::NonLiteralTemplate);
+                }
+                None
+            }
         }
     }
 
@@ -604,6 +690,35 @@ fn mixed_site_s() -> syn::Ident {
     syn::Ident::new("__s", proc_macro2::Span::mixed_site())
 }
 
+/// True if the macro body parses as `head[..head_arity], template,
+/// ...` where `template` is present but not a `LitStr`. Used to
+/// distinguish the "non-literal template" warning case (§2.3.2.2–
+/// §2.3.2.4) from the benign cases this helper is intentionally
+/// silent on: missing args (`panic!()` with no body) and genuine
+/// syntax errors. A `false` return means the macro body either had
+/// too few args or was malformed — `rewrite_or_warn` leaves it
+/// untouched and rustc surfaces the real error from the original
+/// invocation.
+fn has_non_literal_template(tokens: &TokenStream2, head_arity: usize) -> bool {
+    use syn::parse::Parser as _;
+    let parser = move |input: syn::parse::ParseStream| -> syn::Result<bool> {
+        let args: syn::punctuated::Punctuated<syn::Expr, syn::Token![,]> =
+            syn::punctuated::Punctuated::parse_terminated(input)?;
+        let Some(template) = args.iter().nth(head_arity) else {
+            return Ok(false);
+        };
+        let is_literal_template = matches!(
+            template,
+            syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(_),
+                ..
+            }),
+        );
+        Ok(!is_literal_template)
+    };
+    parser.parse2(tokens.clone()).unwrap_or(false)
+}
+
 impl VisitMut for MaskAllWalker {
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
         // Recurse first so inner expressions are processed bottom-up.
@@ -647,8 +762,10 @@ impl VisitMut for MaskAllWalker {
         // inner mod's skip anchors land in `inner::__litmask_skips`
         // rather than pooling at the outer mod's namespace. Do not
         // recurse via `visit_mut::visit_item_mod_mut(self, m)` — that
-        // would re-pool everything into `self.skipped`.
-        process_module(m);
+        // would re-pool everything into `self.skipped`. Strict mode
+        // propagates: an outer `#[mask_all(strict)]` constrains every
+        // descendant module the same way.
+        process_module(m, self.strict);
     }
 
     fn visit_item_const_mut(&mut self, item: &mut ItemConst) {

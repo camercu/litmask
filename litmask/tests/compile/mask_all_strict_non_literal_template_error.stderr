@@ -1,0 +1,7 @@
+error: litmask: skipped literal: non_literal_template
+ --> tests/compile/mask_all_strict_non_literal_template_error.rs:9:1
+  |
+9 | #[mask_all(strict)]
+  | ^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `mask_all` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,7 @@
+error: litmask: skipped literal: pattern_position
+ --> tests/compile/mask_all_strict_pattern_error.rs:8:1
+  |
+8 | #[mask_all(strict)]
+  | ^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `mask_all` (in Nightly builds, run with -Z macro-backtrace for more info)
