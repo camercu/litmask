@@ -191,21 +191,28 @@ pub(crate) fn plan_bind(
 
     // Re-encrypt mask_key under the new unlock_key, reusing the
     // existing nonce. Reuse is safe: the (key, nonce) pair never
-    // repeats because the key changed.
-    let Some(new_body) =
-        aead_encrypt_dispatch(cipher_byte, &new_unlock_key, &nonce, mask_key.as_slice())
-    else {
-        // Encrypt failure on a valid cipher/key/nonce combo is
-        // unreachable for the cipher set we support; classify as
-        // an internal error via SaltInvalid (the closest typed
-        // "the inputs combined into something the cipher refused"
-        // bucket) — would need a SpecBug variant for true
-        // exhaustiveness.
-        return BindOutcome::ConfigMalformed;
-    };
-    if new_body.len() != KEY_LEN + TAG_LEN {
-        return BindOutcome::ConfigMalformed;
-    }
+    // repeats because the key changed. `aead_encrypt_dispatch`
+    // returning `None` here would be a programmer bug: we've
+    // already validated `cipher_byte` against the two known
+    // constants (UnsupportedCipher branch above) and the AEAD
+    // implementations cannot fail for a 32-byte plaintext under
+    // a valid 32-byte key + 12-byte nonce. Panic on that
+    // contract violation rather than misclassify it as a
+    // user-input error (`ConfigMalformed`) — operators reading
+    // the diagnostic should see "this is a bug, file an issue",
+    // not "fix your config".
+    let new_body = aead_encrypt_dispatch(cipher_byte, &new_unlock_key, &nonce, mask_key.as_slice())
+        .unwrap_or_else(|| {
+            unreachable!(
+                "AEAD encrypt refused a 32-byte mask_key under a validated cipher/key/nonce — programmer bug in litmask-cli's bind dispatch",
+            )
+        });
+    assert!(
+        new_body.len() == KEY_LEN + TAG_LEN,
+        "AEAD encrypt returned wrong-length body: expected {} bytes, got {}",
+        KEY_LEN + TAG_LEN,
+        new_body.len(),
+    );
 
     // Assemble the new wrapper, patch the in-memory binary.
     let mut new_wrapper = [0u8; WRAPPER_LEN];

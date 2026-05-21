@@ -342,16 +342,27 @@ pub fn aead_encrypt(
                 .encrypt(AesNonce::from_slice(nonce), plaintext)
                 .map_err(|_| AeadError::AuthenticationFailed)
         }
-        // The match is exhaustive when both features are enabled
-        // (CLI dual-cipher mode). Under a single-cipher build the
-        // unused arm's variant is unreachable through normal control
-        // flow — the wrapper-parse check rejects mismatched cipher
-        // ids before dispatch — but it still has to be a typed
-        // CipherId value for the match to compile.
+        // Under a single-cipher build the unused-arm variant is
+        // statically unreachable through correct callers: the
+        // wrapper-parse + `decrypt_wrapper`'s `CURRENT_CIPHER`
+        // gate filter mismatched cipher ids before dispatch. A
+        // future caller that bypasses that gate is a programmer
+        // bug, not a runtime "wrong key" condition; panicking
+        // here makes the mistake loud instead of disguising it
+        // as `AuthenticationFailed`. The match still has to name
+        // the typed `CipherId` value to compile.
         #[cfg(not(feature = "chacha20-poly1305"))]
-        CipherId::ChaCha20Poly1305 => Err(AeadError::AuthenticationFailed),
+        CipherId::ChaCha20Poly1305 => {
+            unreachable!(
+                "aead_encrypt called with CipherId::ChaCha20Poly1305 in a build without the chacha20-poly1305 feature",
+            )
+        }
         #[cfg(not(feature = "aes-gcm"))]
-        CipherId::Aes256Gcm => Err(AeadError::AuthenticationFailed),
+        CipherId::Aes256Gcm => {
+            unreachable!(
+                "aead_encrypt called with CipherId::Aes256Gcm in a build without the aes-gcm feature",
+            )
+        }
     }
 }
 
@@ -362,6 +373,12 @@ pub fn aead_encrypt(
 ///
 /// Returns [`AeadError::AuthenticationFailed`] when the tag does not
 /// verify (wrong key, wrong nonce, or tampered bytes).
+///
+/// # Panics
+///
+/// Panics with `unreachable!()` if called with a [`CipherId`] whose
+/// AEAD implementation is not compiled into this build (see the
+/// caveat on `aead_encrypt`).
 pub fn aead_decrypt(
     cipher_id: CipherId,
     key: &[u8; KEY_LEN],
@@ -384,9 +401,17 @@ pub fn aead_decrypt(
                 .map_err(|_| AeadError::AuthenticationFailed)
         }
         #[cfg(not(feature = "chacha20-poly1305"))]
-        CipherId::ChaCha20Poly1305 => Err(AeadError::AuthenticationFailed),
+        CipherId::ChaCha20Poly1305 => {
+            unreachable!(
+                "aead_decrypt called with CipherId::ChaCha20Poly1305 in a build without the chacha20-poly1305 feature",
+            )
+        }
         #[cfg(not(feature = "aes-gcm"))]
-        CipherId::Aes256Gcm => Err(AeadError::AuthenticationFailed),
+        CipherId::Aes256Gcm => {
+            unreachable!(
+                "aead_decrypt called with CipherId::Aes256Gcm in a build without the aes-gcm feature",
+            )
+        }
     }
 }
 
