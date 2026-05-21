@@ -15,8 +15,29 @@ build = "build.rs"
 include = ["src/**/*", "build.rs", "examples/**/*"]
 
 [features]
-default = ["std"]
+# Cipher selection (§1.5.1). Default pulls in ChaCha20-Poly1305 via
+# `litmask-internal/chacha20-poly1305`; the `aes-gcm` feature flips
+# to AES-256-GCM. To swap ciphers without dragging the default
+# cipher into the dep tree:
+#
+#   cargo build -p litmask --no-default-features --features std,aes-gcm
+#
+# Cargo's feature-unification model does not let `--features aes-gcm`
+# alone suppress the default `chacha20-poly1305`; users targeting the
+# single-cipher property (§1.5.1, "exactly one cipher per build")
+# pass `--no-default-features` explicitly.
+default = ["std", "chacha20-poly1305"]
 std = []
+chacha20-poly1305 = [
+  "litmask-internal/chacha20-poly1305",
+  "litmask-build/chacha20-poly1305",
+  "litmask-macros/chacha20-poly1305",
+]
+aes-gcm = [
+  "litmask-internal/aes-gcm",
+  "litmask-build/aes-gcm",
+  "litmask-macros/aes-gcm",
+]
 # Currently a no-op marker: the runtime crate is always #![no_std] + alloc.
 # Listed for forward compatibility and so the spec-mandated acceptance
 # command `cargo build -p litmask --no-default-features --features alloc`

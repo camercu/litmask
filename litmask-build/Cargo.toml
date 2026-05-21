@@ -9,8 +9,18 @@ repository.workspace = true
 publish.workspace = true
 include = ["src/**/*"]
 
+[features]
+# Feature passthrough for the cipher selection (§1.5.1). `litmask-build`
+# is invoked from a consumer crate's `build.rs`, which inherits its
+# parent's cipher choice — Cargo's feature unification propagates
+# `aes-gcm` from `litmask` here automatically when the runtime crate
+# is built with `--features aes-gcm`.
+default = ["chacha20-poly1305"]
+chacha20-poly1305 = ["litmask-internal/chacha20-poly1305"]
+aes-gcm = ["litmask-internal/aes-gcm"]
+
 [dependencies]
-litmask-internal.workspace = true
+litmask-internal = { workspace = true, default-features = false }
 rand_chacha = "0.10"
 rand_core = "0.10"
 getrandom = "0.4"

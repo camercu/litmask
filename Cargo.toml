@@ -37,9 +37,15 @@ publish = false
 # required when publishing to a registry (and `publish = false` in
 # `.releaserc.json` skips that path).
 [workspace.dependencies]
-litmask-internal = { path = "litmask-internal" }
+# Cipher selection (§1.5.1): the runtime crate picks one cipher via
+# `default-features = false` + explicit feature in `litmask`'s own
+# Cargo.toml. `litmask-cli` does the same with both ciphers enabled.
+# `default-features = false` here keeps member crates in charge of
+# their own feature selection rather than inheriting whatever
+# litmask-internal's default happens to be.
+litmask-internal = { path = "litmask-internal", default-features = false }
 litmask-macros = { path = "litmask-macros" }
-litmask-build = { path = "litmask-build" }
+litmask-build = { path = "litmask-build", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

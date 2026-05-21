@@ -14,7 +14,9 @@ use quote::quote;
 use syn::LitStr;
 use zeroize::{Zeroize, Zeroizing};
 
-use litmask_internal::{CipherId, KEY_LEN, NONCE_LEN, TAG_LEN, aead_encrypt, nonce_for_call_site};
+use litmask_internal::{
+    CURRENT_CIPHER, KEY_LEN, NONCE_LEN, TAG_LEN, aead_encrypt, nonce_for_call_site,
+};
 
 /// Closed set of failure tags from spec §1.9.6. Every litmask compile
 /// error carries the invoking macro name plus one of these tags so
@@ -295,9 +297,8 @@ fn mask_plaintext(mut plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKin
     let nonce = nonce_for_call_site(&seed, &file, line, column, &plaintext);
     seed.zeroize();
 
-    let ciphertext_and_tag =
-        aead_encrypt(CipherId::ChaCha20Poly1305, &mask_key, &nonce, &plaintext)
-            .expect("AEAD encryption failed during litmask macro expansion");
+    let ciphertext_and_tag = aead_encrypt(CURRENT_CIPHER, &mask_key, &nonce, &plaintext)
+        .expect("AEAD encryption failed during litmask macro expansion");
     // The proc-macro server is a long-lived dylib; build-time key
     // material lingers in process memory if not explicitly cleared.
     // `litmask-build::emit` already zeroizes its copies — mirror

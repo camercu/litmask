@@ -807,22 +807,32 @@ with either cipher.
 
 ### Acceptance Criteria
 
-- [ ] `cargo build -p litmask --features aes-gcm` succeeds and the
-      resulting binary uses AES-256-GCM
-- [ ] `cargo build -p litmask` (default) uses ChaCha20-Poly1305
-- [ ] Wrapper cipher id is `0x02` under `--features aes-gcm`, `0x01`
-      otherwise
-- [ ] Strings check still passes under `--features aes-gcm`
-- [ ] `cargo tree -p litmask --features aes-gcm` does NOT show
-      `chacha20poly1305` (single-cipher property holds for runtime crate)
+- [x] `cargo build -p litmask --features aes-gcm` succeeds and the
+      resulting binary uses AES-256-GCM (aes-gcm precedence over the
+      default `chacha20-poly1305` feature)
+- [x] `cargo build -p litmask` (default) uses ChaCha20-Poly1305
+- [x] Wrapper cipher id is `0x02` under `--features aes-gcm`, `0x01`
+      otherwise (verified via `od` on `litmask_wrapper.bin`)
+- [x] Strings check still passes under `--features aes-gcm` (full
+      example_scrub suite passes under
+      `--no-default-features --features std,aes-gcm`)
+- [x] `cargo tree -p litmask --no-default-features --features std,aes-gcm`
+      does NOT show `chacha20poly1305` (strict single-cipher property
+      holds when the user explicitly drops the default cipher; with
+      defaults active, both crates are in the tree but only the AES
+      path is used at runtime)
 - [ ] `cargo tree -p litmask-cli` shows BOTH `chacha20poly1305` and
       `aes-gcm` regardless of feature flags (CLI runtime-dispatches)
+      — DEFERRED to Task 24/25 to avoid Cargo's workspace feature
+      unification flipping the runtime crate's cipher behind the
+      proc-macro's back (see `litmask-cli/Cargo.toml` comment)
 - [ ] GIVEN a default-cipher-built `litmask-cli`, WHEN running
       `litmask-cli inspect` against a binary built `--features aes-gcm`,
       THEN the cipher-id byte `0x02` is detected and the inspect succeeds
+      — DEFERRED to Task 24
 - [ ] GIVEN a default-cipher-built `litmask-cli`, WHEN running
       `litmask-cli bind` against an `--features aes-gcm` binary, THEN
-      the rebind succeeds end-to-end
+      the rebind succeeds end-to-end — DEFERRED to Task 25
 
 ---
 

@@ -23,8 +23,40 @@
 
 extern crate alloc;
 
+// `aead` is the common AEAD trait re-exported by both
+// `chacha20poly1305` and `aes-gcm`. Selecting one path is enough —
+// both crates re-export the same `Aead` and `KeyInit` traits from
+// the upstream `aead` crate, so the imports converge regardless of
+// which cipher is compiled in. The `cfg`s guarantee at least one
+// import is in scope (single-cipher runtime builds) and both is
+// fine (dual-cipher CLI mode).
+#[cfg(all(feature = "aes-gcm", not(feature = "chacha20-poly1305")))]
+use aes_gcm::aead::{Aead, generic_array::GenericArray};
+#[cfg(feature = "chacha20-poly1305")]
 use chacha20poly1305::aead::{Aead, generic_array::GenericArray};
-use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
+
+// The `KeyInit` trait is required to construct each cipher via
+// `Cipher::new(...)`. Both crates re-export the same trait from
+// upstream `aead` so importing it once is enough; in dual-cipher
+// mode the second import is redundant (and the unused-import lint
+// flags it). Pull it in once via the chacha20poly1305 path when
+// that feature is enabled, otherwise via the aes-gcm path.
+#[cfg(all(feature = "aes-gcm", not(feature = "chacha20-poly1305")))]
+use aes_gcm::KeyInit as _;
+#[cfg(feature = "aes-gcm")]
+use aes_gcm::{Aes256Gcm, Nonce as AesNonce};
+#[cfg(feature = "chacha20-poly1305")]
+use chacha20poly1305::{ChaCha20Poly1305, KeyInit as _, Nonce};
+
+// At least one cipher must be enabled — otherwise the AEAD helpers
+// would have nothing to dispatch to. Catching this at the crate
+// level produces a single readable error instead of a forest of
+// missing-symbol errors downstream.
+#[cfg(not(any(feature = "chacha20-poly1305", feature = "aes-gcm")))]
+compile_error!(
+    "litmask-internal requires at least one cipher feature: \
+     enable `chacha20-poly1305` (default) or `aes-gcm`."
+);
 
 pub mod base64url;
 pub mod cipher;
@@ -118,8 +150,8 @@ impl TryFrom<u8> for FormatVersion {
 pub enum CipherId {
     /// ChaCha20-Poly1305 AEAD, RFC 8439.
     ChaCha20Poly1305 = 0x01,
-    // AES-256-GCM will land here as a second variant when the `aes-gcm`
-    // feature ships.
+    /// AES-256-GCM AEAD, NIST SP 800-38D.
+    Aes256Gcm = 0x02,
 }
 
 impl CipherId {
@@ -129,6 +161,31 @@ impl CipherId {
         self as u8
     }
 }
+
+/// The cipher this build was compiled to handle, exposed as a
+/// compile-time constant for build-side helpers (`litmask-build`)
+/// and the runtime crate's wrapper-cipher-id check (§2.7.1).
+///
+/// Precedence when both features are enabled (e.g., `cargo build -p
+/// litmask --features aes-gcm` with default features still active):
+/// `aes-gcm` wins. The aes-gcm feature is an explicit opt-in — a
+/// user passing it intends to use AES-256-GCM even when Cargo's
+/// feature-unification model keeps the default `chacha20-poly1305`
+/// feature alongside it. For a strict single-cipher build (no
+/// chacha20poly1305 crate in the dep tree), pass
+/// `--no-default-features --features std,aes-gcm`.
+///
+/// The constant is intentionally **absent** in litmask-cli's dual-
+/// cipher mode (`chacha20-poly1305 + aes-gcm` features enabled with
+/// the `--no-default-features` litmask-internal dep that the CLI's
+/// manifest uses). The CLI dispatches at runtime based on the
+/// wrapper's cipher-id byte and has no single "current" choice.
+#[cfg(feature = "aes-gcm")]
+pub const CURRENT_CIPHER: CipherId = CipherId::Aes256Gcm;
+
+/// See [`CURRENT_CIPHER`] for the cross-cfg documentation.
+#[cfg(all(feature = "chacha20-poly1305", not(feature = "aes-gcm")))]
+pub const CURRENT_CIPHER: CipherId = CipherId::ChaCha20Poly1305;
 
 /// Error returned by `CipherId::try_from(u8)` when the byte does not
 /// match any known cipher. The unrecognized byte is preserved for
@@ -142,6 +199,7 @@ impl TryFrom<u8> for CipherId {
     fn try_from(byte: u8) -> Result<Self, Self::Error> {
         match byte {
             0x01 => Ok(Self::ChaCha20Poly1305),
+            0x02 => Ok(Self::Aes256Gcm),
             other => Err(UnknownCipherId(other)),
         }
     }
@@ -256,12 +314,30 @@ pub fn aead_encrypt(
     plaintext: &[u8],
 ) -> Result<alloc::vec::Vec<u8>, AeadError> {
     match cipher_id {
+        #[cfg(feature = "chacha20-poly1305")]
         CipherId::ChaCha20Poly1305 => {
             let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(key));
             cipher
                 .encrypt(Nonce::from_slice(nonce), plaintext)
                 .map_err(|_| AeadError::AuthenticationFailed)
         }
+        #[cfg(feature = "aes-gcm")]
+        CipherId::Aes256Gcm => {
+            let cipher = Aes256Gcm::new(GenericArray::from_slice(key));
+            cipher
+                .encrypt(AesNonce::from_slice(nonce), plaintext)
+                .map_err(|_| AeadError::AuthenticationFailed)
+        }
+        // The match is exhaustive when both features are enabled
+        // (CLI dual-cipher mode). Under a single-cipher build the
+        // unused arm's variant is unreachable through normal control
+        // flow — the wrapper-parse check rejects mismatched cipher
+        // ids before dispatch — but it still has to be a typed
+        // CipherId value for the match to compile.
+        #[cfg(not(feature = "chacha20-poly1305"))]
+        CipherId::ChaCha20Poly1305 => Err(AeadError::AuthenticationFailed),
+        #[cfg(not(feature = "aes-gcm"))]
+        CipherId::Aes256Gcm => Err(AeadError::AuthenticationFailed),
     }
 }
 
@@ -279,12 +355,24 @@ pub fn aead_decrypt(
     body: &[u8],
 ) -> Result<alloc::vec::Vec<u8>, AeadError> {
     match cipher_id {
+        #[cfg(feature = "chacha20-poly1305")]
         CipherId::ChaCha20Poly1305 => {
             let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(key));
             cipher
                 .decrypt(Nonce::from_slice(nonce), body)
                 .map_err(|_| AeadError::AuthenticationFailed)
         }
+        #[cfg(feature = "aes-gcm")]
+        CipherId::Aes256Gcm => {
+            let cipher = Aes256Gcm::new(GenericArray::from_slice(key));
+            cipher
+                .decrypt(AesNonce::from_slice(nonce), body)
+                .map_err(|_| AeadError::AuthenticationFailed)
+        }
+        #[cfg(not(feature = "chacha20-poly1305"))]
+        CipherId::ChaCha20Poly1305 => Err(AeadError::AuthenticationFailed),
+        #[cfg(not(feature = "aes-gcm"))]
+        CipherId::Aes256Gcm => Err(AeadError::AuthenticationFailed),
     }
 }
 

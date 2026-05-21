@@ -9,12 +9,26 @@ repository.workspace = true
 publish.workspace = true
 include = ["src/**/*"]
 
+[features]
+# Both cipher backends are opt-in deps so the runtime crate
+# (`litmask`) can pull in exactly one — the property §1.5.1 calls
+# out as "exactly one cipher per build". `litmask-cli` enables both
+# (per the §1.5.1 amendment) and dispatches at runtime based on the
+# wrapper's cipher-id byte.
+default = ["chacha20-poly1305"]
+chacha20-poly1305 = ["dep:chacha20poly1305"]
+aes-gcm = ["dep:aes-gcm"]
+
 [dependencies]
+aes-gcm = { version = "0.10", default-features = false, features = [
+  "alloc",
+  "aes",
+], optional = true }
 base64ct = { version = "1", features = ["alloc"] }
 blake3 = { version = "1", default-features = false }
 chacha20poly1305 = { version = "0.10", default-features = false, features = [
   "alloc",
-] }
+], optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]

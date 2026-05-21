@@ -12,6 +12,14 @@ include = ["src/**/*"]
 [lib]
 proc-macro = true
 
+[features]
+# Feature passthrough for cipher selection (§1.5.1). The runtime
+# crate (`litmask`) enables one of these to align proc-macro
+# encryption with runtime decryption.
+default = ["chacha20-poly1305"]
+chacha20-poly1305 = ["litmask-internal/chacha20-poly1305"]
+aes-gcm = ["litmask-internal/aes-gcm"]
+
 [dependencies]
 litmask-internal.workspace = true
 proc-macro2 = "1"

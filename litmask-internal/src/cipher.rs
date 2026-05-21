@@ -8,7 +8,7 @@
 use zeroize::Zeroizing;
 
 use crate::{
-    AeadError, CipherId, KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, WrapperParseError, aead_decrypt,
+    AeadError, KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, WrapperParseError, aead_decrypt,
     parse_wrapper,
 };
 
@@ -81,8 +81,8 @@ pub fn decrypt_wrapper(
 ///
 /// `blob` is `nonce (12) || ciphertext (n) || tag (16)`. The blob
 /// format does not record its own cipher id; every per-string blob
-/// in a binary uses the same cipher as the wrapper, hardcoded to
-/// ChaCha20-Poly1305.
+/// in a binary uses the same cipher as the wrapper, fixed at build
+/// time to the value [`crate::CURRENT_CIPHER`] resolves to.
 ///
 /// # Errors
 ///
@@ -102,14 +102,20 @@ pub fn decrypt_blob(
     // a test-time panic instead of silently feeding a too-short body
     // to the AEAD primitive.
     debug_assert!(body.len() >= TAG_LEN);
-    aead_decrypt(CipherId::ChaCha20Poly1305, mask_key, nonce, body).map_err(DecryptError::from)
+    aead_decrypt(crate::CURRENT_CIPHER, mask_key, nonce, body).map_err(DecryptError::from)
 }
 
-#[cfg(test)]
+// These unit tests fix the cipher to ChaCha20-Poly1305 — they
+// exercise the wrapper / blob round-trip plumbing under the default
+// cipher feature. The AES-GCM round-trip lives in
+// `tests/cipher_selection.rs` so this module stays gated cleanly on
+// the chacha feature.
+#[cfg(all(test, feature = "chacha20-poly1305"))]
 mod tests {
     use super::*;
     use crate::{
-        FormatVersion, WRAPPER_BODY_LEN, aead_encrypt, assemble_wrapper, nonce_for_wrapper,
+        CipherId, FormatVersion, WRAPPER_BODY_LEN, aead_encrypt, assemble_wrapper,
+        nonce_for_wrapper,
     };
 
     /// Encrypt a `mask_key` under `unlock_key` and assemble the

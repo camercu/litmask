@@ -36,7 +36,7 @@ use rand_core::{Rng, SeedableRng};
 use zeroize::{Zeroize, Zeroizing};
 
 use litmask_internal::{
-    CipherId, FormatVersion, KEY_LEN, NONCE_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN, aead_encrypt,
+    CURRENT_CIPHER, FormatVersion, KEY_LEN, NONCE_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN, aead_encrypt,
     assemble_wrapper, base64url, nonce_for_wrapper,
 };
 
@@ -130,7 +130,15 @@ impl BuildArtifacts {
         rng.fill_bytes(&mut mask_key);
         rng.fill_bytes(&mut unlock_key);
 
-        let cipher = CipherId::ChaCha20Poly1305;
+        // Single-cipher property: the runtime crate selects exactly
+        // one cipher at compile time (§1.5.1); `litmask-build`
+        // inherits that selection via `CURRENT_CIPHER`. A future
+        // dual-cipher CLI build of the build-script would not be
+        // valid (the build script writes a wrapper that the runtime
+        // crate consumes, and the runtime crate is always single-
+        // cipher), so `CURRENT_CIPHER` being undefined in dual mode
+        // is the correct compile error to surface.
+        let cipher = CURRENT_CIPHER;
         let wrapper_nonce = nonce_for_wrapper(seed);
         let mut ciphertext_with_tag =
             aead_encrypt(cipher, &unlock_key, &wrapper_nonce, mask_key.as_slice())
