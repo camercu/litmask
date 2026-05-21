@@ -242,12 +242,11 @@ where
 
 // ── HardwareIdProvider ──────────────────────────────────────
 
-/// BLAKE3 domain-separation tag for the hardware-id key derivation.
-/// Mixed into the keyed hash so the derived key cannot collide with
-/// other BLAKE3-keyed-hash outputs in the workspace (the wrapper
-/// nonce, the call-site nonce) at the same salt key.
-#[cfg(feature = "hw-id")]
-const HW_ID_DERIVATION_CONTEXT: &str = "litmask 2026-05-20 HardwareIdProvider derivation";
+// The BLAKE3 domain-separation tag for hw-id key derivation lives
+// in `litmask_internal::HW_ID_DERIVATION_CONTEXT` so this crate and
+// `litmask-cli`'s `bind` subcommand share a single canonical
+// string. A drift between the two would silently break bind ↔
+// runtime interop.
 
 /// Derives a 32-byte unlock key from the host's machine ID
 /// (§2.5.4.3). `unlock_key()` is deterministic per host: two calls
@@ -363,7 +362,7 @@ impl core::error::Error for MachineUidError {}
 #[cfg(feature = "hw-id")]
 fn derive_hw_key(machine_id: &[u8], salt: Option<&'static [u8]>) -> [u8; KEY_LEN] {
     let salt_bytes = salt.unwrap_or(&[]);
-    let key = blake3::derive_key(HW_ID_DERIVATION_CONTEXT, salt_bytes);
+    let key = blake3::derive_key(crate::internal::HW_ID_DERIVATION_CONTEXT, salt_bytes);
     let mac = blake3::keyed_hash(&key, machine_id);
     *mac.as_bytes()
 }

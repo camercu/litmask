@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 use aes_gcm::{Aes256Gcm, Nonce as AesNonce};
 use chacha20poly1305::aead::{Aead as _, KeyInit as _, generic_array::GenericArray};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChaNonce};
-use litmask_internal::base64url;
+use litmask_internal::{HW_ID_DERIVATION_CONTEXT, base64url};
 use zeroize::Zeroizing;
 
 // ── Wire-format constants (§1.7.3) ──────────────────────────
@@ -50,10 +50,10 @@ const CIPHER_CHACHA20_POLY1305: u8 = 0x01;
 const CIPHER_AES_256_GCM: u8 = 0x02;
 const FORMAT_V1: u8 = 0x01;
 
-/// BLAKE3 domain separator for the hardware-id key derivation —
-/// matches the constant in `litmask::provider` so a CLI-bound
-/// binary and a runtime `HardwareIdProvider` derive identical keys.
-const HW_ID_DERIVATION_CONTEXT: &str = "litmask 2026-05-20 HardwareIdProvider derivation";
+// `HW_ID_DERIVATION_CONTEXT` is imported from `litmask_internal` so
+// the CLI and the runtime `HardwareIdProvider` share a single
+// canonical string. A drift would silently break bind ↔ runtime
+// interop: every freshly bound binary would fail to unlock.
 
 // ── Functional core: bind planner ────────────────────────────
 

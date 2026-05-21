@@ -71,6 +71,20 @@ pub const NONCE_LEN: usize = 12;
 /// AEAD authentication-tag length, shared by both ciphers.
 pub const TAG_LEN: usize = 16;
 
+/// BLAKE3 domain separator for the hardware-id key derivation
+/// (§2.5.4.3). Shared verbatim by:
+///
+/// - `litmask::provider::HardwareIdProvider` (runtime side)
+/// - `litmask-cli`'s `bind` subcommand (build-time side)
+///
+/// Drift in this string between the two consumers would silently
+/// break the bind ↔ runtime contract: every freshly bound binary
+/// would fail to unlock because the build-time and runtime
+/// derivations would emit different keys for the same `(machine_id,
+/// salt)`. Centralizing here means both sides import the same
+/// symbol — Cargo's incremental rebuild catches any rename.
+pub const HW_ID_DERIVATION_CONTEXT: &str = "litmask 2026-05-20 HardwareIdProvider derivation";
+
 /// 1-byte version + 1-byte cipher id + 12-byte nonce.
 const HEADER_LEN: usize = 2 + NONCE_LEN;
 
