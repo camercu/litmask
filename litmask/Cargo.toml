@@ -38,12 +38,16 @@ aes-gcm = [
   "litmask-build/aes-gcm",
   "litmask-macros/aes-gcm",
 ]
-# Currently a no-op marker: the runtime crate is always #![no_std] + alloc.
-# Listed for forward compatibility and so the spec-mandated acceptance
-# command `cargo build -p litmask --no-default-features --features alloc`
-# is the natural invocation. Task 23 may attach real content to it
-# (e.g., once_cell::race::OnceBox under no_std).
-alloc = []
+# The `alloc` feature marks the no_std + alloc build target. It
+# transitively enables a cipher because `litmask-internal` cannot
+# compile without one (the AEAD primitives are the whole point of
+# the crate). ChaCha20-Poly1305 is the default choice because it
+# avoids the AES-NI / ARMv8-Crypto hardware-acceleration coupling
+# that `aes-gcm` benefits from on hosted platforms — a more
+# conservative default for the embedded targets `--features alloc`
+# is meant to serve. Users targeting embedded AES can still opt in
+# via `--features alloc,aes-gcm` (aes-gcm precedence rule applies).
+alloc = ["chacha20-poly1305"]
 # Pulls in `machine-uid` for `HardwareIdProvider` (§2.5.4, §1.6.5).
 # Opt-in only: the dependency adds platform-specific code paths and a
 # transitive `winreg`/`uuid` graph on Windows, which downstream users

@@ -95,6 +95,13 @@ build:
 check-no-default:
     cargo check -p litmask --no-default-features --features alloc
 
+# Cross-compile the runtime crate to a bare-metal embedded target
+# (§2.10.1–§2.10.6). The `thumbv7m-none-eabi` triple has no `std`
+# and no allocator, so this fails fast if any `std::` reference
+# leaks into `--no-default-features --features alloc` builds.
+check-no-std:
+    cargo check --target thumbv7m-none-eabi -p litmask --no-default-features --features alloc
+
 # ── Documentation ───────────────────────────────────────────
 
 doc:
@@ -170,7 +177,7 @@ pre-push:
 
 # ── CI ──────────────────────────────────────────────────────
 
-ci: fmt-check lint test test-examples build check-no-default doc
+ci: fmt-check lint test test-examples build check-no-default check-no-std doc
 
 # Stable-channel best-effort sanity check; runs in a continue-on-error
 # CI job so toolchain regressions surface without blocking PR merge.

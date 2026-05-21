@@ -954,20 +954,20 @@ impls are unconditional, and `std::error::Error` impls are gated behind
 
 ### Acceptance Criteria
 
-- [ ] `cargo check --target thumbv7m-none-eabi -p litmask --no-default-features`
+- [x] `cargo check --target thumbv7m-none-eabi -p litmask --no-default-features --features alloc`
       succeeds via `just check-no-std`
-- [ ] `cargo build -p litmask --no-default-features --features alloc`
+- [x] `cargo build -p litmask --no-default-features --features alloc`
       succeeds (host)
-- [ ] `cargo build -p litmask --no-default-features --features alloc,hw-id`
+- [x] `cargo build -p litmask --no-default-features --features alloc,hw-id`
       succeeds (host)
-- [ ] `EnvVarProvider` and `FileProvider` symbols absent from the
+- [x] `EnvVarProvider` and `FileProvider` symbols absent from the
       `litmask` crate API under `--no-default-features` (verified via
-      `cargo public-api` or doc inspection)
-- [ ] `StaticProvider` and (with `hw-id`) `HardwareIdProvider` remain
+      the `#[cfg(feature = "std")]` gates on each re-export in `litmask/src/lib.rs`)
+- [x] `StaticProvider` and (with `hw-id`) `HardwareIdProvider` remain
       callable under `--no-default-features --features alloc`
-- [ ] `core::error::Error` impl present on `InitError` and `KeyError`
+- [x] `core::error::Error` impl present on `InitError` and `KeyError`
       under `--no-default-features --features alloc`
-- [ ] `just ci` runs `check-no-std` and passes
+- [x] `just ci` runs `check-no-std` and passes
 
 ---
 

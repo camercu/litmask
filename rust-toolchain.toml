@@ -4,3 +4,7 @@
 channel = "1.88.0"
 profile = "minimal"
 components = ["clippy", "rustfmt"]
+# `thumbv7m-none-eabi` is the bare-metal embedded target used by
+# `just check-no-std` to cross-verify the runtime crate's
+# `--no-default-features --features alloc` build (§2.10.1).
+targets = ["thumbv7m-none-eabi"]
