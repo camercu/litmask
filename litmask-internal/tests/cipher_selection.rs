@@ -12,7 +12,22 @@
 // alone would warn about `KEY_LEN` / `aead_*` being unused.
 #![allow(unused_imports)]
 
-use litmask_internal::{CURRENT_CIPHER, CipherId, KEY_LEN, NONCE_LEN, aead_decrypt, aead_encrypt};
+use litmask_internal::{
+    CURRENT_CIPHER, CipherId, FormatVersion, KEY_LEN, NONCE_LEN, aead_decrypt, aead_encrypt,
+};
+
+#[test]
+fn format_version_v1_byte_is_0x01() {
+    // The wrapper's version byte is load-bearing for every reader
+    // (the runtime crate's wrapper-cipher check, litmask-cli's
+    // dispatcher, every future cross-version migration). A discriminant
+    // swap on `FormatVersion::V1` would break wire compatibility silently;
+    // the unit test in lib.rs covers it inside the crate, this one
+    // covers it across the public boundary so a renamed-or-deleted
+    // re-export also surfaces here.
+    assert_eq!(FormatVersion::V1.to_byte(), 0x01);
+    assert_eq!(FormatVersion::CURRENT.to_byte(), 0x01);
+}
 
 #[test]
 #[cfg(all(feature = "chacha20-poly1305", not(feature = "aes-gcm")))]
