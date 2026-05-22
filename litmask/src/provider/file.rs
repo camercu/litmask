@@ -115,11 +115,6 @@ fn read_file_bytes(path: &std::path::Path) -> Result<alloc::vec::Vec<u8>, KeyErr
 /// trailing newlines by default and a hard-failure mode would
 /// produce a frustrating diagnostic at deployment time. `Raw`
 /// mode requires exactly [`KEY_LEN`] bytes; one byte off → [`KeyError::InvalidFormat`].
-// `buffer` is intentionally taken by value: the function's contract
-// is that the buffer's `Drop` (which a Zeroizing wrapper hooks into
-// `Zeroize::zeroize`) runs at function return. Switching to `&Z`
-// would silently break the zeroize guarantee — the `Counted<T>` unit
-// test pins this exact contract.
 #[allow(clippy::needless_pass_by_value)]
 fn extract_key_from_buffer<Z>(buffer: Z, encoding: KeyEncoding) -> Result<UnlockKey, KeyError>
 where

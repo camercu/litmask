@@ -9,7 +9,7 @@
 //! - [`env`] / [`EnvVarProvider`] — `LITMASK_UNLOCK_KEY` environment var
 //! - [`file`] / [`FileProvider`] — filesystem path, base64url or raw
 //! - [`hw_id`] / [`HardwareIdProvider`] — machine-id + BLAKE3 (opt-in)
-//! - [`static_provider`] / [`StaticProvider`] — fixed key, tests-only
+//! - [`static_key`] / [`StaticProvider`] — fixed key, tests-only
 
 use crate::error::KeyError;
 use crate::key::UnlockKey;
@@ -20,7 +20,7 @@ pub(crate) mod env;
 pub(crate) mod file;
 #[cfg(feature = "hw-id")]
 pub(crate) mod hw_id;
-pub(crate) mod static_provider;
+pub(crate) mod static_key;
 
 #[cfg(feature = "std")]
 pub use env::EnvVarProvider;
@@ -28,7 +28,7 @@ pub use env::EnvVarProvider;
 pub use file::{FileProvider, KeyEncoding};
 #[cfg(feature = "hw-id")]
 pub use hw_id::HardwareIdProvider;
-pub use static_provider::StaticProvider;
+pub use static_key::StaticProvider;
 
 /// A source of `unlock_key` for the layered key strategy.
 ///
@@ -51,12 +51,30 @@ const _: fn() = || {
     fn _assert_object_safe(_: &dyn KeyProvider) {}
 };
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
     use super::*;
+    use crate::internal::KEY_LEN;
 
+    /// Pinned via `StaticProvider` because it's the one built-in
+    /// available in every build configuration (no-std, no-features),
+    /// so this assertion holds even when the std-only providers are
+    /// compiled out. A regression that broke object safety would
+    /// otherwise hide under `#[cfg(feature = "std")]`.
     #[test]
     fn key_provider_is_object_safe() {
+        let _: alloc::boxed::Box<dyn KeyProvider> =
+            alloc::boxed::Box::new(StaticProvider::new(UnlockKey::from_raw([0u8; KEY_LEN])));
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn key_provider_is_object_safe_for_env_provider() {
+        // Companion to the no-std assertion above: under the std
+        // feature, the env-var provider must also satisfy object
+        // safety. A regression that drifted only the std-only impls
+        // (e.g. an added associated type) would hide from the
+        // no-std-friendly test.
         let _: alloc::boxed::Box<dyn KeyProvider> =
             alloc::boxed::Box::new(EnvVarProvider::default());
     }

@@ -57,8 +57,12 @@ pub(crate) fn parse(config_text: &str) -> Result<LitmaskConfig, ParseError> {
 }
 
 /// Decode just the `locator` field. Used by `inspect`, which never
-/// touches `unlock_key` — avoiding the `unlock_key` parse path keeps
-/// the secret bytes out of `inspect`'s address space entirely.
+/// touches `unlock_key` — skipping the `unlock_key` parse path avoids
+/// decoding the secret to its raw 32-byte form. (The base64url-encoded
+/// secret still transits the `toml::Table` we parse above; eliminating
+/// the secret from `inspect`'s address space entirely would require a
+/// scanner that drops `unlock_key` before the TOML body lands in
+/// memory, which §2.9.2 doesn't ask for.)
 pub(crate) fn parse_locator_only(config_text: &str) -> Result<[u8; NONCE_LEN], ParseError> {
     let table: toml::Table = config_text.parse().map_err(|_| ParseError::Malformed)?;
     decode_locator(&table)

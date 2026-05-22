@@ -532,8 +532,8 @@ impl MaskAllWalker {
             return self
                 .skipped
                 .iter()
-                .map(|reason| {
-                    let note = reason.note();
+                .map(|record| {
+                    let note = record.note();
                     syn::parse_quote! {
                         ::core::compile_error!(#note);
                     }
@@ -542,9 +542,9 @@ impl MaskAllWalker {
         }
         let mut const_items: Vec<TokenStream2> = Vec::with_capacity(self.skipped.len());
         let mut anchor_refs: Vec<TokenStream2> = Vec::with_capacity(self.skipped.len());
-        for (i, reason) in self.skipped.iter().enumerate() {
+        for (i, record) in self.skipped.iter().enumerate() {
             let ident = format_ident!("_LITMASK_SKIP_{i}");
-            let note = reason.note();
+            let note = record.note();
             // `dead_code` allow is load-bearing: the const has no use
             // outside the sibling anchor fn. Without it, every skip
             // would emit a competing `unused constant` warning.

@@ -97,14 +97,15 @@ impl KeyProvider for HardwareIdProvider {
 /// This shim captures the upstream's `Display` rendering into an
 /// owned `String` and re-impls `Error` to satisfy the bound.
 ///
-/// **Information loss caveat.** The capture is single-line:
-/// `Display` is recorded; the upstream's `source()` chain is
-/// dropped on the floor. If `machine-uid::get()` ever wraps a
-/// nested cause (e.g. an `io::Error`), operators see only the
-/// outer message. Acceptable for the v1 surface — `machine-uid`'s
-/// current errors are flat strings — but a future upgrade to a
-/// richer machine-id backend would need this shim to walk
-/// `source()` at lift time.
+/// **If `machine-uid` ever wraps a nested cause.** Today its errors
+/// are flat strings, so capturing `Display` alone preserves every
+/// rendered diagnostic byte. A future `machine-uid` upgrade that
+/// chains an inner `io::Error` (or anything else with a non-empty
+/// `source()`) would silently drop the chain at this lift point —
+/// when that upgrade lands, walk `source()` here and accumulate the
+/// chain into the owned `String` (e.g. via the `: ` separator
+/// convention) before constructing `MachineUidError` so operators
+/// keep seeing the full root cause.
 #[derive(Debug)]
 struct MachineUidError(alloc::string::String);
 
