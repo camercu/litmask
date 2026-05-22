@@ -17,11 +17,15 @@
 use std::fs;
 use std::path::Path;
 
+use litmask_internal::NONCE_LEN;
+
 use crate::config;
 
-/// Wrapper-locator length (§1.7.3): the wrapper's first 12 bytes —
-/// header byte 0 + cipher byte + the first 10 bytes of the nonce.
-const LOCATOR_LEN: usize = 12;
+/// Wrapper-locator length (§1.7.3): the 12-byte nonce embedded at
+/// `NONCE_OFFSET` inside every wrapper, used verbatim as the search
+/// key. Aliased to [`NONCE_LEN`] so a future wire-format change to
+/// the nonce width updates the locator search in lockstep.
+const LOCATOR_LEN: usize = NONCE_LEN;
 
 /// Outcome of the pure planner. `plan` returns one of these
 /// variants; the shell renders each to its `(exit_code, stdout_tag)`

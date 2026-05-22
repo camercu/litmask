@@ -16,13 +16,12 @@ use std::process::Command;
 
 use chacha20poly1305::aead::{Aead, KeyInit, generic_array::GenericArray};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce};
-use litmask_internal::base64url;
+// Pull the wire-format constants from `litmask-internal` rather than
+// redefining them here: a future header tweak that drifts these
+// values would silently break this fixture while the production
+// path still matched.
+use litmask_internal::{HEADER_LEN, KEY_LEN, NONCE_LEN, WRAPPER_LEN, base64url};
 use tempfile::TempDir;
-
-const NONCE_LEN: usize = 12;
-const KEY_LEN: usize = 32;
-const HEADER_LEN: usize = 2 + NONCE_LEN;
-const WRAPPER_LEN: usize = HEADER_LEN + KEY_LEN + 16;
 
 fn cli_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_litmask-cli"))
