@@ -143,10 +143,16 @@ pub(crate) fn plan_bind(
     let Ok(wrapper): Result<[u8; WRAPPER_LEN], _> =
         binary_bytes[offset..offset + WRAPPER_LEN].try_into()
     else {
-        // Locate-wrapper already filtered offsets that don't have
-        // room for a full wrapper; reaching this branch would be
-        // a logic bug in `locate_wrapper`.
-        return BindOutcome::ConfigMalformed;
+        // `locate_wrapper` already filtered offsets that don't have
+        // room for a full WRAPPER_LEN slice (see its `i + WRAPPER_LEN
+        // <= haystack.len()` filter). Reaching this branch would be a
+        // logic bug in the locator, not a user-input failure — panic
+        // loudly rather than misclassify it as `ConfigMalformed` and
+        // send the operator looking at their `litmask.config`.
+        unreachable!(
+            "locate_wrapper returned offset {offset} but slice into binary_bytes[..{}] is not WRAPPER_LEN bytes — programmer bug in litmask-cli's bind locator",
+            offset + WRAPPER_LEN,
+        );
     };
 
     // Parse the wrapper's header bytes.
