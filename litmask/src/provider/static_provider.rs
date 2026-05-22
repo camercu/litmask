@@ -1,6 +1,8 @@
 //! [`StaticProvider`] — fixed in-memory `UnlockKey`. **FOR TESTS
 //! ONLY.** §2.5.5.
 
+use zeroize::Zeroize;
+
 use crate::error::KeyError;
 use crate::internal::KEY_LEN;
 use crate::key::UnlockKey;
@@ -19,11 +21,18 @@ use crate::provider::KeyProvider;
 /// duplicates secret material into process memory and defeats the
 /// hardware-binding aim of the layered key strategy — never wire it
 /// into a release build.
-pub struct StaticProvider {
-    key_bytes: [u8; KEY_LEN],
+///
+/// The `S` type parameter is a test seam: production code always
+/// uses `StaticProvider` (i.e. `StaticProvider<[u8; KEY_LEN]>`),
+/// while unit tests instantiate `StaticProvider<Counted>` to observe
+/// the Drop-time wipe without reading dropped memory (which would
+/// be UB). The default keeps the public API single-typed for all
+/// downstream callers.
+pub struct StaticProvider<S: Zeroize = [u8; KEY_LEN]> {
+    key_bytes: S,
 }
 
-impl StaticProvider {
+impl StaticProvider<[u8; KEY_LEN]> {
     /// Construct a provider that returns `key` on every call.
     ///
     /// Takes `UnlockKey` by value: the caller cedes ownership of the
@@ -41,17 +50,20 @@ impl StaticProvider {
     }
 }
 
-impl Drop for StaticProvider {
+impl<S: Zeroize> Drop for StaticProvider<S> {
     fn drop(&mut self) {
         // Wipe the held bytes when the provider is dropped — the
         // type is the only resident copy of the secret outside the
         // process-global mask key cell once it goes out of scope.
-        use zeroize::Zeroize as _;
+        // Dispatching through `Zeroize` (rather than calling
+        // `[u8; KEY_LEN]::zeroize` directly) is what lets the unit
+        // test substitute a `Counted` storage that observes whether
+        // the wipe ran.
         self.key_bytes.zeroize();
     }
 }
 
-impl KeyProvider for StaticProvider {
+impl KeyProvider for StaticProvider<[u8; KEY_LEN]> {
     fn unlock_key(&self) -> Result<UnlockKey, KeyError> {
         // Materialize a fresh UnlockKey on every call. The runtime
         // copies the bytes into `MaskKey` during init and the
@@ -64,6 +76,7 @@ impl KeyProvider for StaticProvider {
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
+    use core::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn static_provider_round_trips_key_bytes_verbatim() {
@@ -85,23 +98,49 @@ mod tests {
         assert_eq!(a.as_bytes(), b.as_bytes());
     }
 
+    /// Storage wrapper whose `Zeroize` impl bumps a caller-supplied
+    /// `AtomicUsize` in addition to wiping the held bytes. Mirrors
+    /// the `Counted` newtype in
+    /// `crate::provider::file::tests` — substituting it for the
+    /// production `[u8; KEY_LEN]` storage is what makes the
+    /// "Drop wipes the held bytes" contract observable without
+    /// reading dropped memory (UB).
+    struct Counted {
+        bytes: [u8; KEY_LEN],
+        counter: &'static AtomicUsize,
+    }
+
+    impl Zeroize for Counted {
+        fn zeroize(&mut self) {
+            self.bytes.zeroize();
+            self.counter.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
     #[test]
-    fn static_provider_drops_zero_held_bytes() {
-        // Drop wipes the stored bytes. Validate by examining the
-        // wrapper's internals before and after drop via mem::take.
-        // Reading dropped memory is UB, so we never inspect the
-        // bytes after Drop completes — instead we observe the
-        // wrapper's bytes immediately before invoking `drop` and
-        // re-construct expectations from there.
-        let bytes: [u8; KEY_LEN] = [0xEEu8; KEY_LEN];
-        let p = StaticProvider::new(UnlockKey::from_raw(bytes));
-        assert_eq!(p.key_bytes, bytes);
-        drop(p);
-        // Cannot read `p.key_bytes` after drop. The drop impl is
-        // the source of truth; this test pins that the field is
-        // accessible via the test seam BEFORE drop, so a future
-        // refactor that moved the bytes into a different storage
-        // shape (or skipped the wipe) trips a visible compile
-        // error or value mismatch.
+    fn static_provider_drop_zeroizes_held_storage_exactly_once() {
+        // Without the test seam, this test could only assert
+        // `p.key_bytes == bytes` BEFORE drop (reading after drop is
+        // UB) — passing even if the production Drop impl were
+        // deleted. The `Counted` storage routes the wipe through an
+        // observable side effect so a missing or stubbed Drop fails
+        // the assertion below.
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let provider = StaticProvider {
+            key_bytes: Counted {
+                bytes: [0xEEu8; KEY_LEN],
+                counter: &COUNTER,
+            },
+        };
+        // Sanity: nothing should have zeroized yet. A spurious
+        // construction-time wipe would inflate the count below and
+        // mask a missing Drop.
+        assert_eq!(COUNTER.load(Ordering::SeqCst), 0);
+        drop(provider);
+        // Exactly one wipe: the Drop impl runs once on the held
+        // storage. Removing the Drop leaves this at 0; an
+        // accidental double-drop (e.g. via mem::replace + manual
+        // drop) leaves it at 2.
+        assert_eq!(COUNTER.load(Ordering::SeqCst), 1);
     }
 }
