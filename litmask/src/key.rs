@@ -42,7 +42,7 @@ impl UnlockKey {
     /// Construct an `UnlockKey` from raw 32-byte material. Used by
     /// providers that source the key bytes directly (rather than via
     /// base64url-encoded text), e.g. `FileProvider` under
-    /// `KeyEncoding::Raw` and (Task 16) `HardwareIdProvider`. Stays
+    /// `KeyEncoding::Raw` and `HardwareIdProvider`. Stays
     /// crate-private so the encoded/typed entry points
     /// (`from_base64url`) remain the canonical user-facing API and a
     /// caller cannot accidentally bypass the length check by handing

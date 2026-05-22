@@ -176,9 +176,10 @@ mod tests {
 
     #[test]
     fn parses_gnu_typical_flag_before_positional() {
-        // The hand-rolled parser this replaces required strict
-        // positional ordering (binary BEFORE --config). clap accepts
-        // either, which matches every other Rust CLI tool.
+        // Pin GNU-style flag tolerance: `--config <val>` may appear
+        // before or after the positional `binary`. Required because
+        // every other Rust CLI tool accepts both orderings, and
+        // operators copy-paste argv across them.
         let cli = parse_argv(&["inspect", "--config", "/cfg", "/bin"]).unwrap();
         match cli.command {
             Command::Inspect { binary, config } => {
@@ -192,7 +193,8 @@ mod tests {
     #[test]
     fn parses_equals_form_for_flag_value() {
         // `--config=value` (single-token form) is the canonical
-        // GNU-style flag syntax; the hand-rolled parser rejected it.
+        // GNU-style flag syntax; tooling that emits this form must
+        // round-trip without a separator-token workaround.
         let cli = parse_argv(&["inspect", "/bin", "--config=/cfg"]).unwrap();
         match cli.command {
             Command::Inspect { config, .. } => assert_eq!(config, PathBuf::from("/cfg")),

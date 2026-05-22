@@ -42,11 +42,12 @@ impl InitError {
     /// | `KeyProvider(InvalidFormat)` | 65 | `EX_DATAERR` |
     /// | `KeyProvider(Provider(_))` | 69 | `EX_UNAVAILABLE` |
     /// | `Decryption` | 65 | `EX_DATAERR` |
+    /// | `UnsupportedFormat` | 70 | `EX_SOFTWARE` |
+    /// | `UnsupportedCipher` | 70 | `EX_SOFTWARE` |
     ///
-    /// The numeric constants are inline literals — no `sysexits`
-    /// crate dependency. The mapping mirrors the table in §1.9.7
-    /// verbatim; future variants (`UnsupportedFormat` /
-    /// `UnsupportedCipher`, landing in Task 21) MUST extend this match.
+    /// Numeric constants are inline literals — no `sysexits` crate
+    /// dependency. The mapping mirrors the §1.9.7 table verbatim;
+    /// new variants MUST extend this match in lockstep.
     #[must_use]
     // `match_same_arms` would collapse `InvalidFormat` and
     // `Decryption` into a single arm because both map to 65. They

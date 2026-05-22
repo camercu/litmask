@@ -43,8 +43,6 @@ use litmask_internal::{
 };
 use zeroize::Zeroizing;
 
-// ── Functional core: bind planner ────────────────────────────
-
 /// Outcome of [`plan_bind`]. The `Success` variant carries the new
 /// bytes the shell will write; every other variant is a typed
 /// classification of "what went wrong" that the shell renders to
@@ -134,7 +132,6 @@ pub(crate) fn plan_bind(
         return BindOutcome::ConfigMalformed;
     };
 
-    // Locate the wrapper.
     let offset = match locate_wrapper(binary_bytes, &parsed_config.locator) {
         LocateOutcome::Single(o) => o,
         LocateOutcome::None => return BindOutcome::NotFound,
@@ -155,7 +152,6 @@ pub(crate) fn plan_bind(
         );
     };
 
-    // Parse the wrapper's header bytes.
     if wrapper[VERSION_OFFSET] != FORMAT_V1 {
         return BindOutcome::UnsupportedFormat;
     }
@@ -168,7 +164,6 @@ pub(crate) fn plan_bind(
         .expect("12-byte slice");
     let body = &wrapper[HEADER_LEN..];
 
-    // Decrypt under the current unlock_key.
     let Some(mask_key) =
         aead_decrypt_dispatch(cipher_byte, &parsed_config.unlock_key, &nonce, body)
             .filter(|p| p.len() == KEY_LEN)
@@ -208,7 +203,6 @@ pub(crate) fn plan_bind(
         new_body.len(),
     );
 
-    // Assemble the new wrapper, patch the in-memory binary.
     let mut new_wrapper = [0u8; WRAPPER_LEN];
     new_wrapper[VERSION_OFFSET] = FORMAT_V1;
     new_wrapper[CIPHER_OFFSET] = cipher_byte;
@@ -217,8 +211,9 @@ pub(crate) fn plan_bind(
     let mut new_binary_bytes = binary_bytes.to_vec();
     new_binary_bytes[offset..offset + WRAPPER_LEN].copy_from_slice(&new_wrapper);
 
-    // Render the new config (locator unchanged because nonce
-    // unchanged).
+    // Locator stays put because the nonce did — only `unlock_key`
+    // rotates, so the rendered config differs from the input only
+    // in its `unlock_key` field.
     let new_config_text = render_config(&new_unlock_key, &parsed_config.locator);
 
     BindOutcome::Success(Commit {
@@ -314,8 +309,6 @@ fn render_config(unlock_key: &[u8; KEY_LEN], locator: &[u8; NONCE_LEN]) -> Strin
         base64url::encode(locator),
     )
 }
-
-// ── Functional core: atomic-commit planner ───────────────────
 
 /// One step of the §1.7.7 atomic commit protocol. The plan is a
 /// `Vec<Operation>`; the executor applies them in order, surfacing
@@ -466,8 +459,6 @@ fn tempfile_alongside(target: &Path) -> PathBuf {
     };
     parent.join(format!(".{}.bind-{}.tmp", name, std::process::id()))
 }
-
-// ── Imperative shell ─────────────────────────────────────────
 
 /// Shell-layer failure shapes. These cover the I/O that happens
 /// outside the pure planner (file reads, machine-uid lookup, the

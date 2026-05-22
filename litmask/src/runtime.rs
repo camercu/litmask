@@ -84,8 +84,9 @@ mod cell {
 /// Forwards provider errors via [`InitError::KeyProvider`]. AEAD
 /// authentication failure on the embedded wrapper (wrong `unlock_key`
 /// or tampered wrapper — cryptographically indistinguishable) returns
-/// [`InitError::Decryption`]. Unsupported format/cipher header bytes
-/// still panic until their typed variants land.
+/// [`InitError::Decryption`]. Unrecognized wrapper header bytes
+/// surface as [`InitError::UnsupportedFormat`] or
+/// [`InitError::UnsupportedCipher`] (§2.7.1).
 #[doc(hidden)]
 pub fn __init_with_wrapper<P: KeyProvider>(
     provider: P,
