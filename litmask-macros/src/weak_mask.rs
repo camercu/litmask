@@ -8,6 +8,12 @@
 //! Use only for non-secret strings that need `strings(1)` protection
 //! and must be readable before `init!()` runs (env-var names,
 //! default file paths).
+//!
+//! Works under `no_std + alloc`. The per-call-site cache is the
+//! `litmask::__internal::WeakCell` shim, which resolves to
+//! `std::sync::OnceLock<String>` under the `std` feature and
+//! `once_cell::race::OnceBox<String>` under `no_std + alloc`. Same
+//! observable contract either way; the macro emits one shape.
 
 use proc_macro::TokenStream;
 use quote::quote;
@@ -47,8 +53,8 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     quote! {
         {
             const #obf_ident: &[u8; #encoded_len] = &#encoded_lit;
-            static #cache_ident: ::std::sync::OnceLock<::std::string::String> =
-                ::std::sync::OnceLock::new();
+            static #cache_ident: ::litmask::__internal::WeakCell =
+                ::litmask::__internal::WeakCell::new();
             ::litmask::__internal::__weak_decode(
                 #obf_ident,
                 ::litmask::__wrapper_bytes!(),

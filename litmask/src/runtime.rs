@@ -19,8 +19,6 @@
     clippy::must_use_candidate
 )]
 
-// `String` is only used by the std-gated `__weak_decode` path below.
-#[cfg(feature = "std")]
 use alloc::string::String;
 
 use crate::error::InitError;
@@ -151,6 +149,12 @@ pub fn __decrypt(blob: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> alloc::vec::Vec<u8
 /// the XOR-cycle and materialize the decoded plaintext directly in
 /// `.rodata`, defeating `weak_mask!()`'s anti-`strings(1)` purpose.
 ///
+/// The cache parameter is the [`WeakCell`] shim — under the `std`
+/// feature it wraps `std::sync::OnceLock<String>`, under
+/// `no_std + alloc` it wraps `once_cell::race::OnceBox<String>`.
+/// Either backend gives the same observable contract: at-most-once
+/// initialization, stable borrow of the cached `String`.
+///
 /// # Panics
 ///
 /// Panics if the cached decode does not produce valid UTF-8. The
@@ -158,21 +162,90 @@ pub fn __decrypt(blob: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> alloc::vec::Vec<u8
 /// guarantee here is just that `weak_mask!()` callers don't feed it
 /// arbitrary bytes; UTF-8 failure indicates an in-process tamper of
 /// either the obfuscated bytes or the wrapper.
-#[cfg(feature = "std")]
 #[doc(hidden)]
 pub fn __weak_decode<const N: usize>(
     obf: &'static [u8; N],
     wrapper: &'static [u8; WRAPPER_LEN],
-    cache: &'static std::sync::OnceLock<String>,
+    cache: &'static WeakCell,
 ) -> &'static str {
-    cache
-        .get_or_init(|| {
-            let wrapper = core::hint::black_box(&wrapper[..]);
-            let obf = core::hint::black_box(&obf[..]);
-            let decoded = crate::internal::xor_cycle(obf, wrapper);
-            String::from_utf8(decoded).unwrap()
-        })
-        .as_str()
+    cache.get_or_init(|| {
+        let wrapper = core::hint::black_box(&wrapper[..]);
+        let obf = core::hint::black_box(&obf[..]);
+        let decoded = crate::internal::xor_cycle(obf, wrapper);
+        String::from_utf8(decoded).unwrap()
+    })
+}
+
+/// Per-call-site cache type for `weak_mask!()`. The proc-macro
+/// emits a `static` of this type at each invocation site; the first
+/// runtime access through [`__weak_decode`] populates it with the
+/// decoded `String`, and subsequent accesses return a borrow.
+///
+/// Two backends, selected by feature flag:
+///
+/// - `feature = "std"` → `std::sync::OnceLock<String>`. Standard
+///   library primitive, optimal under hosted targets.
+/// - `not(feature = "std")` → `once_cell::race::OnceBox<String>`.
+///   The same `race::OnceBox` primitive the runtime's global
+///   `MASK_KEY` cell uses under `no_std + alloc`.
+///
+/// The two backends have differently-shaped `get_or_init` APIs
+/// (`OnceLock` accepts `FnOnce() -> T`; `OnceBox` accepts `FnOnce()
+/// -> Box<T>`). The shim wraps both behind a unified
+/// `FnOnce() -> String` interface so callers don't have to feature-
+/// gate at every call site.
+///
+/// # Why a struct and not a type alias
+///
+/// A bare `pub type WeakCell = <backend>` would force callers (the
+/// emitted `weak_mask!()` expansion) to know the backend's
+/// `get_or_init` shape per feature. The struct wrapper localizes
+/// that conditional inside this module so the proc-macro emits one
+/// shape regardless of which feature is active.
+#[doc(hidden)]
+pub struct WeakCell {
+    #[cfg(feature = "std")]
+    inner: std::sync::OnceLock<String>,
+    #[cfg(not(feature = "std"))]
+    inner: once_cell::race::OnceBox<String>,
+}
+
+impl WeakCell {
+    /// Construct an empty cell. `const fn` so the proc-macro can
+    /// emit `static __WEAK_CACHE: WeakCell = WeakCell::new();`
+    /// without a lazy initializer.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            #[cfg(feature = "std")]
+            inner: std::sync::OnceLock::new(),
+            #[cfg(not(feature = "std"))]
+            inner: once_cell::race::OnceBox::new(),
+        }
+    }
+
+    /// Initialize the cell on first call; return a `&str` borrowing
+    /// the cached `String`. The closure runs at most once even
+    /// under concurrent first-callers (`OnceLock` / `OnceBox` both
+    /// guarantee this).
+    pub fn get_or_init<F: FnOnce() -> String>(&'static self, f: F) -> &'static str {
+        #[cfg(feature = "std")]
+        {
+            self.inner.get_or_init(f).as_str()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            self.inner
+                .get_or_init(|| alloc::boxed::Box::new(f()))
+                .as_str()
+        }
+    }
+}
+
+impl Default for WeakCell {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {

@@ -150,9 +150,7 @@ macro_rules! __decrypt_cstring_call {
 #[doc(hidden)]
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.
-    #[cfg(feature = "std")]
-    pub use crate::runtime::__weak_decode;
-    pub use crate::runtime::{__decrypt, __init_with_wrapper};
+    pub use crate::runtime::{__decrypt, __init_with_wrapper, __weak_decode, WeakCell};
     // Re-export under a hygienic alias so the proc-macro emits a
     // single `::litmask::__internal::__String::from_utf8(...)` path
     // for the `mask!("...")` case.
