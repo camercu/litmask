@@ -9,11 +9,16 @@ use crate::internal::KEY_LEN;
 use crate::key::UnlockKey;
 use crate::provider::KeyProvider;
 
-// The BLAKE3 domain-separation tag for hw-id key derivation lives
-// in `litmask_internal::HW_ID_DERIVATION_CONTEXT` so this crate and
-// `litmask-cli`'s `bind` subcommand share a single canonical
-// string. A drift between the two would silently break bind ↔
-// runtime interop.
+// The BLAKE3 `derive_key` context for hw-id key derivation is the
+// short literal `"hw-v1"`. The runtime call site below routes it
+// through `crate::weak_mask!()` so the string is obfuscated in user
+// binaries (the runtime path is the one place this constant would
+// otherwise land in `strings(1)` output). `litmask-cli`'s `bind`
+// subcommand imports the canonical value from
+// `litmask_internal::HW_ID_DERIVATION_CONTEXT` directly — CLI tools
+// don't need the obfuscation. The literal-vs-const drift between
+// the two sides is pinned by `weak_mask_literal_matches_const` in
+// the test module below.
 
 /// Derives a 32-byte unlock key from the host's machine ID
 /// (§2.5.4.3). `unlock_key()` is deterministic per host: two calls
@@ -83,7 +88,15 @@ impl KeyProvider for HardwareIdProvider {
         // a stable host identifier would linger in the allocator
         // even though `UnlockKey` zeroizes the derived key.
         let machine_id = Zeroizing::new(machine_id);
+        // `weak_mask!()` keeps the BLAKE3 context literal out of
+        // `strings(1)` output for user binaries. The literal MUST
+        // match `litmask_internal::HW_ID_DERIVATION_CONTEXT`
+        // byte-for-byte (which `bind` imports directly) or bind ↔
+        // runtime derivations produce different keys; the drift is
+        // pinned by the `weak_mask_literal_matches_const` unit
+        // test below.
         Ok(UnlockKey::from_raw(derive_hw_key(
+            crate::weak_mask!("hw-v1"),
             machine_id.as_bytes(),
             self.salt,
         )))
@@ -118,10 +131,11 @@ impl core::fmt::Display for MachineUidError {
 impl core::error::Error for MachineUidError {}
 
 /// Pure BLAKE3-keyed-hash derivation: produce a 32-byte unlock key
-/// from `machine_id` and an optional salt. Extracted so unit tests
-/// can pin the derivation behavior (determinism, salt
-/// discrimination) without depending on a host with `machine-uid`
-/// access.
+/// from `(context, machine_id, salt)`. `context` is the BLAKE3
+/// `derive_key` domain separator; the runtime caller passes the
+/// `weak_mask!`-decoded form so tests can supply
+/// `HW_ID_DERIVATION_CONTEXT` directly without depending on
+/// `weak_mask!`'s wrapper-XOR machinery.
 ///
 /// Derivation: `blake3::derive_key` over the salt (or the empty
 /// byte string when no salt) produces a 32-byte BLAKE3 key, then
@@ -130,9 +144,9 @@ impl core::error::Error for MachineUidError {}
 /// the workspace; the keyed hash binds the machine id into the
 /// 32-byte output without revealing the bare machine id in the
 /// output.
-fn derive_hw_key(machine_id: &[u8], salt: Option<&'static [u8]>) -> [u8; KEY_LEN] {
+fn derive_hw_key(context: &str, machine_id: &[u8], salt: Option<&'static [u8]>) -> [u8; KEY_LEN] {
     let salt_bytes = salt.unwrap_or(&[]);
-    let key = blake3::derive_key(crate::internal::HW_ID_DERIVATION_CONTEXT, salt_bytes);
+    let key = blake3::derive_key(context, salt_bytes);
     let mac = blake3::keyed_hash(&key, machine_id);
     *mac.as_bytes()
 }
@@ -140,20 +154,21 @@ fn derive_hw_key(machine_id: &[u8], salt: Option<&'static [u8]>) -> [u8; KEY_LEN
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::internal::HW_ID_DERIVATION_CONTEXT;
 
     #[test]
     fn derive_hw_key_is_deterministic_for_same_inputs() {
         // The runtime deployment depends on this property: the
-        // build's wrapper is encrypted under derive_hw_key(machine_id,
-        // salt) at build time; the binary recovers the same key at
-        // runtime. A non-deterministic derivation would brick every
-        // hw-id deployment.
+        // build's wrapper is encrypted under derive_hw_key(ctx,
+        // machine_id, salt) at build time; the binary recovers the
+        // same key at runtime. A non-deterministic derivation would
+        // brick every hw-id deployment.
         let machine_id = b"fixed-test-machine-id";
-        let a = derive_hw_key(machine_id, None);
-        let b = derive_hw_key(machine_id, None);
+        let a = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, None);
+        let b = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, None);
         assert_eq!(a, b);
-        let a_salt = derive_hw_key(machine_id, Some(b"salt-A"));
-        let b_salt = derive_hw_key(machine_id, Some(b"salt-A"));
+        let a_salt = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, Some(b"salt-A"));
+        let b_salt = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, Some(b"salt-A"));
         assert_eq!(a_salt, b_salt);
     }
 
@@ -164,9 +179,9 @@ mod tests {
         // would also share an unlock key, defeating the purpose of
         // per-product salting.
         let machine_id = b"fixed-test-machine-id";
-        let unsalted = derive_hw_key(machine_id, None);
-        let salt_a = derive_hw_key(machine_id, Some(b"salt-A"));
-        let salt_b = derive_hw_key(machine_id, Some(b"salt-B"));
+        let unsalted = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, None);
+        let salt_a = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, Some(b"salt-A"));
+        let salt_b = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, Some(b"salt-B"));
         assert_ne!(unsalted, salt_a);
         assert_ne!(unsalted, salt_b);
         assert_ne!(salt_a, salt_b);
@@ -177,8 +192,8 @@ mod tests {
         // Two distinct hosts MUST produce distinct keys for the same
         // salt; the hardware binding is the whole point.
         let salt = Some(b"shared-salt".as_slice());
-        let host_a = derive_hw_key(b"host-A", salt);
-        let host_b = derive_hw_key(b"host-B", salt);
+        let host_a = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"host-A", salt);
+        let host_b = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"host-B", salt);
         assert_ne!(host_a, host_b);
     }
 
@@ -189,7 +204,7 @@ mod tests {
         // API change that shortened the output would silently zero-
         // pad the tail of the key — the property test pins the
         // current shape.
-        let key = derive_hw_key(b"any-host", None);
+        let key = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"any-host", None);
         assert_eq!(key.len(), KEY_LEN);
         // Sanity: BLAKE3 of a fixed input is not the all-zero vector.
         assert!(key.iter().any(|&b| b != 0));
@@ -214,5 +229,19 @@ mod tests {
         let wrapped = MachineUidError(alloc::string::String::from("simulated upstream error"));
         assert_eq!(alloc::format!("{wrapped}"), "simulated upstream error");
         assert_send_sync::<MachineUidError>();
+    }
+
+    /// Pin the literal-vs-const drift: the runtime call site
+    /// (`KeyProvider::unlock_key` above) inlines `weak_mask!("hw-v1")`
+    /// so the BLAKE3 context bytes are obfuscated in user binaries,
+    /// while `litmask-cli`'s `bind` imports
+    /// `HW_ID_DERIVATION_CONTEXT` directly. The two MUST decode to
+    /// the same string or every freshly-bound binary will fail to
+    /// unlock: bind would derive its mask key under one context and
+    /// runtime would expect a different one. This test verifies the
+    /// `weak_mask!()` literal still matches the canonical const.
+    #[test]
+    fn weak_mask_literal_matches_const() {
+        assert_eq!(crate::weak_mask!("hw-v1"), HW_ID_DERIVATION_CONTEXT);
     }
 }

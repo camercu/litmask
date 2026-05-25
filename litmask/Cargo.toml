@@ -52,7 +52,13 @@ alloc = ["chacha20-poly1305"]
 # Opt-in only: the dependency adds platform-specific code paths and a
 # transitive `winreg`/`uuid` graph on Windows, which downstream users
 # without a hardware-bound deployment have no reason to compile.
-hw-id = ["dep:machine-uid"]
+# `std` is load-bearing because `machine-uid` requires it for its
+# file-system identity probes (`/etc/machine-id`, Windows registry,
+# etc.). Making the dependency explicit keeps `hw-id` from being a
+# feature combination that compiles half the time. `weak_mask!()`
+# itself works under `no_std + alloc` via the `WeakCell` shim
+# (see `litmask::runtime::WeakCell`).
+hw-id = ["std", "dep:machine-uid"]
 
 [dependencies]
 litmask-internal.workspace = true

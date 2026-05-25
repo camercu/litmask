@@ -71,19 +71,27 @@ pub const NONCE_LEN: usize = 12;
 /// AEAD authentication-tag length, shared by both ciphers.
 pub const TAG_LEN: usize = 16;
 
-/// BLAKE3 domain separator for the hardware-id key derivation
-/// (§2.5.4.3). Shared verbatim by:
+/// BLAKE3 `derive_key` domain separator for the hardware-id key
+/// derivation (§2.5.4.3). Shared verbatim by:
 ///
 /// - `litmask::provider::HardwareIdProvider` (runtime side)
 /// - `litmask-cli`'s `bind` subcommand (build-time side)
 ///
-/// Drift in this string between the two consumers would silently
-/// break the bind ↔ runtime contract: every freshly bound binary
-/// would fail to unlock because the build-time and runtime
-/// derivations would emit different keys for the same `(machine_id,
-/// salt)`. Centralizing here means both sides import the same
-/// symbol — Cargo's incremental rebuild catches any rename.
-pub const HW_ID_DERIVATION_CONTEXT: &str = "litmask 2026-05-20 HardwareIdProvider derivation";
+/// Stays deliberately short and library-identifier-free: this string
+/// is the ONE BLAKE3 separator that lands in user binaries (the
+/// runtime path is `HardwareIdProvider::unlock_key`), so every byte
+/// here is a `strings(1)`-visible byte. The only requirements are
+/// (a) global uniqueness in the BLAKE3 `derive_key` namespace
+/// (workspace-internal: it's the only `derive_key` call) and (b)
+/// byte-for-byte stability across the bind ↔ runtime boundary
+/// (centralizing here means Cargo's incremental rebuild catches any
+/// drift). The `-v1` suffix reserves a rotation path if a future
+/// security review invalidates the current derivation.
+///
+/// Changing this constant is a BREAKING change: every previously
+/// bound binary fails to decrypt under the new context. Treat as a
+/// major-version event.
+pub const HW_ID_DERIVATION_CONTEXT: &str = "hw-v1";
 
 /// Byte offset of the format-version byte (§1.7.3) inside a wrapper.
 pub const VERSION_OFFSET: usize = 0;
@@ -145,11 +153,21 @@ const _: () = assert!(FORMAT_V1 == FormatVersion::V1 as u8);
 const _: () = assert!(CIPHER_CHACHA20_POLY1305 == CipherId::ChaCha20Poly1305 as u8);
 const _: () = assert!(CIPHER_AES_256_GCM == CipherId::Aes256Gcm as u8);
 
-/// BLAKE3 domain separator for per-call-site nonces.
-const NONCE_TAG_CALL_SITE: &[u8] = b"litmask-nonce";
+/// Personalization byte string mixed into the keyed BLAKE3 hash for
+/// per-call-site nonces. Compile-time only — `nonce_for_call_site` is
+/// called from `litmask-macros` proc-macros (which run inside rustc),
+/// not from any runtime path, so this string never lands in user
+/// binaries. The only requirement is that it differ from
+/// `NONCE_TAG_WRAPPER` so the call-site nonce space stays disjoint
+/// from the wrapper nonce space under the same seed.
+const NONCE_TAG_CALL_SITE: &[u8] = b"call-site";
 
-/// BLAKE3 domain separator for the wrapper nonce.
-const NONCE_TAG_WRAPPER: &[u8] = b"litmask-mask-key-nonce";
+/// Personalization byte string mixed into the keyed BLAKE3 hash for
+/// the wrapper nonce. Compile-time only — `nonce_for_wrapper` is
+/// called from `litmask-build` (the build script) at expansion time,
+/// not from any runtime path, so this string never lands in user
+/// binaries. Must differ from `NONCE_TAG_CALL_SITE`.
+const NONCE_TAG_WRAPPER: &[u8] = b"wrapper";
 
 /// Wire-format version of the encrypted-`mask_key` wrapper. Encoded as
 /// a single byte at offset 0 of every wrapper.
