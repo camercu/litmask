@@ -11,8 +11,9 @@ use crate::provider::KeyProvider;
 /// A provider that holds a fixed [`UnlockKey`] and returns a fresh
 /// copy on every call. **FOR TESTS ONLY** — clones the unlock key on
 /// every call. Production code should use [`crate::EnvVarProvider`],
-/// [`crate::FileProvider`], or (with the `hw-id` feature)
-/// [`crate::HardwareIdProvider`].
+/// [`crate::FileProvider`], or `HardwareIdProvider` (behind the
+/// `hw-id` feature; not linked here because the symbol does not exist
+/// under default features and would break intra-doc-link resolution).
 ///
 /// The clone is intentional: `unlock_key()` returns an owned
 /// [`UnlockKey`] (not a borrow), so each call materializes the
