@@ -75,6 +75,17 @@ test-examples:
     found=0
     for src in litmask/examples/*.rs; do
         name=$(basename "$src" .rs)
+        # `hw_id_provider` requires both the `hw-id` feature AND a
+        # prior `litmask-cli bind` step (otherwise init fails with
+        # `decryption_failed`, since the build's wrapper is encrypted
+        # under the env-var key, not the hardware-derived one). The
+        # recipe can't perform the bind step (it would mutate the
+        # binary mid-run), so the example is exercised by the
+        # dedicated integration test in `litmask/tests/hw_id_provider.rs`
+        # instead of this loop.
+        if [ "$name" = "hw_id_provider" ]; then
+            continue
+        fi
         echo "litmask: test-examples — running $name"
         LITMASK_UNLOCK_KEY="$unlock_key" cargo run --quiet --example "$name"
         found=$((found + 1))
