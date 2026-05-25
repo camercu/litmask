@@ -80,14 +80,24 @@ test-examples:
         # `decryption_failed`, since the build's wrapper is encrypted
         # under the env-var key, not the hardware-derived one). The
         # recipe can't perform the bind step (it would mutate the
-        # binary mid-run), so the example is exercised by the
-        # dedicated integration test in `litmask/tests/hw_id_provider.rs`
-        # instead of this loop.
+        # binary mid-run), so the example's runtime path is exercised
+        # by the dedicated integration test in
+        # `litmask/tests/hw_id_provider.rs` and the masking property
+        # of the built binary is exercised by
+        # `litmask/tests/example_scrub.rs::hw_id_provider_example_*`.
         if [ "$name" = "hw_id_provider" ]; then
             continue
         fi
         echo "litmask: test-examples — running $name"
-        LITMASK_UNLOCK_KEY="$unlock_key" cargo run --quiet --example "$name"
+        # Export both the canonical env-var name AND the custom name
+        # `weak_mask_demo` reads (`MYAPP_SECRET_KEY`). The extra
+        # binding is a no-op for every other example and avoids
+        # special-casing inside the loop. The example's own scrub
+        # asserts the custom name is absent from the binary, so the
+        # weak_mask! hiding stays verifiable end-to-end.
+        LITMASK_UNLOCK_KEY="$unlock_key" \
+        MYAPP_SECRET_KEY="$unlock_key" \
+            cargo run --quiet --example "$name"
         found=$((found + 1))
     done
     if [ "$found" -eq 0 ]; then

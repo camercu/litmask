@@ -96,24 +96,49 @@ pub fn config_path(profile: Profile) -> PathBuf {
 /// Build one example by name in the given profile, panicking with a
 /// useful message on failure.
 ///
-/// Memoized per `(name, profile)` for the lifetime of the test
-/// process: subsequent calls with the same key are no-ops. Cargo's
-/// own fingerprint cache already skips a recompile for an
+/// Memoized per `(name, profile, features)` for the lifetime of the
+/// test process: subsequent calls with the same key are no-ops.
+/// Cargo's own fingerprint cache already skips a recompile for an
 /// up-to-date binary, but each `cargo build` invocation still pays
 /// ~100–500ms of startup (process spawn + manifest parse +
-/// dep-graph walk). The `example_scrub` test file builds `mask_format_demo`
-/// three times across separate `#[test]`s; memoizing here shaves a
-/// few seconds off the integration-test wall time without changing
+/// dep-graph walk). The `example_scrub` integration test builds
+/// every example at least once across the run; memoizing here
+/// shaves a few seconds off the wall time without changing
 /// semantics — within one test-binary process, building an example
 /// the second time guarantees nothing has changed since the first.
 pub fn build_example(name: &str, profile: Profile) {
-    static BUILT: OnceLock<Mutex<HashSet<(String, Profile)>>> = OnceLock::new();
+    build_example_with_features(name, profile, &[]);
+}
+
+/// `build_example` with an explicit feature list, passed verbatim
+/// to `cargo build --features <...>`. Used by the `hw_id_provider`
+/// scrub, which must enable `hw-id` even when the surrounding test
+/// runner was launched with default features only (the example's
+/// `required-features = ["hw-id"]` would otherwise silently skip
+/// the build).
+///
+/// Concurrency: cargo's own fingerprint cache serializes builds
+/// against the workspace's lock files, but two parallel `cargo
+/// build --example X` invocations against the same target can race
+/// such that the second returns before the first has finished
+/// writing the output binary. The integration tests run in parallel
+/// (`cargo test`'s default), so two tests both calling
+/// `build_example("X", _)` first would otherwise see the second
+/// caller's `assert!(path.exists())` fail because cargo hasn't
+/// flushed the binary yet. Hold the memoization mutex for the
+/// duration of the cargo invocation so the second caller blocks
+/// until the first call's cargo write completes. Serial across all
+/// example builds is acceptable — there are <10 examples and each
+/// cargo build is a cache-hit no-op after the first build per
+/// (name, profile, features) triple.
+pub fn build_example_with_features(name: &str, profile: Profile, features: &[&str]) {
+    static BUILT: OnceLock<Mutex<HashSet<(String, Profile, Vec<String>)>>> = OnceLock::new();
     let built = BUILT.get_or_init(|| Mutex::new(HashSet::new()));
-    if !built
+    let feature_key: Vec<String> = features.iter().map(|s| (*s).to_string()).collect();
+    let mut guard = built
         .lock()
-        .expect("build_example memoization mutex poisoned")
-        .insert((name.to_string(), profile))
-    {
+        .expect("build_example memoization mutex poisoned");
+    if !guard.insert((name.to_string(), profile, feature_key)) {
         return;
     }
 
@@ -121,14 +146,21 @@ pub fn build_example(name: &str, profile: Profile) {
     let mut cmd = Command::new(&cargo);
     cmd.arg("build");
     cmd.args(profile.cargo_flags());
+    if !features.is_empty() {
+        cmd.args(["--features", &features.join(",")]);
+    }
     cmd.args(["--example", name]);
     cmd.current_dir(workspace_root());
     let status = cmd.status().expect("invoke cargo");
     assert!(
         status.success(),
-        "cargo build {flags:?} --example {name} failed (exit={status:?})",
+        "cargo build {flags:?} --features {features:?} --example {name} failed (exit={status:?})",
         flags = profile.cargo_flags(),
     );
+    // `guard` drops at end of scope, releasing the mutex AFTER the
+    // build artifact exists on disk — that's the load-bearing
+    // ordering this function enforces.
+    drop(guard);
 }
 
 /// Run `strings` on `binary` and return its stdout as UTF-8. Asserts
@@ -148,8 +180,22 @@ pub fn strings_of(binary: &Path) -> String {
 }
 
 /// Assert that none of the [`FORBIDDEN_SUBSTRINGS`] appear in
-/// `binary`'s `strings` output, case-insensitively. Two classes of
-/// substrings are stripped from the haystack before matching:
+/// `binary`'s `strings` output, case-insensitively. Delegates to
+/// [`assert_no_dirty_words_except`] with an empty allow-list — i.e.
+/// every forbidden substring is treated as a leak.
+pub fn assert_no_dirty_words(binary: &Path) {
+    assert_no_dirty_words_except(binary, &[]);
+}
+
+/// [`assert_no_dirty_words`] with a per-binary allow-list. Listed
+/// substrings (lowercased before comparison) are stripped from the
+/// scrub haystack before the [`FORBIDDEN_SUBSTRINGS`] match, so a
+/// transitive-dep crate name that inevitably embeds itself in its
+/// own symbol table (e.g. `blake3_*` function names from the
+/// `blake3` crate when `hw-id` is enabled) doesn't false-fire on
+/// the forbidden list.
+///
+/// Two classes of substrings are ALSO stripped, unconditionally:
 ///
 /// - Rust source-file locations of the form `<crate>/src/<path>.rs`,
 ///   emitted by `core::panic::Location::caller()` at every panic
@@ -162,11 +208,18 @@ pub fn strings_of(binary: &Path) -> String {
 ///
 /// Reports every hit in a single panic message so callers see all
 /// leaks at once instead of fixing one and re-running.
-pub fn assert_no_dirty_words(binary: &Path) {
+pub fn assert_no_dirty_words_except(binary: &Path, allow: &[&str]) {
     let output = strings_of(binary);
     let filtered = filter_source_locations(&output);
     let filtered = filter_binary_basename(&filtered, binary);
-    let haystack = filtered.to_ascii_lowercase();
+    let mut haystack = filtered.to_ascii_lowercase();
+    for allowed in allow {
+        // Replace rather than remove so byte-offsets-in-context for
+        // any subsequent match still point at the original source
+        // position — useful when a future allow entry happens to
+        // contain a forbidden substring.
+        haystack = haystack.replace(&allowed.to_ascii_lowercase(), "");
+    }
 
     let hits: Vec<&str> = FORBIDDEN_SUBSTRINGS
         .iter()
@@ -176,9 +229,10 @@ pub fn assert_no_dirty_words(binary: &Path) {
 
     assert!(
         hits.is_empty(),
-        "{} leaked library plaintext into the binary; found case-insensitive matches for: {:?}",
+        "{} leaked library plaintext into the binary; found case-insensitive matches for: {:?} (allow-list: {:?})",
         binary.display(),
         hits,
+        allow,
     );
 }
 

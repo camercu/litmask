@@ -20,14 +20,39 @@ mod common;
 
 use common::Profile;
 
-/// Every example binary the workspace ships. Add new names here when
-/// new examples land under `litmask/examples/`.
+/// Examples cleared for the case-insensitive library-identifier
+/// scrub. Add new names here when new examples land under
+/// `litmask/examples/`.
+///
+/// Three examples are intentionally absent because they reference
+/// the canonical published env-var name (`LITMASK_UNLOCK_KEY` /
+/// `LITMASK_UNLOCK_KEY_FILE`) as a plain string literal — by design,
+/// for pedagogical clarity — and that literal contains the
+/// `unlock_key` and `litmask` forbidden substrings. Real-world
+/// deployments would `weak_mask!()` the env-var name (see
+/// `weak_mask_demo`); the identifier-scrub absence is testable
+/// there, while these examples are covered by fixture-absence
+/// checks only:
+///
+/// - `static_provider`: cautionary FOR-TESTS-ONLY demo; reads
+///   `LITMASK_UNLOCK_KEY` directly so the user can see the
+///   plaintext-key flow end-to-end.
+/// - `file_provider`: demonstrates `FileProvider`; reads
+///   `LITMASK_UNLOCK_KEY_FILE` to find the key file.
+/// - `hw_id_provider`: gated behind `--features hw-id` (see
+///   [`hw_id_provider_example_masked_fixtures_absent_from_binary`]).
+///   The BLAKE3 context literal `"hw-v1"` is hidden by
+///   `weak_mask!()` in `HardwareIdProvider`, so it doesn't leak —
+///   but the `blake3` crate embeds its own name in internal symbol
+///   strings (e.g. `blake3_*` function names) that we can't filter
+///   away. The hw_id scrub allow-lists `blake3` specifically.
 const EXAMPLES: &[&str] = &[
     "hello_world",
     "weak_mask_demo",
     "byte_cstr_demo",
     "include_str_demo",
     "mask_format_demo",
+    "mask_macros_demo",
     "mask_all_demo",
 ];
 
@@ -41,15 +66,23 @@ fn no_forbidden_substrings_in_any_example_binary() {
     }
 }
 
-/// `weak_mask!` must obfuscate user-supplied literals so the plaintext
-/// is absent from the compiled binary. The fixture is deliberately a
-/// lexically unusual phrase so a false-positive against std /
-/// dependency strings is implausible.
+/// `weak_mask_demo` exercises BOTH masking layers: `weak_mask!`
+/// hides the custom env-var name that the bootstrap `EnvVarProvider`
+/// reads, and `mask!` hides the AEAD-encrypted payload. Both probes
+/// must be absent from the compiled binary — `MYAPP_SECRET_KEY` is
+/// the env-var name a passive `strings` scan would otherwise reveal
+/// as a lookup target; `emerald-puma-c2d8f4` is the secret payload.
 #[test]
-fn weak_mask_fixture_absent_from_binary() {
+fn weak_mask_demo_env_var_name_and_payload_absent_from_binary() {
     common::build_example("weak_mask_demo", Profile::Release);
     let path = common::example_path("weak_mask_demo", Profile::Release);
-    common::assert_substring_absent(&path, "yellow-velvet-tortoise-9c4f1a");
+    // weak_mask!()'d env-var name — visible to `strings(1)` would
+    // tell an attacker exactly where the unlock key lives.
+    common::assert_substring_absent(&path, "MYAPP_SECRET_KEY");
+    // mask!()'d payload — the AEAD layer must hide it even though
+    // it's a fixture, since this example doubles as the load-bearing
+    // demo of the `weak_mask! → init_with! → mask!` pattern.
+    common::assert_substring_absent(&path, "emerald-puma-c2d8f4");
 }
 
 /// `mask!(b"...")` and `mask!(c"...")` must keep their fixture bytes
@@ -258,4 +291,65 @@ fn mask_format_placeholder_names_absent_from_binary() {
     common::assert_substring_absent(&path, "cobalt_terrapin_4b6f12");
     // Dynamic-width ref.
     common::assert_substring_absent(&path, "magenta_lemur_3e8a14");
+}
+
+/// `hello_world`, `static_provider`, and `file_provider` all mask
+/// the same Twain quote — that's the canonical "first example"
+/// payload the docs invite users to verify via `strings | grep`.
+/// Without this test, a `mask!` regression in any of the three
+/// would silently leak the quote and only the identifier scrub
+/// would fire — and only if the regression also leaked a library
+/// identifier. Probe on `"The reports of my death"` rather than
+/// `"greatly exaggerated"` because the latter is common enough
+/// English that dependency text could plausibly contain it; the
+/// former is unique to the Twain quote.
+#[test]
+fn twain_fixture_absent_from_canonical_examples() {
+    for name in ["hello_world", "static_provider", "file_provider"] {
+        common::build_example(name, Profile::Release);
+        let path = common::example_path(name, Profile::Release);
+        common::assert_substring_absent(&path, "The reports of my death");
+    }
+}
+
+/// `hw_id_provider` is gated behind `--features hw-id` (per its
+/// `required-features` in `Cargo.toml`), so the workspace's default
+/// `cargo build --workspace --examples` skips it cleanly and the
+/// `test-examples` shell recipe cannot run it (init would fail with
+/// `decryption_failed` without a prior `litmask-cli bind` step).
+/// The masking property is testable without ever executing the
+/// example: build with the feature and scrub the binary.
+///
+/// The test shells out to `cargo build --features hw-id` directly
+/// rather than gating on `#[cfg(feature = "hw-id")]` — the test
+/// binary itself doesn't need the feature enabled to invoke cargo
+/// with it. That keeps the scrub running under the standard
+/// `cargo test --workspace` invocation that CI uses.
+///
+/// Both scrubs apply: the Twain fixture must be absent (proves
+/// `mask!` worked), and the identifier scrub runs with `"blake3"`
+/// allow-listed. The `blake3` allow is the one unavoidable leak:
+/// the `blake3` crate embeds its own name in internal symbol
+/// strings (`blake3_*` function names) regardless of how the
+/// downstream code uses it. The BLAKE3 context literal itself
+/// (`"hw-v1"`) is hidden by `weak_mask!()` in
+/// `HardwareIdProvider::unlock_key`, so it does NOT need an
+/// allow-list entry — that's a load-bearing property of the
+/// `weak_mask!()` call.
+#[test]
+fn hw_id_provider_example_masked_fixtures_absent_from_binary() {
+    common::build_example_with_features("hw_id_provider", Profile::Release, &["hw-id"]);
+    let path = common::example_path("hw_id_provider", Profile::Release);
+    assert!(
+        path.exists(),
+        "hw_id_provider binary missing after build (did `cargo build --features hw-id --example hw_id_provider` succeed?): {}",
+        path.display(),
+    );
+    common::assert_substring_absent(&path, "The reports of my death");
+    // `hw-v1` MUST be absent: the runtime `weak_mask!()` is the
+    // only thing standing between the BLAKE3 context literal and
+    // a `strings(1)`-visible appearance. If a future refactor
+    // drops the `weak_mask!()` wrapper, this assertion fires.
+    common::assert_substring_absent(&path, "hw-v1");
+    common::assert_no_dirty_words_except(&path, &["blake3"]);
 }
