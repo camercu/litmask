@@ -132,7 +132,11 @@ pub fn build_example(name: &str, profile: Profile) {
 /// cargo build is a cache-hit no-op after the first build per
 /// (name, profile, features) triple.
 pub fn build_example_with_features(name: &str, profile: Profile, features: &[&str]) {
-    static BUILT: OnceLock<Mutex<HashSet<(String, Profile, Vec<String>)>>> = OnceLock::new();
+    /// `(example_name, profile, sorted_feature_list)` identifying a
+    /// single example-build invocation. Aliased so the static below
+    /// stays under clippy's `type_complexity` threshold.
+    type BuildKey = (String, Profile, Vec<String>);
+    static BUILT: OnceLock<Mutex<HashSet<BuildKey>>> = OnceLock::new();
     let built = BUILT.get_or_init(|| Mutex::new(HashSet::new()));
     let feature_key: Vec<String> = features.iter().map(|s| (*s).to_string()).collect();
     let mut guard = built

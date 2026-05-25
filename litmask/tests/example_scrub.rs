@@ -45,7 +45,7 @@ use common::Profile;
 ///   `weak_mask!()` in `HardwareIdProvider`, so it doesn't leak —
 ///   but the `blake3` crate embeds its own name in internal symbol
 ///   strings (e.g. `blake3_*` function names) that we can't filter
-///   away. The hw_id scrub allow-lists `blake3` specifically.
+///   away. The `hw_id` scrub allow-lists `blake3` specifically.
 const EXAMPLES: &[&str] = &[
     "hello_world",
     "weak_mask_demo",
