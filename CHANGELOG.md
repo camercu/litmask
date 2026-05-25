@@ -1,3 +1,25 @@
+## [0.6.0](https://github.com/camercu/litmask/compare/v0.5.0...v0.6.0) (2026-05-25)
+
+### Features
+
+* **cli:** implement litmask-cli bind POSIX atomic commit ([50f6b35](https://github.com/camercu/litmask/commit/50f6b356a038a2c0631f75f6cbeacddeb8a4b144))
+* **cli:** implement litmask-cli inspect subcommand ([c99c6ee](https://github.com/camercu/litmask/commit/c99c6ee691b0f1f2e31aaf23a4ee419859dd4a82))
+* **error:** add InitError::sysexit_code() per §1.9.7 ([807d1d3](https://github.com/camercu/litmask/commit/807d1d328a203f143af92707df82abc3bac45756))
+* **error:** add UnsupportedFormat / UnsupportedCipher InitError variants ([40b662a](https://github.com/camercu/litmask/commit/40b662a44c7c9e28df640ad9063a47e0f951ebe3))
+* **internal:** add AES-256-GCM cipher feature ([1786962](https://github.com/camercu/litmask/commit/178696265e25d94296241b7afaf26ed1f683b69f))
+* **macros:** add #[mask_all(strict)] mode + non-literal-template warning ([da76356](https://github.com/camercu/litmask/commit/da7635615db535cac37e57662d95ecec6eac8f3d))
+* **provider:** add FileProvider with base64url + Raw encodings ([268ea12](https://github.com/camercu/litmask/commit/268ea12e35d0a9dad9f33b94fb6876cf2b39913f))
+* **provider:** add HardwareIdProvider behind hw-id feature ([01c28cb](https://github.com/camercu/litmask/commit/01c28cb7dc57ed93e15e3ad047baad53914088e2))
+* **provider:** add StaticProvider tests-only key holder ([5809f64](https://github.com/camercu/litmask/commit/5809f64e1bfffc3edd0a1d5a0391eaf5ecbaa5cb))
+
+### Bug Fixes
+
+* **cli:** unreachable!() on bind locator slice fallback ([0c46395](https://github.com/camercu/litmask/commit/0c463958e418b52c5d18c558fe78c245a26f0851))
+* **docs:** unbreak StaticProvider intra-doc link under default features ([0c61b24](https://github.com/camercu/litmask/commit/0c61b24a0889a0b383ba60842e14a7d223cf0cc0))
+* **error:** align Decryption Display tag with §1.9.3 ([327dff0](https://github.com/camercu/litmask/commit/327dff0ddb031955d70a165284ff0e908d7e142f))
+* **internal,cli:** panic on unreachable cipher-dispatch arms ([8a4a263](https://github.com/camercu/litmask/commit/8a4a2631c1bae07b0d427cee69f6d96081f528ba))
+* **macros:** restore at <file>:<line> in mask_all skip diagnostics per §2.3.1.4 ([1fb48b1](https://github.com/camercu/litmask/commit/1fb48b18898466717e2e4bcc156bdedd14b212e0))
+
 ## [0.5.0](https://github.com/camercu/litmask/compare/v0.4.0...v0.5.0) (2026-05-20)
 
 ### ⚠ BREAKING CHANGES
