@@ -1,3 +1,60 @@
+## [0.7.0](https://github.com/camercu/litmask/compare/v0.6.0...v0.7.0) (2026-05-25)
+
+### ⚠ BREAKING CHANGES
+
+* **hw-id:** every binary previously bound with `litmask-cli
+bind` under the old context fails to decrypt under the new one.
+`HW_ID_DERIVATION_CONTEXT` must change in lockstep on bind and
+runtime — re-bind every shipped binary.
+
+The old context, `"litmask 2026-05-20 HardwareIdProvider
+derivation"` (49 chars), was three layers of leak baked into every
+`HardwareIdProvider` user binary's `.rodata`:
+
+- the literal `"litmask"` (library identifier)
+- a date stamp (`2026-05-20`) that pinned the constant to a moment
+  in history without serving uniqueness
+- the Rust type name (`HardwareIdProvider derivation")
+
+Shrink to `"hw-v1"` (5 chars, no library identifier). The `-v1`
+suffix reserves a rotation path if a future security review
+invalidates the current derivation. Workspace-internal global
+uniqueness in BLAKE3's `derive_key` namespace is satisfied — this
+is the only `derive_key` call in the workspace.
+
+Also shrink the two non-leaking nonce personalization strings:
+`NONCE_TAG_WRAPPER` → `b"wrapper"`,
+`NONCE_TAG_CALL_SITE` → `b"call-site"`. These are
+`blake3::keyed_hash` / `Hasher::new_keyed` data inputs, not
+`derive_key` contexts, and `nonce_for_wrapper` /
+`nonce_for_call_site` are called only at build-script /
+proc-macro time — they don't reach user binaries either way. The
+shrink keeps them readable for code review without spending bytes
+on a `litmask-` prefix that had no security role.
+
+Route the runtime `HardwareIdProvider` BLAKE3 context through
+`weak_mask!("hw-v1")` so the literal is obfuscated in user
+binaries — the runtime is the only consumer that ships in user
+binaries; `litmask-cli bind` (the other consumer) uses the
+canonical `HW_ID_DERIVATION_CONTEXT` directly. Pin the
+literal-vs-const drift via a unit test
+(`weak_mask_literal_matches_const`) so bind ↔ runtime can't
+silently desync.
+
+`derive_hw_key` now takes the context as a parameter — the
+runtime call site supplies the `weak_mask!`-decoded form; tests
+supply `HW_ID_DERIVATION_CONTEXT` directly so the test path
+doesn't depend on `weak_mask!`'s wrapper-XOR machinery.
+
+Make `hw-id = ["std", "dep:machine-uid"]` explicit. `std` is
+load-bearing because `machine-uid` requires it for filesystem
+identity probes; the prior `hw-id = ["dep:machine-uid"]` was a
+feature combination that compiled half the time.
+
+### Features
+
+* **hw-id:** shrink BLAKE3 context + weak_mask runtime literal ([9e97f55](https://github.com/camercu/litmask/commit/9e97f55657c50345114a89dadbb48f26276d1765))
+
 ## [0.6.0](https://github.com/camercu/litmask/compare/v0.5.0...v0.6.0) (2026-05-25)
 
 ### Features
