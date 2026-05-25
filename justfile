@@ -115,8 +115,14 @@ check-no-std:
 
 # ── Documentation ───────────────────────────────────────────
 
+# `--all-features` so every feature-gated symbol (`HardwareIdProvider`
+# under `hw-id`, the `aes-gcm` cipher path, etc.) is documented and
+# every intra-doc link resolves. Mirrors the
+# `[package.metadata.docs.rs] all-features = true` declared in each
+# member crate's Cargo.toml, so local `just doc` output matches what
+# docs.rs would render.
 doc:
-    RUSTDOCFLAGS="{{warnings}}" cargo doc --workspace --no-deps
+    RUSTDOCFLAGS="{{warnings}}" cargo doc --workspace --no-deps --all-features
 
 # ── Tool versions ───────────────────────────────────────────
 

@@ -84,3 +84,11 @@ trybuild = "1"
 
 [lints]
 workspace = true
+
+# docs.rs renders every feature-gated symbol (HardwareIdProvider under
+# `hw-id`, the aes-gcm cipher path under `aes-gcm`, etc.) so users see
+# the full API surface instead of just the default-features subset.
+# `just doc` mirrors this with `--all-features` to keep local doc
+# output aligned with the published page.
+[package.metadata.docs.rs]
+all-features = true

@@ -32,3 +32,9 @@ tempfile = "3"
 
 [lints]
 workspace = true
+
+# See `litmask/Cargo.toml`'s `[package.metadata.docs.rs]` for the
+# rationale: enable every feature on docs.rs so the cipher-gated
+# wrapper-assembly path is documented under both ciphers.
+[package.metadata.docs.rs]
+all-features = true

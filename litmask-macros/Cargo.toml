@@ -30,3 +30,10 @@ zeroize = "1"
 
 [lints]
 workspace = true
+
+# See `litmask/Cargo.toml`'s `[package.metadata.docs.rs]` for the
+# rationale: enable every feature on docs.rs so the cipher-gated
+# encryption paths in proc-macro expansion are documented under
+# both ciphers.
+[package.metadata.docs.rs]
+all-features = true

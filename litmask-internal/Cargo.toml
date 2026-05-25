@@ -36,3 +36,10 @@ proptest = "1"
 
 [lints]
 workspace = true
+
+# See `litmask/Cargo.toml`'s `[package.metadata.docs.rs]` for the
+# rationale: enable every feature when rendering docs so the
+# `aes-gcm`-only `CURRENT_CIPHER` constant and the wrapper-parse
+# helpers under both cipher gates are documented.
+[package.metadata.docs.rs]
+all-features = true
