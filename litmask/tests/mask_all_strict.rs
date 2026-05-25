@@ -65,8 +65,8 @@ fn strict_const_initializer_compiles_when_value_is_unmasked() {
 }
 
 // Sanity: an explicit `unmasked!()` invocation at expression position
-// still expands to the bare literal (Task 9 contract) — strict mode
-// must not perturb this.
+// still expands to the bare literal — strict mode must not perturb
+// the identity-wrapper contract.
 #[test]
 fn unmasked_expression_expands_to_bare_literal_under_strict_scope() {
     let s: &str = unmasked!("explicit-opt-out");

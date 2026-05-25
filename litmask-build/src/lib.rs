@@ -351,12 +351,12 @@ mod tests {
         assert_eq!(debug_seed(dir.path()), canned);
     }
 
-    /// Prove-it: a wrong-length persist file is overwritten with a
-    /// fresh KEY_LEN-byte seed. The pre-fix code generated a fresh
-    /// seed but did not persist it, so the corrupt file stayed in
-    /// place and every subsequent build produced a different seed —
-    /// the `assert_eq!(after.len(), KEY_LEN)` line below failed
-    /// against that path.
+    /// A wrong-length persist file MUST be overwritten with a
+    /// fresh KEY_LEN-byte seed, not left in place. If the corrupt
+    /// file survives, every subsequent build regenerates a fresh
+    /// seed (because the read still fails), silently defeating
+    /// debug-profile reproducibility — the persisted bytes drift
+    /// each build.
     #[test]
     fn source_seed_overwrites_corrupt_short_file() {
         let dir = TempDir::new().expect("tempdir");
