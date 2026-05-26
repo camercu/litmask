@@ -1204,20 +1204,20 @@ no claims against out-of-scope attacker capabilities).
 
 ### Acceptance Criteria
 
-- [ ] `README.md` contains the §1.1.4 security level table verbatim
-- [ ] `README.md` contains the §1.1.6 value-proposition table verbatim
-- [ ] `README.md` includes a prominently formatted "does NOT protect
+- [x] `README.md` contains the §1.1.4 security level table verbatim
+- [x] `README.md` contains the §1.1.6 value-proposition table verbatim
+- [x] `README.md` includes a prominently formatted "does NOT protect
       against" section
-- [ ] `cargo doc --no-deps --all-features` produces docs for every public
+- [x] `cargo doc --no-deps --all-features` produces docs for every public
       item without missing-docs warnings
-- [ ] `cargo test --doc` passes — every public item's doctest compiles
+- [x] `cargo test --doc` passes — every public item's doctest compiles
       and runs
-- [ ] `cargo test --doc --no-default-features --features alloc` also
+- [x] `cargo test --doc --no-default-features --features alloc` also
       passes (proves doctests for the `no_std`-available API surface
       compile under that configuration)
-- [ ] No documentation surface promises resistance to out-of-scope
+- [x] No documentation surface promises resistance to out-of-scope
       capabilities listed in §1.1.3
-- [ ] `mask!` rustdoc explains the `String` return type and the
+- [x] `mask!` rustdoc explains the `String` return type and the
       `&'static str` ergonomics workaround: if a call site needs
       `&str` rather than an owned `String`, either bind once
       (`let s: &str = &MASKED;`) or use `weak_mask!` when the
