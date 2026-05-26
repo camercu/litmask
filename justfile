@@ -52,6 +52,12 @@ test:
     cargo nextest run --workspace
     cargo test --workspace --doc
 
+# Unit tests only — integration tests and examples import std-gated
+# types (FileProvider, EnvVarProvider) that don't compile under
+# no-default-features.
+test-no-default:
+    cargo nextest run -p litmask -p litmask-internal --no-default-features --features alloc --lib
+
 # Run tests with --all-features so dual-cipher (chacha + aes-gcm)
 # code paths are exercised. Catches bugs like encrypt-with-one-cipher /
 # decrypt-with-another when CURRENT_CIPHER resolves differently than
@@ -227,7 +233,7 @@ pre-push:
 
 # ── CI ──────────────────────────────────────────────────────
 
-ci: fmt-check lint test test-all-features test-examples build check-no-default check-no-std doc ci-coverage
+ci: fmt-check lint test test-all-features test-no-default test-examples build check-no-default check-no-std doc ci-coverage
 
 # Best-effort coverage summary. Prints to stdout but does not fail CI
 # pre-1.0 (no minimum threshold set).
