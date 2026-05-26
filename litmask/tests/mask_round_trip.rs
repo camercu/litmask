@@ -8,6 +8,7 @@
 mod common;
 
 use common::Profile;
+use litmask_internal::WRAPPER_LEN;
 use std::process::Command;
 
 const FIXTURE: &str = "The reports of my death have been greatly exaggerated. — Mark Twain";
@@ -59,14 +60,9 @@ fn litmask_config_present_with_required_fields() {
     let body = std::fs::read_to_string(&config).expect("read litmask.config");
     assert!(body.contains("unlock_key ="), "unlock_key field missing");
     assert!(body.contains("locator ="), "locator field missing");
+    let expected_length = format!("length = {WRAPPER_LEN}");
     assert!(
-        body.contains("length = 62"),
-        "length field missing or wrong (expected 62)"
+        body.contains(&expected_length),
+        "length field missing or wrong (expected {WRAPPER_LEN})"
     );
-}
-
-#[test]
-fn key_provider_is_object_safe() {
-    use litmask::{EnvVarProvider, KeyProvider};
-    let _: Box<dyn KeyProvider> = Box::new(EnvVarProvider::default());
 }

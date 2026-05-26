@@ -11,16 +11,11 @@
 
 mod common;
 
-use litmask::{KeyProvider, StaticProvider, UnlockKey, init_with, mask};
-
-fn unlock_key_from_build_config() -> UnlockKey {
-    let b64 = common::read_unlock_key(&common::config_path(common::Profile::Debug));
-    UnlockKey::from_base64url(&b64).expect("build config holds a 32-byte base64url key")
-}
+use litmask::{EnvVarProvider, KeyProvider, StaticProvider, init_with, mask};
 
 #[test]
 fn unlock_key_returns_ok_on_every_call() {
-    let key = unlock_key_from_build_config();
+    let key = common::unlock_key_from_config(common::Profile::Debug);
     let provider = StaticProvider::new(key);
     assert!(provider.unlock_key().is_ok());
     assert!(provider.unlock_key().is_ok());
@@ -28,11 +23,12 @@ fn unlock_key_returns_ok_on_every_call() {
 
 #[test]
 fn init_with_static_provider_against_build_config_succeeds() {
-    // The build's `litmask.config` carries the unlock_key that
-    // matches the embedded wrapper; StaticProvider holding that key
-    // MUST succeed at init and unlock the runtime so a subsequent
-    // mask!() decrypts.
-    let key = unlock_key_from_build_config();
+    let key = common::unlock_key_from_config(common::Profile::Debug);
     let _ = init_with!(StaticProvider::new(key));
     let _ = mask!("static-provider-fixture");
+}
+
+#[test]
+fn key_provider_is_object_safe() {
+    let _: Box<dyn KeyProvider> = Box::new(EnvVarProvider::default());
 }

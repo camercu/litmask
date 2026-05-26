@@ -84,6 +84,7 @@ name = "hw_id_provider"
 required-features = ["hw-id"]
 
 [dev-dependencies]
+litmask-internal.workspace = true
 proptest = "1"
 regex = "1"
 trybuild = "1"

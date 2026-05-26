@@ -6,6 +6,10 @@
 
 mod common;
 
+use litmask_internal::{NONCE_LEN, TAG_LEN};
+
+const MIN_BLOB_LEN: usize = NONCE_LEN + TAG_LEN;
+
 /// `catch_unwind` rather than `#[should_panic]` so the assertion does
 /// not depend on `panic!()`'s default message text ("explicit panic"
 /// is a stable-but-implementation-detail string in `core`). Any
@@ -14,33 +18,12 @@ mod common;
 /// unwinds.
 #[test]
 fn decrypt_panics_on_tampered_blob() {
-    // `init_once` populates the process-global mask key cell from the
-    // production unlock key. The subsequent blob is the minimum valid
-    // shape (nonce + zero-byte ciphertext + tag) but zero-filled, so
-    // AEAD authentication fails — the panic this asserts is the
-    // tampering-detection panic, not a lazy-init env-var miss that
-    // would also surface as an unwind.
     common::init_once();
 
-    // Silence the panic message during catch_unwind; without the noop
-    // hook the test output is polluted by stderr from std's default
-    // panic hook. The race window with other concurrent tests'
-    // panic output is acceptable — this is test infrastructure, not
-    // production state.
-    let prev_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
-
-    let outcome = std::panic::catch_unwind(|| {
-        let blob: [u8; 28] = [0u8; 28];
+    let _ = common::assert_panic_msg(|| {
+        let blob = [0u8; MIN_BLOB_LEN];
         let _ = ::litmask::__internal::__decrypt(&blob, ::litmask::__wrapper_bytes!());
     });
-
-    std::panic::set_hook(prev_hook);
-
-    assert!(
-        outcome.is_err(),
-        "expected __decrypt to panic on tampered blob"
-    );
 }
 
 /// Scans every file that contributes text to the user binary's
