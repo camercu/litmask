@@ -131,13 +131,19 @@ test-examples:
 # ── Coverage ────────────────────────────────────────────────
 
 coverage:
+    cargo llvm-cov nextest --workspace --all-features
+
+alias cov := coverage
+
+coverage-html:
     cargo llvm-cov nextest --workspace --all-features --html
 
-coverage-text:
-    cargo llvm-cov nextest --workspace --all-features
+alias cov-html := coverage-html
 
 coverage-lcov:
     cargo llvm-cov nextest --workspace --all-features --lcov --output-path target/llvm-cov/lcov.info
+
+alias cov-lcov := coverage-lcov
 
 # ── Building / checking ─────────────────────────────────────
 
