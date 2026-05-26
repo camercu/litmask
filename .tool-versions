@@ -8,4 +8,5 @@ typos-cli 1.45.0
 taplo-cli 0.10.0
 cargo-llvm-cov 0.8.7
 cargo-semver-checks 0.44.0
+cargo-fuzz 0.13.1
 nodejs 22.22.2

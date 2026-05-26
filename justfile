@@ -198,6 +198,7 @@ check-tool-versions:
             taplo-cli)     actual=$(taplo --version | awk '{print $2}') ;;
             cargo-llvm-cov) actual=$(cargo llvm-cov --version | awk '{print $2}') ;;
             cargo-semver-checks) actual=$(cargo semver-checks --version | awk '{print $2}') ;;
+            cargo-fuzz) actual=$(cargo fuzz --version 2>/dev/null | awk '{print $2}') ;;
             nodejs)        actual=$(node --version | sed 's/^v//') ;;
             *)
                 # Loud failure: a new entry in `.tool-versions` without

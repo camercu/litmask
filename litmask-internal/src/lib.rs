@@ -60,6 +60,7 @@ compile_error!(
 
 pub mod base64url;
 pub mod cipher;
+pub mod format_parser;
 
 /// Length of every symmetric key in bytes. ChaCha20-Poly1305 and
 /// AES-256-GCM both use 32-byte keys.
