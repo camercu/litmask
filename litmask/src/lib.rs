@@ -22,6 +22,16 @@
 //! }
 //! ```
 //!
+//! ## Two-phase masking
+//!
+//! [`mask!`] (and its variants `mask_format!`, `mask_concat!`, etc.)
+//! require [`init!`] to have populated the AEAD mask-key cell.
+//! [`weak_mask!`] is the **only** masking macro that works before
+//! `init!()` — use it exclusively for bootstrap-phase strings
+//! (env-var names, default file paths) that must be readable before
+//! the provider has run. `weak_mask!` provides anti-`strings(1)`
+//! obfuscation only; real secrets always go through `mask!`.
+//!
 //! The crate is `#![no_std]` + `alloc` from day one. The default `std`
 //! feature gates only what genuinely requires `std`.
 

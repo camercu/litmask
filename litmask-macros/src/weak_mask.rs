@@ -1,13 +1,15 @@
-//! `weak_mask!` proc-macro: XOR a string literal against the per-build
-//! encrypted-`mask_key` wrapper bytes at compile time and expand to a
-//! cached-on-first-use decode that returns `&'static str`.
+//! `weak_mask!` proc-macro: pre-`init!()` string obfuscation.
+//!
+//! XOR a string literal against the per-build wrapper bytes at compile
+//! time and expand to a cached-on-first-use decode that returns
+//! `&'static str`. Intended exclusively for the pre-`init!()`
+//! bootstrap window — env-var names, default file paths, and other
+//! non-secret metadata that must be readable before the AEAD mask-key
+//! cell is populated.
 //!
 //! Weaker than [`crate::mask::expand`]: no AEAD, and the XOR key
 //! (the wrapper) lives in the same binary as the obfuscated bytes, so a
 //! disassembler-equipped attacker recovers the plaintext trivially.
-//! Use only for non-secret strings that need `strings(1)` protection
-//! and must be readable before `init!()` runs (env-var names,
-//! default file paths).
 //!
 //! Works under `no_std + alloc`. The per-call-site cache is the
 //! `litmask::__internal::WeakCell` shim, which resolves to

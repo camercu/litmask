@@ -251,18 +251,22 @@ pub fn mask_format(input: TokenStream) -> TokenStream {
     mask_format::expand(input)
 }
 
-/// Obfuscate a string literal at compile time using XOR against the
-/// per-build encrypted-`mask_key` wrapper bytes. Expand to code that
-/// decodes back to `&'static str` on first runtime access and caches
-/// the result for the program's lifetime.
+/// Pre-`init!()` string obfuscation via XOR against the per-build
+/// wrapper bytes. Expand to code that decodes back to `&'static str`
+/// on first runtime access and caches the result for the program's
+/// lifetime.
 ///
-/// `weak_mask!()` is weaker than [`mask!`]: there is no AEAD
+/// `weak_mask!()` is the **only** masking macro that works before
+/// [`init!`] has run. Use it **exclusively** for bootstrap-phase
+/// strings that must be readable before the AEAD mask-key cell is
+/// populated — env-var names, default file paths, and other
+/// non-secret metadata that the provider needs during init.
+///
+/// `weak_mask!()` is strictly weaker than [`mask!`]: there is no AEAD
 /// authentication, and both ciphertext and key material live in the
 /// same compiled binary, so a Level-2 attacker (disassembler + manual
-/// decode) can recover the plaintext. Use `weak_mask!()` only for
-/// non-secret strings that need anti-`strings(1)` protection and
-/// cannot wait for `init!()` to run (env-var names, default file
-/// paths, etc.). Real secrets always go through [`mask!`].
+/// decode) can recover the plaintext. Real secrets always go through
+/// [`mask!`] after `init!()` has succeeded.
 ///
 /// # Panics
 ///

@@ -1,9 +1,13 @@
-//! Integration tests for the public `weak_mask!()` macro.
+//! Integration tests for the public `weak_mask!()` macro — the
+//! pre-`init!()` obfuscation path for bootstrap-phase strings.
 //!
-//! Verifies round-trip decoding of obfuscated string literals across
-//! ASCII, empty, multi-byte UTF-8, and key-cycling-length cases, plus
-//! the pointer-stability (`&'static str` returned by a per-call-site
-//! cache) contract.
+//! These tests deliberately do NOT call `init!()`: `weak_mask!` must
+//! decode independently of the AEAD runtime, using only the wrapper
+//! bytes baked into the binary at compile time.
+//!
+//! Verifies round-trip decoding across ASCII, empty, multi-byte UTF-8,
+//! and key-cycling-length cases, plus the pointer-stability
+//! (`&'static str` returned by a per-call-site cache) contract.
 
 use litmask::weak_mask;
 

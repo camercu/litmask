@@ -751,16 +751,18 @@ mask_file!()                // current source path → masked String
 #[mask_all(strict)]         // upgrades skip warnings to errors
 ```
 
-`weak_mask!` is a complement to `mask!` for strings that must be
-readable before `init!()` has populated the runtime master key — env
-var names, default file paths, and other bootstrap configuration. The
-threat model is strictly weaker than `mask!`: the literal is XOR-ed
-against the per-build wrapper bytes (which themselves live in the user
-binary), so an attacker with both the obfuscated bytes and the wrapper
-recovers the plaintext trivially. `weak_mask!` defends against
-`strings(1)` and Level 1 inspection only. Real secrets always use
-`mask!`. Return type is `&'static str`; decode happens once per call
-site (cached in a `OnceLock`).
+`weak_mask!` is the **only** masking macro that works before `init!()`
+has populated the runtime master key. It MUST be used exclusively for
+strings needed during the pre-`init!()` bootstrap window — env var
+names, default file paths, and other non-secret metadata that the
+provider needs in order to locate the unlock key. The threat model is
+strictly weaker than `mask!`: the literal is XOR-ed against the
+per-build wrapper bytes (which themselves live in the user binary), so
+an attacker with both the obfuscated bytes and the wrapper recovers
+the plaintext trivially. `weak_mask!` defends against `strings(1)` and
+Level 1 inspection only. Real secrets always use `mask!` after
+`init!()` has succeeded. Return type is `&'static str`; decode happens
+once per call site (cached in a `OnceLock`).
 
 `mask!` accepts:
 - String literal (`"text"`, raw, Unicode-escape) → returns `String`
