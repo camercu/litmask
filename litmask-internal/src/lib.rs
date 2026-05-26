@@ -249,11 +249,12 @@ impl CipherId {
 /// chacha20poly1305 crate in the dep tree), pass
 /// `--no-default-features --features std,aes-gcm`.
 ///
-/// The constant is intentionally **absent** in litmask-cli's dual-
-/// cipher mode (`chacha20-poly1305 + aes-gcm` features enabled with
-/// the `--no-default-features` litmask-internal dep that the CLI's
-/// manifest uses). The CLI dispatches at runtime based on the
-/// wrapper's cipher-id byte and has no single "current" choice.
+/// When both cipher features are active (as in `litmask-cli`'s
+/// dual-cipher build or `cargo test --all-features`), AES-GCM wins
+/// because the `#[cfg(feature = "aes-gcm")]` arm is unconditional.
+/// The CLI's `decrypt_wrapper` ignores this constant and dispatches
+/// at runtime based on the wrapper's cipher-id byte; the constant
+/// matters only for `decrypt_blob` and the proc-macro encrypt path.
 #[cfg(feature = "aes-gcm")]
 pub const CURRENT_CIPHER: CipherId = CipherId::Aes256Gcm;
 
@@ -515,7 +516,7 @@ pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
 }
 
 /// Derive a per-call-site nonce: first [`NONCE_LEN`] bytes of the
-/// keyed BLAKE3 hash of the `"litmask-nonce"` domain separator
+/// keyed BLAKE3 hash of the `b"call-site"` domain separator
 /// followed by the call site's `file` path, `line`, `column`, and
 /// the `plaintext` being encrypted — all keyed on `seed`.
 ///
@@ -551,8 +552,8 @@ pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
 /// structure in `.rodata`.
 ///
 /// **Domain separation.** The call-site domain separator
-/// (`"litmask-nonce"`) differs from the wrapper's
-/// (`"litmask-mask-key-nonce"`), so the call-site nonce space is
+/// (`b"call-site"`) differs from the wrapper's
+/// (`b"wrapper"`), so the call-site nonce space is
 /// disjoint from the wrapper's at the same seed.
 #[must_use]
 pub fn nonce_for_call_site(

@@ -115,16 +115,17 @@ pub fn decrypt_blob(
     aead_decrypt(crate::CURRENT_CIPHER, mask_key, nonce, body).map_err(DecryptError::from)
 }
 
-// These unit tests fix the cipher to ChaCha20-Poly1305 — they
-// exercise the wrapper / blob round-trip plumbing under the default
-// cipher feature. The AES-GCM round-trip lives in
-// `tests/cipher_selection.rs` so this module stays gated cleanly on
-// the chacha feature.
+// Wrapper tests hardcode ChaCha20-Poly1305 because `decrypt_wrapper`
+// reads the cipher byte from the header and dispatches accordingly —
+// the wrapper carries its own cipher identity. Blob tests use
+// `CURRENT_CIPHER` because `decrypt_blob` dispatches through that
+// constant (blobs don't carry a cipher byte). The AES-GCM-specific
+// round-trip lives in `tests/cipher_selection.rs`.
 #[cfg(all(test, feature = "chacha20-poly1305"))]
 mod tests {
     use super::*;
     use crate::{
-        CipherId, FormatVersion, WRAPPER_BODY_LEN, aead_encrypt, assemble_wrapper,
+        CURRENT_CIPHER, CipherId, FormatVersion, WRAPPER_BODY_LEN, aead_encrypt, assemble_wrapper,
         nonce_for_wrapper,
     };
 
@@ -161,8 +162,7 @@ mod tests {
         nonce: &[u8; NONCE_LEN],
         plaintext: &[u8],
     ) -> alloc::vec::Vec<u8> {
-        let body =
-            aead_encrypt(CipherId::ChaCha20Poly1305, mask_key, nonce, plaintext).expect("encrypt");
+        let body = aead_encrypt(CURRENT_CIPHER, mask_key, nonce, plaintext).expect("encrypt");
         let mut blob = alloc::vec::Vec::with_capacity(NONCE_LEN + body.len());
         blob.extend_from_slice(nonce);
         blob.extend_from_slice(&body);
