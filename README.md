@@ -1,11 +1,8 @@
 # litmask
 
-Compile-time string literal obfuscation with runtime decryption for Rust.
-
-Raise the cost of static binary analysis for string constants. Each call
-to `mask!` encrypts its literal at compile time with an AEAD cipher
-(ChaCha20-Poly1305 or AES-256-GCM); the runtime decrypts on first use
-after a process-global mask key is recovered from an embedded wrapper.
+**Hide string literals from `strings(1)` and hex editors.** AEAD-encrypt
+every string constant at compile time, decrypt at runtime. Drop-in
+macros, layered key management, `no_std` ready.
 
 ```rust
 use litmask::mask;
@@ -17,66 +14,27 @@ fn main() {
 ```
 
 ```sh
-# The plaintext never appears in the binary:
-strings target/release/my_app | grep "secret token"
-# (no output)
+strings target/release/my_app | grep "secret token"   # no output
 ```
 
-## Security levels
+## Why litmask
 
-| Configuration | Defeats |
-|---|---|
-| Zero-config build (defaults to `EnvVarProvider`) | `strings`, casual binary inspection (Level 1); also Level 2 because `unlock_key` is not embedded |
-| `FileProvider` + filesystem permissions | Above with OS-enforced access control |
-| `HardwareIdProvider` | Above + binary moved to a different machine |
-| Custom `KeyProvider` (network call, vault) | Above + offline attackers |
-
-The "zero-config" descriptor refers to absence of project configuration,
-not to absence of runtime key provisioning. Providers that source
-`unlock_key` from external runtime state require the deployer to
-provision that state. A binary configured with such a provider but
-without the corresponding state will fail at init.
-
-## What litmask does NOT protect against
-
-- Runtime memory inspection
-- Debugger attachment after key derivation
-- Compromised runtime environments
-- Side-channel attacks (timing, power analysis)
-- Control-flow obfuscation or anti-debugging
-- Protection of dynamically generated strings
-- Perfect secrecy under any threat model
-
-`litmask` raises the cost of static analysis. It is not a DRM system and
-does not claim to defeat a motivated reverse engineer with runtime
-access.
-
-## Comparison with existing crates
-
-| Property | `obfstr` | `litcrypt`/`litcrypt2` | `litmask` |
+| | `obfstr` | `litcrypt` | **`litmask`** |
 |---|---|---|---|
-| Cipher | XOR | XOR | ChaCha20-Poly1305 (AEAD) or AES-256-GCM |
-| Tamper detection | No | No | Yes (AEAD authentication) |
-| Per-string nonces | Compile-time random (no auth) | None | Per-build deterministic, authenticated |
-| Key model | Compile-time random per build | Single env var | Layered: `mask_key` + `unlock_key`, multiple providers |
-| Format string masking | Separate `fmtools` crate | None | Built-in `mask_format!` with single-evaluation semantics |
-| Module-level masking | None | None | `#[mask_all]` with deep substitution |
-| Hardware binding | None | None | Yes (post-build rebind via `litmask-cli`) |
-| Multiple literal types (str/bytes/cstr) | str only | str only | All three |
-| `no_std` support | Limited | No | Yes (with `alloc`) |
-| Threat model documented | Minimal | Minimal | Explicit security ladder, honest scope |
-| Reproducible builds | No | No | Yes (with `LITMASK_RNG_SEED`) |
-| Fuzzing | No | No | Yes |
-
-The cipher upgrade (XOR to AEAD) is the primary technical advance.
-Everything else is operational maturity (key management, deployment
-story, tooling).
+| Cipher | XOR | XOR | **ChaCha20-Poly1305 / AES-256-GCM** |
+| Tamper detection | No | No | **Yes (AEAD)** |
+| Key model | Compile-time random | Single env var | **Layered providers** |
+| Format strings | No | No | **`mask_format!`** |
+| Module-level | No | No | **`#[mask_all]`** |
+| Hardware binding | No | No | **`litmask-cli bind`** |
+| Literal types | `str` | `str` | **str / bytes / cstr** |
+| `no_std` | Limited | No | **Yes** |
+| Reproducible builds | No | No | **Yes** |
 
 ## Quick start
 
-Add `litmask` and its build-time companion to your `Cargo.toml`:
-
 ```toml
+# Cargo.toml
 [dependencies]
 litmask = "0.7"
 
@@ -84,30 +42,10 @@ litmask = "0.7"
 litmask-build = "0.7"
 ```
 
-Create a `build.rs` at your crate root:
-
 ```rust
-fn main() {
-    litmask_build::emit();
-}
+// build.rs
+fn main() { litmask_build::emit(); }
 ```
-
-Use `mask!` in your code:
-
-```rust
-use litmask::{init, mask};
-
-fn main() {
-    // Initialize with the default EnvVarProvider.
-    // Reads LITMASK_UNLOCK_KEY from the environment.
-    litmask::init!().expect("litmask init");
-
-    let secret = mask!("my secret string");
-    println!("{secret}");
-}
-```
-
-Run with the unlock key from the build config:
 
 ```sh
 cargo build
@@ -115,60 +53,76 @@ LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' target/debug/litmask.c
     cargo run
 ```
 
-## Masking macros
+## Macros
 
-| Macro | Returns | Description |
+| Macro | Returns | Replaces |
 |---|---|---|
-| `mask!("...")` | `String` | AEAD-encrypted string literal |
-| `mask!(b"...")` | `Vec<u8>` | AEAD-encrypted byte string |
-| `mask!(c"...")` | `CString` | AEAD-encrypted C string (requires `std`) |
-| `mask_format!("...", args)` | `String` | Masked format template |
-| `mask_concat!(a, b, ...)` | `String` | Masked concatenation |
-| `mask_env!("VAR")` | `String` | Masked build-time env var |
-| `mask_option_env!("VAR")` | `Option<String>` | Masked optional env var |
-| `mask_include_str!("path")` | `String` | Masked file contents |
-| `mask_include_bytes!("path")` | `Vec<u8>` | Masked file bytes |
-| `mask_file!()` | `String` | Masked source file path |
-| `weak_mask!("...")` | `&'static str` | XOR obfuscation only, works pre-`init!` |
-| `unmasked!("...")` | `&'static str` | Opt-out marker for `#[mask_all]` |
-| `#[mask_all]` | — | Rewrites all literals in a module |
+| `mask!("...")` | `String` | string literals |
+| `mask!(b"...")` | `Vec<u8>` | byte string literals |
+| `mask!(c"...")` | `CString` | C string literals (`std`) |
+| `mask_format!("{}", x)` | `String` | `format!` |
+| `mask_concat!(a, b)` | `String` | `concat!` |
+| `mask_env!("VAR")` | `String` | `env!` |
+| `mask_option_env!("VAR")` | `Option<String>` | `option_env!` |
+| `mask_include_str!("path")` | `String` | `include_str!` |
+| `mask_include_bytes!("path")` | `Vec<u8>` | `include_bytes!` |
+| `mask_file!()` | `String` | `file!` |
+| `weak_mask!("...")` | `&'static str` | pre-`init!` bootstrap strings |
+| `unmasked!("...")` | `&'static str` | opt out of `#[mask_all]` |
+| `#[mask_all]` | -- | rewrites all literals in a module |
 
-### Return types
-
-`mask!` and its companions return owned types (`String`, `Vec<u8>`,
-`CString`) because masked values are decrypted at runtime and cannot
-inhabit `'static` storage. If a call site needs `&str`, bind once:
-
-```rust
-let secret = mask!("my secret");
-let s: &str = &secret;
-```
-
-When the threat model permits weaker guarantees (no AEAD, plaintext
-cached for program lifetime), `weak_mask!` returns `&'static str`
-directly.
+`mask!` returns owned types because decryption happens at runtime. If you
+need `&str`, bind: `let s: &str = &mask!("...");`. For `&'static str`
+with weaker guarantees, use `weak_mask!`.
 
 ## Key providers
 
 | Provider | Source | Feature |
 |---|---|---|
-| `EnvVarProvider` | Environment variable | `std` (default) |
-| `FileProvider` | Filesystem path | `std` (default) |
-| `HardwareIdProvider` | Machine-id + BLAKE3 | `hw-id` |
-| `StaticProvider` | Fixed key (tests only) | always |
-| Custom `impl KeyProvider` | Anything | always |
+| `EnvVarProvider` | Environment variable | default |
+| `FileProvider` | Filesystem path | default |
+| `HardwareIdProvider` | Machine ID + BLAKE3 | `hw-id` |
+| `StaticProvider` | Fixed key (tests only) | -- |
+| `impl KeyProvider` | Anything you write | -- |
+
+```rust
+use litmask::HardwareIdProvider;
+
+let provider = HardwareIdProvider::with_salt(b"myapp-v1");
+litmask::init_with!(provider).expect("init");
+```
+
+## Security model
+
+| Configuration | Defeats |
+|---|---|
+| Default (`EnvVarProvider`) | `strings`, casual inspection |
+| `FileProvider` + permissions | Above + unauthorized file access |
+| `HardwareIdProvider` | Above + binary redistribution |
+| Custom provider (vault, HSM) | Above + offline attackers |
+
+**Does NOT protect against:** runtime memory inspection, debugger
+attachment, compromised runtime environments, side-channel attacks,
+or a motivated reverse engineer with runtime access. See
+[THREAT_MODEL.md](docs/THREAT_MODEL.md) for the full scope.
 
 ## Features
 
-| Feature | Default | Description |
+| Feature | Default | |
 |---|---|---|
-| `std` | Yes | Enables `EnvVarProvider`, `FileProvider`, `mask!(c"...")` |
-| `chacha20-poly1305` | Yes | ChaCha20-Poly1305 cipher |
-| `aes-gcm` | No | AES-256-GCM cipher (takes precedence when both enabled) |
-| `alloc` | — | `no_std` + allocator support |
-| `hw-id` | No | `HardwareIdProvider` (machine-bound keys) |
+| `std` | yes | `EnvVarProvider`, `FileProvider`, `mask!(c"...")` |
+| `chacha20-poly1305` | yes | Default cipher |
+| `aes-gcm` | no | AES-256-GCM (takes precedence when enabled) |
+| `alloc` | -- | `no_std` + allocator |
+| `hw-id` | no | `HardwareIdProvider` |
+
+## Documentation
+
+- [API docs (docs.rs)](https://docs.rs/litmask)
+- [Threat model](docs/THREAT_MODEL.md)
+- [Deployment guide](docs/DEPLOYMENT.md)
+- [Specification](docs/SPECIFICATION.md)
 
 ## License
 
-Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
-[MIT License](LICENSE-MIT) at your option.
+MIT OR Apache-2.0
