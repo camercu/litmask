@@ -17,15 +17,9 @@
 use std::fs;
 use std::path::Path;
 
-use litmask_internal::NONCE_LEN;
+use litmask_internal::scan::count_occurrences;
 
 use crate::config;
-
-/// Wrapper-locator length (§1.7.3): the 12-byte nonce embedded at
-/// `NONCE_OFFSET` inside every wrapper, used verbatim as the search
-/// key. Aliased to [`NONCE_LEN`] so a future wire-format change to
-/// the nonce width updates the locator search in lockstep.
-const LOCATOR_LEN: usize = NONCE_LEN;
 
 /// Outcome of the pure planner. `plan` returns one of these
 /// variants; the shell renders each to its `(exit_code, stdout_tag)`
@@ -107,29 +101,15 @@ impl ShellError {
     }
 }
 
-/// Count non-overlapping occurrences of `needle` in `haystack`.
-/// `windows(N)` slides one byte at a time so adjacent occurrences
-/// (impossible for a 12-byte random locator in practice, but a
-/// possibility the §2.9.2 ambiguous-match branch must still count)
-/// are still each counted once.
-fn count_occurrences(haystack: &[u8], needle: &[u8; LOCATOR_LEN]) -> usize {
-    if haystack.len() < LOCATOR_LEN {
-        return 0;
-    }
-    haystack
-        .windows(LOCATOR_LEN)
-        .filter(|w| *w == needle)
-        .count()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use litmask_internal::NONCE_LEN;
     use litmask_internal::base64url;
 
-    const LOCATOR: [u8; LOCATOR_LEN] = [0xCDu8; LOCATOR_LEN];
+    const LOCATOR: [u8; NONCE_LEN] = [0xCDu8; NONCE_LEN];
 
-    fn config_with_locator(loc: &[u8; LOCATOR_LEN]) -> String {
+    fn config_with_locator(loc: &[u8; NONCE_LEN]) -> String {
         format!(
             "# fixture\nunlock_key = \"placeholder\"\nlocator = \"{}\"\nlength = 62\n",
             base64url::encode(loc),
@@ -149,7 +129,7 @@ mod tests {
     fn plan_single_match_yields_verified() {
         let cfg = config_with_locator(&LOCATOR);
         let mut binary = vec![0u8; 1024];
-        binary[200..200 + LOCATOR_LEN].copy_from_slice(&LOCATOR);
+        binary[200..200 + NONCE_LEN].copy_from_slice(&LOCATOR);
         assert_eq!(plan(&cfg, &binary), Outcome::Verified);
     }
 
@@ -158,7 +138,7 @@ mod tests {
         let cfg = config_with_locator(&LOCATOR);
         let mut binary = vec![0u8; 1024];
         for offset in [100, 400, 700] {
-            binary[offset..offset + LOCATOR_LEN].copy_from_slice(&LOCATOR);
+            binary[offset..offset + NONCE_LEN].copy_from_slice(&LOCATOR);
         }
         assert_eq!(plan(&cfg, &binary), Outcome::Ambiguous(3));
     }
@@ -172,7 +152,7 @@ mod tests {
     #[test]
     fn plan_binary_shorter_than_locator_yields_not_found() {
         let cfg = config_with_locator(&LOCATOR);
-        assert_eq!(plan(&cfg, &[0u8; LOCATOR_LEN - 1]), Outcome::NotFound);
+        assert_eq!(plan(&cfg, &[0u8; NONCE_LEN - 1]), Outcome::NotFound);
     }
 
     // ── plan: config-malformation paths ───────────────────────
@@ -229,7 +209,7 @@ mod tests {
         // here is deliberately heterogeneous so internal sliding
         // windows (e.g., starting at offset 1) DON'T match — only
         // the two true occurrences at offsets 0 and 12 do.
-        let needle: [u8; LOCATOR_LEN] = *b"LITMASK-LOCT";
+        let needle: [u8; NONCE_LEN] = *b"LITMASK-LOCT";
         let mut haystack = needle.to_vec();
         haystack.extend_from_slice(&needle);
         assert_eq!(count_occurrences(&haystack, &needle), 2);

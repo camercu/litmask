@@ -36,6 +36,7 @@ use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChaNonce};
 // from `litmask_internal` so the CLI shares a single canonical source
 // with the runtime crate. A drift here would silently break bind ↔
 // runtime interop: every freshly bound binary would fail to unlock.
+use litmask_internal::scan::{LocateOutcome, locate_wrapper};
 use litmask_internal::{
     CIPHER_AES_256_GCM, CIPHER_CHACHA20_POLY1305, CIPHER_OFFSET, FORMAT_V1, HEADER_LEN,
     HW_ID_DERIVATION_CONTEXT, KEY_LEN, NONCE_LEN, NONCE_OFFSET, TAG_LEN, VERSION_OFFSET,
@@ -227,31 +228,6 @@ fn decode_salt(salt_b64: Option<&str>) -> Result<Vec<u8>, ()> {
         None => Ok(Vec::new()),
         Some(s) => base64url::decode(s).map_err(|_| ()),
     }
-}
-
-enum LocateOutcome {
-    None,
-    Single(usize),
-    Multiple,
-}
-
-fn locate_wrapper(haystack: &[u8], locator: &[u8; NONCE_LEN]) -> LocateOutcome {
-    if haystack.len() < WRAPPER_LEN {
-        return LocateOutcome::None;
-    }
-    let mut hits = haystack
-        .windows(NONCE_LEN)
-        .enumerate()
-        .filter(|(_, w)| *w == locator)
-        .filter(|(i, _)| i + WRAPPER_LEN <= haystack.len())
-        .map(|(i, _)| i);
-    let Some(first) = hits.next() else {
-        return LocateOutcome::None;
-    };
-    if hits.next().is_some() {
-        return LocateOutcome::Multiple;
-    }
-    LocateOutcome::Single(first)
 }
 
 fn aead_decrypt_dispatch(
