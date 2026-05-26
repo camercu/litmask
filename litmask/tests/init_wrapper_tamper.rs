@@ -21,7 +21,7 @@ fn init_returns_decryption_error_on_tampered_wrapper() {
     tampered[20] ^= 0x01;
 
     let key = common::read_unlock_key(&common::config_path(common::Profile::Debug));
-    let provider = common::StaticProvider { key_b64: key };
+    let provider = common::TestKeyProvider { key_b64: key };
 
     let result = __init_with_wrapper(provider, &tampered);
     assert!(

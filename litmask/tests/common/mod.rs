@@ -322,6 +322,22 @@ where
     })
 }
 
+/// Like [`catch_panic_msg`], but panics if `f` returned normally.
+/// Use when the test unconditionally expects a panic.
+pub fn assert_panic_msg<F>(f: F) -> String
+where
+    F: FnOnce() + std::panic::UnwindSafe,
+{
+    catch_panic_msg(f).expect("expected closure to panic, but it returned normally")
+}
+
+/// Parse the unlock key from `litmask.config` at the given profile's
+/// build directory and return a ready-to-use [`UnlockKey`].
+pub fn unlock_key_from_config(profile: Profile) -> UnlockKey {
+    let b64 = read_unlock_key(&config_path(profile));
+    UnlockKey::from_base64url(&b64).expect("base64url unlock_key in litmask.config")
+}
+
 /// Idempotently initialize the runtime against the debug-profile
 /// `litmask.config` so integration tests do not depend on
 /// `LITMASK_UNLOCK_KEY` being set in the test process's environment.
@@ -331,7 +347,7 @@ pub fn init_once() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         let key = read_unlock_key(&config_path(Profile::Debug));
-        let provider = StaticProvider { key_b64: key };
+        let provider = TestKeyProvider { key_b64: key };
         init_with!(provider).expect("init_with succeeded");
     });
 }
@@ -340,11 +356,11 @@ pub fn init_once() {
 /// in-process `String`. Used by integration tests that want
 /// deterministic init against the build's `litmask.config` without
 /// depending on `LITMASK_UNLOCK_KEY` in the test environment.
-pub struct StaticProvider {
+pub struct TestKeyProvider {
     pub key_b64: String,
 }
 
-impl KeyProvider for StaticProvider {
+impl KeyProvider for TestKeyProvider {
     fn unlock_key(&self) -> Result<UnlockKey, KeyError> {
         UnlockKey::from_base64url(&self.key_b64)
     }

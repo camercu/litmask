@@ -21,7 +21,7 @@ fn init_returns_unsupported_format_for_byte_0x99_at_offset_0() {
     fabricated[0] = 0x99; // format byte (offset 0) — unknown version
 
     let key = common::read_unlock_key(&common::config_path(common::Profile::Debug));
-    let provider = common::StaticProvider { key_b64: key };
+    let provider = common::TestKeyProvider { key_b64: key };
     let result = __init_with_wrapper(provider, &fabricated);
     assert!(
         matches!(result, Err(InitError::UnsupportedFormat)),
@@ -30,41 +30,30 @@ fn init_returns_unsupported_format_for_byte_0x99_at_offset_0() {
 }
 
 #[test]
+#[cfg_attr(
+    all(feature = "chacha20-poly1305", feature = "aes-gcm"),
+    ignore = "dual-cipher build accepts both cipher bytes; mismatch only testable in single-cipher mode"
+)]
 fn init_returns_unsupported_cipher_for_mismatched_cipher_byte() {
-    // Build the default-cipher (chacha) runtime. A wrapper whose
-    // cipher byte is 0x02 (aes-gcm) must surface UnsupportedCipher,
-    // not Decryption — the cipher mismatch is detectable before
-    // AEAD authentication is even attempted.
-    //
-    // Under the dual-cipher CLI build (both features), this test
-    // would actually succeed at decryption (no mismatch); skip via
-    // a feature-gated cfg so the assertion stays clean in
-    // single-cipher mode.
-    #[cfg(any(
-        all(feature = "chacha20-poly1305", not(feature = "aes-gcm")),
-        all(feature = "aes-gcm", not(feature = "chacha20-poly1305")),
-    ))]
+    let mut fabricated = *__wrapper_bytes!();
+    // Flip the cipher byte to the OPPOSITE of what the runtime
+    // expects. Under chacha-only: flip to 0x02. Under aes-only:
+    // flip to 0x01.
+    #[cfg(feature = "chacha20-poly1305")]
     {
-        let mut fabricated = *__wrapper_bytes!();
-        // Flip the cipher byte to the OPPOSITE of what the runtime
-        // expects. Under chacha-only: flip to 0x02. Under aes-only:
-        // flip to 0x01.
-        #[cfg(feature = "chacha20-poly1305")]
-        {
-            fabricated[1] = 0x02;
-        }
-        #[cfg(feature = "aes-gcm")]
-        {
-            fabricated[1] = 0x01;
-        }
-        let key = common::read_unlock_key(&common::config_path(common::Profile::Debug));
-        let provider = common::StaticProvider { key_b64: key };
-        let result = __init_with_wrapper(provider, &fabricated);
-        assert!(
-            matches!(result, Err(InitError::UnsupportedCipher)),
-            "expected Err(InitError::UnsupportedCipher), got {result:?}",
-        );
+        fabricated[1] = 0x02;
     }
+    #[cfg(feature = "aes-gcm")]
+    {
+        fabricated[1] = 0x01;
+    }
+    let key = common::read_unlock_key(&common::config_path(common::Profile::Debug));
+    let provider = common::TestKeyProvider { key_b64: key };
+    let result = __init_with_wrapper(provider, &fabricated);
+    assert!(
+        matches!(result, Err(InitError::UnsupportedCipher)),
+        "expected Err(InitError::UnsupportedCipher), got {result:?}",
+    );
 }
 
 #[test]
@@ -74,7 +63,7 @@ fn init_returns_unsupported_format_for_unknown_byte_0xfe() {
     let mut fabricated = *__wrapper_bytes!();
     fabricated[0] = 0xFE;
     let key = common::read_unlock_key(&common::config_path(common::Profile::Debug));
-    let provider = common::StaticProvider { key_b64: key };
+    let provider = common::TestKeyProvider { key_b64: key };
     let result = __init_with_wrapper(provider, &fabricated);
     assert!(matches!(result, Err(InitError::UnsupportedFormat)));
 }
@@ -86,7 +75,7 @@ fn matching_format_and_cipher_continues_to_succeed() {
     // succeed (or be idempotent if a previous test in this binary
     // already initialized).
     let key = common::read_unlock_key(&common::config_path(common::Profile::Debug));
-    let provider = common::StaticProvider { key_b64: key };
+    let provider = common::TestKeyProvider { key_b64: key };
     let result = __init_with_wrapper(provider, __wrapper_bytes!());
     assert!(result.is_ok(), "valid wrapper must init, got {result:?}");
 }
