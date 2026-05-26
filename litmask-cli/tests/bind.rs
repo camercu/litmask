@@ -20,7 +20,9 @@ use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 // redefining them here: a future header tweak that drifts these
 // values would silently break this fixture while the production
 // path still matched.
-use litmask_internal::{HEADER_LEN, KEY_LEN, NONCE_LEN, WRAPPER_LEN, base64url};
+use litmask_internal::{
+    CipherId, FormatVersion, HEADER_LEN, KEY_LEN, NONCE_LEN, WRAPPER_LEN, base64url,
+};
 use tempfile::TempDir;
 
 fn cli_binary() -> PathBuf {
@@ -37,8 +39,8 @@ fn build_wrapper(
         .encrypt(Nonce::from_slice(nonce), mask_key.as_slice())
         .expect("encrypt");
     let mut out = [0u8; WRAPPER_LEN];
-    out[0] = 0x01; // format
-    out[1] = 0x01; // chacha20-poly1305
+    out[0] = FormatVersion::CURRENT.to_byte();
+    out[1] = CipherId::ChaCha20Poly1305.to_byte();
     out[2..HEADER_LEN].copy_from_slice(nonce);
     out[HEADER_LEN..].copy_from_slice(&body);
     out
@@ -95,6 +97,11 @@ fn end_to_end_happy_path_rebinds_wrapper_and_updates_config() {
     let new_unlock: [u8; KEY_LEN] = new_unlock_bytes.try_into().unwrap();
 
     let binary_after = fs::read(&binary_path).expect("read rebound binary");
+    let locator_matches = binary_after
+        .windows(NONCE_LEN)
+        .filter(|w| *w == locator)
+        .count();
+    assert_eq!(locator_matches, 1, "locator must appear exactly once");
     let offset = binary_after
         .windows(NONCE_LEN)
         .position(|w| w == locator)

@@ -15,10 +15,10 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 
-use litmask_internal::base64url;
+use litmask_internal::{NONCE_LEN, WRAPPER_LEN, base64url};
 use tempfile::TempDir;
 
-const LOCATOR: &[u8; 12] = b"LITMASK-LOCT";
+const LOCATOR: &[u8; NONCE_LEN] = b"LITMASK-LOCT";
 
 fn cli_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_litmask-cli"))
@@ -43,7 +43,7 @@ fn end_to_end_single_match_exits_zero_and_prints_verified() {
     fs::write(
         &config_path,
         format!(
-            "# fixture\nunlock_key = \"placeholder\"\nlocator = \"{}\"\nlength = 62\n",
+            "# fixture\nunlock_key = \"placeholder\"\nlocator = \"{}\"\nlength = {WRAPPER_LEN}\n",
             base64url::encode(LOCATOR),
         ),
     )
