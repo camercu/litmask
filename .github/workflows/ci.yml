@@ -36,6 +36,8 @@ jobs:
           targets: thumbv7m-none-eabi,x86_64-pc-windows-gnu,aarch64-apple-darwin
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
 
       - uses: taiki-e/install-action@v2
         with:
@@ -61,6 +63,8 @@ jobs:
           components: clippy
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
 
       - uses: taiki-e/install-action@v2
         with:
@@ -90,6 +94,8 @@ jobs:
           toolchain: ${{ steps.tools.outputs.rust }}
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
 
       - uses: taiki-e/install-action@v2
         with:
@@ -111,6 +117,8 @@ jobs:
           tool: cargo-fuzz
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
 
       - name: Fuzz parse_format_template
         run: cd litmask && cargo +nightly fuzz run parse_format_template -- -max_total_time=10
