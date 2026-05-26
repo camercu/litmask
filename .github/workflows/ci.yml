@@ -98,6 +98,33 @@ jobs:
       - name: just semver-check
         run: just semver-check
 
+  fuzz:
+    name: Fuzz (10s budget)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Fuzz parse_format_template
+        run: cd litmask && cargo +nightly fuzz run parse_format_template -- -max_total_time=10
+
+      - name: Fuzz locator_scan
+        run: cd litmask && cargo +nightly fuzz run locator_scan -- -max_total_time=10
+
+      - name: Upload crashes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: litmask/fuzz/artifacts/
+
   commitlint:
     # Runs on both pull_request and push so direct-to-main commits
     # are linted too. Branch protection may permit direct pushes;

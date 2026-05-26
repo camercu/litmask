@@ -266,6 +266,13 @@ ci-coverage:
 # CI job so toolchain regressions surface without blocking PR merge.
 ci-stable: lint-clippy-stable test-stable
 
+# ── Fuzz ───────────────────────────────────────────────────
+
+# Run cargo-fuzz targets (requires nightly). Default 10s per target.
+fuzz duration="10":
+    cd litmask && cargo +nightly fuzz run parse_format_template -- -max_total_time={{duration}}
+    cd litmask && cargo +nightly fuzz run locator_scan -- -max_total_time={{duration}}
+
 # ── Release ─────────────────────────────────────────────────
 
 # Invoked by .github/workflows/release.yml after a successful CI run on
