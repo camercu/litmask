@@ -20,6 +20,7 @@ pub enum LocateOutcome {
 /// Slides one byte at a time so adjacent occurrences (impossible for
 /// a 12-byte random locator in practice, but a possibility the
 /// ambiguous-match branch must still count) are each counted once.
+#[must_use]
 pub fn count_occurrences(haystack: &[u8], needle: &[u8; NONCE_LEN]) -> usize {
     if haystack.len() < NONCE_LEN {
         return 0;
@@ -31,6 +32,7 @@ pub fn count_occurrences(haystack: &[u8], needle: &[u8; NONCE_LEN]) -> usize {
 ///
 /// Returns [`LocateOutcome::Single`] only when exactly one match has
 /// room for a full [`WRAPPER_LEN`]-byte wrapper following it.
+#[must_use]
 pub fn locate_wrapper(haystack: &[u8], locator: &[u8; NONCE_LEN]) -> LocateOutcome {
     if haystack.len() < WRAPPER_LEN {
         return LocateOutcome::None;

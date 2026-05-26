@@ -40,6 +40,12 @@ pub struct ParsedPlaceholder {
 /// Walk the user's template once, emitting alternating literal
 /// fragments and parsed placeholders. The result invariant is
 /// `fragments.len() == placeholders.len() + 1`.
+///
+/// # Errors
+///
+/// Returns a descriptive `String` on malformed templates (unmatched
+/// braces, invalid placeholder characters, etc.).
+#[allow(clippy::missing_panics_doc)]
 pub fn parse_mask_format_template(
     s: &str,
 ) -> Result<(Vec<String>, Vec<ParsedPlaceholder>), String> {
@@ -178,6 +184,7 @@ fn make_template_ref(token: &str) -> TemplateRef {
 }
 
 /// Whether `c` is valid inside a placeholder name or numeric index.
+#[must_use]
 pub fn is_token_char(c: char) -> bool {
     c.is_ascii_digit() || c == '_' || c.is_alphabetic()
 }
