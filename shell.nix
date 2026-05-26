@@ -22,5 +22,8 @@ pkgs.mkShell {
     # cargo-llvm-cov is omitted: the nixpkgs derivation is marked broken
     # (depends on a Rust nightly feature gate). Install locally via
     # `cargo install cargo-llvm-cov` or rely on CI's taiki-e/install-action.
+    # cargo-semver-checks is omitted: pinned nixpkgs ships 0.41.0 but
+    # .tool-versions pins 0.44.0. Install locally via
+    # `cargo install cargo-semver-checks` or rely on CI's taiki-e/install-action.
   ];
 }

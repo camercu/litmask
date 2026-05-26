@@ -68,6 +68,35 @@ jobs:
       - name: just ci-stable
         run: just ci-stable
 
+  semver-check:
+    # Pre-1.0: no crates.io baseline exists, so this job will fail
+    # until the first publish. continue-on-error keeps it advisory.
+    name: Semver check
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Parse .tool-versions
+        id: tools
+        run: |
+          while read -r name version; do
+            echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
+          done < <(grep -v '^#' .tool-versions | grep -v '^$')
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.tools.outputs.rust }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just@${{ steps.tools.outputs.just }},cargo-semver-checks@${{ steps.tools.outputs.cargo_semver_checks }}
+
+      - name: just semver-check
+        run: just semver-check
+
   commitlint:
     # Runs on both pull_request and push so direct-to-main commits
     # are linted too. Branch protection may permit direct pushes;
