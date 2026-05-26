@@ -257,7 +257,7 @@ pub fn mask_format(input: TokenStream) -> TokenStream {
 /// lifetime.
 ///
 /// `weak_mask!()` is the **only** masking macro that works before
-/// [`init!`] has run. Use it **exclusively** for bootstrap-phase
+/// `init!` has run. Use it **exclusively** for bootstrap-phase
 /// strings that must be readable before the AEAD mask-key cell is
 /// populated — env-var names, default file paths, and other
 /// non-secret metadata that the provider needs during init.
