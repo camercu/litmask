@@ -4,9 +4,9 @@
 channel = "1.88.0"
 profile = "minimal"
 components = ["clippy", "rustfmt", "llvm-tools"]
-# `thumbv7m-none-eabi` is the bare-metal embedded target used by
-# `just check-no-std` to cross-verify the runtime crate's
-# `--no-default-features --features alloc` build (§2.10.1).
+# `thumbv7m-none-eabi`: bare-metal target for `just check-no-std`.
+# `x86_64-pc-windows-gnu`, `aarch64-apple-darwin`: cross targets for
+# `just check-cross` (cargo check only, no linker required).
 targets = [
   "thumbv7m-none-eabi",
   "x86_64-pc-windows-gnu",

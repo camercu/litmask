@@ -145,8 +145,8 @@ build:
     cargo build --workspace --all-targets
 
 # Verify the runtime crate compiles with `--no-default-features --features alloc`
-# (the no_std + alloc configuration). Feature-matrix expansion lands in Task 27;
-# this single combo guards against feature-gate regressions today.
+# (the no_std + alloc configuration). `test-no-default` runs unit tests under
+# the same feature set; this recipe is a faster compile-only gate.
 check-no-default:
     cargo check -p litmask --no-default-features --features alloc
 
