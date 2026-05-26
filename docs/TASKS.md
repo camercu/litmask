@@ -1132,12 +1132,12 @@ per PR and uploads any new crashes as artifacts.
 
 ### Acceptance Criteria
 
-- [ ] `cargo fuzz list` shows both targets
-- [ ] `cargo fuzz run parse_format_template -- -max_total_time=10` exits
+- [x] `cargo fuzz list` shows both targets
+- [x] `cargo fuzz run parse_format_template -- -max_total_time=10` exits
       cleanly on a fresh checkout
-- [ ] `cargo fuzz run locator_scan -- -max_total_time=10` exits cleanly
-- [ ] CI executes both targets per PR with the 10s budget
-- [ ] Seed corpora are versioned in git
+- [x] `cargo fuzz run locator_scan -- -max_total_time=10` exits cleanly
+- [x] CI executes both targets per PR with the 10s budget
+- [x] Seed corpora are versioned in git
 
 ---
 
