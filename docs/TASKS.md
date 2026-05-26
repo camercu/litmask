@@ -1104,16 +1104,16 @@ local invocation matches CI behavior.
 
 ### Acceptance Criteria
 
-- [ ] `just coverage` produces `target/llvm-cov/html/index.html`
-- [ ] `just coverage-lcov` produces `target/llvm-cov/lcov.info`
-- [ ] `just semver-check` runs `cargo semver-checks check-release`
-- [ ] CI canonical-gate runs `coverage-text` (best-effort)
-- [ ] CI has a separate semver-check job (continue-on-error pre-1.0)
-- [ ] `just test-no-default`, `just test-all-features`, `just test-aes-gcm`
+- [x] `just coverage` produces `target/llvm-cov/html/index.html`
+- [x] `just coverage-lcov` produces `target/llvm-cov/lcov.info`
+- [x] `just semver-check` runs `cargo semver-checks check-release`
+- [x] CI canonical-gate runs `coverage-text` (best-effort)
+- [x] CI has a separate semver-check job (continue-on-error pre-1.0)
+- [x] `just test-no-default`, `just test-all-features`, `just test-aes-gcm`
       all exit 0
-- [ ] `just check-cross` exits 0 for both `x86_64-pc-windows-gnu` and
+- [x] `just check-cross` exits 0 for both `x86_64-pc-windows-gnu` and
       `aarch64-apple-darwin`
-- [ ] `just ci` chains the matrix recipes and remains green
+- [x] `just ci` chains the matrix recipes and remains green
 
 ---
 
