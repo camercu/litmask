@@ -1,6 +1,9 @@
 //! `mask_concat!` resolves string literals and nested
 //! `concat!` / `include_str!` / `env!` invocations at proc-macro
 //! time, then masks the concatenated result as a single `String`.
+//!
+//! Zero-argument case is a compile error; see
+//! `tests/compile/mask_concat_empty.rs`.
 
 mod common;
 

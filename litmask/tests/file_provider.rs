@@ -15,7 +15,7 @@ mod common;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use litmask::{FileProvider, KeyEncoding, KeyError, KeyProvider, init_with, mask};
 
@@ -37,7 +37,7 @@ fn tmp_dir(name: &str) -> PathBuf {
     dir
 }
 
-fn write_file(path: &PathBuf, bytes: &[u8]) {
+fn write_file(path: &Path, bytes: &[u8]) {
     let mut f = fs::File::create(path).expect("create key file");
     f.write_all(bytes).expect("write key file");
     f.sync_all().expect("sync");

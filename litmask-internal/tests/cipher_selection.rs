@@ -6,12 +6,7 @@
 //! the wire format invariants without going through the runtime
 //! crate's macro layer.
 
-// Different feature combinations exercise different subsets of
-// imports; the `cfg(test_)` blocks below gate accordingly. Without
-// this allow, building under e.g. `--features chacha20-poly1305`
-// alone would warn about `KEY_LEN` / `aead_*` being unused.
-#![allow(unused_imports)]
-
+#[allow(unused_imports)]
 use litmask_internal::{
     CURRENT_CIPHER, CipherId, FormatVersion, KEY_LEN, NONCE_LEN, aead_decrypt, aead_encrypt,
 };
@@ -30,21 +25,27 @@ fn format_version_v1_byte_is_0x01() {
 }
 
 #[test]
-#[cfg(all(feature = "chacha20-poly1305", not(feature = "aes-gcm")))]
+#[cfg_attr(
+    not(all(feature = "chacha20-poly1305", not(feature = "aes-gcm"))),
+    ignore = "only meaningful in chacha20-poly1305-only builds"
+)]
 fn current_cipher_default_is_chacha20_poly1305() {
     assert_eq!(CURRENT_CIPHER, CipherId::ChaCha20Poly1305);
     assert_eq!(CURRENT_CIPHER.to_byte(), 0x01);
 }
 
 #[test]
-#[cfg(all(feature = "aes-gcm", not(feature = "chacha20-poly1305")))]
+#[cfg_attr(
+    not(all(feature = "aes-gcm", not(feature = "chacha20-poly1305"))),
+    ignore = "only meaningful in aes-gcm-only builds"
+)]
 fn current_cipher_aes_gcm_byte_is_0x02() {
     assert_eq!(CURRENT_CIPHER, CipherId::Aes256Gcm);
     assert_eq!(CURRENT_CIPHER.to_byte(), 0x02);
 }
 
 #[test]
-#[cfg(feature = "aes-gcm")]
+#[cfg_attr(not(feature = "aes-gcm"), ignore = "requires aes-gcm feature")]
 fn aes_gcm_aead_round_trips() {
     let key = [0x11u8; KEY_LEN];
     let nonce = [0x22u8; NONCE_LEN];
@@ -55,7 +56,7 @@ fn aes_gcm_aead_round_trips() {
 }
 
 #[test]
-#[cfg(feature = "aes-gcm")]
+#[cfg_attr(not(feature = "aes-gcm"), ignore = "requires aes-gcm feature")]
 fn aes_gcm_rejects_wrong_key() {
     let key = [0x11u8; KEY_LEN];
     let nonce = [0x22u8; NONCE_LEN];
@@ -65,7 +66,10 @@ fn aes_gcm_rejects_wrong_key() {
 }
 
 #[test]
-#[cfg(all(feature = "chacha20-poly1305", feature = "aes-gcm"))]
+#[cfg_attr(
+    not(all(feature = "chacha20-poly1305", feature = "aes-gcm")),
+    ignore = "requires both cipher features (dual-cipher CLI build)"
+)]
 fn both_ciphers_compile_simultaneously_for_cli_dispatch() {
     // litmask-cli enables both ciphers and dispatches at runtime
     // based on the wrapper's cipher-id byte. Pin that the helpers

@@ -18,6 +18,8 @@
 
 use litmask::{HardwareIdProvider, KeyError, KeyProvider};
 
+/// Environment-probing test, not a correctness gate: both Ok and
+/// Err(Provider) are valid outcomes depending on host capabilities.
 #[test]
 fn unlock_key_on_supported_host_or_returns_provider_error() {
     // Hosts in the workspace's CI matrix split into two camps:

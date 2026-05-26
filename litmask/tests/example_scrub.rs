@@ -56,6 +56,8 @@ const EXAMPLES: &[&str] = &[
     "mask_all_demo",
 ];
 
+const EXCEPTIONS: &[&str] = &["static_provider", "file_provider", "hw_id_provider"];
+
 #[test]
 fn no_forbidden_substrings_in_any_example_binary() {
     for name in EXAMPLES {
@@ -352,4 +354,32 @@ fn hw_id_provider_example_masked_fixtures_absent_from_binary() {
     // drops the `weak_mask!()` wrapper, this assertion fires.
     common::assert_substring_absent(&path, "hw-v1");
     common::assert_no_dirty_words_except(&path, &["blake3"]);
+}
+
+/// Every `.rs` file under `litmask/examples/` must appear in either
+/// [`EXAMPLES`] or [`EXCEPTIONS`]. Catches the "added a new example
+/// but forgot to add scrub coverage" failure mode.
+#[test]
+fn all_examples_accounted_for_in_scrub_tests() {
+    let examples_dir = common::workspace_root().join("litmask/examples");
+    let mut on_disk: Vec<String> = std::fs::read_dir(&examples_dir)
+        .expect("read examples dir")
+        .filter_map(|entry| {
+            let name = entry.ok()?.file_name().to_str()?.to_string();
+            name.strip_suffix(".rs").map(String::from)
+        })
+        .collect();
+    on_disk.sort();
+
+    let mut accounted: Vec<String> = EXAMPLES
+        .iter()
+        .chain(EXCEPTIONS.iter())
+        .map(|s| (*s).to_string())
+        .collect();
+    accounted.sort();
+
+    assert_eq!(
+        on_disk, accounted,
+        "examples/ directory and EXAMPLES + EXCEPTIONS are out of sync"
+    );
 }

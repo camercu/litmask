@@ -452,6 +452,8 @@ mod eprintln_macro_rewritten {
     }
 }
 
+// Compilation + no-panic only; binary-absence pinned in
+// example_scrub::mask_all_eprintln_print_eprint_templates_absent_from_binary.
 #[test]
 fn mask_all_rewrites_eprintln_with_literal_template() {
     common::init_once();
@@ -465,6 +467,8 @@ mod print_macro_rewritten {
     }
 }
 
+// Compilation + no-panic only; binary-absence pinned in
+// example_scrub::mask_all_eprintln_print_eprint_templates_absent_from_binary.
 #[test]
 fn mask_all_rewrites_print_with_literal_template() {
     common::init_once();
@@ -478,6 +482,8 @@ mod eprint_macro_rewritten {
     }
 }
 
+// Compilation + no-panic only; binary-absence pinned in
+// example_scrub::mask_all_eprintln_print_eprint_templates_absent_from_binary.
 #[test]
 fn mask_all_rewrites_eprint_with_literal_template() {
     common::init_once();
