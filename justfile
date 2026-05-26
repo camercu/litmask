@@ -157,6 +157,11 @@ check-no-default:
 check-no-std:
     cargo check --target thumbv7m-none-eabi -p litmask --no-default-features --features alloc
 
+# `cargo check` only (no linking) so no cross-linker is required.
+check-cross:
+    cargo check --target x86_64-pc-windows-gnu -p litmask -p litmask-internal
+    cargo check --target aarch64-apple-darwin -p litmask -p litmask-internal
+
 semver-check:
     cargo semver-checks check-release --workspace
 
@@ -243,7 +248,7 @@ pre-push:
 
 # ── CI ──────────────────────────────────────────────────────
 
-ci: fmt-check lint test test-all-features test-no-default test-aes-gcm test-hw-id test-examples build check-no-default check-no-std doc ci-coverage
+ci: fmt-check lint test test-all-features test-no-default test-aes-gcm test-hw-id test-examples build check-no-default check-no-std check-cross doc ci-coverage
 
 # Best-effort coverage summary. Prints to stdout but does not fail CI
 # pre-1.0 (no minimum threshold set).

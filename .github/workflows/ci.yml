@@ -33,6 +33,7 @@ jobs:
         with:
           toolchain: ${{ steps.tools.outputs.rust }}
           components: clippy,rustfmt,llvm-tools
+          targets: thumbv7m-none-eabi,x86_64-pc-windows-gnu,aarch64-apple-darwin
 
       - uses: Swatinem/rust-cache@v2
 
