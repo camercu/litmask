@@ -85,11 +85,25 @@ pub fn example_path(name: &str, profile: Profile) -> PathBuf {
         .join(name)
 }
 
-/// Path to `litmask.config` for the given profile.
+/// Path to `litmask.config` for a subprocess build under the standard
+/// target directory. Use [`self_config_path`] when reading the config
+/// that matches the *running* test binary (e.g. for `init_once`).
 pub fn config_path(profile: Profile) -> PathBuf {
     workspace_root()
         .join("target")
         .join(profile.dir())
+        .join("litmask.config")
+}
+
+/// Path to `litmask.config` matching the build that produced the
+/// running test binary. Derived from `current_exe()` so it works
+/// under `cargo llvm-cov` (which redirects `--target-dir`).
+pub fn self_config_path() -> PathBuf {
+    let exe = std::env::current_exe().expect("current_exe");
+    // Test binary lives at <target_dir>/<profile>/deps/<binary>.
+    exe.parent()
+        .and_then(Path::parent)
+        .expect("exe path has <profile>/deps/ ancestors")
         .join("litmask.config")
 }
 
@@ -331,10 +345,10 @@ where
     catch_panic_msg(f).expect("expected closure to panic, but it returned normally")
 }
 
-/// Parse the unlock key from `litmask.config` at the given profile's
-/// build directory and return a ready-to-use [`UnlockKey`].
-pub fn unlock_key_from_config(profile: Profile) -> UnlockKey {
-    let b64 = read_unlock_key(&config_path(profile));
+/// Parse the unlock key from the `litmask.config` that matches the
+/// running test binary and return a ready-to-use [`UnlockKey`].
+pub fn unlock_key_from_config() -> UnlockKey {
+    let b64 = read_unlock_key(&self_config_path());
     UnlockKey::from_base64url(&b64).expect("base64url unlock_key in litmask.config")
 }
 
@@ -346,7 +360,7 @@ pub fn unlock_key_from_config(profile: Profile) -> UnlockKey {
 pub fn init_once() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let key = read_unlock_key(&config_path(Profile::Debug));
+        let key = read_unlock_key(&self_config_path());
         let provider = TestKeyProvider { key_b64: key };
         init_with!(provider).expect("init_with succeeded");
     });

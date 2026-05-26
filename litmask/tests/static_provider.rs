@@ -15,7 +15,7 @@ use litmask::{EnvVarProvider, KeyProvider, StaticProvider, init_with, mask};
 
 #[test]
 fn unlock_key_returns_ok_on_every_call() {
-    let key = common::unlock_key_from_config(common::Profile::Debug);
+    let key = common::unlock_key_from_config();
     let provider = StaticProvider::new(key);
     assert!(provider.unlock_key().is_ok());
     assert!(provider.unlock_key().is_ok());
@@ -23,7 +23,7 @@ fn unlock_key_returns_ok_on_every_call() {
 
 #[test]
 fn init_with_static_provider_against_build_config_succeeds() {
-    let key = common::unlock_key_from_config(common::Profile::Debug);
+    let key = common::unlock_key_from_config();
     let _ = init_with!(StaticProvider::new(key));
     let _ = mask!("static-provider-fixture");
 }

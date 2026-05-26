@@ -53,7 +53,7 @@ fn file_provider_round_trips_against_build_config() {
     common::init_once();
     let dir = tmp_dir("e2e");
     let path = dir.join("unlock_key.b64");
-    let key = common::read_unlock_key(&common::config_path(common::Profile::Debug));
+    let key = common::read_unlock_key(&common::self_config_path());
     write_file(&path, key.as_bytes());
 
     // Init was already performed by common::init_once on first call;
@@ -182,7 +182,7 @@ fn init_with_file_provider_compiles_and_does_not_panic() {
     // Build a key file holding the build's unlock_key.
     let dir = tmp_dir("init-with");
     let path = dir.join("unlock_key.b64");
-    let key = common::read_unlock_key(&common::config_path(common::Profile::Debug));
+    let key = common::read_unlock_key(&common::self_config_path());
     write_file(&path, key.as_bytes());
 
     // First init_with! call succeeds; subsequent ones are no-ops.
