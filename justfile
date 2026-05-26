@@ -52,6 +52,13 @@ test:
     cargo nextest run --workspace
     cargo test --workspace --doc
 
+# Run tests with --all-features so dual-cipher (chacha + aes-gcm)
+# code paths are exercised. Catches bugs like encrypt-with-one-cipher /
+# decrypt-with-another when CURRENT_CIPHER resolves differently than
+# the hardcoded cipher in a test helper.
+test-all-features:
+    cargo nextest run --workspace --all-features
+
 # Latest-stable sanity check. Skips the trybuild compile_fixtures
 # harness because rustc's diagnostic text drifts between minor
 # releases and the snapshots are byte-exact against the
@@ -204,7 +211,7 @@ pre-push:
 
 # ── CI ──────────────────────────────────────────────────────
 
-ci: fmt-check lint test test-examples build check-no-default check-no-std doc
+ci: fmt-check lint test test-all-features test-examples build check-no-default check-no-std doc
 
 # Stable-channel best-effort sanity check; runs in a continue-on-error
 # CI job so toolchain regressions surface without blocking PR merge.
