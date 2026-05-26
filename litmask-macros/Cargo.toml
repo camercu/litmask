@@ -25,7 +25,7 @@ litmask-internal.workspace = true
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full", "visit-mut"] }
-blake3 = "1"
+blake3 = { version = "1", default-features = false, features = ["pure"] }
 zeroize = "1"
 
 [lints]

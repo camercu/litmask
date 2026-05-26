@@ -63,7 +63,7 @@ hw-id = ["std", "dep:machine-uid"]
 [dependencies]
 litmask-internal.workspace = true
 litmask-macros.workspace = true
-blake3 = { version = "1", default-features = false }
+blake3 = { version = "1", default-features = false, features = ["pure"] }
 machine-uid = { version = "0.6", optional = true }
 once_cell = { version = "1", default-features = false, features = [
   "race",
