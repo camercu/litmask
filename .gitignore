@@ -22,5 +22,9 @@ Thumbs.db
 # Node (commitlint, semantic-release)
 /node_modules/
 
+# LLVM profiling data (cargo-llvm-cov)
+*.profraw
+*.profdata
+
 # Claude Code local config
 /.claude/

@@ -6,4 +6,5 @@ cargo-deny 0.19.1
 cargo-nextest 0.9.133
 typos-cli 1.45.0
 taplo-cli 0.10.0
+cargo-llvm-cov 0.8.7
 nodejs 22.22.2

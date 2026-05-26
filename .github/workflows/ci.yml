@@ -32,13 +32,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.tools.outputs.rust }}
-          components: clippy,rustfmt
+          components: clippy,rustfmt,llvm-tools
 
       - uses: Swatinem/rust-cache@v2
 
       - uses: taiki-e/install-action@v2
         with:
-          tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }}
+          tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }},cargo-llvm-cov@${{ steps.tools.outputs.cargo_llvm_cov }}
 
       - name: just ci
         run: just ci

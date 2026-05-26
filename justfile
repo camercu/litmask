@@ -112,6 +112,17 @@ test-examples:
         exit 1
     fi
 
+# ── Coverage ────────────────────────────────────────────────
+
+coverage:
+    cargo llvm-cov nextest --workspace --all-features --html
+
+coverage-text:
+    cargo llvm-cov nextest --workspace --all-features
+
+coverage-lcov:
+    cargo llvm-cov nextest --workspace --all-features --lcov --output-path target/llvm-cov/lcov.info
+
 # ── Building / checking ─────────────────────────────────────
 
 build:
@@ -155,6 +166,7 @@ check-tool-versions:
             cargo-nextest) actual=$(cargo nextest --version | head -1 | awk '{print $2}') ;;
             typos-cli)     actual=$(typos --version | awk '{print $2}') ;;
             taplo-cli)     actual=$(taplo --version | awk '{print $2}') ;;
+            cargo-llvm-cov) actual=$(cargo llvm-cov --version | awk '{print $2}') ;;
             nodejs)        actual=$(node --version | sed 's/^v//') ;;
             *)
                 # Loud failure: a new entry in `.tool-versions` without
@@ -211,7 +223,12 @@ pre-push:
 
 # ── CI ──────────────────────────────────────────────────────
 
-ci: fmt-check lint test test-all-features test-examples build check-no-default check-no-std doc
+ci: fmt-check lint test test-all-features test-examples build check-no-default check-no-std doc ci-coverage
+
+# Best-effort coverage summary. Prints to stdout but does not fail CI
+# pre-1.0 (no minimum threshold set).
+ci-coverage:
+    -cargo llvm-cov nextest --workspace --all-features
 
 # Stable-channel best-effort sanity check; runs in a continue-on-error
 # CI job so toolchain regressions surface without blocking PR merge.
