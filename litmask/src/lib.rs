@@ -2,38 +2,93 @@
 //!
 //! Raise the cost of static binary analysis for string constants in
 //! Rust binaries. Each call to [`mask!`] encrypts its literal at
-//! compile time with an AEAD cipher; the runtime decrypts on first
-//! use, after a process-global mask key is recovered from the
-//! embedded wrapper using an unlock key that a [`KeyProvider`] sources
-//! at runtime (the default [`EnvVarProvider`] reads
-//! `LITMASK_UNLOCK_KEY` from the environment).
-//!
-//! See `docs/SPECIFICATION.md` and `docs/THREAT_MODEL.md` in the
-//! source repository for the design rationale, threat model, and
-//! security guarantees.
+//! compile time with an AEAD cipher (ChaCha20-Poly1305 or
+//! AES-256-GCM); the runtime decrypts on first use, after a
+//! process-global mask key is recovered from the embedded wrapper
+//! using an unlock key that a [`KeyProvider`] sources at runtime
+//! (the default [`EnvVarProvider`] reads `LITMASK_UNLOCK_KEY` from
+//! the environment).
 //!
 //! ```ignore
 //! use litmask::{init, mask};
 //!
 //! fn main() {
-//!     // Optional but recommended: surface init errors as Result.
-//!     litmask::init!().expect("missing LITMASK_UNLOCK_KEY");
-//!     println!("{}", mask!("hello"));
+//!     litmask::init!().expect("litmask init");
+//!     println!("{}", mask!("secret token"));
 //! }
 //! ```
 //!
+//! ## Security levels
+//!
+//! | Configuration | Defeats |
+//! |---|---|
+//! | Zero-config build (defaults to `EnvVarProvider`) | `strings`, casual binary inspection (Level 1); also Level 2 because `unlock_key` is not embedded |
+//! | `FileProvider` + filesystem permissions | Above with OS-enforced access control |
+//! | `HardwareIdProvider` | Above + binary moved to a different machine |
+//! | Custom `KeyProvider` (network call, vault) | Above + offline attackers |
+//!
+//! The "zero-config" descriptor refers to absence of project
+//! configuration, not to absence of runtime key provisioning.
+//! Providers that source `unlock_key` from external runtime state
+//! require the deployer to provision that state.
+//!
+//! ## What litmask does NOT protect against
+//!
+//! - Runtime memory inspection
+//! - Debugger attachment after key derivation
+//! - Compromised runtime environments
+//! - Side-channel attacks (timing, power analysis)
+//! - Control-flow obfuscation or anti-debugging
+//! - Protection of dynamically generated strings
+//! - Perfect secrecy under any threat model
+//!
+//! ## Comparison with existing crates
+//!
+//! | Property | `obfstr` | `litcrypt`/`litcrypt2` | `litmask` |
+//! |---|---|---|---|
+//! | Cipher | XOR | XOR | ChaCha20-Poly1305 (AEAD) or AES-256-GCM |
+//! | Tamper detection | No | No | Yes (AEAD authentication) |
+//! | Per-string nonces | Compile-time random (no auth) | None | Per-build deterministic, authenticated |
+//! | Key model | Compile-time random per build | Single env var | Layered: `mask_key` + `unlock_key`, multiple providers |
+//! | Format string masking | Separate `fmtools` crate | None | Built-in [`mask_format!`] with single-evaluation semantics |
+//! | Module-level masking | None | None | [`macro@mask_all`] with deep substitution |
+//! | Hardware binding | None | None | Yes (post-build rebind via `litmask-cli`) |
+//! | Multiple literal types (str/bytes/cstr) | str only | str only | All three |
+//! | `no_std` support | Limited | No | Yes (with `alloc`) |
+//! | Threat model documented | Minimal | Minimal | Explicit security ladder, honest scope |
+//! | Reproducible builds | No | No | Yes (with `LITMASK_RNG_SEED`) |
+//! | Fuzzing | No | No | Yes |
+//!
+//! The cipher upgrade (XOR to AEAD) is the primary technical advance.
+//!
 //! ## Two-phase masking
 //!
-//! [`mask!`] (and its variants `mask_format!`, `mask_concat!`, etc.)
-//! require [`init!`] to have populated the AEAD mask-key cell.
+//! [`mask!`] (and its variants [`mask_format!`], [`mask_concat!`],
+//! etc.) require [`init!`] to have populated the AEAD mask-key cell.
 //! [`weak_mask!`] is the **only** masking macro that works before
 //! `init!()` — use it exclusively for bootstrap-phase strings
 //! (env-var names, default file paths) that must be readable before
 //! the provider has run. `weak_mask!` provides anti-`strings(1)`
 //! obfuscation only; real secrets always go through `mask!`.
 //!
-//! The crate is `#![no_std]` + `alloc` from day one. The default `std`
-//! feature gates only what genuinely requires `std`.
+//! ## Return types
+//!
+//! [`mask!`] returns [`String`](alloc::string::String), not
+//! `&'static str`, because masked values are decrypted at runtime
+//! and cannot inhabit `'static` storage. If a call site needs
+//! `&str`, bind once:
+//!
+//! ```ignore
+//! let secret = mask!("my secret");
+//! let s: &str = &secret;
+//! ```
+//!
+//! When the threat model permits weaker guarantees (no AEAD,
+//! plaintext cached for program lifetime), [`weak_mask!`] returns
+//! `&'static str` directly.
+//!
+//! The crate is `#![no_std]` + `alloc` from day one. The default
+//! `std` feature gates only what genuinely requires `std`.
 
 #![no_std]
 

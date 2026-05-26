@@ -35,6 +35,22 @@ pub use static_key::StaticProvider;
 /// The `&self` receiver permits stateful providers (cached lookups,
 /// network clients). Implementations must be `Send + Sync` so providers
 /// can be passed to [`crate::init_with!`] in multithreaded contexts.
+///
+/// # Examples
+///
+/// ```
+/// use litmask::{KeyProvider, UnlockKey, KeyError, KEY_LEN};
+///
+/// struct FixedProvider;
+///
+/// impl KeyProvider for FixedProvider {
+///     fn unlock_key(&self) -> Result<UnlockKey, KeyError> {
+///         UnlockKey::from_base64url(
+///             "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+///         )
+///     }
+/// }
+/// ```
 pub trait KeyProvider: Send + Sync {
     /// Retrieve the `unlock_key` used to decrypt the embedded
     /// `mask_key` wrapper.

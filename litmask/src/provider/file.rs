@@ -12,6 +12,15 @@ use crate::provider::KeyProvider;
 ///
 /// Adding a future encoding is a non-breaking change for downstream
 /// exhaustive matches via `#[non_exhaustive]`.
+///
+/// # Examples
+///
+/// ```
+/// use litmask::KeyEncoding;
+///
+/// let enc = KeyEncoding::Base64Url;
+/// assert_eq!(enc, KeyEncoding::Base64Url);
+/// ```
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyEncoding {
@@ -28,9 +37,17 @@ pub enum KeyEncoding {
 
 /// Reads `unlock_key` from a filesystem path.
 ///
-/// `FileProvider::new(path)` decodes the contents as base64url
-/// (§2.5.3.1). [`FileProvider::with_encoding`] swaps the encoding
-/// (§2.5.3.2). Errors map per §2.5.3.3:
+/// # Examples
+///
+/// ```ignore
+/// use litmask::FileProvider;
+///
+/// let provider = FileProvider::new("/run/secrets/litmask_key");
+/// litmask::init_with!(provider).expect("init");
+/// ```
+///
+/// `FileProvider::new(path)` decodes the contents as base64url.
+/// [`FileProvider::with_encoding`] swaps the encoding. Errors map:
 ///
 /// | Condition | Error |
 /// |---|---|

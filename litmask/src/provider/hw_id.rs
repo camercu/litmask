@@ -20,12 +20,20 @@ use crate::provider::KeyProvider;
 // the two sides is pinned by `weak_mask_literal_matches_const` in
 // the test module below.
 
-/// Derives a 32-byte unlock key from the host's machine ID
-/// (§2.5.4.3). `unlock_key()` is deterministic per host: two calls
-/// on the same machine with the same salt produce byte-identical
-/// output, so the binary's wrapper can be encrypted under this
-/// key at build time and decrypted at runtime without any
-/// secret-distribution channel.
+/// Derives a 32-byte unlock key from the host's machine ID.
+/// `unlock_key()` is deterministic per host: two calls on the same
+/// machine with the same salt produce byte-identical output, so the
+/// binary's wrapper can be encrypted under this key at build time
+/// and decrypted at runtime without any secret-distribution channel.
+///
+/// # Examples
+///
+/// ```ignore
+/// use litmask::HardwareIdProvider;
+///
+/// let provider = HardwareIdProvider::with_salt(b"myapp-v1");
+/// litmask::init_with!(provider).expect("init");
+/// ```
 ///
 /// # Salt
 ///

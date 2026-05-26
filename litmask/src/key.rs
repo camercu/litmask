@@ -15,6 +15,18 @@ use crate::internal::{KEY_LEN, base64url};
 ///
 /// `Clone` is intentionally not implemented; duplicating a
 /// zero-on-drop secret should be opt-in and obvious at the call site.
+///
+/// # Examples
+///
+/// ```
+/// use litmask::UnlockKey;
+///
+/// // 32 bytes of zeros encoded as base64url (43 chars, no padding).
+/// let key = UnlockKey::from_base64url(
+///     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+/// ).expect("valid key");
+/// assert_eq!(format!("{key:?}"), "UnlockKey([REDACTED])");
+/// ```
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct UnlockKey([u8; KEY_LEN]);
 

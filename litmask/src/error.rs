@@ -11,6 +11,15 @@ use core::fmt;
 pub(crate) type ProviderError = alloc::boxed::Box<dyn core::error::Error + Send + Sync + 'static>;
 
 /// Errors surfaced by [`crate::init!`] / [`crate::init_with!`].
+///
+/// # Examples
+///
+/// ```
+/// use litmask::InitError;
+///
+/// let err = InitError::Decryption;
+/// assert_eq!(err.sysexit_code(), 65);
+/// ```
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum InitError {
@@ -33,7 +42,7 @@ pub enum InitError {
 }
 
 impl InitError {
-    /// Sysexits.h-compatible exit code (§1.9.7). Mapping:
+    /// Sysexits.h-compatible exit code.
     ///
     /// | Variant | Code | Name |
     /// |---|---|---|
@@ -45,9 +54,14 @@ impl InitError {
     /// | `UnsupportedFormat` | 70 | `EX_SOFTWARE` |
     /// | `UnsupportedCipher` | 70 | `EX_SOFTWARE` |
     ///
-    /// Numeric constants are inline literals — no `sysexits` crate
-    /// dependency. The mapping mirrors the §1.9.7 table verbatim;
-    /// new variants MUST extend this match in lockstep.
+    /// # Examples
+    ///
+    /// ```
+    /// use litmask::{InitError, KeyError};
+    ///
+    /// let err = InitError::KeyProvider(KeyError::NotFound);
+    /// assert_eq!(err.sysexit_code(), 78);
+    /// ```
     #[must_use]
     // `match_same_arms` would collapse `InvalidFormat` and
     // `Decryption` into a single arm because both map to 65. They
@@ -88,6 +102,15 @@ impl core::error::Error for InitError {
 }
 
 /// Errors surfaced by [`crate::KeyProvider::unlock_key`].
+///
+/// # Examples
+///
+/// ```
+/// use litmask::KeyError;
+///
+/// let err = KeyError::NotFound;
+/// assert_eq!(format!("{err}"), "not_found");
+/// ```
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum KeyError {

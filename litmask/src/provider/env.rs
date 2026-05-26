@@ -8,6 +8,15 @@ use crate::key::UnlockKey;
 use crate::provider::KeyProvider;
 
 /// Reads `unlock_key` from a configurable environment variable.
+///
+/// # Examples
+///
+/// ```ignore
+/// use litmask::EnvVarProvider;
+///
+/// let provider = EnvVarProvider::new("MY_APP_KEY");
+/// litmask::init_with!(provider).expect("init");
+/// ```
 pub struct EnvVarProvider {
     name: &'static str,
 }

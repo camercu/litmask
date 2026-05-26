@@ -13,6 +13,17 @@ use crate::provider::KeyProvider;
 /// every call. Production code should use [`crate::EnvVarProvider`],
 /// [`crate::FileProvider`], or [`crate::HardwareIdProvider`].
 ///
+/// # Examples
+///
+/// ```
+/// use litmask::{StaticProvider, UnlockKey};
+///
+/// let key = UnlockKey::from_base64url(
+///     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+/// ).unwrap();
+/// let provider = StaticProvider::new(key);
+/// ```
+///
 /// The clone is intentional: `unlock_key()` returns an owned
 /// [`UnlockKey`] (not a borrow), so each call materializes the
 /// secret bytes into a fresh 32-byte buffer. That cost is acceptable
