@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 # scripts/setup-dev.sh — bootstrap the local development environment.
 #
-# Every tool used here lives in `shell.nix`; the script enters a Nix
-# subshell so PATH resolves to the pinned versions regardless of
-# whether the caller has already run `nix-shell`. The Nix shell is
-# the single source of truth for tool versions — no fallback
-# installer paths. Safe to re-run; each install step is idempotent.
+# Most tools live in `shell.nix`; tools whose nix derivations are
+# broken or version-mismatched are installed via `cargo install`
+# below. Safe to re-run; each install step is idempotent.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -28,7 +26,15 @@ cat > rust-toolchain.toml <<EOF
 [toolchain]
 channel = "${rust_version}"
 profile = "minimal"
-components = ["clippy", "rustfmt"]
+components = ["clippy", "rustfmt", "llvm-tools"]
+# \`thumbv7m-none-eabi\`: bare-metal target for \`just check-no-std\`.
+# \`x86_64-pc-windows-gnu\`, \`aarch64-apple-darwin\`: cross targets for
+# \`just check-cross\` (cargo check only, no linker required).
+targets = [
+  "thumbv7m-none-eabi",
+  "x86_64-pc-windows-gnu",
+  "aarch64-apple-darwin",
+]
 EOF
 
 nix-shell --run '
@@ -38,6 +44,23 @@ nix-shell --run '
     # triggers a download if the pinned channel is not installed yet.
     echo "litmask: setup-dev — ensuring Rust toolchain matches rust-toolchain.toml…"
     rustup show active-toolchain >/dev/null
+
+    # Tools whose nix derivations are broken or version-mismatched.
+    install_cargo_tool() {
+        local pkg="$1" ver="$2" actual
+        actual=$(cargo "${pkg#cargo-}" --version 2>/dev/null | awk "{print \$2}") || true
+        if [ "$actual" = "$ver" ]; then
+            return
+        fi
+        echo "litmask: setup-dev — installing $pkg@$ver via cargo…"
+        cargo install "$pkg" --version "$ver" --locked
+    }
+
+    llvm_cov_ver=$(awk "/^cargo-llvm-cov / {print \$2}" .tool-versions)
+    install_cargo_tool cargo-llvm-cov "$llvm_cov_ver"
+
+    semver_ver=$(awk "/^cargo-semver-checks / {print \$2}" .tool-versions)
+    install_cargo_tool cargo-semver-checks "$semver_ver"
 
     # Authoritative match against `.tool-versions`; aborts on drift
     # so a misaligned nix-shell surfaces here instead of in CI.
