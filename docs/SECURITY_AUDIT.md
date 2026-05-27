@@ -133,7 +133,7 @@ Documented in THREAT_MODEL.md timing section.
 **Status: pass**
 
 POSIX atomic commit protocol pinned by
-`plan_posix_commit_emits_eight_ops_in_spec_order` unit test. The test
+`plan_commit_emits_eight_ops_in_spec_order` unit test. The test
 asserts the exact operation sequence:
 
 1. Write temp config

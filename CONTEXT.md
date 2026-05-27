@@ -46,7 +46,7 @@ _Avoid_: "ciphertext" alone (ambiguous with the wrapper's ciphertext field);
 "encrypted literal".
 
 **Locator**:
-The first 12 bytes of the **wrapper**. Used by [`litmask-cli bind`](#operations)
+The first 12 bytes of the **wrapper**. Used by [`litmask bind`](#operations)
 to find the wrapper inside a binary by scanning. Stored in `litmask.config`.
 _Avoid_: "wrapper prefix", "header".
 
@@ -91,11 +91,11 @@ artifacts to `OUT_DIR` and `litmask.config`.
 **`litmask.config`**: Deployer-facing TOML written at build time.
 Contains the **unlock key**, the **locator**, and the wrapper length.
 Secret; do not commit. Consumed by the runtime (via env var) and by
-`litmask-cli`.
+`litmask`.
 
 **Bind** (verb): Rebind a binary to a new **unlock key**, typically
 derived from the target machine's hardware ID. Performed by
-`litmask-cli bind`.
+`litmask bind`.
 
 ## Relationships
 
@@ -124,7 +124,7 @@ derived from the target machine's hardware ID. Performed by
 > byte-identical. Same for per-call-site **blobs**, given the same
 > source layout."
 >
-> **Dev:** "And if I run `litmask-cli bind` against the binary?"
+> **Dev:** "And if I run `litmask bind` against the binary?"
 >
 > **Maintainer:** "The **mask key** doesn't change — bind decrypts the
 > **wrapper** with the current **unlock key**, derives a new **unlock

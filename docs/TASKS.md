@@ -992,10 +992,10 @@ codes per §2.9.1.3.
       `recording_fs_failure_at_binary_fsync_stops_before_rename`:
       no `Rename` op executes after fsync failure at step 5, so
       original config is untouched; protocol ordering pinned by
-      `plan_posix_commit_emits_six_ops_in_spec_order`.
+      `plan_commit_emits_eight_ops_in_spec_order`.
 - [x] Parent-directory fsync is performed on POSIX (verified via strace
       or instrumented test) — pinned by
-      `plan_posix_commit_emits_six_ops_in_spec_order` (step 7 is
+      `plan_commit_emits_eight_ops_in_spec_order` (step 7 is
       `FsyncDirBestEffort`); `recording_fs_captures_full_commit_sequence`
       verifies the executor dispatches it; `execute_writes_binary_and_renames_temp_config`
       exercises the real `StdCommitFs` path on the host OS.

@@ -3,7 +3,7 @@
 //! `DecryptionFailed` / `SaltInvalid` / `ConfigMalformed` /
 //! `UnsupportedFormat` / `UnsupportedCipher` / `Success`) live in
 //! the `bind::tests` unit tests; the §1.7.7 step ordering is
-//! pinned in `bind::tests::plan_posix_commit_emits_six_ops_in_spec_order`.
+//! pinned in `bind::tests::plan_commit_emits_eight_ops_in_spec_order`.
 //! This file just confirms the wiring — args parsing, file I/O,
 //! stdout, atomic-commit execute — survives end-to-end as a real
 //! subprocess.

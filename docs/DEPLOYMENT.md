@@ -35,7 +35,7 @@ key file (`chmod 400`).
 Bind the binary to the deployment host's machine ID:
 
 ```sh
-litmask-cli bind target/release/my_app \
+litmask bind target/release/my_app \
     --config target/release/litmask.config
 ```
 
@@ -111,14 +111,14 @@ target host after copying:
 scp target/release/my_app deploy@host:/opt/my_app/
 scp target/release/litmask.config deploy@host:/opt/my_app/
 
-ssh deploy@host 'litmask-cli bind /opt/my_app/my_app \
+ssh deploy@host 'litmask bind /opt/my_app/my_app \
     --config /opt/my_app/litmask.config'
 ```
 
 To rebind with a different salt (e.g., per-product isolation):
 
 ```sh
-litmask-cli bind /opt/my_app/my_app \
+litmask bind /opt/my_app/my_app \
     --config /opt/my_app/litmask.config \
     --salt "$(echo -n 'product-v1' | base64url)"
 ```
