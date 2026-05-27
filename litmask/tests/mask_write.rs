@@ -139,3 +139,35 @@ fn mask_writeln_io_no_args() {
     mask_writeln!(buf).unwrap();
     assert_eq!(buf, b"\n");
 }
+
+// ── edge cases ──────────────────────────────────────────────────
+
+#[test]
+fn mask_writeln_fmt_empty_template() {
+    common::init_once();
+    let mut buf = String::new();
+    mask_writeln!(buf, "").unwrap();
+    assert_eq!(buf, "\n");
+}
+
+struct FailWriter;
+
+impl std::fmt::Write for FailWriter {
+    fn write_str(&mut self, _: &str) -> std::fmt::Result {
+        Err(std::fmt::Error)
+    }
+}
+
+#[test]
+fn mask_write_fmt_fail_writer_propagates_error() {
+    common::init_once();
+    let result = mask_write!(FailWriter, "hello");
+    assert!(result.is_err());
+}
+
+#[test]
+fn mask_writeln_fmt_fail_writer_propagates_error() {
+    common::init_once();
+    let result = mask_writeln!(FailWriter, "hello");
+    assert!(result.is_err());
+}

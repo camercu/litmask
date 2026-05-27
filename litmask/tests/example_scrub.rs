@@ -54,6 +54,7 @@ const EXAMPLES: &[&str] = &[
     "mask_format_demo",
     "mask_macros_demo",
     "mask_all_demo",
+    "mask_print_e2e",
 ];
 
 const EXCEPTIONS: &[&str] = &["static_provider", "file_provider", "hw_id_provider"];
