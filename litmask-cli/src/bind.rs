@@ -322,7 +322,11 @@ impl CommitFs for StdCommitFs {
     }
 
     fn sync_file(&self, path: &Path) -> io::Result<()> {
-        let f = fs::File::open(path)?;
+        // Windows `FlushFileBuffers` requires a write-capable handle;
+        // `File::open` (read-only) returns `ACCESS_DENIED`. Opening
+        // with `.write(true)` without `.truncate(true)` is safe — it
+        // does not modify existing content.
+        let f = fs::OpenOptions::new().write(true).open(path)?;
         f.sync_all()
     }
 
@@ -361,7 +365,7 @@ impl CommitFs for WindowsCommitFs {
     }
 
     fn sync_file(&self, path: &Path) -> io::Result<()> {
-        let f = fs::File::open(path)?;
+        let f = fs::OpenOptions::new().write(true).open(path)?;
         f.sync_all()
     }
 
