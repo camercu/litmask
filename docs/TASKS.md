@@ -821,18 +821,16 @@ with either cipher.
       holds when the user explicitly drops the default cipher; with
       defaults active, both crates are in the tree but only the AES
       path is used at runtime)
-- [ ] `cargo tree -p litmask-cli` shows BOTH `chacha20poly1305` and
+- [x] `cargo tree -p litmask-cli` shows BOTH `chacha20poly1305` and
       `aes-gcm` regardless of feature flags (CLI runtime-dispatches)
-      — DEFERRED to Task 24/25 to avoid Cargo's workspace feature
-      unification flipping the runtime crate's cipher behind the
-      proc-macro's back (see `litmask-cli/Cargo.toml` comment)
-- [ ] GIVEN a default-cipher-built `litmask-cli`, WHEN running
+- [x] GIVEN a default-cipher-built `litmask-cli`, WHEN running
       `litmask-cli inspect` against a binary built `--features aes-gcm`,
       THEN the cipher-id byte `0x02` is detected and the inspect succeeds
-      — DEFERRED to Task 24
-- [ ] GIVEN a default-cipher-built `litmask-cli`, WHEN running
+      (`end_to_end_aes_gcm_wrapper_inspects_as_verified`)
+- [x] GIVEN a default-cipher-built `litmask-cli`, WHEN running
       `litmask-cli bind` against an `--features aes-gcm` binary, THEN
-      the rebind succeeds end-to-end — DEFERRED to Task 25
+      the rebind succeeds end-to-end
+      (`end_to_end_aes_gcm_wrapper_rebinds_successfully`)
 
 ---
 
@@ -1029,28 +1027,25 @@ codes per §2.9.1.3.
 - [x] Wrong current `unlock_key` (forced by hand-edited config) → exit 65,
       output `decryption_failed`
 - [ ] On a host where `machine-uid` fails → exit 69, output
-      `hardware_id_unavailable` — code path is in `derive_hw_unlock_key`;
+      `hardware_id_unavailable` — code path is in `run()`;
       runtime verification requires a host without a stable machine ID
       (OpenBSD, container without `/etc/machine-id`). Covered by the
       §1.6.5 platform CI matrix work (Task 29).
 - [x] Failure injected before in-place write leaves binary AND config
       byte-identical to pre-bind state
       (`pre_write_failure_leaves_binary_and_config_byte_identical`)
-- [ ] Failure injected after binary write but before rename leaves
-      original config intact (so retry is safe) — verifying this
-      requires injecting a `panic!` or `kill -9` between steps 5 and 6
-      of the §1.7.7 protocol; the helper to do that cleanly is more
-      infrastructure than the AC warrants for a happy-path verification.
-      Pin via code inspection: `posix_atomic_commit` writes the temp
-      config FIRST, then patches the binary, then renames — so a crash
-      after step 4 (binary patched) but before step 6 (rename) leaves
-      the temp config orphaned alongside the original config, and
-      retry recovers via the same path.
-- [ ] Parent-directory fsync is performed on POSIX (verified via strace
-      or instrumented test) — `posix_atomic_commit` opens the parent
-      directory and calls `sync_all()` on it (`fsync(2)`). strace-based
-      verification is platform-specific and lives in the Task 29 CI
-      matrix.
+- [x] Failure injected after binary write but before rename leaves
+      original config intact (so retry is safe) — verified by
+      `recording_fs_failure_at_binary_fsync_stops_before_rename`:
+      no `Rename` op executes after fsync failure at step 5, so
+      original config is untouched; protocol ordering pinned by
+      `plan_posix_commit_emits_six_ops_in_spec_order`.
+- [x] Parent-directory fsync is performed on POSIX (verified via strace
+      or instrumented test) — pinned by
+      `plan_posix_commit_emits_six_ops_in_spec_order` (step 7 is
+      `FsyncDirBestEffort`); `recording_fs_captures_full_commit_sequence`
+      verifies the executor dispatches it; `execute_writes_binary_and_renames_temp_config`
+      exercises the real `StdCommitFs` path on the host OS.
 
 ---
 
