@@ -52,6 +52,11 @@ enum Command {
     /// hardware-derived `unlock_key`, atomically updating both the
     /// binary and `litmask.config`.
     ///
+    /// Works with any provider: binaries using `HardwareIdProvider`
+    /// decrypt automatically after bind; binaries using
+    /// `EnvVarProvider` decrypt when given the config's updated
+    /// `unlock_key` via the environment variable.
+    ///
     /// Exit codes (§2.9.1.3):
     /// - 0 on success
     /// - 65 on locator-ambiguous, AEAD decryption failure, or

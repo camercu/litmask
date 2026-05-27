@@ -1,6 +1,12 @@
 //! `litmask-cli bind` subcommand (§2.9.1.1–§2.9.1.6, §1.7.6,
 //! §1.7.7 POSIX).
 //!
+//! `bind` decrypts using the current config's `unlock_key` (from
+//! any provider) and re-encrypts under a hardware-derived key. The
+//! updated config records this new key, so `EnvVarProvider` callers
+//! can relay it through the environment variable without switching
+//! to `HardwareIdProvider`.
+//!
 //! Functional core / imperative shell split with plan-execute
 //! atomicity:
 //!

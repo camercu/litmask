@@ -106,6 +106,33 @@ attachment, compromised runtime environments, side-channel attacks,
 or a motivated reverse engineer with runtime access. See
 [THREAT_MODEL.md](docs/THREAT_MODEL.md) for the full scope.
 
+## Hardware binding (`litmask-cli bind`)
+
+`bind` re-encrypts a binary's embedded wrapper under a key derived from
+the host's machine ID. The typical workflow uses `HardwareIdProvider` at
+runtime so the binary decrypts only on the machine it was bound to:
+
+```sh
+cargo build --features hw-id --release
+litmask-cli bind target/release/my_app --config target/release/litmask.config
+./target/release/my_app   # decrypts via HardwareIdProvider — no env var needed
+```
+
+`bind` also works with binaries that use `EnvVarProvider` (the default).
+After binding, the config's `unlock_key` is the hardware-derived key.
+Pass it as the environment variable and decryption succeeds regardless
+of the runtime provider:
+
+```sh
+cargo build --release
+litmask-cli bind target/release/my_app --config target/release/litmask.config
+LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' target/release/litmask.config) \
+    ./target/release/my_app
+```
+
+This is useful for deployment pipelines that bind on a target host but
+manage the unlock key externally (e.g., injected by an orchestrator).
+
 ## Features
 
 | Feature | Default | |
