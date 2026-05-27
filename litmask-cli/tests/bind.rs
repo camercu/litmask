@@ -25,7 +25,7 @@ use litmask_internal::{
 use tempfile::TempDir;
 
 fn cli_binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_litmask-cli"))
+    PathBuf::from(env!("CARGO_BIN_EXE_litmask"))
 }
 
 fn build_wrapper(

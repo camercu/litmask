@@ -21,7 +21,7 @@ use tempfile::TempDir;
 const LOCATOR: &[u8; NONCE_LEN] = b"LITMASK-LOCT";
 
 fn cli_binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_litmask-cli"))
+    PathBuf::from(env!("CARGO_BIN_EXE_litmask"))
 }
 
 #[test]

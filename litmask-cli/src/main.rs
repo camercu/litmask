@@ -1,7 +1,7 @@
-//! `litmask-cli` — companion tool for `bind` and `inspect`.
+//! `litmask` CLI — companion tool for `bind` and `inspect`.
 //!
 //! Each subcommand lives in a module split into a pure planner
-//! ([`inspect::plan`] / [`bind::plan_bind`] + [`bind::plan_posix_commit`])
+//! ([`inspect::plan`] / [`bind::plan_bind`] + [`bind::plan_commit`])
 //! and a thin imperative shell (`run`). `main` is responsible only
 //! for argument parsing (via `clap`) and mapping the shell's
 //! `Result<Outcome, ShellError>` to an `ExitCode`.
@@ -23,10 +23,10 @@ const EX_UNAVAILABLE: u8 = 69;
 /// I/O, etc.).
 const EX_SOFTWARE: u8 = 70;
 
-/// `litmask-cli` companion tool for inspecting and rebinding
+/// `litmask` companion tool for inspecting and rebinding
 /// litmask-built binaries.
 #[derive(Parser, Debug)]
-#[command(name = "litmask-cli", version, about, long_about = None)]
+#[command(name = "litmask", version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -111,7 +111,7 @@ fn dispatch_inspect(binary: &std::path::Path, config: &std::path::Path) -> ExitC
     match inspect::run(binary, config) {
         Ok(outcome) => ExitCode::from(outcome.exit_code()),
         Err(e) => {
-            eprintln!("litmask-cli: {}", e.message());
+            eprintln!("litmask: {}", e.message());
             ExitCode::from(EX_USAGE)
         }
     }
@@ -125,7 +125,7 @@ fn dispatch_bind(
     match bind::run(binary, config, salt) {
         Ok(outcome) => ExitCode::from(outcome.exit_code()),
         Err(e @ (bind::ShellError::ConfigUnreadable | bind::ShellError::BinaryUnreadable)) => {
-            eprintln!("litmask-cli: {}", e.message());
+            eprintln!("litmask: {}", e.message());
             ExitCode::from(EX_USAGE)
         }
         Err(bind::ShellError::HardwareIdUnavailable) => {
@@ -135,7 +135,7 @@ fn dispatch_bind(
             ExitCode::from(EX_UNAVAILABLE)
         }
         Err(e @ bind::ShellError::CommitFailed(_)) => {
-            eprintln!("litmask-cli: {}", e.message());
+            eprintln!("litmask: {}", e.message());
             ExitCode::from(EX_SOFTWARE)
         }
     }
@@ -146,7 +146,7 @@ mod tests {
     use super::*;
 
     fn parse_argv(argv: &[&str]) -> Result<Cli, clap::Error> {
-        Cli::try_parse_from(std::iter::once("litmask-cli").chain(argv.iter().copied()))
+        Cli::try_parse_from(std::iter::once("litmask").chain(argv.iter().copied()))
     }
 
     #[test]
@@ -246,7 +246,7 @@ mod tests {
     fn help_request_kind_is_display_help() {
         // Pin clap's contract: `--help` is reported as
         // `ErrorKind::DisplayHelp`. main() maps this to
-        // ExitCode::SUCCESS so `litmask-cli --help` exits 0, not 64.
+        // ExitCode::SUCCESS so `litmask --help` exits 0, not 64.
         let err = parse_argv(&["--help"]).unwrap_err();
         assert!(matches!(err.kind(), clap::error::ErrorKind::DisplayHelp));
     }

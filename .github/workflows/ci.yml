@@ -159,7 +159,7 @@ jobs:
       - name: Build workspace
         run: cargo build --workspace
 
-      - name: Test litmask-cli (includes bind integration tests)
+      - name: Test CLI (includes bind integration tests)
         run: cargo test -p litmask-cli
 
   commitlint:

@@ -9,34 +9,13 @@ repository.workspace = true
 publish.workspace = true
 include = ["src/**/*"]
 
-# §1.5.1 amendment: the CLI is the deliberate exception to the
-# single-cipher rule and is expected to link both cipher backends so
-# `inspect` / `bind` (Tasks 24–26) can operate on wrappers from
-# either cipher. Pulling both ciphers in directly here would trigger
-# Cargo's workspace feature unification: litmask-internal would end
-# up with both features in the target context, the runtime crate's
-# CURRENT_CIPHER would flip to aes-gcm, and the host-context proc-
-# macro (chacha-only) would no longer match. That ships a binary
-# whose mask!() blobs are unrecoverable.
-#
-# Defer the dual-cipher dispatch to Task 24/25 where the CLI will
-# pull `chacha20poly1305` and `aes-gcm` crates directly (without
-# routing through litmask-internal's cipher dispatch). For Task 18
-# the CLI is still a stub that exits 70.
+# The CLI links BOTH ciphers and dispatches at runtime on the
+# wrapper's cipher-id byte. Direct AEAD deps avoid routing through
+# litmask-internal's feature-gated dispatch, which would propagate
+# `aes-gcm` to the runtime crate via workspace unification and flip
+# its CURRENT_CIPHER, breaking proc-macro/runtime cipher alignment.
 [dependencies]
-# The CLI's wire-format constants + base64url codec come from
-# `litmask-internal`. The cipher dispatch (§2.9.1.6 amendment)
-# lives in the CLI itself via direct dependencies on the AEAD
-# crates so Cargo's workspace feature unification cannot flip the
-# runtime crate's cipher choice — see the long-form rationale in
-# the §1.5.1 amendment and the deferred-AC notes in Task 18.
 litmask-internal = { workspace = true, features = ["chacha20-poly1305"] }
-# Direct AEAD deps: the CLI links BOTH ciphers and dispatches on
-# the wrapper's cipher-id byte at runtime (§2.9.1.6, §1.5.1
-# amendment). Going through `litmask-internal`'s feature-gated
-# dispatch would propagate `aes-gcm` to the runtime crate via
-# workspace unification, which would flip its `CURRENT_CIPHER`
-# and break the proc-macro/runtime cipher alignment.
 aes-gcm = { version = "0.10", default-features = false, features = [
   "alloc",
   "aes",
@@ -65,12 +44,12 @@ toml = "=1.1.2"
 tempfile = "3"
 
 [[bin]]
-name = "litmask-cli"
+name = "litmask"
 path = "src/main.rs"
 
 # Cannot use `lints.workspace = true` — the workspace sets
 # `unsafe_code = "forbid"` which blocks `#[allow(unsafe_code)]` on the
-# Windows `MoveFileExW` FFI (§1.7.7 Windows atomic commit). Duplicate
+# Windows `MoveFileExW` FFI (atomic commit). Duplicate
 # workspace lints here with `unsafe_code` relaxed to `"deny"`.
 [lints.rust]
 unsafe_code = "deny"
