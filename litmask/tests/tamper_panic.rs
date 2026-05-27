@@ -54,8 +54,10 @@ fn no_custom_panic_messages_in_decryption_path() {
         (
             format!("{manifest}/src/lib.rs"),
             vec![
-                // crate-level doc-comment example — does not compile.
+                // crate-level doc-comment examples — `ignore` blocks,
+                // never compiled into user binaries.
                 r#".expect("missing LITMASK_UNLOCK_KEY")"#,
+                r#".expect("litmask init")"#,
             ],
         ),
         (format!("{manifest}/../litmask-macros/src/mask.rs"), vec![]),
