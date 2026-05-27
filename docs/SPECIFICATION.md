@@ -1737,7 +1737,7 @@ expand after attribute proc-macros).
   recursively mask any string-literal arguments. Emit a compile-time warning.
 
 §2.3.2.4 — Panic macros (`panic!`, `todo!`, `unimplemented!`,
-`debug_assert!`, and `assert!`/`assert_eq!`/`assert_ne!` with custom message
+`unreachable!`, and `assert!`/`assert_eq!`/`assert_ne!` with custom message
 form) SHALL be rewritten analogously to §2.3.2.3, wrapping the masked format
 result in a literal `"{}"` template when the original template is a literal;
 otherwise left unchanged with literal arguments masked recursively.
@@ -1770,8 +1770,11 @@ Excluded from rewriting:
   at panic sites by rustc's own emission, outside the proc-macro's
   reach — `mask_file!` documents this caveat (§2.1.8.3).
 
-§2.3.2.6 — `dbg!`, `stringify!`, `assert_eq!`/`assert_ne!` (without custom
-message) SHALL be skipped without modification.
+§2.3.2.6 — `dbg!`, `stringify!`, `debug_assert!`/`debug_assert_eq!`/`debug_assert_ne!`,
+`assert_eq!`/`assert_ne!` (without custom message) SHALL be skipped without
+modification. The `debug_assert` family is excluded because release builds
+dead-code-eliminate the body, so masking would add runtime cost for no
+release-binary benefit.
 
 §2.3.2.7 — User-defined or unrecognized macros SHALL have their literal
 arguments left unmasked, with a compile-time warning per skipped literal.
