@@ -164,7 +164,7 @@ fn consume_placeholder_spec(
                 if is_token_char(c) {
                     token.push(c);
                 } else if c == '$' && !token.is_empty() {
-                    spec_refs.push(make_template_ref(&token));
+                    spec_refs.push(make_template_ref(&token)?);
                     token.clear();
                 } else {
                     token.clear();
@@ -175,11 +175,14 @@ fn consume_placeholder_spec(
     Ok((spec_raw, spec_refs))
 }
 
-fn make_template_ref(token: &str) -> TemplateRef {
+fn make_template_ref(token: &str) -> Result<TemplateRef, String> {
     if token.chars().all(|c| c.is_ascii_digit()) {
-        TemplateRef::Positional(token.parse::<usize>().expect("all-digits parses as usize"))
+        let i = token.parse::<usize>().map_err(|_| {
+            alloc::format!("positional index `{token}` overflows usize in mask_format! spec")
+        })?;
+        Ok(TemplateRef::Positional(i))
     } else {
-        TemplateRef::Named(token.to_string())
+        Ok(TemplateRef::Named(token.to_string()))
     }
 }
 
@@ -187,4 +190,33 @@ fn make_template_ref(token: &str) -> TemplateRef {
 #[must_use]
 pub fn is_token_char(c: char) -> bool {
     c.is_ascii_digit() || c == '_' || c.is_alphabetic()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overflowing_positional_in_spec_returns_error() {
+        let input = "{:>6666666666666666666666$}";
+        let err = parse_mask_format_template(input).unwrap_err();
+        assert!(
+            err.contains("overflows"),
+            "expected overflow error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn valid_positional_in_spec_succeeds() {
+        let (frags, phs) = parse_mask_format_template("{:>0$}").unwrap();
+        assert_eq!(frags.len(), 2);
+        assert_eq!(phs[0].spec_refs.len(), 1);
+    }
+
+    #[test]
+    fn fuzz_crash_input_returns_error_not_panic() {
+        let input =
+            "{:>6666666666666666666666${:\x00\x15 :\x00%A$666666666666${:\x00\x15 :\x00%A$}\np}\n";
+        let _ = parse_mask_format_template(input);
+    }
 }

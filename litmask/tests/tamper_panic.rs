@@ -63,12 +63,7 @@ fn no_custom_panic_messages_in_decryption_path() {
         (format!("{manifest}/../litmask-macros/src/mask.rs"), vec![]),
         (
             format!("{manifest}/../litmask-macros/src/mask_format.rs"),
-            vec![
-                // Runs at proc-macro expansion time on a string the
-                // parser has already validated as all-digits; never
-                // reaches the user binary.
-                r#".expect("all-digits parses as usize")"#,
-            ],
+            vec![],
         ),
         (
             format!("{manifest}/../litmask-macros/src/common.rs"),
