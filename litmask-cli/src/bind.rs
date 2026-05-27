@@ -286,6 +286,60 @@ fn render_config(unlock_key: &[u8; KEY_LEN], locator: &[u8; NONCE_LEN]) -> Strin
     )
 }
 
+/// Filesystem operations required by the §1.7.7 atomic commit
+/// protocol. [`execute`] dispatches each [`Operation`] through this
+/// trait, which lets the production path use real I/O
+/// ([`StdCommitFs`]) while tests inject a recording double
+/// ([`RecordingCommitFs`] in the test module) for failure-injection
+/// and sequence verification without touching the filesystem.
+///
+/// Platform-specific implementations (e.g. Windows
+/// `MoveFileExW(MOVEFILE_WRITE_THROUGH)`) implement this trait
+/// with the platform's atomicity guarantees; all commit-protocol
+/// logic in [`execute`] stays platform-agnostic.
+pub(crate) trait CommitFs {
+    fn write_file(&self, path: &Path, bytes: &[u8]) -> io::Result<()>;
+    fn sync_file(&self, path: &Path) -> io::Result<()>;
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
+    fn sync_dir_best_effort(&self, path: &Path);
+    fn remove_file(&self, path: &Path);
+}
+
+/// Production [`CommitFs`] using `std::fs`. Suitable for POSIX and
+/// any platform where `std::fs::rename` provides atomic
+/// same-filesystem replacement.
+pub(crate) struct StdCommitFs;
+
+impl CommitFs for StdCommitFs {
+    fn write_file(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)?;
+        f.write_all(bytes)
+    }
+
+    fn sync_file(&self, path: &Path) -> io::Result<()> {
+        let f = fs::File::open(path)?;
+        f.sync_all()
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        fs::rename(from, to)
+    }
+
+    fn sync_dir_best_effort(&self, path: &Path) {
+        if let Ok(dir) = fs::File::open(path) {
+            let _ = dir.sync_all();
+        }
+    }
+
+    fn remove_file(&self, path: &Path) {
+        let _ = fs::remove_file(path);
+    }
+}
+
 /// One step of the §1.7.7 atomic commit protocol. The plan is a
 /// `Vec<Operation>`; the executor applies them in order, surfacing
 /// the first failure as the bind result. Variants are deliberately
@@ -385,39 +439,27 @@ pub(crate) struct ExecuteError {
 /// up before returning the error — leaving a `.bind-<pid>.tmp`
 /// behind would clutter the operator's working dir without
 /// changing the (binary, config) consistency state.
-pub(crate) fn execute(plan: &[Operation]) -> Result<(), ExecuteError> {
+pub(crate) fn execute(plan: &[Operation], commit_fs: &dyn CommitFs) -> Result<(), ExecuteError> {
     for (op_index, op) in plan.iter().enumerate() {
         match op {
             Operation::WriteFile { path, bytes } => {
-                let mut f = fs::OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .truncate(true)
-                    .open(path)
-                    .map_err(|cause| ExecuteError { op_index, cause })?;
-                f.write_all(bytes)
+                commit_fs
+                    .write_file(path, bytes)
                     .map_err(|cause| ExecuteError { op_index, cause })?;
             }
             Operation::FsyncFile { path } => {
-                let f = fs::File::open(path).map_err(|cause| ExecuteError { op_index, cause })?;
-                f.sync_all()
+                commit_fs
+                    .sync_file(path)
                     .map_err(|cause| ExecuteError { op_index, cause })?;
             }
             Operation::Rename { from, to } => {
-                if let Err(cause) = fs::rename(from, to) {
-                    let _ = fs::remove_file(from);
+                if let Err(cause) = commit_fs.rename(from, to) {
+                    commit_fs.remove_file(from);
                     return Err(ExecuteError { op_index, cause });
                 }
             }
             Operation::FsyncDirBestEffort { path } => {
-                // sync_all on a directory handle is the documented
-                // POSIX way to flush dirent updates; ignore the
-                // result if the platform refuses (e.g., directory
-                // not syncable) — the prior Rename's local atomicity
-                // is what the §1.7.7 protocol critically relies on.
-                if let Ok(dir) = fs::File::open(path) {
-                    let _ = dir.sync_all();
-                }
+                commit_fs.sync_dir_best_effort(path);
             }
         }
     }
@@ -479,7 +521,7 @@ pub(crate) fn run(
             config_path,
             commit.new_config_text.clone(),
         );
-        execute(&plan).map_err(ShellError::CommitFailed)?;
+        execute(&plan, &StdCommitFs).map_err(ShellError::CommitFailed)?;
     } else if let Some(tag) = outcome.stdout_tag() {
         println!("{tag}");
     }
@@ -888,7 +930,7 @@ mod tests {
         );
     }
 
-    // ── execute: end-to-end on tempfiles ─────────────────────
+    // ── execute: end-to-end on tempfiles (StdCommitFs) ────────
 
     #[test]
     fn execute_writes_binary_and_renames_temp_config() {
@@ -904,12 +946,10 @@ mod tests {
             &config,
             "new config contents".to_string(),
         );
-        execute(&plan).expect("execute should succeed");
+        execute(&plan, &StdCommitFs).expect("execute should succeed");
 
         assert_eq!(fs::read(&binary).unwrap(), b"new binary contents");
         assert_eq!(fs::read(&config).unwrap(), b"new config contents");
-        // The tempfile was renamed away — only `binary` and
-        // `litmask.config` should remain in the dir.
         let remaining: Vec<_> = fs::read_dir(dir.path())
             .unwrap()
             .map(|e| e.unwrap().file_name())
@@ -920,8 +960,6 @@ mod tests {
     #[test]
     fn execute_reports_op_index_of_first_failure() {
         let dir = tempfile::TempDir::new().unwrap();
-        // Plan with an FsyncFile at op[1] pointing at a path that
-        // doesn't exist yet — exercise the error-attribution path.
         let plan = vec![
             Operation::WriteFile {
                 path: dir.path().join("a"),
@@ -931,7 +969,7 @@ mod tests {
                 path: dir.path().join("does-not-exist"),
             },
         ];
-        let err = execute(&plan).expect_err("op[1] must fail");
+        let err = execute(&plan, &StdCommitFs).expect_err("op[1] must fail");
         assert_eq!(err.op_index, 1);
     }
 
@@ -945,11 +983,181 @@ mod tests {
             from: temp.clone(),
             to: nonexistent_dest,
         }];
-        let err = execute(&plan).expect_err("rename into nonexistent subdir must fail");
+        let err =
+            execute(&plan, &StdCommitFs).expect_err("rename into nonexistent subdir must fail");
         assert_eq!(err.op_index, 0);
         assert!(
             !temp.exists(),
             "executor must clean up orphaned tempfile after rename failure",
+        );
+    }
+
+    // ── execute: RecordingCommitFs (failure injection) ───────
+
+    use std::cell::RefCell;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum FsCall {
+        WriteFile(PathBuf),
+        SyncFile(PathBuf),
+        Rename { from: PathBuf, to: PathBuf },
+        SyncDirBestEffort(PathBuf),
+        RemoveFile(PathBuf),
+    }
+
+    struct RecordingCommitFs {
+        calls: RefCell<Vec<FsCall>>,
+        fail_at_call: Option<usize>,
+    }
+
+    impl RecordingCommitFs {
+        fn new() -> Self {
+            Self {
+                calls: RefCell::new(Vec::new()),
+                fail_at_call: None,
+            }
+        }
+
+        fn failing_at(call_index: usize) -> Self {
+            Self {
+                calls: RefCell::new(Vec::new()),
+                fail_at_call: Some(call_index),
+            }
+        }
+
+        fn calls(&self) -> Vec<FsCall> {
+            self.calls.borrow().clone()
+        }
+
+        fn maybe_fail(&self) -> io::Result<()> {
+            let idx = self.calls.borrow().len() - 1;
+            if self.fail_at_call == Some(idx) {
+                Err(io::Error::new(io::ErrorKind::Other, "injected failure"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    impl CommitFs for RecordingCommitFs {
+        fn write_file(&self, path: &Path, _bytes: &[u8]) -> io::Result<()> {
+            self.calls
+                .borrow_mut()
+                .push(FsCall::WriteFile(path.to_path_buf()));
+            self.maybe_fail()
+        }
+
+        fn sync_file(&self, path: &Path) -> io::Result<()> {
+            self.calls
+                .borrow_mut()
+                .push(FsCall::SyncFile(path.to_path_buf()));
+            self.maybe_fail()
+        }
+
+        fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+            self.calls.borrow_mut().push(FsCall::Rename {
+                from: from.to_path_buf(),
+                to: to.to_path_buf(),
+            });
+            self.maybe_fail()
+        }
+
+        fn sync_dir_best_effort(&self, path: &Path) {
+            self.calls
+                .borrow_mut()
+                .push(FsCall::SyncDirBestEffort(path.to_path_buf()));
+        }
+
+        fn remove_file(&self, path: &Path) {
+            self.calls
+                .borrow_mut()
+                .push(FsCall::RemoveFile(path.to_path_buf()));
+        }
+    }
+
+    #[test]
+    fn recording_fs_captures_full_commit_sequence() {
+        let fs = RecordingCommitFs::new();
+        let plan = plan_posix_commit(
+            Path::new("/bin"),
+            b"binary".to_vec(),
+            Path::new("/cfg"),
+            "config".to_string(),
+        );
+        execute(&plan, &fs).expect("no failures injected");
+        let calls = fs.calls();
+        assert_eq!(calls.len(), 6);
+        assert!(matches!(&calls[0], FsCall::WriteFile(p) if p != Path::new("/bin")));
+        assert!(matches!(&calls[1], FsCall::SyncFile(_)));
+        assert!(matches!(&calls[2], FsCall::WriteFile(p) if p == Path::new("/bin")));
+        assert!(matches!(&calls[3], FsCall::SyncFile(p) if p == Path::new("/bin")));
+        assert!(matches!(&calls[4], FsCall::Rename { to, .. } if to == Path::new("/cfg")));
+        assert!(matches!(&calls[5], FsCall::SyncDirBestEffort(_)));
+    }
+
+    #[test]
+    fn recording_fs_failure_at_temp_write_stops_before_binary_patch() {
+        let fs = RecordingCommitFs::failing_at(0);
+        let plan = plan_posix_commit(
+            Path::new("/bin"),
+            b"binary".to_vec(),
+            Path::new("/cfg"),
+            "config".to_string(),
+        );
+        let err = execute(&plan, &fs).expect_err("op 0 injected");
+        assert_eq!(err.op_index, 0);
+        assert_eq!(fs.calls().len(), 1, "must stop after first failure");
+    }
+
+    #[test]
+    fn recording_fs_failure_at_binary_write_stops_before_rename() {
+        let fs = RecordingCommitFs::failing_at(2);
+        let plan = plan_posix_commit(
+            Path::new("/bin"),
+            b"binary".to_vec(),
+            Path::new("/cfg"),
+            "config".to_string(),
+        );
+        let err = execute(&plan, &fs).expect_err("op 2 injected");
+        assert_eq!(err.op_index, 2);
+        let calls = fs.calls();
+        assert_eq!(calls.len(), 3);
+        assert!(!calls.iter().any(|c| matches!(c, FsCall::Rename { .. })));
+    }
+
+    #[test]
+    fn recording_fs_failure_at_rename_triggers_cleanup() {
+        let fs = RecordingCommitFs::failing_at(4);
+        let plan = plan_posix_commit(
+            Path::new("/bin"),
+            b"binary".to_vec(),
+            Path::new("/cfg"),
+            "config".to_string(),
+        );
+        let err = execute(&plan, &fs).expect_err("rename injected");
+        assert_eq!(err.op_index, 4);
+        let calls = fs.calls();
+        assert!(
+            matches!(calls.last(), Some(FsCall::RemoveFile(_))),
+            "executor must attempt tempfile cleanup after rename failure",
+        );
+    }
+
+    #[test]
+    fn recording_fs_failure_at_binary_fsync_stops_before_rename() {
+        let fs = RecordingCommitFs::failing_at(3);
+        let plan = plan_posix_commit(
+            Path::new("/bin"),
+            b"binary".to_vec(),
+            Path::new("/cfg"),
+            "config".to_string(),
+        );
+        let err = execute(&plan, &fs).expect_err("fsync injected");
+        assert_eq!(err.op_index, 3);
+        assert!(
+            !fs.calls()
+                .iter()
+                .any(|c| matches!(c, FsCall::Rename { .. }))
         );
     }
 }
