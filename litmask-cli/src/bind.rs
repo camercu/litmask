@@ -429,8 +429,7 @@ fn win_rename_write_through(from: &Path, to: &Path) -> io::Result<()> {
 /// plan rather than a property of imperative flow.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Operation {
-    /// Truncate `path` to zero and write `bytes`. Used for both
-    /// the in-place binary patch and the tempfile config write.
+    /// Truncate `path` to zero and write `bytes`.
     WriteFile { path: PathBuf, bytes: Vec<u8> },
     /// Open `path`, call `sync_all()`. Hard error on failure; the
     /// protocol depends on the file being durable before
@@ -460,7 +459,9 @@ pub(crate) fn plan_posix_commit(
     new_config: String,
 ) -> Vec<Operation> {
     let temp_config = tempfile_alongside(config_path);
-    let parent = config_path.parent().map(Path::to_path_buf);
+    let temp_binary = tempfile_alongside(binary_path);
+    let config_parent = config_path.parent().map(Path::to_path_buf);
+    let binary_parent = binary_path.parent().map(Path::to_path_buf);
     let mut plan = vec![
         // Step 2: write new config to a same-dir tempfile.
         // Same-dir is mandatory for `rename(2)` to be atomic
@@ -469,38 +470,45 @@ pub(crate) fn plan_posix_commit(
             path: temp_config.clone(),
             bytes: new_config.into_bytes(),
         },
-        // Step 3: fsync the tempfile so its bytes land on disk
-        // before we begin patching the binary.
+        // Step 3: fsync the config tempfile.
         Operation::FsyncFile {
             path: temp_config.clone(),
         },
-        // Step 4: in-place binary patch. We overwrite the entire
-        // file rather than seeking-and-writing the WRAPPER_LEN
-        // window so the binary either has the new wrapper or the
-        // old one, not a partial blend.
+        // Step 4: write new binary to a same-dir tempfile.
         Operation::WriteFile {
-            path: binary_path.to_path_buf(),
+            path: temp_binary.clone(),
             bytes: new_binary,
         },
-        // Step 5: fsync the binary so its bytes land before the
-        // rename. A crash between steps 4 and 6 must not persist
-        // the rename + old binary.
+        // Step 5: fsync the binary tempfile.
         Operation::FsyncFile {
-            path: binary_path.to_path_buf(),
+            path: temp_binary.clone(),
         },
-        // Step 6: rename(temp_config, config_path). POSIX
-        // guarantees this is atomic with respect to a concurrent
-        // reader.
+        // Step 6: rename temp binary → binary. Crash before this
+        // step leaves both originals intact (retryable).
+        Operation::Rename {
+            from: temp_binary,
+            to: binary_path.to_path_buf(),
+        },
+        // Step 7: rename temp config → config. Crash between
+        // steps 6 and 7 leaves new binary + old config
+        // (inconsistent but documented; recovery = rebind).
         Operation::Rename {
             from: temp_config,
             to: config_path.to_path_buf(),
         },
     ];
-    // Step 7: fsync the parent directory so the rename survives
-    // a crash. Without this step, the rename is in the kernel's
-    // dirent cache but the journal may not yet reference it.
-    if let Some(parent) = parent {
+    // Step 8: fsync parent directories so renames survive crash.
+    if let Some(parent) = binary_parent {
         plan.push(Operation::FsyncDirBestEffort { path: parent });
+    }
+    if let Some(parent) = config_parent {
+        // Deduplicate when binary and config share a parent.
+        if plan.last().is_none_or(|op| match op {
+            Operation::FsyncDirBestEffort { path } => path != &parent,
+            _ => true,
+        }) {
+            plan.push(Operation::FsyncDirBestEffort { path: parent });
+        }
     }
     plan
 }
@@ -881,94 +889,85 @@ mod tests {
     // ── plan_posix_commit: §1.7.7 ordering as data ───────────
 
     #[test]
-    fn plan_posix_commit_emits_six_ops_in_spec_order() {
+    fn plan_posix_commit_emits_eight_ops_in_spec_order() {
         let plan = plan_posix_commit(
             Path::new("/path/to/binary"),
             b"new binary bytes".to_vec(),
             Path::new("/path/to/litmask.config"),
             "new config text".to_string(),
         );
-        // 5 fs ops + 1 best-effort parent fsync.
-        assert_eq!(plan.len(), 6);
+        // 4 write/fsync + 2 renames + 1 deduped parent fsync
+        // (binary and config share `/path/to`).
+        assert_eq!(plan.len(), 7);
 
-        // Locate the temp-config path from the plan; subsequent
-        // step assertions reference it by value so a swap with
-        // the binary path is caught by path-equality (the two
-        // WriteFile variants are otherwise structurally
-        // identical and a name-shape heuristic alone leaves the
-        // swap detectable only via incidental string content).
+        // Step 2 — WriteFile(temp_config).
         let Operation::WriteFile {
-            path: temp_path,
-            bytes: temp_bytes,
+            path: temp_config,
+            bytes: config_bytes,
         } = &plan[0]
         else {
             panic!("step 2 must be WriteFile(temp_config), got {:?}", plan[0]);
         };
-        assert_eq!(temp_path.parent(), Some(Path::new("/path/to")));
-        let temp_name = temp_path
+        assert_eq!(temp_config.parent(), Some(Path::new("/path/to")));
+        let temp_name = temp_config
             .file_name()
             .and_then(|n| n.to_str())
             .expect("temp path file_name str");
-        // Case sensitivity is fine here — we generated the suffix
-        // ourselves and want byte-exact match.
         #[allow(clippy::case_sensitive_file_extension_comparisons)]
         let temp_name_ok = temp_name.contains(".bind-") && temp_name.ends_with(".tmp");
-        assert!(temp_name_ok, "tempfile name shape mismatch: {temp_path:?}",);
-        assert_eq!(
-            temp_bytes.as_slice(),
-            b"new config text",
-            "step 2 must carry the new config text bytes",
+        assert!(
+            temp_name_ok,
+            "tempfile name shape mismatch: {temp_config:?}"
         );
+        assert_eq!(config_bytes.as_slice(), b"new config text");
 
-        // Step 3 — FsyncFile points at the SAME tempfile written
-        // in step 2 (not just any path under the same parent —
-        // identity equality catches a planner bug that targeted
-        // a sibling).
+        // Step 3 — FsyncFile(temp_config).
         match &plan[1] {
-            Operation::FsyncFile { path } => assert_eq!(path, temp_path),
-            other => panic!("step 3 must be FsyncFile(temp), got {other:?}"),
+            Operation::FsyncFile { path } => assert_eq!(path, temp_config),
+            other => panic!("step 3 must be FsyncFile(temp_config), got {other:?}"),
         }
 
-        // Step 4 — WriteFile targets the binary by path equality
-        // AND carries the binary bytes verbatim. A planner bug
-        // swapping `plan[0]` and `plan[2]` fails this assert
-        // because the temp-config bytes ≠ the binary bytes (and
-        // because the temp path ≠ the binary path above).
-        match &plan[2] {
-            Operation::WriteFile { path, bytes } => {
-                assert_eq!(path, Path::new("/path/to/binary"));
-                assert_eq!(
-                    bytes.as_slice(),
-                    b"new binary bytes",
-                    "step 4 must carry the new binary bytes",
-                );
-            }
-            other => panic!("step 4 must be WriteFile(binary), got {other:?}"),
-        }
+        // Step 4 — WriteFile(temp_binary).
+        let Operation::WriteFile {
+            path: temp_binary,
+            bytes: binary_bytes,
+        } = &plan[2]
+        else {
+            panic!("step 4 must be WriteFile(temp_binary), got {:?}", plan[2]);
+        };
+        assert_eq!(temp_binary.parent(), Some(Path::new("/path/to")));
+        assert_eq!(binary_bytes.as_slice(), b"new binary bytes");
 
-        // Step 5 — FsyncFile on the binary by path equality.
+        // Step 5 — FsyncFile(temp_binary).
         match &plan[3] {
-            Operation::FsyncFile { path } => assert_eq!(path, Path::new("/path/to/binary")),
-            other => panic!("step 5 must be FsyncFile(binary), got {other:?}"),
+            Operation::FsyncFile { path } => assert_eq!(path, temp_binary),
+            other => panic!("step 5 must be FsyncFile(temp_binary), got {other:?}"),
         }
 
-        // Step 6 — Rename from the SAME tempfile in step 2 to the
-        // documented config path. Identity equality on `from`
-        // catches a planner bug that renamed a different sibling.
+        // Step 6 — Rename(temp_binary → binary).
         match &plan[4] {
             Operation::Rename { from, to } => {
-                assert_eq!(from, temp_path, "rename must consume the step-2 tempfile");
-                assert_eq!(to, Path::new("/path/to/litmask.config"));
+                assert_eq!(from, temp_binary);
+                assert_eq!(to, Path::new("/path/to/binary"));
             }
-            other => panic!("step 6 must be Rename, got {other:?}"),
+            other => panic!("step 6 must be Rename(binary), got {other:?}"),
         }
 
-        // Step 7 — FsyncDirBestEffort(parent of config).
+        // Step 7 — Rename(temp_config → config).
         match &plan[5] {
+            Operation::Rename { from, to } => {
+                assert_eq!(from, temp_config);
+                assert_eq!(to, Path::new("/path/to/litmask.config"));
+            }
+            other => panic!("step 7 must be Rename(config), got {other:?}"),
+        }
+
+        // Step 8 — FsyncDirBestEffort(shared parent).
+        match &plan[6] {
             Operation::FsyncDirBestEffort { path } => {
                 assert_eq!(path, Path::new("/path/to"));
             }
-            other => panic!("step 7 must be FsyncDirBestEffort, got {other:?}"),
+            other => panic!("step 8 must be FsyncDirBestEffort, got {other:?}"),
         }
     }
 
@@ -984,16 +983,38 @@ mod tests {
             Path::new("/x/litmask.config"),
             String::new(),
         );
-        let Operation::WriteFile { path: temp, .. } = &plan[0] else {
+        let Operation::WriteFile {
+            path: temp_config, ..
+        } = &plan[0]
+        else {
             panic!()
         };
-        let Operation::Rename { from, to } = &plan[4] else {
+        let Operation::WriteFile {
+            path: temp_binary, ..
+        } = &plan[2]
+        else {
             panic!()
         };
-        assert_eq!(temp.parent(), Some(Path::new("/x")));
-        assert_eq!(from.parent(), Some(Path::new("/x")));
-        assert_eq!(to.parent(), Some(Path::new("/x")));
-        assert_eq!(from, temp);
+        let Operation::Rename {
+            from: bin_from,
+            to: bin_to,
+        } = &plan[4]
+        else {
+            panic!()
+        };
+        let Operation::Rename {
+            from: cfg_from,
+            to: cfg_to,
+        } = &plan[5]
+        else {
+            panic!()
+        };
+        assert_eq!(temp_config.parent(), Some(Path::new("/x")));
+        assert_eq!(temp_binary.parent(), Some(Path::new("/x")));
+        assert_eq!(cfg_from, temp_config);
+        assert_eq!(cfg_to.parent(), Some(Path::new("/x")));
+        assert_eq!(bin_from, temp_binary);
+        assert_eq!(bin_to.parent(), Some(Path::new("/x")));
     }
 
     #[test]
@@ -1172,17 +1193,18 @@ mod tests {
         );
         execute(&plan, &fs).expect("no failures injected");
         let calls = fs.calls();
-        assert_eq!(calls.len(), 6);
-        assert!(matches!(&calls[0], FsCall::WriteFile(p) if p != Path::new("/bin")));
+        assert_eq!(calls.len(), 7);
+        assert!(matches!(&calls[0], FsCall::WriteFile(p) if p != Path::new("/cfg")));
         assert!(matches!(&calls[1], FsCall::SyncFile(_)));
-        assert!(matches!(&calls[2], FsCall::WriteFile(p) if p == Path::new("/bin")));
-        assert!(matches!(&calls[3], FsCall::SyncFile(p) if p == Path::new("/bin")));
-        assert!(matches!(&calls[4], FsCall::Rename { to, .. } if to == Path::new("/cfg")));
-        assert!(matches!(&calls[5], FsCall::SyncDirBestEffort(_)));
+        assert!(matches!(&calls[2], FsCall::WriteFile(p) if p != Path::new("/bin")));
+        assert!(matches!(&calls[3], FsCall::SyncFile(_)));
+        assert!(matches!(&calls[4], FsCall::Rename { to, .. } if to == Path::new("/bin")));
+        assert!(matches!(&calls[5], FsCall::Rename { to, .. } if to == Path::new("/cfg")));
+        assert!(matches!(&calls[6], FsCall::SyncDirBestEffort(_)));
     }
 
     #[test]
-    fn recording_fs_failure_at_temp_write_stops_before_binary_patch() {
+    fn recording_fs_failure_at_config_temp_write_stops_immediately() {
         let fs = RecordingCommitFs::failing_at(0);
         let plan = plan_posix_commit(
             Path::new("/bin"),
@@ -1196,7 +1218,7 @@ mod tests {
     }
 
     #[test]
-    fn recording_fs_failure_at_binary_write_stops_before_rename() {
+    fn recording_fs_failure_at_binary_temp_write_stops_before_rename() {
         let fs = RecordingCommitFs::failing_at(2);
         let plan = plan_posix_commit(
             Path::new("/bin"),
@@ -1212,7 +1234,7 @@ mod tests {
     }
 
     #[test]
-    fn recording_fs_failure_at_rename_triggers_cleanup() {
+    fn recording_fs_failure_at_binary_rename_triggers_cleanup() {
         let fs = RecordingCommitFs::failing_at(4);
         let plan = plan_posix_commit(
             Path::new("/bin"),
@@ -1220,7 +1242,7 @@ mod tests {
             Path::new("/cfg"),
             "config".to_string(),
         );
-        let err = execute(&plan, &fs).expect_err("rename injected");
+        let err = execute(&plan, &fs).expect_err("binary rename injected");
         assert_eq!(err.op_index, 4);
         let calls = fs.calls();
         assert!(

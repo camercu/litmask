@@ -16,17 +16,20 @@
 //! subcommands' TOML expectations cannot happen.
 
 use litmask_internal::{KEY_LEN, NONCE_LEN, base64url};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
-/// Decoded `litmask.config` payload. `unlock_key` is wrapped in
-/// `Zeroizing` so the heap copy wipes on drop — callers that
-/// extract the bytes into their own buffer (e.g. `bind` copies into
-/// a `[u8; KEY_LEN]` array) take responsibility for further
-/// lifecycle.
+/// Decoded `litmask.config` payload. `unlock_key` is zeroized on
+/// drop so the secret does not linger in freed memory.
 #[derive(Debug)]
 pub(crate) struct LitmaskConfig {
     pub(crate) unlock_key: [u8; KEY_LEN],
     pub(crate) locator: [u8; NONCE_LEN],
+}
+
+impl Drop for LitmaskConfig {
+    fn drop(&mut self) {
+        self.unlock_key.zeroize();
+    }
 }
 
 /// Failure shapes for [`parse`]. The granularity matches what each

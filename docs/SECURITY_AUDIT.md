@@ -133,19 +133,19 @@ Documented in THREAT_MODEL.md timing section.
 **Status: pass**
 
 POSIX atomic commit protocol pinned by
-`plan_posix_commit_emits_six_ops_in_spec_order` unit test. The test
+`plan_posix_commit_emits_eight_ops_in_spec_order` unit test. The test
 asserts the exact operation sequence:
 
 1. Write temp config
 2. Fsync temp config
-3. In-place binary patch
-4. Fsync binary
-5. Rename temp config → config
-6. Fsync parent directory (best-effort)
+3. Write temp binary
+4. Fsync temp binary
+5. Rename temp binary → binary
+6. Rename temp config → config
+7-8. Fsync parent directories (best-effort)
 
-`recording_fs_failure_at_binary_fsync_stops_before_rename` verifies
-that fsync failure at step 4 prevents the rename at step 5, so the
-original config remains intact for retry.
+Both files use temp+rename so a crash during any write step leaves the
+originals intact (retryable).
 
 `execute_writes_binary_and_renames_temp_config` exercises the real
 `StdCommitFs` path on the host OS.
@@ -153,10 +153,10 @@ original config remains intact for retry.
 Windows bind uses `MoveFileExW` with `MOVEFILE_WRITE_THROUGH`.
 
 **Category: accepted-risk**
-Power loss between step 3 (binary patch) and step 5 (rename) leaves
-the binary patched but config unchanged. This is the documented recovery
-state: retry bind with the original config. Filesystem journals on
-modern OS kernels make this window extremely narrow.
+Power loss between step 5 (binary rename) and step 6 (config rename)
+leaves new binary + old config (inconsistent). Recovery requires
+rebind. Filesystem journals on modern OS kernels make this window
+extremely narrow.
 
 ## Reproducibility
 

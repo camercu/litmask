@@ -299,7 +299,7 @@ blobs are derived deterministically inside the `mask!` proc-macro as:
 ```
 nonce = first_12_bytes(BLAKE3-keyed-hash(
     seed,
-    "litmask-nonce"
+    CALL_SITE_TAG
     || file_len_le || file
     || line_le
     || column_le
@@ -307,7 +307,11 @@ nonce = first_12_bytes(BLAKE3-keyed-hash(
 ))
 ```
 
-where `file` is the call-site source path
+`CALL_SITE_TAG` and `WRAPPER_TAG` (§1.7.3) are implementation-defined
+byte strings that MUST differ from each other so the call-site and wrapper
+nonce spaces remain disjoint under the same seed.
+
+`file` is the call-site source path
 (`proc_macro::Span::file()` canonicalized to a `CARGO_MANIFEST_DIR`-
 relative form so reproducibility doesn't depend on the absolute
 checkout location), `line` and `column` are the 4-byte
@@ -412,10 +416,9 @@ Properties:
   resistance plus canonical encoding).
 - **Determinism across builds**: same source layout + same seed →
   same nonces → same ciphertext, independent of expansion order.
-- **Independence from the wrapper nonce**: the `"litmask-nonce"`
-  domain separator differs from the wrapper's
-  `"litmask-mask-key-nonce"`, so the nonce spaces are disjoint at
-  the same seed.
+- **Independence from the wrapper nonce**: the call-site domain
+  separator MUST differ from the wrapper's domain separator, so the
+  nonce spaces are disjoint at the same seed.
 
 The wrapper around the encrypted `mask_key` uses a separate nonce derivation
 documented in §1.7.3.
@@ -574,7 +577,7 @@ The wrapper's nonce is derived deterministically as:
 ```
 wrapper_nonce = first_12_bytes(BLAKE3-keyed-hash(
     seed,
-    "litmask-mask-key-nonce"
+    WRAPPER_TAG
 ))
 ```
 
@@ -638,36 +641,30 @@ write fails partway through, the bind operation MUST:
 1. Compute new `unlock_key`, new wrapper bytes, and new `litmask.config`
    contents in memory; do not write anything yet.
 2. Write new `litmask.config` contents to a tempfile in the same directory.
-3. `fsync` the tempfile.
-4. Patch the binary at the located offset.
-5. `fsync` the binary.
-6. `rename` the tempfile to `litmask.config` (atomic on POSIX).
-7. `fsync` the parent directory of `litmask.config`. This step is mandatory
-   on POSIX — without it, the rename is not durable across crashes and may
-   appear to revert after a system crash.
+3. `fsync` the config tempfile.
+4. Write new binary contents to a tempfile in the same directory as the
+   original binary.
+5. `fsync` the binary tempfile.
+6. `rename` the binary tempfile to the binary path (atomic on POSIX).
+7. `rename` the config tempfile to `litmask.config` (atomic on POSIX).
+8. `fsync` parent directories of the binary and config so the renames are
+   durable across crashes.
 
 **On Windows:**
 Same steps 1-5, but:
-6. Use `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH`
-   flags to atomically replace `litmask.config` with the tempfile contents.
-   `MOVEFILE_WRITE_THROUGH` ensures the rename is flushed to disk before
-   returning, providing equivalent durability to POSIX step 7. No separate
-   directory-level fsync is needed.
-7. (no-op on Windows; durability is provided by step 6)
+6-7. Use `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH`
+   flags for each rename. `MOVEFILE_WRITE_THROUGH` ensures the rename is
+   flushed to disk before returning, providing equivalent durability to
+   POSIX step 8. No separate directory-level fsync is needed.
 
 If any step fails, the binary and original `litmask.config` are left in the
 most consistent recoverable state:
-- Steps 1-3 fail: nothing modified.
-- Step 4 fails before any write: nothing modified.
-- Step 4 fails partway: binary is corrupted; original config is intact.
-  Recovery requires rebuilding.
-- Step 5 fails: binary is patched but not flushed; config not yet renamed.
-  On crash, filesystem may persist either or neither.
-- Step 6 fails: extremely rare; binary and old config diverge. Document
-  recovery procedure (rebuild required).
-- Step 7 fails (POSIX only): binary and config are written but rename may
-  not survive a crash. On reboot, the original config may reappear; rebind
-  will be needed.
+- Steps 1-5 fail: nothing modified; tempfiles are partial/orphaned at worst.
+- Step 6 fails: original binary and config intact. Retry bind.
+- Step 7 fails: new binary with new wrapper, old config with old
+  `unlock_key`. Recovery requires rebind.
+- Step 8 fails: renames succeeded but may not survive a crash. On reboot,
+  either rename may revert; rebind will be needed.
 
 ### §1.8 API Surface
 
@@ -689,7 +686,7 @@ mask_file!()                // current source path → masked String
 ```
 
 `weak_mask!` is the **only** masking macro that works before `init!()`
-has populated the runtime master key. It MUST be used exclusively for
+has populated the runtime mask key. It MUST be used exclusively for
 strings needed during the pre-`init!()` bootstrap window — env var
 names, default file paths, and other non-secret metadata that the
 provider needs in order to locate the unlock key. The threat model is
@@ -774,7 +771,7 @@ pub enum KeyEncoding { Base64Url, Raw }
 The following types exist but are explicitly internal — marked `#[doc(hidden)]`
 and not subject to semver guarantees:
 
-- `MaskKey` — runtime container for the decrypted master key
+- `MaskKey` — runtime container for the decrypted mask key
 - `EncryptedBlob` and helper types used by macro-generated code
 - Derivation helpers (e.g., the `derive_nonce` private function inside
   `litmask-macros`)
