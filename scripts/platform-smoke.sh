@@ -40,7 +40,7 @@ assert_marker_absent "$BINARY" "pre-bind"
 bind_exit=0
 "$CLI" bind "$BINARY" --config "$CONFIG" || bind_exit=$?
 
-if "$EXPECT_UNAVAILABLE"; then
+if [ "$EXPECT_UNAVAILABLE" = "true" ]; then
     if [ "$bind_exit" -ne 69 ]; then
         echo "FAIL: expected EX_UNAVAILABLE (69), got $bind_exit"
         exit 1
