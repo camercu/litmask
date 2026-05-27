@@ -86,7 +86,9 @@
 //!
 //! When the threat model permits weaker guarantees (no AEAD,
 //! plaintext cached for program lifetime), [`weak_mask!`] returns
-//! `&'static str` directly.
+//! `&'static` references directly: `&'static str` for `"..."`,
+//! `&'static [u8]` for `b"..."`, `&'static CStr` for `c"..."`
+//! (`std` feature).
 //!
 //! The crate is `#![no_std]` + `alloc` from day one. The default
 //! `std` feature gates only what genuinely requires `std`.
@@ -292,10 +294,40 @@ macro_rules! __decrypt_cstring_call {
     };
 }
 
+/// Internal dispatch for `weak_mask!(c"...")` expansion. Under `std`,
+/// allocates a per-call-site `WeakCStrCell` cache and decodes via
+/// `__weak_decode_cstr`. Under `no_std`, emits a `compile_error!`.
+#[cfg(feature = "std")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __weak_decode_cstr_call {
+    ($obf:expr, $wrapper:expr) => {{
+        static __WEAK_CACHE: $crate::__internal::WeakCStrCell =
+            $crate::__internal::WeakCStrCell::new();
+        $crate::__internal::__weak_decode_cstr($obf, $wrapper, &__WEAK_CACHE)
+    }};
+}
+
+#[cfg(not(feature = "std"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __weak_decode_cstr_call {
+    ($obf:expr, $wrapper:expr) => {
+        ::core::compile_error!(
+            "weak_mask!(c\"...\") requires the `std` feature on the `litmask` crate; \
+             enable it via `litmask = { features = [\"std\"] }`"
+        )
+    };
+}
+
 #[doc(hidden)]
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.
-    pub use crate::runtime::{__decrypt, __init_with_wrapper, __weak_decode, WeakCell};
+    pub use crate::runtime::{
+        __decrypt, __init_with_wrapper, __weak_decode, __weak_decode_bytes, WeakByteCell, WeakCell,
+    };
+    #[cfg(feature = "std")]
+    pub use crate::runtime::{__weak_decode_cstr, WeakCStrCell};
     // Re-export under a hygienic alias so the proc-macro emits a
     // single `::litmask::__internal::__String::from_utf8(...)` path
     // for the `mask!("...")` case.

@@ -699,8 +699,13 @@ per-build wrapper bytes (which themselves live in the user binary), so
 an attacker with both the obfuscated bytes and the wrapper recovers
 the plaintext trivially. `weak_mask!` defends against `strings(1)` and
 Level 1 inspection only. Real secrets always use `mask!` after
-`init!()` has succeeded. Return type is `&'static str`; decode happens
-once per call site (cached in a `OnceLock`).
+`init!()` has succeeded. Decode happens once per call site (cached in
+a `OnceLock`).
+
+`weak_mask!` accepts the same three literal kinds as `mask!`:
+- `weak_mask!("text")` → `&'static str`
+- `weak_mask!(b"\x...")` → `&'static [u8]`
+- `weak_mask!(c"text")` → `&'static CStr` (requires `std` feature)
 
 `mask!` accepts only the three literal kinds:
 - String literal (`"text"`, raw, Unicode-escape) → returns `String`

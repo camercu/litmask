@@ -73,6 +73,8 @@ LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' target/debug/litmask.c
 | `mask_include_bytes!("path")` | `Vec<u8>` | `include_bytes!` |
 | `mask_file!()` | `String` | `file!` |
 | `weak_mask!("...")` | `&'static str` | pre-`init!` bootstrap strings |
+| `weak_mask!(b"...")` | `&'static [u8]` | pre-`init!` bootstrap bytes |
+| `weak_mask!(c"...")` | `&'static CStr` | pre-`init!` bootstrap C strings (`std`) |
 | `unmasked!("...")` | `&'static str` | opt out of `#[mask_all]` |
 | `#[mask_all]` | -- | rewrites all literals in a module |
 

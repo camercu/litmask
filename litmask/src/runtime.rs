@@ -248,6 +248,117 @@ impl Default for WeakCell {
     }
 }
 
+/// Per-call-site cache for `weak_mask!(b"...")`. Same architecture as
+/// [`WeakCell`] but stores `Vec<u8>` and returns `&'static [u8]`.
+#[doc(hidden)]
+pub struct WeakByteCell {
+    #[cfg(feature = "std")]
+    inner: std::sync::OnceLock<alloc::vec::Vec<u8>>,
+    #[cfg(not(feature = "std"))]
+    inner: once_cell::race::OnceBox<alloc::vec::Vec<u8>>,
+}
+
+impl WeakByteCell {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            #[cfg(feature = "std")]
+            inner: std::sync::OnceLock::new(),
+            #[cfg(not(feature = "std"))]
+            inner: once_cell::race::OnceBox::new(),
+        }
+    }
+
+    pub fn get_or_init<F: FnOnce() -> alloc::vec::Vec<u8>>(&'static self, f: F) -> &'static [u8] {
+        #[cfg(feature = "std")]
+        {
+            self.inner.get_or_init(f).as_slice()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            self.inner
+                .get_or_init(|| alloc::boxed::Box::new(f()))
+                .as_slice()
+        }
+    }
+}
+
+impl Default for WeakByteCell {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// XOR-decode byte-string obfuscated data and cache the result.
+/// Returns `&'static [u8]`. No UTF-8 validation — raw bytes pass
+/// through unchanged.
+#[doc(hidden)]
+pub fn __weak_decode_bytes<const N: usize>(
+    obf: &'static [u8; N],
+    wrapper: &'static [u8; WRAPPER_LEN],
+    cache: &'static WeakByteCell,
+) -> &'static [u8] {
+    cache.get_or_init(|| {
+        let wrapper = core::hint::black_box(&wrapper[..]);
+        let obf = core::hint::black_box(&obf[..]);
+        crate::internal::xor_cycle(obf, wrapper)
+    })
+}
+
+/// Per-call-site cache for `weak_mask!(c"...")`. Stores a `CString`
+/// and returns `&'static CStr`. Only available under the `std`
+/// feature, matching `mask!(c"...")`'s feature gate.
+#[cfg(feature = "std")]
+#[doc(hidden)]
+pub struct WeakCStrCell {
+    inner: std::sync::OnceLock<std::ffi::CString>,
+}
+
+#[cfg(feature = "std")]
+impl WeakCStrCell {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            inner: std::sync::OnceLock::new(),
+        }
+    }
+
+    pub fn get_or_init<F: FnOnce() -> std::ffi::CString>(
+        &'static self,
+        f: F,
+    ) -> &'static std::ffi::CStr {
+        self.inner.get_or_init(f).as_c_str()
+    }
+}
+
+#[cfg(feature = "std")]
+impl Default for WeakCStrCell {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// XOR-decode C-string obfuscated data, construct a `CString`, and
+/// cache the result. Returns `&'static CStr`.
+///
+/// The bare `.unwrap()` mirrors the `__decrypt_cstring_call!` policy:
+/// `LitCStr` rejects interior NUL at parse time, and the XOR cycle
+/// cannot introduce one. Unreachable in practice.
+#[cfg(feature = "std")]
+#[doc(hidden)]
+pub fn __weak_decode_cstr<const N: usize>(
+    obf: &'static [u8; N],
+    wrapper: &'static [u8; WRAPPER_LEN],
+    cache: &'static WeakCStrCell,
+) -> &'static std::ffi::CStr {
+    cache.get_or_init(|| {
+        let wrapper = core::hint::black_box(&wrapper[..]);
+        let obf = core::hint::black_box(&obf[..]);
+        let decoded = crate::internal::xor_cycle(obf, wrapper);
+        std::ffi::CString::new(decoded).unwrap()
+    })
+}
+
 fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {
     cell::get_or_init(|| {
         // Under no_std there is no default provider — lazy init only
