@@ -201,7 +201,7 @@ fn mask_format_expand(parsed: &MaskFormatInput) -> syn::Result<TokenStream2> {
         {
             #(#arg_bindings)*
             #(#arg_checks)*
-            let mut #out_ident = ::std::string::String::new();
+            let mut #out_ident = ::litmask::__internal::__String::new();
             #(#writes)*
             #out_ident
         }
@@ -280,7 +280,7 @@ fn build_writes(
     for (i, fragment) in fragments.iter().enumerate() {
         if !fragment.is_empty() {
             writes.push(quote! {
-                ::std::fmt::Write::write_str(
+                ::core::fmt::Write::write_str(
                     &mut #out_ident,
                     &::litmask::mask!(#fragment),
                 ).unwrap();
@@ -289,7 +289,7 @@ fn build_writes(
         if resolved.get(i).is_some() {
             let args = placeholder_format_args(&emissions[i], arg_idents);
             writes.push(quote! {
-                ::std::fmt::Write::write_fmt(&mut #out_ident, #args).unwrap();
+                ::core::fmt::Write::write_fmt(&mut #out_ident, #args).unwrap();
             });
         }
     }

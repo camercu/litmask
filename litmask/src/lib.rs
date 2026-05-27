@@ -342,3 +342,52 @@ pub mod __internal {
     // for either std or no_std + alloc.
     pub use alloc::string::String as __String;
 }
+
+#[cfg(test)]
+#[cfg(not(feature = "std"))]
+mod no_std_tests {
+    extern crate std;
+
+    use std::sync::Once;
+
+    fn init_once() {
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            let out_dir = std::env!("OUT_DIR");
+            let config_path = std::path::Path::new(out_dir)
+                .ancestors()
+                .nth(3)
+                .unwrap()
+                .join("litmask.config");
+            let text = std::fs::read_to_string(&config_path).unwrap();
+            let key_line = text.lines().find(|l| l.starts_with("unlock_key")).unwrap();
+            let key_b64 = key_line.split('"').nth(1).unwrap();
+            let provider =
+                crate::StaticProvider::new(crate::UnlockKey::from_base64url(key_b64).unwrap());
+            crate::init_with!(provider).unwrap();
+        });
+    }
+
+    #[test]
+    fn mask_format_compiles_under_no_std() {
+        init_once();
+        let s = crate::mask_format!("no_std check: {}", 42);
+        assert_eq!(s, "no_std check: 42");
+    }
+
+    #[test]
+    fn mask_format_no_args_under_no_std() {
+        init_once();
+        let s = crate::mask_format!("plain literal");
+        assert_eq!(s, "plain literal");
+    }
+
+    #[test]
+    fn mask_write_compiles_under_no_std() {
+        use core::fmt::Write as _;
+        init_once();
+        let mut buf = alloc::string::String::new();
+        crate::mask_write!(buf, "write {}", 99).unwrap();
+        assert_eq!(buf, "write 99");
+    }
+}
