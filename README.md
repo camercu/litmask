@@ -7,14 +7,15 @@ macros, layered key management, `no_std` ready.
 ```rust
 use litmask::mask;
 
-fn main() {
-    litmask::init!().expect("litmask init");
-    println!("{}", mask!("secret token"));
+fn main() -> Result<(), litmask::InitError> {
+    litmask::init!()?;
+    println!("{}", mask!("sensitive data"));
+    Ok(())
 }
 ```
 
 ```sh
-strings target/release/my_app | grep "secret token"   # no output
+strings target/release/my_app | grep "sensitive data"   # no output
 ```
 
 ## Why litmask
@@ -26,7 +27,7 @@ strings target/release/my_app | grep "secret token"   # no output
 | Key model | Compile-time random | Single env var | **Layered providers** |
 | Format strings | No | No | **`mask_format!`** |
 | Module-level | No | No | **`#[mask_all]`** |
-| Hardware binding | No | No | **`litmask-cli bind`** |
+| Hardware binding | No | No | **`litmask bind`** |
 | Literal types | `str` | `str` | **str / bytes / cstr** |
 | `no_std` | Limited | No | **Yes** |
 | Reproducible builds | No | No | **Yes** |
@@ -86,10 +87,10 @@ with weaker guarantees, use `weak_mask!`.
 | `impl KeyProvider` | Anything you write | -- |
 
 ```rust
-use litmask::HardwareIdProvider;
+use litmask::{HardwareIdProvider, weak_mask};
 
-let provider = HardwareIdProvider::with_salt(b"myapp-v1");
-litmask::init_with!(provider).expect("init");
+let provider = HardwareIdProvider::with_salt(weak_mask!("myapp-v1").as_bytes());
+litmask::init_with!(provider)?;
 ```
 
 ## Security model
@@ -97,7 +98,7 @@ litmask::init_with!(provider).expect("init");
 | Configuration | Defeats |
 |---|---|
 | Default (`EnvVarProvider`) | `strings`, casual inspection |
-| `FileProvider` + permissions | Above + unauthorized file access |
+| `FileProvider` | Above, key sourced from a file path |
 | `HardwareIdProvider` | Above + binary redistribution |
 | Custom provider (vault, HSM) | Above + offline attackers |
 
@@ -106,7 +107,7 @@ attachment, compromised runtime environments, side-channel attacks,
 or a motivated reverse engineer with runtime access. See
 [THREAT_MODEL.md](docs/THREAT_MODEL.md) for the full scope.
 
-## Hardware binding (`litmask-cli bind`)
+## Hardware binding (`litmask bind`)
 
 `bind` re-encrypts a binary's embedded wrapper under a key derived from
 the host's machine ID. The typical workflow uses `HardwareIdProvider` at
@@ -114,7 +115,7 @@ runtime so the binary decrypts only on the machine it was bound to:
 
 ```sh
 cargo build --features hw-id --release
-litmask-cli bind target/release/my_app --config target/release/litmask.config
+litmask bind target/release/my_app --config target/release/litmask.config
 ./target/release/my_app   # decrypts via HardwareIdProvider — no env var needed
 ```
 
@@ -125,7 +126,7 @@ of the runtime provider:
 
 ```sh
 cargo build --release
-litmask-cli bind target/release/my_app --config target/release/litmask.config
+litmask bind target/release/my_app --config target/release/litmask.config
 LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' target/release/litmask.config) \
     ./target/release/my_app
 ```
@@ -140,7 +141,7 @@ manage the unlock key externally (e.g., injected by an orchestrator).
 | `std` | yes | `EnvVarProvider`, `FileProvider`, `mask!(c"...")` |
 | `chacha20-poly1305` | yes | Default cipher |
 | `aes-gcm` | no | AES-256-GCM (takes precedence when enabled) |
-| `alloc` | -- | `no_std` + allocator |
+| `alloc` | -- | `no_std` + allocator (required for `no_std` builds) |
 | `hw-id` | no | `HardwareIdProvider` |
 
 ## Documentation

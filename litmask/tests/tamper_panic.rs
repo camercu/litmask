@@ -59,15 +59,7 @@ fn no_custom_panic_messages_in_decryption_path() {
                 r#"panic!("invalid utf-8")"#,
             ],
         ),
-        (
-            format!("{manifest}/src/lib.rs"),
-            vec![
-                // crate-level doc-comment examples — `ignore` blocks,
-                // never compiled into user binaries.
-                r#".expect("missing LITMASK_UNLOCK_KEY")"#,
-                r#".expect("litmask init")"#,
-            ],
-        ),
+        (format!("{manifest}/src/lib.rs"), vec![]),
         (format!("{manifest}/../litmask-macros/src/mask.rs"), vec![]),
         (
             format!("{manifest}/../litmask-macros/src/mask_format.rs"),

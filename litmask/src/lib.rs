@@ -12,9 +12,10 @@
 //! ```ignore
 //! use litmask::{init, mask};
 //!
-//! fn main() {
-//!     litmask::init!().expect("litmask init");
-//!     println!("{}", mask!("secret token"));
+//! fn main() -> Result<(), litmask::InitError> {
+//!     litmask::init!()?;
+//!     println!("{}", mask!("sensitive data"));
+//!     Ok(())
 //! }
 //! ```
 //!
@@ -23,7 +24,7 @@
 //! | Configuration | Defeats |
 //! |---|---|
 //! | Zero-config build (defaults to `EnvVarProvider`) | `strings`, casual binary inspection (Level 1); also Level 2 because `unlock_key` is not embedded |
-//! | `FileProvider` + filesystem permissions | Above with OS-enforced access control |
+//! | `FileProvider` | Above, key sourced from a file path |
 //! | `HardwareIdProvider` | Above + binary moved to a different machine |
 //! | Custom `KeyProvider` (network call, vault) | Above + offline attackers |
 //!
@@ -52,7 +53,7 @@
 //! | Key model | Compile-time random per build | Single env var | Layered: `mask_key` + `unlock_key`, multiple providers |
 //! | Format string masking | Separate `fmtools` crate | None | Built-in [`mask_format!`] with single-evaluation semantics |
 //! | Module-level masking | None | None | [`macro@mask_all`] with deep substitution |
-//! | Hardware binding | None | None | Yes (post-build rebind via `litmask-cli`) |
+//! | Hardware binding | None | None | Yes (post-build rebind via `litmask` CLI) |
 //! | Multiple literal types (str/bytes/cstr) | str only | str only | All three |
 //! | `no_std` support | Limited | No | Yes (with `alloc`) |
 //! | Threat model documented | Minimal | Minimal | Explicit security ladder, honest scope |
