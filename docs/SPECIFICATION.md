@@ -17,51 +17,6 @@ rationale, and protocol specifications. Requirements (Part II) is canonical for
 testable behavioral assertions. Cross-references point to the canonical source
 rather than restating content.
 
-**Amendment convention:** Inline amendments are marked with
-`> **Amendment YYYY-MM-DD:**` blockquotes immediately following the
-paragraph they modify. The blockquote contains the new normative text,
-not a meta-description. The unmodified original text is retained above
-each blockquote so the diff reads cleanly in source review and so
-readers can see what was superseded.
-
-## Revision history
-
-- **2026-05-10 — Amendment 1:** `mask!` grammar extended to accept
-  `include_str!(<path>)` and `concat!(<args>)` invocations as inputs,
-  resolved at proc-macro time. Affects §1.8.1, §1.9.6, §2.1.1, §2.3.2.5.
-- **2026-05-10 — Amendment 2:** `#[mask_all]` compile-time warning
-  mechanism specified as the ghost `#[deprecated] const _` hack until
-  `proc_macro::Diagnostic::emit` stabilizes. Affects §2.3.1.4 and the
-  warning branches of §2.3.2.
-- **2026-05-10 — Amendment 3:** `litmask-cli` compiles BOTH ciphers
-  unconditionally and runtime-dispatches based on the wrapper's
-  cipher-id byte; the "exactly one cipher per build" rule from §1.5.1
-  is narrowed to the `litmask` runtime crate only. Affects §1.5.1,
-  §1.7.3, §1.14, §2.9.1.
-- **2026-05-10 — Amendment 4:** The "single crate" goal in §1.2 is
-  clarified — Rust prohibits non-macro exports from a `proc-macro`
-  crate, so the workspace MAY contain a hidden internal
-  `litmask-macros` proc-macro crate that the user-facing `litmask`
-  crate re-exports. Affects §1.2.
-- **2026-05-11 — Amendment 5:** `litmask::init` and
-  `litmask::init_with` are declarative macros (`init!` /
-  `init_with!`), not regular functions. The wrapper bytes must be
-  read from the downstream user's `OUT_DIR` via `include_bytes!`
-  evaluated in the user's crate compile context, which is only
-  reachable from a macro expansion at the call site — not from a
-  function body in the runtime crate. Affects §1.4.1, §1.8.2,
-  §2.6.1, §2.1.1.12.
-- **2026-05-11 — Amendment 6:** Std-emitted panic-source-location
-  `&'static str` values in `.rodata` are accepted as
-  litmask-identifying plaintext that cannot be removed on stable
-  Rust 1.88. Affects §1.9.3, §1.9.5, §1.11.2.
-- **2026-05-12 — Amendment 7:** New design principle: litmask MUST
-  NOT contribute fixed byte signatures to user binaries. Any
-  litmask-supplied static string (default env-var name, etc.) is
-  obfuscated against the per-build wrapper bytes via the public
-  `weak_mask!()` macro so its `.rodata` representation varies per
-  build. Affects §1.7.1, §1.8.1, §1.9.3.
-
 ---
 
 ## Part I — Architecture
@@ -165,32 +120,25 @@ else is operational maturity (key management, deployment story, tooling).
 
 ### §1.2 Workspace Structure
 
-`litmask` is a Cargo workspace with three crates:
+`litmask` is a Cargo workspace. The user-facing surface is three crates:
 
 | Crate | Type | Purpose |
 |---|---|---|
-| `litmask` | proc-macro + library | Runtime, proc-macros, key provider trait and built-ins |
+| `litmask` | library | Runtime, proc-macro re-exports, key provider trait and built-ins |
 | `litmask-build` | library (build-dep) | `build.rs` helper for compile-time key generation, writes `litmask.config` |
 | `litmask-cli` | binary | `bind` and `inspect` commands for hardware-bound deployment |
 
-The proc-macro and runtime ship in a single crate (`litmask`) rather than
-separate `litmask-macros` + `litmask-runtime` crates. This is unconventional
-but intentional: the proc-macro and runtime share a binary format that must
-evolve in lockstep, and splitting them adds version-skew risk without benefit.
+The user-facing API ships as a single `litmask` crate. Internally, Rust
+forbids exporting non-macro items from a `proc-macro = true` crate, so the
+workspace contains a hidden `litmask-macros` proc-macro crate that `litmask`
+re-exports via `pub use litmask_macros::*;`. The two MUST be pinned as
+`=x.y.z` exact-version dependencies and released together so the binary
+format never desyncs. `litmask-macros` is marked `publish = true` (so users
+can resolve the transitive dependency) but documented as "internal — do not
+depend on directly."
 
-> **Amendment 2026-05-10:** Rust forbids exporting non-macro items from a
-> crate with `proc-macro = true`, so the "single crate" goal cannot be
-> taken literally. The user-facing surface remains a single `litmask`
-> crate; internally, the workspace MAY contain a hidden
-> `litmask-macros` proc-macro crate that the public `litmask` crate
-> re-exports via `pub use litmask_macros::*;`. The two MUST be pinned
-> as `=x.y.z` exact-version dependencies and released together so the
-> binary format never desyncs. `litmask-macros` SHALL be marked
-> `publish = true` (so users can resolve the transitive dependency)
-> but documented as "internal — do not depend on directly." The
-> three-crate workspace table above lists user-facing crates; the
-> internal `litmask-macros` is implementation detail. Add it to the
-> workspace `members` array when Task 5 lands.
+An additional internal crate, `litmask-internal`, holds shared wire-format
+constants and utilities used by both the runtime and CLI crates.
 
 ### §1.3 Build Pipeline
 
@@ -264,28 +212,24 @@ The runtime maintains a single `OnceLock<MaskKey>` for the decrypted `mask_key`.
 Initialization happens via:
 
 ```rust
-litmask::init()?;                              // Uses default EnvVarProvider
-litmask::init_with(provider)?;                 // Uses provided KeyProvider
+litmask::init!()?;                              // Uses default EnvVarProvider
+litmask::init_with!(provider)?;                 // Uses provided KeyProvider
 ```
 
-Either form is optional — first `mask!()` call performs lazy init with the
-default provider. Explicit init is recommended so initialization failures
-surface at startup with structured errors rather than panics deep in program
-execution.
+`init` and `init_with` are declarative macros, not regular functions. The
+macros expand at the call site so they can `include_bytes!(concat!(env!("OUT_DIR"),
+"/litmask_wrapper.bin"))` against the **caller's** crate `OUT_DIR` (where the
+user's `build.rs` ran `litmask_build::emit()`). A regular function in the
+`litmask` runtime crate cannot reach a downstream crate's `OUT_DIR`. The
+macros delegate to a private function
+`litmask::__internal::__init_with_wrapper(provider, &wrapper_bytes)` that
+contains the actual decryption logic.
 
-> **Amendment 2026-05-11:** `init` and `init_with` are declarative
-> macros, not regular functions. User-facing call is `litmask::init!()?`
-> and `litmask::init_with!(provider)?`. The macros expand at the call
-> site so they can `include_bytes!(concat!(env!("OUT_DIR"),
-> "/litmask_wrapper.bin"))` against the **caller's** crate `OUT_DIR`
-> (where the user's `build.rs` ran `litmask_build::emit()`). A regular
-> function in the `litmask` runtime crate cannot reach a downstream
-> crate's `OUT_DIR`. The macros delegate to a private function
-> `litmask::__internal::__init_with_wrapper(provider, &wrapper_bytes)`
-> that contains the actual decryption logic. The lazy-init path used
-> by `mask!()` calls without prior `init!()` performs the same
-> sequence using `EnvVarProvider::default()` and the wrapper bytes
-> that `mask!()` itself embeds via `include_bytes!`.
+Either form is optional — first `mask!()` call performs lazy init with the
+default provider (using `EnvVarProvider::default()` and the wrapper bytes
+that `mask!()` itself embeds via `include_bytes!`). Explicit init is
+recommended so initialization failures surface at startup with structured
+errors rather than panics deep in program execution.
 
 The `OnceLock` is initialized exactly once per process; key rotation at runtime
 is not supported in v1.
@@ -315,7 +259,8 @@ into its own owned return value.
 - **Optional**: AES-256-GCM (AEAD, 256-bit key, 96-bit nonce, 128-bit tag),
   selected by enabling the `aes-gcm` feature
 
-Exactly one cipher is compiled into any given build. The selection rule is:
+Exactly one cipher is compiled into the `litmask` runtime crate and
+`litmask-build`. The selection rule is:
 
 | `aes-gcm` feature | Compiled cipher |
 |---|---|
@@ -328,27 +273,23 @@ implementation. Both ciphers are NOT compiled simultaneously; the
 implementation. This avoids ambiguity about which cipher is in use and keeps
 the binary footprint minimal.
 
+`litmask-cli` is exempt from the single-cipher rule. It SHALL link BOTH
+`chacha20poly1305` and `aes-gcm` unconditionally and SHALL select between
+them at runtime based on the cipher-id byte in the wrapper it operates on
+(`0x01` → ChaCha20-Poly1305, `0x02` → AES-256-GCM, anything else → exit
+EX_DATAERR with the message `unsupported_cipher`). Rationale: a user who
+builds a binary `--features aes-gcm` and then runs `cargo install
+litmask-cli` (default features) would otherwise hit a silent bind failure
+because the default-built CLI cannot decrypt an AES-GCM wrapper. Runtime
+dispatch in the CLI is acceptable because the CLI's binary footprint and
+"single cipher in the binary" obfuscation property are not user-facing
+concerns — the CLI is a developer tool, not a deployed artifact.
+
 Rejected ciphers: AES-CTR (no authentication), Salsa20 (superseded by
 ChaCha20), RC4 (cryptographically broken).
 
 Cipher selection is fixed at build time; runtime cipher switching is not
 supported.
-
-> **Amendment 2026-05-10:** The "exactly one cipher per build" rule
-> applies to the `litmask` runtime crate (the code that ships in user
-> binaries) and to `litmask-build`. It does NOT apply to `litmask-cli`.
-> `litmask-cli` SHALL link BOTH `chacha20poly1305` and `aes-gcm`
-> unconditionally and SHALL select between them at runtime based on
-> the cipher-id byte in the wrapper it operates on (`0x01` →
-> ChaCha20-Poly1305, `0x02` → AES-256-GCM, anything else → exit
-> EX_DATAERR with the message `unsupported_cipher`). Rationale: a user
-> who builds a binary `--features aes-gcm` and then runs `cargo install
-> litmask-cli` (default features) would otherwise hit a silent bind
-> failure because the default-built CLI cannot decrypt an AES-GCM
-> wrapper. Runtime dispatch in the CLI is acceptable because the
-> CLI's binary footprint and "single cipher in the binary"
-> obfuscation property are not user-facing concerns — the CLI is a
-> developer tool, not a deployed artifact.
 
 #### §1.5.2 Per-string nonce derivation
 
@@ -491,7 +432,7 @@ All cipher choices are AEAD. Tampering with any ciphertext (including the
 encrypted `mask_key` wrapper) produces an authentication failure during
 decryption. The runtime panics with a tampering-detected error when this
 occurs at a `mask!()` call site (per §1.9.5), or returns
-`InitError::Decryption` when it occurs during `init()` (per §1.9.2).
+`InitError::Decryption` when it occurs during `init!()` (per §1.9.2).
 
 #### §1.5.5 Per-string KDF — rejected
 
@@ -539,7 +480,7 @@ precludes English-language strings on the trait. Deployment guidance lives in
 | `HardwareIdProvider` | `hw-id` (opt-in) | Derives from machine ID via `machine-uid` |
 | `StaticProvider` | always available | Holds an `UnlockKey` directly; primarily for tests |
 
-Default provider when `init()` is called without arguments:
+Default provider when `init!()` is called without arguments:
 `EnvVarProvider::new("LITMASK_UNLOCK_KEY")`.
 
 #### §1.6.3 Key encoding
@@ -554,7 +495,7 @@ without padding** (RFC 4648 §5). 32 bytes encodes to 43 characters.
 #### §1.6.4 UnlockKey lifecycle
 
 `UnlockKey` is constructed by `KeyProvider::unlock_key()`, used to decrypt
-`mask_key` during `init()`, and dropped immediately after. The decrypted
+`mask_key` during `init!()`, and dropped immediately after. The decrypted
 `mask_key` is held in the `OnceLock` for the program lifetime.
 
 `UnlockKey` and `MaskKey` (internal type) both implement `Drop` with `zeroize`
@@ -587,15 +528,12 @@ ciphertext (uniformly random under the cipher), they constitute no fixed
 pattern across builds — every build has different locator bytes due to seed
 variation.
 
-> **Amendment 2026-05-12:** Generalizing this property to all
-> litmask-supplied static strings: litmask MUST NOT contribute fixed
-> byte signatures to user binaries. Any ancillary literal that the
-> library needs to embed (the default env-var name, future default
-> file paths for `FileProvider`, etc.) MUST be obfuscated against the
-> per-build wrapper bytes via the public `weak_mask!()` macro
-> (§1.8.1). The resulting `.rodata` representation varies per build
-> with the wrapper's random ciphertext, leaving no
-> grep-across-binaries fingerprint.
+Generalizing this property: litmask MUST NOT contribute fixed byte signatures
+to user binaries. Any ancillary literal that the library needs to embed (the
+default env-var name, future default file paths for `FileProvider`, etc.) MUST
+be obfuscated against the per-build wrapper bytes via the public `weak_mask!()`
+macro (§1.8.1). The resulting `.rodata` representation varies per build with
+the wrapper's random ciphertext, leaving no grep-across-binaries fingerprint.
 
 #### §1.7.2 Per-string ciphertext blob format
 
@@ -627,9 +565,9 @@ Total length: 62 bytes.
   rejects unknown versions per §1.9.2 (`InitError::UnsupportedFormat`).
 - Cipher id: `0x01` for ChaCha20-Poly1305, `0x02` for AES-256-GCM. The
   `litmask` runtime crate rejects mismatch with its compiled cipher
-  feature per §1.9.2 (`InitError::UnsupportedCipher`). `litmask-cli`,
-  per the §1.5.1 amendment, instead dispatches at runtime on this byte
-  to select between the two ciphers it always links.
+  feature per §1.9.2 (`InitError::UnsupportedCipher`). `litmask-cli`
+  dispatches at runtime on this byte to select between the two ciphers
+  it always links (see §1.5.1).
 
 The wrapper's nonce is derived deterministically as:
 
@@ -737,8 +675,7 @@ most consistent recoverable state:
 
 ```rust
 mask!(literal)              // dispatches on literal kind
-mask_format!(template, args...) // formerly mask_fmt! — renamed per
-                             // Amendment 2026-05-20
+mask_format!(template, args...) // masked format string
 unmasked!(literal)          // explicit opt-out, returns literal unchanged
 weak_mask!(literal)         // XOR-with-wrapper obfuscation; weaker than mask!
 mask_include_str!("path")   // file contents → masked String
@@ -764,61 +701,35 @@ Level 1 inspection only. Real secrets always use `mask!` after
 `init!()` has succeeded. Return type is `&'static str`; decode happens
 once per call site (cached in a `OnceLock`).
 
-`mask!` accepts:
+`mask!` accepts only the three literal kinds:
 - String literal (`"text"`, raw, Unicode-escape) → returns `String`
 - Byte string literal (`b"\x..."`, raw byte) → returns `Vec<u8>`
 - C string literal (`c"text"`, Rust 1.77+) → returns `CString`
 
-> **Amendment 2026-05-10:** _Obsoleted by Amendment 2026-05-17(b)._
-> Previously `mask!` accepted `mask!(include_str!(...))` and
-> `mask!(concat!(...))` as inputs resolved at proc-macro time. That
-> whitelist is removed; the dedicated `mask_include_str!` and
-> `mask_concat!` macros (§2.1.3, §2.1.5) replace it.
+`mask!` SHALL NOT accept macro invocations as input. Any
+`mask!(<macro>!(...))` form is rejected with the standard non-literal
+error from §1.9.6.
 
-> **Amendment 2026-05-17(b):** A dedicated family of compile-time-
-> resolving masking macros replaces the prior `mask!(include_str!(...))`
-> / `mask!(concat!(...))` whitelist. Each new macro takes the same
-> input as its stdlib counterpart but encrypts the result before
-> emission, eliminating the metadata leak of the unmasked form. The
-> new public macros are:
->
-> - `mask_include_str!("path")` → `String` — §2.1.3
-> - `mask_include_bytes!("path")` → `Vec<u8>` — §2.1.4
-> - `mask_concat!(args...)` → `String` — §2.1.5
-> - `mask_env!("VAR")` → `String` (compile_error if unset) — §2.1.6
-> - `mask_option_env!("VAR")` → `Option<String>` — §2.1.7
-> - `mask_file!()` → `String` — §2.1.8
->
-> Additionally:
->
-> - `maskfmt!` is renamed to `mask_fmt!` for naming consistency with
->   the new mask_* family. The bare `maskfmt!` name SHALL NOT exist
->   in the public API. Every spec reference to `maskfmt!` reads
->   `mask_fmt!`. _(Superseded by Amendment 2026-05-20: `mask_fmt!`
->   is renamed again to `mask_format!`; the chain of renames is
->   `maskfmt!` → `mask_fmt!` → `mask_format!`.)_
-> - `mask!` SHALL NOT accept macro invocations as input. The
->   §2.1.1.14 whitelist of `include_str!` / `concat!` is removed. Any
->   `mask!(<macro>!(...))` form is rejected with the [INVALID_LITERAL_MSG]
->   error from §1.9.6.
-> - `#[mask_all]`'s substitution table (§2.3.2) rewrites the
->   unmasked stdlib forms (`include_str!`, `include_bytes!`,
->   `concat!`, `env!`, `option_env!`, `file!`) to their dedicated
->   `mask_*!` counterparts.
->
-> The dropped scope considered during refinement: `mask_cfg!`
-> (because stdlib `cfg!()` resolves to a compile-time bool with no
-> `.rodata` residue — masking the bool adds runtime cost for zero
-> metadata reduction) and `mask_module_path!` (because
-> `proc_macro::Span` does not expose a `module_path()` accessor on
-> stable Rust, making proc-macro-time resolution unreachable). Both
-> would have been pure API parallels without functional benefit.
->
-> Rationale for dedicated macros over the prior `mask!(<macro>!(...))`
-> shim: macro expansion in Rust is inside-out, so the shim required
-> `mask!` to re-implement the stdlib macros at proc-macro time. The
-> dedicated forms collapse that two-step expansion into one and
-> simplify `#[mask_all]`'s rewrite logic.
+A dedicated family of compile-time-resolving masking macros handles
+stdlib equivalents. Each macro takes the same input as its stdlib
+counterpart but encrypts the result before emission:
+
+- `mask_include_str!("path")` → `String` — §2.1.3
+- `mask_include_bytes!("path")` → `Vec<u8>` — §2.1.4
+- `mask_concat!(args...)` → `String` — §2.1.5
+- `mask_env!("VAR")` → `String` (compile_error if unset) — §2.1.6
+- `mask_option_env!("VAR")` → `Option<String>` — §2.1.7
+- `mask_file!()` → `String` — §2.1.8
+
+`#[mask_all]`'s substitution table (§2.3.2) rewrites the unmasked
+stdlib forms (`include_str!`, `include_bytes!`, `concat!`, `env!`,
+`option_env!`, `file!`) to their dedicated `mask_*!` counterparts.
+
+Not included: `mask_cfg!` (stdlib `cfg!()` resolves to a compile-time
+bool with no `.rodata` residue — masking adds runtime cost for zero
+metadata reduction) and `mask_module_path!` (`proc_macro::Span` does
+not expose a `module_path()` accessor on stable Rust, making
+proc-macro-time resolution unreachable).
 
 `mask_format!` accepts string literal templates only. Non-literal templates produce
 a compile error directing users toward `mask!` for runtime-decrypted strings.
@@ -828,21 +739,18 @@ a compile error directing users toward `mask!` for runtime-decrypted strings.
 literals as intentionally unmasked, particularly for `#[mask_all(strict)]`
 audit purposes.
 
-#### §1.8.2 Functions
+#### §1.8.2 Init macros
 
 ```rust
-pub fn init() -> Result<(), InitError>;
-pub fn init_with<P: KeyProvider>(provider: P) -> Result<(), InitError>;
+litmask::init!()?;                    // Uses default EnvVarProvider
+litmask::init_with!(provider)?;       // Uses provided KeyProvider
 ```
 
-> **Amendment 2026-05-11:** Per Amendment 5, `init` and `init_with`
-> are declarative macros, not functions. The signatures above describe
-> the expansion result, not the user-facing API. User-facing
-> invocations use the bang form: `litmask::init!()?` and
-> `litmask::init_with!(provider)?`. The macros delegate to a private
-> `litmask::__internal::__init_with_wrapper` function whose signature
-> resembles the one above, taking the wrapper bytes as an extra
-> argument supplied by the macro expansion.
+`init!` and `init_with!` are declarative macros (see §1.4.1 for rationale).
+They delegate to a private `litmask::__internal::__init_with_wrapper`
+function, passing wrapper bytes read via `include_bytes!` at the call site.
+The effective signature of the expansion result is
+`Result<(), InitError>`.
 
 #### §1.8.3 Public types
 
@@ -877,7 +785,7 @@ User code MUST NOT depend on these types.
 
 #### §1.9.1 Two-layer error model
 
-- **Init layer** (fallible, structured): `init()` and
+- **Init layer** (fallible, structured): `init!()` and
   `KeyProvider::unlock_key()` return `Result`. Application code can handle
   initialization errors gracefully (display message, exit cleanly, fall back
   to alternate mode).
@@ -955,7 +863,7 @@ identifiers, not explanations. Application code is responsible for any
 human-readable messaging:
 
 ```rust
-match litmask::init() {
+match litmask::init!() {
     Ok(()) => {}
     Err(InitError::KeyProvider(KeyError::NotFound)) => {
         eprintln!("Configuration error: missing unlock key");
@@ -1030,32 +938,29 @@ want a more informative tampering panic may set a panic hook
 (`std::panic::set_hook`) that detects panics in `litmask`-affected locations
 and emits their own message.
 
-> **Amendment 2026-05-11 (B):** Even with the recommended deployment
-> profile (`strip = "symbols"`, `debug = false`, `panic = "abort"`,
-> `lto = true`), the `&'static str` produced by
-> `core::panic::Location::caller()` for every `panic!()` call site
-> remains in the binary's `.rodata`. The string has the shape
-> `<crate-name>/src/<path>.rs` and is recoverable via `strings(1)`.
-> For `litmask` panic sites this leaks the substring "litmask" into
-> user binaries, in addition to the std-emitted "panicked at"
-> message text mentioned above. This is unavoidable on stable Rust
-> 1.88: `strip` removes symbols and debug info but not `.rodata`
-> string literals; `panic = "abort"` swaps out the unwinder but still
-> references the `Location` value when aborting. Removal options:
->
-> - Compile with `RUSTFLAGS="-Z location-detail=none"` on the
->   nightly toolchain. This is the upstream-blessed way to strip
->   panic location strings.
-> - Move every panicking call site into a workspace crate with a
->   non-identifying name. The location string then references the
->   helper crate's path instead of `litmask/...`.
->
-> The dirty-word regression scrub at `litmask/tests/example_scrub.rs`
-> filters substrings matching the shape `<crate>/src/<path>.rs` before
-> looking for forbidden identifiers, so this leak does not flag a
-> CI failure on stable. `THREAT_MODEL.md` MUST surface this caveat to
-> users who require a zero-identifier binary; the operationally-correct
-> recommendation is to add the nightly `-Z` flag or accept the leak.
+Even with the recommended deployment profile (`strip = "symbols"`,
+`debug = false`, `panic = "abort"`, `lto = true`), the `&'static str`
+produced by `core::panic::Location::caller()` for every `panic!()` call site
+remains in the binary's `.rodata`. The string has the shape
+`<crate-name>/src/<path>.rs` and is recoverable via `strings(1)`. For
+`litmask` panic sites this leaks the substring "litmask" into user binaries.
+This is unavoidable on stable Rust 1.88: `strip` removes symbols and debug
+info but not `.rodata` string literals; `panic = "abort"` swaps out the
+unwinder but still references the `Location` value when aborting. Removal
+options:
+
+- Compile with `RUSTFLAGS="-Z location-detail=none"` on the nightly
+  toolchain. This is the upstream-blessed way to strip panic location strings.
+- Move every panicking call site into a workspace crate with a
+  non-identifying name. The location string then references the helper
+  crate's path instead of `litmask/...`.
+
+The dirty-word regression scrub at `litmask/tests/example_scrub.rs` filters
+substrings matching the shape `<crate>/src/<path>.rs` before looking for
+forbidden identifiers, so this leak does not flag a CI failure on stable.
+`THREAT_MODEL.md` MUST surface this caveat to users who require a
+zero-identifier binary; the operationally-correct recommendation is to add
+the nightly `-Z` flag or accept the leak.
 
 #### §1.9.6 Compile-time error message requirements
 
@@ -1102,51 +1007,13 @@ positions fall through to rustc's natural diagnostics
 (`E0015: cannot call non-const function ...` and
 `expected pattern, found {` respectively); the proc-macro emits no
 custom substring for these positions. See §2.1.1.9 and §2.1.1.10
-for the behavioral contract and the amendment below for rationale.
-
-> **Amendment 2026-05-10:** The "mask! invalid literal type" message
-> remains the rejection text for everything that is not a string /
-> byte / cstr literal AND is not one of the two built-in macro
-> invocations whitelisted in the §1.8.1 amendment
-> (`include_str!(...)`, `concat!(...)`). Those two are silent successes
-> at the grammar level. The new "concat! arguments inside mask!"
-> message covers the case where `concat!`'s arguments are themselves
-> non-literal.
-
-> **Amendment 2026-05-17:** The `mask!` const/static and
-> pattern-position rejection substrings (previously rows in the
-> table above) are dropped. Detecting both positions from inside
-> the proc-macro is not directly possible:
-> - **Const/static initializers** would require the proc-macro to
->   inspect the surrounding item, which `proc_macro::Span` does not
->   expose. Calling a non-const function (`__decrypt`) from a const
->   context naturally fails with rustc's `E0015`, which is precise
->   and points at the `mask!()` call site.
-> - **Pattern positions** invoke macros in pattern context, which
->   rustc rejects with `expected pattern, found {` before the
->   proc-macro runs at all. There is no proc-macro-side hook to
->   customize the message.
->
-> Trybuild fixtures `mask_const_context.rs`, `mask_static_context.rs`,
-> `mask_pattern_position.rs`, and `mask_if_let_pattern.rs` lock the
-> rejection by snapshotting the natural diagnostic. The spec's only
-> contract here is that the code MUST fail to compile in these
-> positions — see §2.1.1.9 / §2.1.1.10.
-
-> **Amendment 2026-05-20:** §1.9.6's exact-substring table is replaced
-> with a uniform rule: every error MUST include the macro name with
-> `!` suffix and a closed-set failure tag (`non-literal`, `read-failure`,
-> `unset`, `unicode-failure`, `invalid-arg`, `empty-args`,
-> `args-not-allowed`, `duplicate-name`, `positional-after-named`,
-> `positional-unused`, `positional-out-of-range`, `invalid-placeholder`,
-> `template-syntax`). Wording is implementation-defined; trybuild
-> fixtures are the regression net. Rationale: the prior substring lock
-> coupled spec prose to implementation strings — every error-message
-> tweak required a spec PR, every new `mask_*!` macro required a new
-> row. Compile errors never reach the user binary (§1.9.6 paragraph
-> one) so there is no security argument for fixing the prose. The
-> macro-name + tag pair preserves grep-stability for downstream
-> tooling while letting implementation evolve freely.
+for the behavioral contract. Rationale: detecting both positions from
+inside the proc-macro is not directly possible — const/static
+initializers would require the proc-macro to inspect the surrounding
+item, which `proc_macro::Span` does not expose, and pattern positions
+invoke macros in pattern context, which rustc rejects before the
+proc-macro runs at all. Trybuild fixtures lock the rejection by
+snapshotting the natural diagnostic.
 
 #### §1.9.7 Sysexits.h exit code mapping
 
@@ -1191,7 +1058,7 @@ The mapping rationale:
 Recommended usage pattern:
 
 ```rust
-if let Err(e) = litmask::init() {
+if let Err(e) = litmask::init!() {
     std::process::exit(e.sysexit_code());
 }
 ```
@@ -1317,7 +1184,7 @@ Stable surface (semver-protected):
 - `KeyProvider` trait
 - `UnlockKey` type
 - `EnvVarProvider`, `FileProvider`, `HardwareIdProvider`, `StaticProvider`
-- `init()`, `init_with()` functions
+- `init!()`, `init_with!()` macros
 - `InitError::sysexit_code()` method and the sysexits mapping in §1.9.7
 - Error type variants (new variants non-breaking via `#[non_exhaustive]`)
 - `litmask.config` schema (additions allowed; removals breaking)
@@ -1392,14 +1259,13 @@ Build crate (`litmask-build`):
 
 CLI crate (`litmask-cli`):
 - `clap` (argument parsing)
-- `chacha20poly1305` AND `aes-gcm` (BOTH always linked per the §1.5.1
-  amendment; CLI dispatches at runtime on the wrapper's cipher-id byte
-  rather than mirroring the runtime crate's feature flag)
+- `chacha20poly1305` AND `aes-gcm` (BOTH always linked; CLI dispatches
+  at runtime on the wrapper's cipher-id byte rather than mirroring the
+  runtime crate's feature flag)
 - `base64ct`
 - `blake3`
 - `machine-uid`
-- `toml` (read/write `litmask.config`, exact-version pinned per the
-  Task 24 acceptance in `docs/TASKS.md`)
+- `toml` (read/write `litmask.config`)
 
 The Rust crypto stack is RustCrypto, not `ring`. Rationale: pure-Rust modular
 crates support `no_std`, are easier to audit per-component, and have no C
@@ -1520,19 +1386,11 @@ terminator.
 
 §2.1.1.5 — `mask!` SHALL produce a compile error when given a literal of any
 other type (e.g., integer, float, bool, char), a non-literal expression, or
-any macro invocation. (Amendment 2026-05-17(b) removes the §2.1.1.14
-whitelist; use the dedicated `mask_include_str!` / `mask_concat!` /
-`mask_env!` macros instead.)
+any macro invocation. Use the dedicated `mask_include_str!` / `mask_concat!` /
+`mask_env!` macros for compile-time-resolving inputs.
 
 §2.1.1.6 — The compile error message for invalid literal types SHALL include
 the substring "mask! accepts string, byte string, or C string literals".
-
-§2.1.1.14 — _**Obsoleted by Amendment 2026-05-17(b).**_ Previously
-`mask!` accepted `mask!(include_str!(<path>))` and `mask!(concat!(<args>...))`
-as inputs resolved at proc-macro time. That whitelist is removed; the
-dedicated `mask_include_str!` (§2.1.3) and `mask_concat!` (§2.1.5) macros
-replace it. `mask!` accepts only the three literal kinds enumerated in
-§2.1.1.1–§2.1.1.4.
 
 §2.1.1.7 — Each `mask!` invocation SHALL produce ciphertext using a unique
 nonce derived per §1.5.2.
@@ -1545,19 +1403,17 @@ derivation hashes a `CARGO_MANIFEST_DIR`-relative file path (§1.5.2).
 
 §2.1.1.9 — `mask!` SHALL NOT be usable in `const` or `static` initializers.
 The compile error SHALL come from rustc's natural `E0015` diagnostic; the
-proc-macro SHALL NOT emit its own substring for this position. See the §1.9.6
-2026-05-17 amendment for rationale.
+proc-macro SHALL NOT emit its own substring for this position. See §1.9.6 for rationale.
 
 §2.1.1.10 — `mask!` SHALL NOT be usable in pattern positions (match arms,
 `if let`, `while let`). The compile error SHALL come from rustc's natural
 `expected pattern, found {` diagnostic; the proc-macro SHALL NOT emit its
-own substring for this position. See the §1.9.6 2026-05-17 amendment for
-rationale.
+own substring for this position. See §1.9.6 for rationale.
 
 §2.1.1.11 — Decryption failure on a `mask!` invocation SHALL panic per the
 policy in §1.9.5.
 
-§2.1.1.12 — Calling `mask!` before `litmask::init()` or `litmask::init_with()`
+§2.1.1.12 — Calling `mask!` before `litmask::init!()` or `litmask::init_with!()`
 SHALL trigger lazy initialization using the default `EnvVarProvider`.
 
 §2.1.1.13 — Lazy initialization failure SHALL panic per the policy in §1.9.5.
@@ -1729,17 +1585,10 @@ invocations, not the implicit panic-site embedding.)
 
 ### §2.2 Iteration 2 — Format string masking (mask_format!)
 
-> **Amendment 2026-05-17(b):** Renamed from `maskfmt!` to `mask_fmt!`
-> for naming consistency with the `mask_*!` family introduced in
-> §2.1.3–§2.1.8. (Superseded by Amendment 2026-05-20 — see below.)
->
-> **Amendment 2026-05-20:** Renamed from `mask_fmt!` to `mask_format!`
-> to mirror the `mask_<stdlib_macro>` convention per §2.1.0: stdlib's
-> macro is `format!`, so the masked counterpart spells out `format`.
-> Every requirement and error-message substring below reads
-> `mask_format!` (trybuild snapshots regenerate, integration tests
-> update mechanically — no behavior change). The bare `mask_fmt!`
-> name SHALL NOT exist in the public API.
+`mask_format!` mirrors the `mask_<stdlib_macro>` naming convention per
+§2.1.0: stdlib's macro is `format!`, so the masked counterpart spells
+out `format`. The bare `mask_fmt!` name SHALL NOT exist in the public
+API.
 
 #### §2.2.1 Acceptance criteria
 
@@ -1817,30 +1666,28 @@ without modification:
 §2.3.1.4 — `#[mask_all]` SHALL emit a compile-time warning for each literal
 it skips, identifying the file, line, and reason for the skip.
 
-> **Amendment 2026-05-10:** Until `proc_macro::Diagnostic::emit`
-> stabilizes on stable Rust, the warning emission mechanism SHALL be
-> the **ghost-deprecation hack**. For each skip, the proc-macro SHALL
-> inject an unused item of the form
->
-> ```rust
-> #[deprecated(note = "litmask: skipped literal at <file>:<line>: <reason>")]
-> #[allow(non_upper_case_globals)]
-> const _LITMASK_SKIP_<n>: () = ();
-> let _ = _LITMASK_SKIP_<n>;
-> ```
->
-> into the rewritten output, where `<n>` is a per-module monotonic
-> counter ensuring uniqueness and `<reason>` is a short ASCII tag
-> (e.g., `pattern_position`, `const_initializer`, `unrecognized_macro`).
-> The `let _` reference triggers rustc's `deprecated` lint, which
-> surfaces as a normal `warning: use of deprecated constant
-> _LITMASK_SKIP_<n>: litmask: skipped literal at ...` in cargo output.
-> Under `#[mask_all(strict)]`, the proc-macro SHALL substitute
-> `compile_error!("litmask: ...")` for the ghost-item pattern so the
-> same skip becomes a hard error. Migration to `Diagnostic::emit` is
-> a v2 candidate; the warning text format above is normative and MUST
-> NOT change without a minor-version bump (so downstream tooling that
-> greps cargo output remains stable).
+Until `proc_macro::Diagnostic::emit` stabilizes on stable Rust, the warning
+emission mechanism is the **ghost-deprecation hack**. For each skip, the
+proc-macro SHALL inject an unused item of the form
+
+```rust
+#[deprecated(note = "litmask: skipped literal at <file>:<line>: <reason>")]
+#[allow(non_upper_case_globals)]
+const _LITMASK_SKIP_<n>: () = ();
+let _ = _LITMASK_SKIP_<n>;
+```
+
+into the rewritten output, where `<n>` is a per-module monotonic counter
+ensuring uniqueness and `<reason>` is a short ASCII tag (e.g.,
+`pattern_position`, `const_initializer`, `unrecognized_macro`). The `let _`
+reference triggers rustc's `deprecated` lint, which surfaces as a normal
+`warning: use of deprecated constant _LITMASK_SKIP_<n>: litmask: skipped
+literal at ...` in cargo output. Under `#[mask_all(strict)]`, the proc-macro
+SHALL substitute `compile_error!("litmask: ...")` for the ghost-item pattern
+so the same skip becomes a hard error. Migration to `Diagnostic::emit` is a
+v2 candidate; the warning text format above is normative and MUST NOT change
+without a minor-version bump (so downstream tooling that greps cargo output
+remains stable).
 
 §2.3.1.5 — `#[mask_all]` SHALL recurse into nested modules, functions,
 blocks, and closures within the attributed module.
@@ -1874,7 +1721,7 @@ form) SHALL be rewritten analogously to §2.3.2.3, wrapping the masked format
 result in a literal `"{}"` template when the original template is a literal;
 otherwise left unchanged with literal arguments masked recursively.
 
-§2.3.2.5 — _**Revised by Amendment 2026-05-17(b).**_ The following
+§2.3.2.5 — The following
 stdlib macros SHALL be rewritten to their dedicated `mask_*!`
 counterparts (§2.1.3–§2.1.8):
 
@@ -2052,26 +1899,22 @@ unconditionally.
 
 #### §2.6.1 init functions
 
-§2.6.1.1 — `litmask::init() -> Result<(), InitError>` SHALL initialize the
-runtime using `EnvVarProvider::default()`.
+§2.6.1.1 — `litmask::init!()` SHALL initialize the runtime using
+`EnvVarProvider::default()`, returning `Result<(), InitError>`.
 
-§2.6.1.2 — `litmask::init_with<P: KeyProvider>(provider: P) -> Result<(), InitError>`
-SHALL initialize the runtime using the given provider.
+§2.6.1.2 — `litmask::init_with!(provider)` SHALL initialize the runtime
+using the given provider, returning `Result<(), InitError>`.
 
-> **Amendment 2026-05-11:** Per Amendment 5, §2.6.1.1 and §2.6.1.2 are
-> implemented as declarative macros (`init!` / `init_with!`) that
-> expand at the call site to read wrapper bytes via `include_bytes!`
-> from the caller's `OUT_DIR`, then forward to a private
-> `__init_with_wrapper(provider, &wrapper_bytes)` function whose
-> behavior matches the requirements below verbatim. The user-facing
-> ergonomic contract is `litmask::init!()?` and
-> `litmask::init_with!(provider)?` returning `Result<(), InitError>`.
+Both are declarative macros that expand at the call site to read wrapper
+bytes via `include_bytes!` from the caller's `OUT_DIR`, then forward to a
+private `__init_with_wrapper(provider, &wrapper_bytes)` function whose
+behavior matches the requirements below verbatim.
 
 §2.6.1.3 — Both init functions SHALL retrieve `unlock_key` via
 `provider.unlock_key()`, decrypt the embedded `mask_key` wrapper (format per
 §1.7.3), and store the result in the global `OnceLock`.
 
-§2.6.1.4 — Successive calls to `init()` or `init_with()` after successful
+§2.6.1.4 — Successive calls to `init!()` or `init_with!()` after successful
 initialization SHALL return `Ok(())` without re-running the provider
 (idempotent).
 
@@ -2079,7 +1922,7 @@ initialization SHALL return `Ok(())` without re-running the provider
 provider call.
 
 §2.6.1.6 — Lazy initialization (triggered by first `mask!()` call without
-prior `init()`) SHALL behave equivalently to explicit `init()`, except that
+prior `init!()`) SHALL behave equivalently to explicit `init!()`, except that
 lazy init failures result in panic per §2.1.1.13 rather than `Result` return.
 
 §2.6.1.7 — Initialization failures SHALL return the `InitError` variants
@@ -2185,7 +2028,7 @@ any step before the in-place write fails.
 region (symbol tables, section headers, signatures — though re-signing is
 the user's responsibility).
 
-§2.9.1.6 — *(added by Amendment 2026-05-10)* `bind` SHALL select the
+§2.9.1.6 — `bind` SHALL select the
 cipher used for wrapper decryption and re-encryption based on the
 cipher-id byte in the wrapper read from the target binary, dispatching
 between `chacha20poly1305` (`0x01`) and `aes-gcm` (`0x02`) at runtime.
