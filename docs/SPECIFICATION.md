@@ -673,6 +673,10 @@ most consistent recoverable state:
 ```rust
 mask!(literal)              // dispatches on literal kind
 mask_format!(template, args...) // masked format string
+mask_print!(template, args...)  // masked print to stdout (std)
+mask_println!(template, args...)// masked println to stdout (std)
+mask_write!(dst, template, args...)  // masked write to any writer
+mask_writeln!(dst, template, args...)// masked writeln to any writer
 unmasked!(literal)          // explicit opt-out, returns literal unchanged
 weak_mask!(literal)         // XOR-with-wrapper obfuscation; weaker than mask!
 mask_include_str!("path")   // file contents → masked String
@@ -730,6 +734,21 @@ proc-macro-time resolution unreachable).
 
 `mask_format!` accepts string literal templates only. Non-literal templates produce
 a compile error directing users toward `mask!` for runtime-decrypted strings.
+
+`mask_print!` and `mask_println!` are declarative-macro wrappers around
+`mask_format!` that print the decrypted result to stdout via `print!` /
+`println!`. Gated behind the `std` feature. `mask_println!()` with no
+arguments prints a bare newline (no masking involved). The decrypted
+text is written in the clear to stdout — litmask protects literals at
+rest in the binary; once printed, the output is unprotected.
+
+`mask_write!` and `mask_writeln!` are declarative-macro wrappers around
+`mask_format!` that write to an arbitrary destination via `write!` /
+`writeln!`. Work with any `core::fmt::Write` or `std::io::Write`
+implementor (the caller must have the appropriate trait in scope).
+`mask_writeln!(dst)` with no format arguments writes a bare newline.
+Available in `no_std` + `alloc` builds. Same security note: once
+written, the destination controls confidentiality, not litmask.
 
 `unmasked!` accepts any of the above literal kinds and returns them unchanged
 (preserving original type: `&str`, `&[u8; N]`, or `&CStr`). It exists to mark

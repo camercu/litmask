@@ -127,6 +127,85 @@ pub use litmask_macros::{
     mask_include_str, mask_option_env, unmasked, weak_mask,
 };
 
+/// Write a `mask_format!`-encrypted format string to a destination.
+///
+/// Thin wrapper: `mask_write!(dst, "fmt", args)` expands to
+/// `write!(dst, "{}", mask_format!("fmt", args))`. Works with any
+/// `core::fmt::Write` or `std::io::Write` implementor (the caller
+/// must have the appropriate trait in scope, same as `write!`).
+///
+/// **Security note:** the decrypted text is written in the clear to
+/// `dst`. litmask protects literals at rest in the binary; once
+/// written, the destination controls confidentiality.
+///
+/// Available in `no_std` + `alloc` builds.
+#[macro_export]
+macro_rules! mask_write {
+    ($dst:expr, $($args:tt)*) => {
+        ::core::write!($dst, "{}", $crate::mask_format!($($args)*))
+    };
+}
+
+/// Write a `mask_format!`-encrypted format string plus newline to a
+/// destination.
+///
+/// Thin wrapper: `mask_writeln!(dst, "fmt", args)` expands to
+/// `writeln!(dst, "{}", mask_format!("fmt", args))`. The no-argument
+/// form `mask_writeln!(dst)` writes a bare newline (no masking
+/// needed).
+///
+/// **Security note:** the decrypted text is written in the clear to
+/// `dst`. litmask protects literals at rest in the binary; once
+/// written, the destination controls confidentiality.
+///
+/// Available in `no_std` + `alloc` builds.
+#[macro_export]
+macro_rules! mask_writeln {
+    ($dst:expr) => {
+        ::core::writeln!($dst)
+    };
+    ($dst:expr, $($args:tt)*) => {
+        ::core::writeln!($dst, "{}", $crate::mask_format!($($args)*))
+    };
+}
+
+/// Print a `mask_format!`-encrypted format string to stdout.
+///
+/// Thin wrapper: `mask_print!("fmt", args)` expands to
+/// `print!("{}", mask_format!("fmt", args))`.
+///
+/// **Security note:** the decrypted text is printed in the clear to
+/// stdout. litmask protects literals at rest in the binary; once
+/// printed, the output is unprotected.
+#[cfg(feature = "std")]
+#[macro_export]
+macro_rules! mask_print {
+    ($($args:tt)*) => {
+        ::std::print!("{}", $crate::mask_format!($($args)*))
+    };
+}
+
+/// Print a `mask_format!`-encrypted format string plus newline to
+/// stdout.
+///
+/// Thin wrapper: `mask_println!("fmt", args)` expands to
+/// `println!("{}", mask_format!("fmt", args))`. The no-argument form
+/// `mask_println!()` prints a bare newline (no masking needed).
+///
+/// **Security note:** the decrypted text is printed in the clear to
+/// stdout. litmask protects literals at rest in the binary; once
+/// printed, the output is unprotected.
+#[cfg(feature = "std")]
+#[macro_export]
+macro_rules! mask_println {
+    () => {
+        ::std::println!()
+    };
+    ($($args:tt)*) => {
+        ::std::println!("{}", $crate::mask_format!($($args)*))
+    };
+}
+
 /// Internal helper: expand to `include_bytes!(...)` for the embedded
 /// encrypted-`mask_key` wrapper at the caller's `OUT_DIR`. Shared by
 /// [`init!`], [`init_with!`], and the `mask!` proc-macro to avoid

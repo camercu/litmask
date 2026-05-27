@@ -387,7 +387,7 @@ impl Bindings {
                 // prefixed names (`1abc`), and other non-identifier
                 // headers surface as a typed compile error instead of
                 // a proc-macro panic.
-                let ident: syn::Ident = syn::parse_str(name).map_err(|_| {
+                let mut ident: syn::Ident = syn::parse_str(name).map_err(|_| {
                     compile_error(
                         span,
                         MACRO_NAME,
@@ -397,6 +397,10 @@ impl Bindings {
                         ),
                     )
                 })?;
+                // Carry the template literal's span so the ident
+                // resolves in the caller's scope even when mask_format!
+                // is invoked indirectly through a declarative macro.
+                ident.set_span(span);
                 let idx = self.base_for_implicit + self.implicit.len();
                 self.implicit_idx.insert(name.clone(), idx);
                 self.implicit.push(ident);

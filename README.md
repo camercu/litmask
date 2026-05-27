@@ -62,6 +62,10 @@ LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' target/debug/litmask.c
 | `mask!(b"...")` | `Vec<u8>` | byte string literals |
 | `mask!(c"...")` | `CString` | C string literals (`std`) |
 | `mask_format!("{}", x)` | `String` | `format!` |
+| `mask_print!("{}", x)` | `()` | `print!` (`std`) |
+| `mask_println!("{}", x)` | `()` | `println!` (`std`) |
+| `mask_write!(dst, "{}", x)` | `Result` | `write!` |
+| `mask_writeln!(dst, "{}", x)` | `Result` | `writeln!` |
 | `mask_concat!(a, b)` | `String` | `concat!` |
 | `mask_env!("VAR")` | `String` | `env!` |
 | `mask_option_env!("VAR")` | `Option<String>` | `option_env!` |
