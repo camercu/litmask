@@ -22,7 +22,7 @@ See `docs/SPECIFICATION.md` for the full spec with section numbers.
 | Crate | Runs at | Touches secrets |
 |---|---|---|
 | `litmask-build` | `build.rs` (compile time) | Yes: generates seed, keys |
-| `litmask-macros` | proc-macro expansion | Yes: reads keys from env |
+| `litmask-macros` | proc-macro expansion | Yes: reads keys from `OUT_DIR` files |
 | `litmask-internal` | both build + runtime | Wire format constants only |
 | `litmask` | runtime | Yes: decrypts wrapper + blobs |
 | `litmask-cli` | post-build tool | Yes: rebinds wrapper |

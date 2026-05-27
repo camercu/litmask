@@ -44,7 +44,7 @@ publish = false
 # their own feature selection rather than inheriting whatever
 # litmask-internal's default happens to be.
 litmask-internal = { path = "litmask-internal", default-features = false }
-litmask-macros = { path = "litmask-macros" }
+litmask-macros = { path = "litmask-macros", default-features = false }
 litmask-build = { path = "litmask-build", default-features = false }
 
 [workspace.lints.rust]

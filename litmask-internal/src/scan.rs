@@ -15,7 +15,7 @@ pub enum LocateOutcome {
     Multiple,
 }
 
-/// Count non-overlapping occurrences of `needle` in `haystack`.
+/// Count occurrences of `needle` in `haystack`.
 ///
 /// Slides one byte at a time so adjacent occurrences (impossible for
 /// a 12-byte random locator in practice, but a possibility the
