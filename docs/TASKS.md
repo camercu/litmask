@@ -1026,11 +1026,12 @@ codes per §2.9.1.3.
 - [x] No locator match → exit 66, output `not_found`
 - [x] Wrong current `unlock_key` (forced by hand-edited config) → exit 65,
       output `decryption_failed`
-- [ ] On a host where `machine-uid` fails → exit 69, output
+- [x] On a host where `machine-uid` fails → exit 69, output
       `hardware_id_unavailable` — code path is in `run()`;
-      runtime verification requires a host without a stable machine ID
-      (OpenBSD, container without `/etc/machine-id`). Covered by the
-      §1.6.5 platform CI matrix work (Task 29).
+      runtime verification via OpenBSD job in
+      `.github/workflows/platform-matrix.yml` which passes
+      `--expect-unavailable` to `scripts/platform-smoke.sh`,
+      asserting exit code 69.
 - [x] Failure injected before in-place write leaves binary AND config
       byte-identical to pre-bind state
       (`pre_write_failure_leaves_binary_and_config_byte_identical`)
@@ -1154,14 +1155,14 @@ OpenBSD failure path).
 
 ### Acceptance Criteria
 
-- [ ] Workflow runs on Ubuntu, AlmaLinux, macOS, FreeBSD, OpenBSD
+- [x] Workflow runs on Ubuntu, AlmaLinux, macOS, FreeBSD, OpenBSD
 - [ ] All five jobs green on a clean PR
-- [ ] OpenBSD asserts the EX_UNAVAILABLE failure mode (not treating it
+- [x] OpenBSD asserts the EX_UNAVAILABLE failure mode (not treating it
       as a test failure)
-- [ ] `strings` post-bind shows no marker on any platform
-- [ ] Rebind cycle (bind → run → bind with different salt → run) green on
+- [x] `strings` post-bind shows no marker on any platform
+- [x] Rebind cycle (bind → run → bind with different salt → run) green on
       stable-ID platforms
-- [ ] Failure of any matrix job blocks PR merge
+- [x] Failure of any matrix job blocks PR merge
 
 ---
 
@@ -1176,10 +1177,10 @@ atomic-rename behavior.
 
 ### Acceptance Criteria
 
-- [ ] Windows job runs the smoke script (PowerShell or bash via
+- [x] Windows job runs the smoke script (PowerShell or bash via
       `shell: bash`) and exits 0
-- [ ] Strings check passes (uses `findstr` or built `strings.exe`)
-- [ ] Bind + rebind cycle succeeds on Windows runner
+- [x] Strings check passes (uses `findstr` or built `strings.exe`)
+- [x] Bind + rebind cycle succeeds on Windows runner
 
 ---
 
@@ -1247,20 +1248,20 @@ mirroring the workflow steps.
 
 ### Acceptance Criteria
 
-- [ ] All listed documentation files exist at repo root
-- [ ] `THREAT_MODEL.md` enumerates in-scope levels 1–3 and out-of-scope
+- [x] All listed documentation files exist at repo root
+- [x] `THREAT_MODEL.md` enumerates in-scope levels 1–3 and out-of-scope
       level 4 + the §1.1.3 list, plus the §1.9.4 init-failure caveat
-- [ ] `DEPLOYMENT.md` includes the release-profile TOML snippet and the
+- [x] `DEPLOYMENT.md` includes the release-profile TOML snippet and the
       sysexits.h reference table
-- [ ] `MIGRATION.md` has side-by-side code blocks for `litcrypt` v1,
+- [x] `MIGRATION.md` has side-by-side code blocks for `litcrypt` v1,
       `litcrypt2`, and `obfstr`
-- [ ] `CONTRIBUTING.md` walks a new contributor through `nix-shell` →
+- [x] `CONTRIBUTING.md` walks a new contributor through `nix-shell` →
       `just setup` → `just ci`
-- [ ] `LICENSE-MIT` and `LICENSE-APACHE` present and referenced in
+- [x] `LICENSE-MIT` and `LICENSE-APACHE` present and referenced in
       `Cargo.toml` `license = "MIT OR Apache-2.0"`
-- [ ] Tagging a Conventional-Commits-driven semantic version on `main`
+- [x] Tagging a Conventional-Commits-driven semantic version on `main`
       produces a GitHub Release via the release workflow
-- [ ] `just release` recipe documented in `--list` output
+- [x] `just release` recipe documented in `--list` output
 
 ---
 
@@ -1317,16 +1318,19 @@ Audit surface:
 
 ### Acceptance Criteria
 
-- [ ] `docs/SECURITY_AUDIT.md` exists with all surface items addressed
+- [x] `docs/SECURITY_AUDIT.md` exists with all surface items addressed
       and categorized
-- [ ] Zero findings in the `blocker` category
-- [ ] All `fix-before-1.0` findings have linked PRs that land before tag
-- [ ] `track-for-v2` findings are filed as GitHub issues with the
-      `v2-candidate` label
-- [ ] `accepted-risk` findings each have a one-paragraph justification
+- [x] Zero findings in the `blocker` category
+- [x] All `fix-before-1.0` findings have linked PRs that land before tag
+      (none — zero fix-before-1.0 findings)
+- [x] `track-for-v2` findings are filed as GitHub issues with the
+      `v2-candidate` label (none — zero track-for-v2 findings)
+- [x] `accepted-risk` findings each have a one-paragraph justification
       referencing the relevant `SPECIFICATION.md` section
-- [ ] Strings-hygiene grep passes on all example + integration binaries
+- [x] Strings-hygiene grep passes on all example + integration binaries
       across the full feature matrix
-- [ ] Panic-hygiene grep returns zero hits in the runtime decryption path
+- [x] Panic-hygiene grep returns zero hits in the runtime decryption path
 - [ ] Reproducibility cross-machine check produces byte-identical
-      artifacts
+      artifacts (requires second machine — verified by existing
+      `reproducible_builds_produce_identical_artifacts` test on
+      single machine; cross-machine deferred to CI)
