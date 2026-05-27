@@ -290,7 +290,7 @@ fn render_config(unlock_key: &[u8; KEY_LEN], locator: &[u8; NONCE_LEN]) -> Strin
 /// protocol. [`execute`] dispatches each [`Operation`] through this
 /// trait, which lets the production path use real I/O
 /// ([`StdCommitFs`]) while tests inject a recording double
-/// ([`RecordingCommitFs`] in the test module) for failure-injection
+/// (`RecordingCommitFs` in the test module) for failure-injection
 /// and sequence verification without touching the filesystem.
 ///
 /// Platform-specific implementations (e.g. Windows
@@ -308,6 +308,7 @@ pub(crate) trait CommitFs {
 /// Production [`CommitFs`] using `std::fs`. Suitable for POSIX and
 /// any platform where `std::fs::rename` provides atomic
 /// same-filesystem replacement.
+#[cfg_attr(windows, allow(dead_code))]
 pub(crate) struct StdCommitFs;
 
 impl CommitFs for StdCommitFs {
@@ -337,6 +338,78 @@ impl CommitFs for StdCommitFs {
 
     fn remove_file(&self, path: &Path) {
         let _ = fs::remove_file(path);
+    }
+}
+
+/// Windows [`CommitFs`] using `MoveFileExW` with
+/// `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH` for the rename
+/// step (§1.7.7 Windows). `WRITE_THROUGH` flushes the directory entry
+/// to disk before returning, which subsumes the POSIX directory-fsync
+/// step — `sync_dir_best_effort` is a no-op.
+#[cfg(windows)]
+pub(crate) struct WindowsCommitFs;
+
+#[cfg(windows)]
+impl CommitFs for WindowsCommitFs {
+    fn write_file(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)?;
+        f.write_all(bytes)
+    }
+
+    fn sync_file(&self, path: &Path) -> io::Result<()> {
+        let f = fs::File::open(path)?;
+        f.sync_all()
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        win_rename_write_through(from, to)
+    }
+
+    fn sync_dir_best_effort(&self, _path: &Path) {}
+
+    fn remove_file(&self, path: &Path) {
+        let _ = fs::remove_file(path);
+    }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn win_rename_write_through(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+
+    unsafe extern "system" {
+        fn MoveFileExW(
+            lpExistingFileName: *const u16,
+            lpNewFileName: *const u16,
+            dwFlags: u32,
+        ) -> i32;
+    }
+
+    fn to_wide(path: &Path) -> Vec<u16> {
+        path.as_os_str()
+            .encode_wide()
+            .chain(core::iter::once(0))
+            .collect()
+    }
+
+    let from_wide = to_wide(from);
+    let to_wide = to_wide(to);
+    let flags = MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH;
+    // SAFETY: `MoveFileExW` is a stable Windows API. Both wide-string
+    // pointers are null-terminated, heap-allocated, and live for the
+    // duration of the call.
+    let ret = unsafe { MoveFileExW(from_wide.as_ptr(), to_wide.as_ptr(), flags) };
+    if ret == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
     }
 }
 
@@ -521,7 +594,11 @@ pub(crate) fn run(
             config_path,
             commit.new_config_text.clone(),
         );
-        execute(&plan, &StdCommitFs).map_err(ShellError::CommitFailed)?;
+        #[cfg(windows)]
+        let commit_fs: &dyn CommitFs = &WindowsCommitFs;
+        #[cfg(not(windows))]
+        let commit_fs: &dyn CommitFs = &StdCommitFs;
+        execute(&plan, commit_fs).map_err(ShellError::CommitFailed)?;
     } else if let Some(tag) = outcome.stdout_tag() {
         println!("{tag}");
     }
@@ -1032,7 +1109,7 @@ mod tests {
         fn maybe_fail(&self) -> io::Result<()> {
             let idx = self.calls.borrow().len() - 1;
             if self.fail_at_call == Some(idx) {
-                Err(io::Error::new(io::ErrorKind::Other, "injected failure"))
+                Err(io::Error::other("injected failure"))
             } else {
                 Ok(())
             }

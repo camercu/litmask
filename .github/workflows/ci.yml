@@ -133,6 +133,34 @@ jobs:
           name: fuzz-crashes
           path: litmask/fuzz/artifacts/
 
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Parse .tool-versions
+        id: tools
+        shell: bash
+        run: |
+          while read -r name version; do
+            echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
+          done < <(grep -v '^#' .tool-versions | grep -v '^$')
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.tools.outputs.rust }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Build workspace
+        run: cargo build --workspace
+
+      - name: Test litmask-cli (includes bind integration tests)
+        run: cargo test -p litmask-cli
+
   commitlint:
     # Runs on both pull_request and push so direct-to-main commits
     # are linted too. Branch protection may permit direct pushes;

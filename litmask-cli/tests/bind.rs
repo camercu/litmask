@@ -8,8 +8,6 @@
 //! stdout, atomic-commit execute — survives end-to-end as a real
 //! subprocess.
 
-#![cfg(unix)]
-
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;

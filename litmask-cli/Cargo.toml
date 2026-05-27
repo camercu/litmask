@@ -68,5 +68,14 @@ tempfile = "3"
 name = "litmask-cli"
 path = "src/main.rs"
 
-[lints]
-workspace = true
+# Cannot use `lints.workspace = true` — the workspace sets
+# `unsafe_code = "forbid"` which blocks `#[allow(unsafe_code)]` on the
+# Windows `MoveFileExW` FFI (§1.7.7 Windows atomic commit). Duplicate
+# workspace lints here with `unsafe_code` relaxed to `"deny"`.
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
