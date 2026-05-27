@@ -1067,11 +1067,11 @@ verification.
 
 ### Acceptance Criteria
 
-- [ ] On Windows, full bind cycle on a freshly built binary succeeds
-- [ ] Failure injected before write leaves binary + config unchanged
-- [ ] `MoveFileExW` flags used (verified by code inspection or
+- [x] On Windows, full bind cycle on a freshly built binary succeeds
+- [x] Failure injected before write leaves binary + config unchanged
+- [x] `MoveFileExW` flags used (verified by code inspection or
       Procmon trace)
-- [ ] Exit codes match POSIX behavior
+- [x] Exit codes match POSIX behavior
 
 ---
 
