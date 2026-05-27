@@ -1,3 +1,39 @@
+## [0.8.0](https://github.com/camercu/litmask/compare/v0.7.0...v0.8.0) (2026-05-27)
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** none — internal-only code path, no public API change.
+* **cli:** execute() now takes &dyn CommitFs parameter.
+* **internal:** none
+
+* **cli:** extract CommitFs trait from execute() for platform testability ([d5e84a2](https://github.com/camercu/litmask/commit/d5e84a244f9a847d3c3c9c4cb3deaf1624e77595))
+
+### Features
+
+* **ci:** add cargo-semver-checks tooling end-to-end ([9251c9a](https://github.com/camercu/litmask/commit/9251c9a58ad8878dc2a4f30f8778beaab7ee59f8))
+* **ci:** add cross-compile targets and check-cross recipe ([732329a](https://github.com/camercu/litmask/commit/732329aabb44c427670147f73c2f95efbb052201))
+* **ci:** add fuzz job and justfile recipe ([0de1f23](https://github.com/camercu/litmask/commit/0de1f235792519d6846a1e7a9ac40498da625304))
+* **ci:** add test-aes-gcm feature-matrix recipe ([0d56cd3](https://github.com/camercu/litmask/commit/0d56cd34c5f9d89abdfb26b2c762421baa97b3a5))
+* **ci:** add test-hw-id feature-matrix recipe ([4be3164](https://github.com/camercu/litmask/commit/4be316415a62d98316ff27fdec3d4d65f8d40b04))
+* **ci:** add test-no-default feature-matrix recipe ([312e0ac](https://github.com/camercu/litmask/commit/312e0ac5451ce611eee7ea8d7e67440a00da8a2f))
+* **cli:** add Windows atomic commit via MoveFileExW + CI job ([834415f](https://github.com/camercu/litmask/commit/834415fad7121d5579676b9de9e540c0f95f4df0))
+* **coverage:** add cargo-llvm-cov tooling end-to-end ([f284e5a](https://github.com/camercu/litmask/commit/f284e5a5f785d97bb5cc4d75a08e59fa07353f61))
+* **fuzz:** add locator_scan fuzz target ([0efad23](https://github.com/camercu/litmask/commit/0efad2341408419c0a4458ddf1f154f32817ee66))
+* **fuzz:** add parse_format_template fuzz target ([2ed8d4c](https://github.com/camercu/litmask/commit/2ed8d4c28f99a1bbe2f43d27c9c8a6ffa2894b5c))
+
+### Bug Fixes
+
+* **ci:** force gnu target for fuzz jobs to avoid ASAN/musl conflict ([abb551d](https://github.com/camercu/litmask/commit/abb551d95eae75afbfb87077b6efbdbd1fd195e7))
+* **ci:** pin rust-cache workspace to prevent trybuild target discovery ([a5cc53a](https://github.com/camercu/litmask/commit/a5cc53a05b612a1f9fac1777b841ed4f733878a0))
+* **cli:** open sync_file handle with write access for Windows ([f22a98d](https://github.com/camercu/litmask/commit/f22a98d8a087555e4d118aac0d7343fe8c8f4501))
+* **deps:** enable blake3 pure feature to fix cross-compilation ([94f166f](https://github.com/camercu/litmask/commit/94f166f56c2888c5b9abd697f4989f491a48d213))
+* **docs:** replace broken `init!` intra-doc link with plain code span ([6606f72](https://github.com/camercu/litmask/commit/6606f72dfcfee59af2e8a070e836195c51e40985))
+* **internal:** blob test helpers use CURRENT_CIPHER for dual-cipher compat ([65e0387](https://github.com/camercu/litmask/commit/65e03874bd0d1321340e4cec736cee556831348c))
+* **lint:** add must_use, errors doc, and panics suppression to extracted fns ([ab9bd80](https://github.com/camercu/litmask/commit/ab9bd803b4e615c397cc19fc731e516e11415ddd))
+* **parser:** return error on overflowing positional index instead of panicking ([603636f](https://github.com/camercu/litmask/commit/603636f57bbc699bb4c5f0bcc80446cb0b448644))
+* **setup:** regenerate rust-toolchain.toml with llvm-tools + targets ([2fe803e](https://github.com/camercu/litmask/commit/2fe803ea76e011220762c140d74deeddc755aaea))
+* **test:** allowlist doc-example expect() in tamper_panic scan ([12cc426](https://github.com/camercu/litmask/commit/12cc42634f80fd7bd7eff8dcecd80516e0071b92))
+
 ## [0.7.0](https://github.com/camercu/litmask/compare/v0.6.0...v0.7.0) (2026-05-25)
 
 ### ⚠ BREAKING CHANGES
