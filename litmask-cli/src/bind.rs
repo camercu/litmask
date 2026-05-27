@@ -305,6 +305,7 @@ fn render_config(unlock_key: &[u8; KEY_LEN], locator: &[u8; NONCE_LEN]) -> Strin
 pub(crate) trait CommitFs {
     fn write_file(&self, path: &Path, bytes: &[u8]) -> io::Result<()>;
     fn sync_file(&self, path: &Path) -> io::Result<()>;
+    fn copy_permissions(&self, from: &Path, to: &Path) -> io::Result<()>;
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
     fn sync_dir_best_effort(&self, path: &Path);
     fn remove_file(&self, path: &Path);
@@ -333,6 +334,10 @@ impl CommitFs for StdCommitFs {
         // does not modify existing content.
         let f = fs::OpenOptions::new().write(true).open(path)?;
         f.sync_all()
+    }
+
+    fn copy_permissions(&self, from: &Path, to: &Path) -> io::Result<()> {
+        fs::set_permissions(to, fs::metadata(from)?.permissions())
     }
 
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
@@ -372,6 +377,10 @@ impl CommitFs for WindowsCommitFs {
     fn sync_file(&self, path: &Path) -> io::Result<()> {
         let f = fs::OpenOptions::new().write(true).open(path)?;
         f.sync_all()
+    }
+
+    fn copy_permissions(&self, from: &Path, to: &Path) -> io::Result<()> {
+        fs::set_permissions(to, fs::metadata(from)?.permissions())
     }
 
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
@@ -439,6 +448,10 @@ pub(crate) enum Operation {
     /// (removing the orphaned tempfile if rename fails) is the
     /// executor's responsibility — see `execute`.
     Rename { from: PathBuf, to: PathBuf },
+    /// Copy filesystem permissions from `from` to `to`. Inserted
+    /// after writing the binary tempfile so the replacement inherits
+    /// the original's mode bits (notably the execute bit).
+    CopyPermissions { from: PathBuf, to: PathBuf },
     /// `fsync` on a directory handle. Best-effort: platforms that
     /// refuse a directory fsync (some FUSE mounts, certain BSD
     /// configurations) are tolerated rather than aborting the
@@ -478,6 +491,12 @@ pub(crate) fn plan_commit(
         Operation::WriteFile {
             path: temp_binary.clone(),
             bytes: new_binary,
+        },
+        // Step 4b: copy original binary's permissions (execute bit)
+        // to the tempfile before fsync.
+        Operation::CopyPermissions {
+            from: binary_path.to_path_buf(),
+            to: temp_binary.clone(),
         },
         // Step 5: fsync the binary tempfile.
         Operation::FsyncFile {
@@ -540,6 +559,11 @@ pub(crate) fn execute(plan: &[Operation], commit_fs: &dyn CommitFs) -> Result<()
             Operation::FsyncFile { path } => {
                 commit_fs
                     .sync_file(path)
+                    .map_err(|cause| ExecuteError { op_index, cause })?;
+            }
+            Operation::CopyPermissions { from, to } => {
+                commit_fs
+                    .copy_permissions(from, to)
                     .map_err(|cause| ExecuteError { op_index, cause })?;
             }
             Operation::Rename { from, to } => {
@@ -896,9 +920,9 @@ mod tests {
             Path::new("/path/to/litmask.config"),
             "new config text".to_string(),
         );
-        // 4 write/fsync + 2 renames + 1 deduped parent fsync
-        // (binary and config share `/path/to`).
-        assert_eq!(plan.len(), 7);
+        // 4 write/fsync + 1 copy_permissions + 2 renames + 1 deduped
+        // parent fsync (binary and config share `/path/to`).
+        assert_eq!(plan.len(), 8);
 
         // Step 2 — WriteFile(temp_config).
         let Operation::WriteFile {
@@ -938,14 +962,23 @@ mod tests {
         assert_eq!(temp_binary.parent(), Some(Path::new("/path/to")));
         assert_eq!(binary_bytes.as_slice(), b"new binary bytes");
 
-        // Step 5 — FsyncFile(temp_binary).
+        // Step 4b — CopyPermissions(binary → temp_binary).
         match &plan[3] {
+            Operation::CopyPermissions { from, to } => {
+                assert_eq!(from, Path::new("/path/to/binary"));
+                assert_eq!(to, temp_binary);
+            }
+            other => panic!("step 4b must be CopyPermissions(binary → temp_binary), got {other:?}"),
+        }
+
+        // Step 5 — FsyncFile(temp_binary).
+        match &plan[4] {
             Operation::FsyncFile { path } => assert_eq!(path, temp_binary),
             other => panic!("step 5 must be FsyncFile(temp_binary), got {other:?}"),
         }
 
         // Step 6 — Rename(temp_binary → binary).
-        match &plan[4] {
+        match &plan[5] {
             Operation::Rename { from, to } => {
                 assert_eq!(from, temp_binary);
                 assert_eq!(to, Path::new("/path/to/binary"));
@@ -954,7 +987,7 @@ mod tests {
         }
 
         // Step 7 — Rename(temp_config → config).
-        match &plan[5] {
+        match &plan[6] {
             Operation::Rename { from, to } => {
                 assert_eq!(from, temp_config);
                 assert_eq!(to, Path::new("/path/to/litmask.config"));
@@ -963,7 +996,7 @@ mod tests {
         }
 
         // Step 8 — FsyncDirBestEffort(shared parent).
-        match &plan[6] {
+        match &plan[7] {
             Operation::FsyncDirBestEffort { path } => {
                 assert_eq!(path, Path::new("/path/to"));
             }
@@ -998,14 +1031,14 @@ mod tests {
         let Operation::Rename {
             from: bin_from,
             to: bin_to,
-        } = &plan[4]
+        } = &plan[5]
         else {
             panic!()
         };
         let Operation::Rename {
             from: cfg_from,
             to: cfg_to,
-        } = &plan[5]
+        } = &plan[6]
         else {
             panic!()
         };
@@ -1107,6 +1140,7 @@ mod tests {
     enum FsCall {
         WriteFile(PathBuf),
         SyncFile(PathBuf),
+        CopyPermissions { from: PathBuf, to: PathBuf },
         Rename { from: PathBuf, to: PathBuf },
         SyncDirBestEffort(PathBuf),
         RemoveFile(PathBuf),
@@ -1161,6 +1195,14 @@ mod tests {
             self.maybe_fail()
         }
 
+        fn copy_permissions(&self, from: &Path, to: &Path) -> io::Result<()> {
+            self.calls.borrow_mut().push(FsCall::CopyPermissions {
+                from: from.to_path_buf(),
+                to: to.to_path_buf(),
+            });
+            self.maybe_fail()
+        }
+
         fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
             self.calls.borrow_mut().push(FsCall::Rename {
                 from: from.to_path_buf(),
@@ -1193,14 +1235,15 @@ mod tests {
         );
         execute(&plan, &fs).expect("no failures injected");
         let calls = fs.calls();
-        assert_eq!(calls.len(), 7);
+        assert_eq!(calls.len(), 8);
         assert!(matches!(&calls[0], FsCall::WriteFile(p) if p != Path::new("/cfg")));
         assert!(matches!(&calls[1], FsCall::SyncFile(_)));
         assert!(matches!(&calls[2], FsCall::WriteFile(p) if p != Path::new("/bin")));
-        assert!(matches!(&calls[3], FsCall::SyncFile(_)));
-        assert!(matches!(&calls[4], FsCall::Rename { to, .. } if to == Path::new("/bin")));
-        assert!(matches!(&calls[5], FsCall::Rename { to, .. } if to == Path::new("/cfg")));
-        assert!(matches!(&calls[6], FsCall::SyncDirBestEffort(_)));
+        assert!(matches!(&calls[3], FsCall::CopyPermissions { .. }));
+        assert!(matches!(&calls[4], FsCall::SyncFile(_)));
+        assert!(matches!(&calls[5], FsCall::Rename { to, .. } if to == Path::new("/bin")));
+        assert!(matches!(&calls[6], FsCall::Rename { to, .. } if to == Path::new("/cfg")));
+        assert!(matches!(&calls[7], FsCall::SyncDirBestEffort(_)));
     }
 
     #[test]
@@ -1235,7 +1278,7 @@ mod tests {
 
     #[test]
     fn recording_fs_failure_at_binary_rename_triggers_cleanup() {
-        let fs = RecordingCommitFs::failing_at(4);
+        let fs = RecordingCommitFs::failing_at(5);
         let plan = plan_commit(
             Path::new("/bin"),
             b"binary".to_vec(),
@@ -1243,7 +1286,7 @@ mod tests {
             "config".to_string(),
         );
         let err = execute(&plan, &fs).expect_err("binary rename injected");
-        assert_eq!(err.op_index, 4);
+        assert_eq!(err.op_index, 5);
         let calls = fs.calls();
         assert!(
             matches!(calls.last(), Some(FsCall::RemoveFile(_))),
@@ -1253,7 +1296,7 @@ mod tests {
 
     #[test]
     fn recording_fs_failure_at_binary_fsync_stops_before_rename() {
-        let fs = RecordingCommitFs::failing_at(3);
+        let fs = RecordingCommitFs::failing_at(4);
         let plan = plan_commit(
             Path::new("/bin"),
             b"binary".to_vec(),
@@ -1261,7 +1304,7 @@ mod tests {
             "config".to_string(),
         );
         let err = execute(&plan, &fs).expect_err("fsync injected");
-        assert_eq!(err.op_index, 3);
+        assert_eq!(err.op_index, 4);
         assert!(
             !fs.calls()
                 .iter()
