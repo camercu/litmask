@@ -147,7 +147,7 @@ without litmask-specific knowledge:
 echo $?   # 78 → missing configuration
 ```
 
-## What does NOT protect against
+## What litmask does NOT protect against
 
 - Runtime memory inspection
 - Debugger attachment after key derivation

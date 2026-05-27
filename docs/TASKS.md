@@ -11,51 +11,6 @@ Task 33 is the pre-1.0 security audit gate.
 Each task is a vertical slice through every layer it touches and is demoable
 on its own.
 
-## Spec amendments required (land in `SPECIFICATION.md` before affected tasks)
-
-Three design decisions extend `SPECIFICATION.md`. Land them as ADRs
-under `docs/adr/` or as inline amendments before the affected task
-starts.
-
-- **`include_str!` / `concat!` rewrite — proc-macro-time resolution
-  (extends §2.3.2.5).** `mask!`'s parser is extended to accept two
-  specific built-in macro invocations as inputs in addition to bare
-  literals: `include_str!(<path>)` and `concat!(<args>)`. When detected,
-  `mask!` reads the file (for `include_str!`) using `std::fs::read_to_string`
-  with `proc_macro::tracked_path::path` to register the file as a build
-  dependency, or evaluates `concat!` arguments (which must themselves
-  be string / byte / cstr literals or further `concat!`/`include_str!`
-  calls) at proc-macro time. The resulting string is then masked
-  exactly as if it had been a bare literal. `#[mask_all]`'s rewrite of
-  `include_str!` and `concat!` (§2.3.2.5) becomes the natural
-  `mask!(include_str!("x"))` / `mask!(concat!(...))` form. Land before
-  Task 13. Required Task 7 spec update: the "mask! accepts string,
-  byte string, or C string literals" error substring is preserved, but
-  `mask!`'s grammar formally also accepts `include_str!` and
-  `concat!` invocations.
-- **`#[mask_all]` warning emission via ghost-deprecation hack
-  (extends §2.3.1.4 et al.).** Until `proc_macro::Diagnostic::emit`
-  stabilizes, `#[mask_all]` emits warnings by injecting per-skip
-  ghost items of the form
-  `{ #[deprecated(note = "litmask: skipped literal at <file>:<line>: <reason>")] const _LITMASK_SKIP_<n>: () = (); _LITMASK_SKIP_<n> }`
-  (or equivalent unused `const _` pattern that triggers the
-  `deprecated` lint at the call site). Each ghost item is unique by
-  counter to avoid name collision. The lint surfaces as a normal
-  `warning: use of deprecated constant` in cargo output. Under
-  `#[mask_all(strict)]`, ghost items use `compile_error!` instead.
-  Migration to `Diagnostic::emit` is a v2 candidate once stabilized.
-  Land before Task 12.
-- **Runtime cipher dispatch in `litmask-cli` (extends §1.5.1, §1.7.3,
-  §2.9.1).** `litmask-cli` does NOT mirror the `aes-gcm` feature flag.
-  Instead, the CLI compiles BOTH `chacha20poly1305` and `aes-gcm` and
-  dispatches at runtime based on the wrapper's cipher-id byte (`0x01`
-  → ChaCha20-Poly1305, `0x02` → AES-256-GCM). This breaks the
-  "exactly one cipher per build" rule for the CLI specifically (the
-  rule still holds for the `litmask` runtime crate that ships in user
-  binaries). Rationale: avoids the failure mode where a user builds a
-  binary `--features aes-gcm` but `cargo install`s the default CLI
-  and bind silently fails. Land before Task 18.
-
 ---
 
 ## Task 1: Cargo workspace + Rust toolchain + bare justfile (AFK)
@@ -302,7 +257,7 @@ all three literal kinds are actually accepted
 given non-literal expressions, wrong literal types (int/float/bool/char),
 or used in `const`/`static` initializers or pattern positions. Coverage
 provided via `trybuild` fixtures under `litmask/tests/compile/`.
-Per the spec amendment in the intro, `mask!`'s grammar is also extended
+Per the spec, `mask!`'s grammar is also extended
 in this task to accept `include_str!(<path>)` and `concat!(<args>)`
 invocations as inputs (resolved at proc-macro time). The error
 substring "mask! accepts string, byte string, or C string literals"
@@ -317,14 +272,14 @@ exceptions are silent successes.
 - [x] `const X: String = mask!("x");` fails to compile via rustc's
       natural `E0015: cannot call non-const function` diagnostic
       (locked by trybuild fixtures `mask_const_context.rs` and
-      `mask_static_context.rs`). Spec §2.1.1.9 + §1.9.6 amendment
-      2026-05-17 drop the litmask-emitted-substring requirement —
+      `mask_static_context.rs`). Spec §2.1.1.9 + §1.9.6 drop the
+      litmask-emitted-substring requirement —
       proc-macros cannot detect const/static context directly.
 - [x] `match s { mask!("foo") => ... }` fails to compile via rustc's
       natural `expected pattern, found {` diagnostic (locked by
       trybuild fixtures `mask_pattern_position.rs` and
-      `mask_if_let_pattern.rs`). Spec §2.1.1.10 + §1.9.6 amendment
-      2026-05-17 drop the litmask-emitted-substring requirement —
+      `mask_if_let_pattern.rs`). Spec §2.1.1.10 + §1.9.6 drop the
+      litmask-emitted-substring requirement —
       rustc rejects the macro invocation before the proc-macro
       runs.
 - [x] All four cases covered by `trybuild` fixtures wired into `cargo test`
@@ -460,7 +415,7 @@ functions, blocks, and closures. Skips literals in pattern positions,
 `mask!`/`mask_format!`/`unmasked!` invocations. Skips `dbg!`, `stringify!`,
 `assert_eq!`/`assert_ne!` (no-message form). Each skip emits a
 compile-time warning naming file, line, and reason via the
-**ghost-deprecation hack** decided in the spec amendments: an injected
+**ghost-deprecation hack** (per spec §2.3.1.4): an injected
 unused `const _LITMASK_SKIP_<n>: () = ();` carrying
 `#[deprecated(note = "litmask: skipped literal at <file>:<line>: <reason>")]`,
 referenced once in the same scope so rustc fires its own
@@ -501,8 +456,7 @@ a v2 candidate.
   only add a `.rodata` blob and a runtime decrypt that's never
   observed in shipping binaries.
 - `include_str!`, `concat!`: wrap entire invocation in `mask!()` —
-  works because of the spec amendment in the intro: `mask!`'s parser
-  is extended (Task 7 / amended §2.3.2.5) to accept these two specific
+  works because `mask!`'s parser accepts these two specific
   built-ins as inputs and resolve them at proc-macro time via
   `proc_macro::tracked_path::path` + `std::fs::read_to_string` (for
   `include_str!`) or by recursive evaluation of literal arguments (for
@@ -552,7 +506,7 @@ plaintext under `#[mask_all]`:
 ## Task 13A: Dedicated mask_* macros + maskfmt → mask_fmt rename (AFK)
 
 **Implements:** spec §1.8.1 (revised), §2.1.3–§2.1.8, §2.2 (renamed),
-§2.3.2.5 (revised), §1.9.6 (revised) — all per Amendment 2026-05-17(b)
+§2.3.2.5, §1.9.6
 **Blocked by:** Task 13
 
 > **Follow-up rename (2026-05-20):** `mask_fmt!` was subsequently
@@ -597,8 +551,7 @@ unmasked stdlib form directly to its dedicated counterpart:
    again to `mask_format!` on 2026-05-20 — see follow-up note above).
    The bare `maskfmt!` name no longer exists. Migration: search-and-
    replace `maskfmt!` → `mask_fmt!` across all sources, trybuild
-   fixtures, examples, and spec text (spec already updated per
-   Amendment 2026-05-17(b)).
+   fixtures, examples, and spec text.
 
 **Out of scope (with rationale):**
 
@@ -654,8 +607,7 @@ unmasked stdlib form directly to its dedicated counterpart:
       option_env,file}_to_mask_*` plus existing `_wraps_include_str_`
       and `_wraps_concat_` tests now exercise the new rewrite path.)
 - [x] Spec §1.8.1, §2.1.3–§2.1.8, §2.2 (renamed), §2.3.2.5, §1.9.6
-      reflect the final API. (Landed in the spec-amendment commit
-      `53a5f95` prior to implementation.)
+      reflect the final API.
 
 ---
 
@@ -800,7 +752,7 @@ runtime crate and `litmask-build` via `#[cfg]` selection. Exactly one
 cipher is compiled per `litmask` runtime build (this is the property
 that ships in user binaries). Cipher id byte in the wrapper becomes
 `0x02` when the feature is enabled. **`litmask-cli` is the deliberate
-exception** per the spec amendment in the intro: the CLI compiles BOTH
+exception** per the spec (§1.5.1): the CLI compiles BOTH
 ciphers and runtime-dispatches based on the wrapper's cipher-id byte,
 so a single `cargo install litmask-cli` works against binaries built
 with either cipher.
