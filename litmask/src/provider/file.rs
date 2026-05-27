@@ -1,5 +1,5 @@
 //! [`FileProvider`] + [`KeyEncoding`]: reads `unlock_key` from a
-//! filesystem path. See §2.5.3.
+//! filesystem path.
 
 use zeroize::{Zeroize, Zeroizing};
 
@@ -56,7 +56,7 @@ pub enum KeyEncoding {
 /// | Contents do not parse, or wrong length | [`KeyError::InvalidFormat`] |
 ///
 /// The in-memory copy of the file bytes is wiped immediately after
-/// the 32-byte key is extracted (§2.5.3.4) via a `Zeroizing` wrapper
+/// the 32-byte key is extracted via a `Zeroizing` wrapper
 /// around the read buffer. The wipe is verified in unit tests via a
 /// `Counted<T>` newtype that bumps an `AtomicUsize` from its
 /// `Zeroize` impl.
@@ -106,7 +106,7 @@ impl KeyProvider for FileProvider {
 
 /// Read a path into memory, mapping `io::Error` to the canonical
 /// [`KeyError`] surface for [`FileProvider`]. The mapping is
-/// exhaustive against the documented behavior in §2.5.3.3: missing →
+/// exhaustive against the documented behavior: missing →
 /// `NotFound`, anything that prevents the read attempt from
 /// completing → `Permission`. Genuine I/O failures (transient disk
 /// errors, etc.) are rare enough that bucketing them under

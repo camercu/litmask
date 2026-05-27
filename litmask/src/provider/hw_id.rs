@@ -1,6 +1,5 @@
 //! [`HardwareIdProvider`] — derives `unlock_key` from the host's
 //! machine ID via BLAKE3-keyed-hash. Feature-gated behind `hw-id`.
-//! §2.5.4, §1.6.5.
 
 use zeroize::Zeroizing;
 
@@ -49,7 +48,7 @@ use crate::provider::KeyProvider;
 /// default. The failure surfaces as [`KeyError::Provider`] carrying
 /// the upstream error. Cross-compilation users targeting such
 /// environments MUST verify behavior on the target before relying
-/// on this provider (§1.6.5).
+/// on this provider.
 pub struct HardwareIdProvider {
     salt: Option<&'static [u8]>,
 }

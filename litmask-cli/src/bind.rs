@@ -1,5 +1,4 @@
-//! `litmask-cli bind` subcommand (§2.9.1.1–§2.9.1.6, §1.7.6,
-//! §1.7.7 POSIX).
+//! `litmask-cli bind` subcommand.
 //!
 //! `bind` decrypts using the current config's `unlock_key` (from
 //! any provider) and re-encrypts under a hardware-derived key. The
@@ -19,7 +18,7 @@
 //!
 //! 2. **Commit plan ([`plan_posix_commit`]):** another pure
 //!    function that turns the bind plan's payload into a
-//!    `Vec<Operation>` whose order encodes the §1.7.7 protocol.
+//!    `Vec<Operation>` whose order encodes the atomic commit protocol.
 //!    A unit test pins this order at the value level so a future
 //!    bug that swaps fsync and rename surfaces in CI rather than
 //!    after a power loss in production.
@@ -53,7 +52,7 @@ use zeroize::Zeroizing;
 /// Outcome of [`plan_bind`]. The `Success` variant carries the new
 /// bytes the shell will write; every other variant is a typed
 /// classification of "what went wrong" that the shell renders to
-/// stdout + exit code per §2.9.1.3.
+/// stdout + exit code.
 #[derive(Debug)]
 pub(crate) enum BindOutcome {
     /// Bind plan succeeded. `Commit` is the input to the commit
@@ -66,7 +65,7 @@ pub(crate) enum BindOutcome {
     /// AEAD authentication failed during wrapper decryption.
     DecryptionFailed,
     /// Wrapper carries a cipher byte the dispatcher does not
-    /// support (§2.9.1.6).
+    /// support.
     UnsupportedCipher,
     /// Wrapper carries an unknown format-version byte.
     UnsupportedFormat,
@@ -98,7 +97,7 @@ impl BindOutcome {
         }
     }
 
-    /// Stdout tag per §2.9.1.3. `None` means "the shell prints a
+    /// Stdout tag. `None` means "the shell prints a
     /// stderr message instead" (Salt/Config errors are operator-
     /// input problems that warrant a usage message, not a
     /// machine-parseable stdout tag).
@@ -292,7 +291,7 @@ fn render_config(unlock_key: &[u8; KEY_LEN], locator: &[u8; NONCE_LEN]) -> Strin
     )
 }
 
-/// Filesystem operations required by the §1.7.7 atomic commit
+/// Filesystem operations required by the atomic commit
 /// protocol. [`execute`] dispatches each [`Operation`] through this
 /// trait, which lets the production path use real I/O
 /// ([`StdCommitFs`]) while tests inject a recording double
@@ -353,7 +352,7 @@ impl CommitFs for StdCommitFs {
 
 /// Windows [`CommitFs`] using `MoveFileExW` with
 /// `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH` for the rename
-/// step (§1.7.7 Windows). `WRITE_THROUGH` flushes the directory entry
+/// step. `WRITE_THROUGH` flushes the directory entry
 /// to disk before returning, which subsumes the POSIX directory-fsync
 /// step — `sync_dir_best_effort` is a no-op.
 #[cfg(windows)]
@@ -423,10 +422,10 @@ fn win_rename_write_through(from: &Path, to: &Path) -> io::Result<()> {
     }
 }
 
-/// One step of the §1.7.7 atomic commit protocol. The plan is a
+/// One step of the atomic commit protocol. The plan is a
 /// `Vec<Operation>`; the executor applies them in order, surfacing
 /// the first failure as the bind result. Variants are deliberately
-/// narrow so the §1.7.7 ordering is a structural property of the
+/// narrow so the commit ordering is a structural property of the
 /// plan rather than a property of imperative flow.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Operation {
@@ -450,7 +449,7 @@ pub(crate) enum Operation {
     FsyncDirBestEffort { path: PathBuf },
 }
 
-/// Plan the §1.7.7 POSIX atomic commit. Pure: same inputs in,
+/// Plan the POSIX atomic commit. Pure: same inputs in,
 /// byte-identical operation list out. The unit tests pin the
 /// step ordering at the value level so a future bug that swaps
 /// fsync and rename surfaces in CI.
@@ -585,7 +584,7 @@ impl ShellError {
 }
 
 /// Imperative shell entry point. Reads files + machine-uid, calls
-/// [`plan_bind`], and on Success executes the §1.7.7 commit plan.
+/// [`plan_bind`], and on Success executes the atomic commit plan.
 pub(crate) fn run(
     binary_path: &Path,
     config_path: &Path,

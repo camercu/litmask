@@ -32,12 +32,12 @@ pub enum InitError {
     /// The wrapper's format-version byte does not match a version
     /// this build supports. Detected before AEAD decryption so a
     /// tampered version byte cannot be silently swallowed as
-    /// [`Self::Decryption`] (§2.7.1, §1.12.2).
+    /// [`Self::Decryption`].
     UnsupportedFormat,
     /// The wrapper's cipher-id byte does not match the cipher this
     /// build was compiled with. Detected before AEAD decryption so
     /// a mismatched cipher byte produces a typed diagnostic instead
-    /// of a generic auth-failure (§2.7.1, §1.12.2).
+    /// of a generic auth-failure.
     UnsupportedCipher,
 }
 
@@ -64,10 +64,9 @@ impl InitError {
     /// ```
     #[must_use]
     // `match_same_arms` would collapse `InvalidFormat` and
-    // `Decryption` into a single arm because both map to 65. They
-    // are independent ACs in §1.9.7 — keeping the arms separate
-    // lets a future spec change adjust one without disturbing the
-    // other, and the source layout still mirrors the §1.9.7 table.
+    // `Decryption` into a single arm because both map to 65. Keeping
+    // the arms separate lets a future change adjust one without
+    // disturbing the other.
     #[allow(clippy::match_same_arms)]
     pub fn sysexit_code(&self) -> i32 {
         match self {

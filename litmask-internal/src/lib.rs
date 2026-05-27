@@ -74,7 +74,7 @@ pub const NONCE_LEN: usize = 12;
 pub const TAG_LEN: usize = 16;
 
 /// BLAKE3 `derive_key` domain separator for the hardware-id key
-/// derivation (§2.5.4.3). Shared verbatim by:
+/// derivation. Shared verbatim by:
 ///
 /// - `litmask::provider::HardwareIdProvider` (runtime side)
 /// - `litmask-cli`'s `bind` subcommand (build-time side)
@@ -95,10 +95,10 @@ pub const TAG_LEN: usize = 16;
 /// major-version event.
 pub const HW_ID_DERIVATION_CONTEXT: &str = "hw-v1";
 
-/// Byte offset of the format-version byte (§1.7.3) inside a wrapper.
+/// Byte offset of the format-version byte inside a wrapper.
 pub const VERSION_OFFSET: usize = 0;
 
-/// Byte offset of the cipher-id byte (§1.7.3) inside a wrapper.
+/// Byte offset of the cipher-id byte inside a wrapper.
 pub const CIPHER_OFFSET: usize = 1;
 
 /// Byte offset where the AEAD nonce starts inside a wrapper.
@@ -240,7 +240,7 @@ impl CipherId {
 
 /// The cipher this build was compiled to handle, exposed as a
 /// compile-time constant for build-side helpers (`litmask-build`)
-/// and the runtime crate's wrapper-cipher-id check (§2.7.1).
+/// and the runtime crate's wrapper-cipher-id check.
 ///
 /// Precedence when both features are enabled (e.g., `cargo build -p
 /// litmask --features aes-gcm` with default features still active):

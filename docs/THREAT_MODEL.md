@@ -117,5 +117,5 @@ Users requiring provable absence of these strings should use
 path. The underlying AEAD crates (ChaCha20-Poly1305, AES-256-GCM) use
 constant-time primitives, but surrounding Rust code (comparisons,
 branching) is not audited for timing leaks. Side-channel attacks are
-explicitly out of scope (§1.1.3), but this note is provided for users
-who assess timing properties independently.
+explicitly out of scope, but this note is provided for users who
+assess timing properties independently.

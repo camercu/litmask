@@ -84,7 +84,7 @@ mod cell {
 /// or tampered wrapper — cryptographically indistinguishable) returns
 /// [`InitError::Decryption`]. Unrecognized wrapper header bytes
 /// surface as [`InitError::UnsupportedFormat`] or
-/// [`InitError::UnsupportedCipher`] (§2.7.1).
+/// [`InitError::UnsupportedCipher`].
 #[doc(hidden)]
 pub fn __init_with_wrapper<P: KeyProvider>(
     provider: P,

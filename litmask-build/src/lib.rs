@@ -273,10 +273,9 @@ fn decode_env_seed(raw: &OsString) -> [u8; KEY_LEN] {
 /// emit when no `LITMASK_RNG_SEED` was supplied. Returns `None` for
 /// every other (profile, source) combination so debug builds and
 /// env-driven release builds stay silent. Extracted as a pure
-/// function so unit tests can pin the exact text — the spec calls
-/// out the warning channel as the only release-profile recovery
-/// path for reproducible rebuilds, so the string format is
-/// normative.
+/// function so unit tests can pin the exact text — the warning
+/// channel is the only release-profile recovery path for
+/// reproducible rebuilds, so the string format is normative.
 fn fresh_release_warning(
     seed: &[u8; KEY_LEN],
     profile: Profile,
@@ -497,8 +496,8 @@ mod tests {
     }
 
     /// `derive` is the pure core of `emit()`. Same seed in must yield
-    /// byte-identical artifacts out — the spec calls this out as the
-    /// reproducible-builds property.
+    /// byte-identical artifacts out — this is the reproducible-builds
+    /// property.
     #[test]
     fn build_artifacts_derive_is_deterministic() {
         let seed = [0x55u8; KEY_LEN];

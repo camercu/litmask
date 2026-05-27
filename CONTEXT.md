@@ -95,7 +95,7 @@ Secret; do not commit. Consumed by the runtime (via env var) and by
 
 **Bind** (verb): Rebind a binary to a new **unlock key**, typically
 derived from the target machine's hardware ID. Performed by
-`litmask-cli bind` per spec §1.7.6.
+`litmask-cli bind`.
 
 ## Relationships
 

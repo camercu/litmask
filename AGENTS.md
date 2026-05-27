@@ -14,7 +14,7 @@ See `docs/SPECIFICATION.md` for the full spec with section numbers.
 - Comments: Ousterhout style — WHY / invariants / contracts only.
   No restating-the-obvious.
 - Plans: vertical slices, walking skeleton first.
-- Security: never overstate guarantees. §1.1.5 deliberate
+- Security: never overstate guarantees. Deliberate
   understatement applies to all docs and error messages.
 
 ## Crate boundaries

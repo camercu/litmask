@@ -1,5 +1,5 @@
 //! [`StaticProvider`] — fixed in-memory `UnlockKey`. **FOR TESTS
-//! ONLY.** §2.5.5.
+//! ONLY.**
 
 use zeroize::Zeroize;
 

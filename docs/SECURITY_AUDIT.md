@@ -23,9 +23,9 @@ pedagogical clarity. These are documented in `example_scrub.rs`.
 
 **Category: accepted-risk**
 Debug-build string leakage is inherent to Rust's debug info. The
-recommended release profile eliminates it. §1.9.3 acknowledges that
-short `Display` variant tags exist; §1.9.5 ensures no panic messages
-leak identifying text.
+recommended release profile eliminates it. Short `Display` variant
+tags are accepted (they don't identify litmask); panic messages use
+no identifying text.
 
 ## Panic hygiene
 
@@ -35,14 +35,14 @@ Grep of the runtime decryption path (`litmask/src/runtime.rs`) for
 `.expect(`, `panic!("`, `unwrap_or_else(|_| panic!`, `unreachable!(`
 with custom messages: **zero hits**.
 
-All `panic!()` calls in the runtime are bare (no message argument),
-conforming to §1.9.5. The `.expect()` and `panic!("...")` hits in
+All `panic!()` calls in the runtime are bare (no message argument).
+The `.expect()` and `panic!("...")` hits in
 `key.rs`, `error.rs`, and provider modules are exclusively in
 `#[cfg(test)]` blocks.
 
 **Category: accepted-risk**
 Bare `panic!()` produces std's generic panic message, which appears in
-many Rust programs and does not identify litmask. §1.9.5 permits this.
+many Rust programs and does not identify litmask.
 
 ## Key zeroization
 
@@ -64,16 +64,16 @@ log lines, error variants, or long-lived buffers.
 **Category: accepted-risk**
 `Zeroize` is best-effort against compiler optimizations (the standard
 caveat for all Rust zeroization). The `zeroize` crate's approach
-(volatile writes) is the state of the art. §1.1.3 excludes runtime
-memory inspection from scope.
+(volatile writes) is the state of the art. Runtime memory inspection
+is explicitly out of scope.
 
 ## Threat-model claim verification
 
 **Status: pass**
 
 Reviewed `THREAT_MODEL.md`, `README.md`, `DEPLOYMENT.md`, and
-crate-level rustdoc. No claim promises resistance against §1.1.3
-out-of-scope capabilities:
+crate-level rustdoc. No claim promises resistance against out-of-scope
+capabilities:
 
 - No mention of runtime memory protection.
 - No anti-debugging claims.
@@ -83,7 +83,7 @@ out-of-scope capabilities:
 - Level 3 resistance explicitly hedged: "does not promise complete
   Level 3 resistance."
 
-Tone conforms to §1.1.5 deliberate understatement.
+Tone conforms to deliberate understatement policy.
 
 **Category: accepted-risk** (by design — honesty is the policy)
 
@@ -122,17 +122,17 @@ The AEAD crates (`chacha20poly1305`, `aes-gcm`) use constant-time
 primitives internally. `blake3` uses `constant_time_eq` for comparisons.
 
 Surrounding Rust code (error branching, `locate_wrapper` scanning) is
-not constant-time. This is acceptable per §1.1.3 (side-channel attacks
-are out of scope) but noted for users who assess timing properties.
+not constant-time. Side-channel attacks are out of scope but noted
+for users who assess timing properties.
 
-**Category: accepted-risk** — §1.1.3 excludes side-channel attacks.
+**Category: accepted-risk** — side-channel attacks are out of scope.
 Documented in THREAT_MODEL.md timing section.
 
 ## Bind atomicity
 
 **Status: pass**
 
-§1.7.7 POSIX commit protocol pinned by
+POSIX atomic commit protocol pinned by
 `plan_posix_commit_emits_six_ops_in_spec_order` unit test. The test
 asserts the exact operation sequence:
 
@@ -150,7 +150,7 @@ original config remains intact for retry.
 `execute_writes_binary_and_renames_temp_config` exercises the real
 `StdCommitFs` path on the host OS.
 
-Windows bind (Task 26) uses `MoveFileExW` with `MOVEFILE_WRITE_THROUGH`.
+Windows bind uses `MoveFileExW` with `MOVEFILE_WRITE_THROUGH`.
 
 **Category: accepted-risk**
 Power loss between step 3 (binary patch) and step 5 (rename) leaves
@@ -169,8 +169,8 @@ modern OS kernels make this window extremely narrow.
 3. Fresh random (new build)
 
 Integration test `reproducible_builds_produce_identical_artifacts`
-verifies byte-identical output with fixed seed. §1.3.3 conditions
-(same seed, same source, same toolchain) are documented.
+verifies byte-identical output with fixed seed. Reproducibility
+conditions (same seed, same source, same toolchain) are documented.
 
 **Category: accepted-risk**
 Reproducibility depends on `LITMASK_RNG_SEED` being set explicitly.
@@ -210,4 +210,4 @@ Unit tests cover: bad version byte, bad cipher byte, truncated wrappers.
 **Blockers: 0**
 **Fix-before-1.0: 0**
 **Track-for-v2: 0**
-**Accepted-risk: 8** (all with justification referencing spec sections)
+**Accepted-risk: 8** (all with justification)

@@ -36,7 +36,7 @@ struct Cli {
 enum Command {
     /// Scan a binary for the locator recorded in `litmask.config`.
     ///
-    /// Exit codes (§2.9.2.3):
+    /// Exit codes:
     /// - 0 on a single match (prints `verified`)
     /// - 65 on multiple matches (prints `ambiguous:<count>`)
     /// - 66 on no match (prints `not_found`)
@@ -57,7 +57,7 @@ enum Command {
     /// `EnvVarProvider` decrypt when given the config's updated
     /// `unlock_key` via the environment variable.
     ///
-    /// Exit codes (§2.9.1.3):
+    /// Exit codes:
     /// - 0 on success
     /// - 65 on locator-ambiguous, AEAD decryption failure, or
     ///   unsupported format/cipher

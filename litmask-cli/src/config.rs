@@ -62,7 +62,7 @@ pub(crate) fn parse(config_text: &str) -> Result<LitmaskConfig, ParseError> {
 /// secret still transits the `toml::Table` we parse above; eliminating
 /// the secret from `inspect`'s address space entirely would require a
 /// scanner that drops `unlock_key` before the TOML body lands in
-/// memory, which §2.9.2 doesn't ask for.)
+/// memory, which is not required.)
 pub(crate) fn parse_locator_only(config_text: &str) -> Result<[u8; NONCE_LEN], ParseError> {
     let table: toml::Table = config_text.parse().map_err(|_| ParseError::Malformed)?;
     decode_locator(&table)
