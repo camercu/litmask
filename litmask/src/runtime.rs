@@ -172,7 +172,7 @@ pub fn __weak_decode<const N: usize>(
         let wrapper = core::hint::black_box(&wrapper[..]);
         let obf = core::hint::black_box(&obf[..]);
         let decoded = crate::internal::xor_cycle(obf, wrapper);
-        String::from_utf8(decoded).unwrap()
+        String::from_utf8(decoded).unwrap_or_else(|_| panic!("invalid utf-8"))
     })
 }
 

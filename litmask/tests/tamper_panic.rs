@@ -50,7 +50,15 @@ fn decrypt_panics_on_tampered_blob() {
 fn no_custom_panic_messages_in_decryption_path() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     let scans: Vec<(String, Vec<&str>)> = vec![
-        (format!("{manifest}/src/runtime.rs"), vec![]),
+        (
+            format!("{manifest}/src/runtime.rs"),
+            vec![
+                // __weak_decode: non-identifying message — "invalid
+                // utf-8" appears in many Rust programs and does not
+                // fingerprint litmask.
+                r#"panic!("invalid utf-8")"#,
+            ],
+        ),
         (
             format!("{manifest}/src/lib.rs"),
             vec![
