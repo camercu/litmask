@@ -12,6 +12,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+use aes_gcm::{Aes256Gcm, Nonce as AesNonce};
 use chacha20poly1305::aead::{Aead, KeyInit, generic_array::GenericArray};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 // Pull the wire-format constants from `litmask-internal` rather than
@@ -39,6 +40,23 @@ fn build_wrapper(
     let mut out = [0u8; WRAPPER_LEN];
     out[0] = FormatVersion::CURRENT.to_byte();
     out[1] = CipherId::ChaCha20Poly1305.to_byte();
+    out[2..HEADER_LEN].copy_from_slice(nonce);
+    out[HEADER_LEN..].copy_from_slice(&body);
+    out
+}
+
+fn build_aes_gcm_wrapper(
+    unlock_key: &[u8; KEY_LEN],
+    mask_key: &[u8; KEY_LEN],
+    nonce: &[u8; NONCE_LEN],
+) -> [u8; WRAPPER_LEN] {
+    let cipher = Aes256Gcm::new(GenericArray::from_slice(unlock_key));
+    let body = cipher
+        .encrypt(AesNonce::from_slice(nonce), mask_key.as_slice())
+        .expect("encrypt");
+    let mut out = [0u8; WRAPPER_LEN];
+    out[0] = FormatVersion::CURRENT.to_byte();
+    out[1] = CipherId::Aes256Gcm.to_byte();
     out[2..HEADER_LEN].copy_from_slice(nonce);
     out[HEADER_LEN..].copy_from_slice(&body);
     out
@@ -109,6 +127,66 @@ fn end_to_end_happy_path_rebinds_wrapper_and_updates_config() {
     let recovered = cipher
         .decrypt(Nonce::from_slice(&nonce), &new_wrapper[HEADER_LEN..])
         .expect("decrypt under rebound unlock_key");
+    assert_eq!(recovered, mask.to_vec());
+}
+
+#[test]
+fn end_to_end_aes_gcm_wrapper_rebinds_successfully() {
+    let dir = TempDir::new().expect("tempdir");
+    let binary_path = dir.path().join("binary");
+    let config_path = dir.path().join("litmask.config");
+    let unlock = [0x11u8; KEY_LEN];
+    let mask = [0x22u8; KEY_LEN];
+    let nonce = [0x33u8; NONCE_LEN];
+    let wrapper = build_aes_gcm_wrapper(&unlock, &mask, &nonce);
+    let locator: [u8; NONCE_LEN] = wrapper[..NONCE_LEN].try_into().unwrap();
+
+    let mut bytes = vec![0u8; 64];
+    bytes.extend_from_slice(&wrapper);
+    bytes.extend(vec![0u8; 64]);
+    fs::write(&binary_path, &bytes).expect("write binary");
+    fs::write(
+        &config_path,
+        format!(
+            "# fixture\nunlock_key = \"{}\"\nlocator = \"{}\"\nlength = {WRAPPER_LEN}\n",
+            base64url::encode(&unlock),
+            base64url::encode(&locator),
+        ),
+    )
+    .expect("write config");
+
+    let out = Command::new(cli_binary())
+        .args([
+            "bind",
+            binary_path.to_str().unwrap(),
+            "--config",
+            config_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn cli");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "aes-gcm bind must exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let new_config = fs::read_to_string(&config_path).expect("read rebound config");
+    let table: toml::Table = new_config.parse().expect("parse rebound config");
+    let new_unlock_b64 = table.get("unlock_key").unwrap().as_str().unwrap();
+    let new_unlock_bytes = base64url::decode(new_unlock_b64).expect("decode unlock_key");
+    let new_unlock: [u8; KEY_LEN] = new_unlock_bytes.try_into().unwrap();
+
+    let binary_after = fs::read(&binary_path).expect("read rebound binary");
+    let offset = binary_after
+        .windows(NONCE_LEN)
+        .position(|w| w == locator)
+        .expect("locator preserved across rebind");
+    let new_wrapper = &binary_after[offset..offset + WRAPPER_LEN];
+    let cipher = Aes256Gcm::new(GenericArray::from_slice(&new_unlock));
+    let recovered = cipher
+        .decrypt(AesNonce::from_slice(&nonce), &new_wrapper[HEADER_LEN..])
+        .expect("decrypt aes-gcm under rebound unlock_key");
     assert_eq!(recovered, mask.to_vec());
 }
 
