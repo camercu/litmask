@@ -16,7 +16,7 @@
 //!    structurally enforced because the shell cannot start writing
 //!    until the plan succeeds.
 //!
-//! 2. **Commit plan ([`plan_posix_commit`]):** another pure
+//! 2. **Commit plan ([`plan_commit`]):** another pure
 //!    function that turns the bind plan's payload into a
 //!    `Vec<Operation>` whose order encodes the atomic commit protocol.
 //!    A unit test pins this order at the value level so a future
@@ -56,7 +56,7 @@ use zeroize::Zeroizing;
 #[derive(Debug)]
 pub(crate) enum BindOutcome {
     /// Bind plan succeeded. `Commit` is the input to the commit
-    /// planner ([`plan_posix_commit`]).
+    /// planner ([`plan_commit`]).
     Success(Commit),
     /// Locator not present in the binary.
     NotFound,
@@ -452,7 +452,7 @@ pub(crate) enum Operation {
 /// byte-identical operation list out. The unit tests pin the
 /// step ordering at the value level so a future bug that swaps
 /// fsync and rename surfaces in CI.
-pub(crate) fn plan_posix_commit(
+pub(crate) fn plan_commit(
     binary_path: &Path,
     new_binary: Vec<u8>,
     config_path: &Path,
@@ -605,7 +605,7 @@ pub(crate) fn run(
     let outcome = plan_bind(&config_text, &binary_bytes, salt_b64, &machine_id);
 
     if let BindOutcome::Success(commit) = &outcome {
-        let plan = plan_posix_commit(
+        let plan = plan_commit(
             binary_path,
             commit.new_binary_bytes.clone(),
             config_path,
@@ -886,11 +886,11 @@ mod tests {
         assert_eq!(BindOutcome::ConfigMalformed.stdout_tag(), None);
     }
 
-    // ── plan_posix_commit: §1.7.7 ordering as data ───────────
+    // ── plan_commit: §1.7.7 ordering as data ───────────
 
     #[test]
-    fn plan_posix_commit_emits_eight_ops_in_spec_order() {
-        let plan = plan_posix_commit(
+    fn plan_commit_emits_eight_ops_in_spec_order() {
+        let plan = plan_commit(
             Path::new("/path/to/binary"),
             b"new binary bytes".to_vec(),
             Path::new("/path/to/litmask.config"),
@@ -972,12 +972,12 @@ mod tests {
     }
 
     #[test]
-    fn plan_posix_commit_tempfile_and_target_share_parent_dir() {
+    fn plan_commit_tempfile_and_target_share_parent_dir() {
         // Same-dir is mandatory for rename(2) to be atomic. Pin
         // it at the plan level so a future refactor that moved
         // the tempfile (e.g., to /tmp) fails the unit test before
         // shipping.
-        let plan = plan_posix_commit(
+        let plan = plan_commit(
             Path::new("/x/binary"),
             vec![],
             Path::new("/x/litmask.config"),
@@ -1018,8 +1018,8 @@ mod tests {
     }
 
     #[test]
-    fn plan_posix_commit_omits_parent_fsync_when_config_has_no_parent() {
-        let plan = plan_posix_commit(
+    fn plan_commit_omits_parent_fsync_when_config_has_no_parent() {
+        let plan = plan_commit(
             Path::new("binary"),
             vec![],
             Path::new("config"),
@@ -1047,7 +1047,7 @@ mod tests {
         fs::write(&binary, b"old binary contents").unwrap();
         fs::write(&config, b"old config contents").unwrap();
 
-        let plan = plan_posix_commit(
+        let plan = plan_commit(
             &binary,
             b"new binary contents".to_vec(),
             &config,
@@ -1185,7 +1185,7 @@ mod tests {
     #[test]
     fn recording_fs_captures_full_commit_sequence() {
         let fs = RecordingCommitFs::new();
-        let plan = plan_posix_commit(
+        let plan = plan_commit(
             Path::new("/bin"),
             b"binary".to_vec(),
             Path::new("/cfg"),
@@ -1206,7 +1206,7 @@ mod tests {
     #[test]
     fn recording_fs_failure_at_config_temp_write_stops_immediately() {
         let fs = RecordingCommitFs::failing_at(0);
-        let plan = plan_posix_commit(
+        let plan = plan_commit(
             Path::new("/bin"),
             b"binary".to_vec(),
             Path::new("/cfg"),
@@ -1220,7 +1220,7 @@ mod tests {
     #[test]
     fn recording_fs_failure_at_binary_temp_write_stops_before_rename() {
         let fs = RecordingCommitFs::failing_at(2);
-        let plan = plan_posix_commit(
+        let plan = plan_commit(
             Path::new("/bin"),
             b"binary".to_vec(),
             Path::new("/cfg"),
@@ -1236,7 +1236,7 @@ mod tests {
     #[test]
     fn recording_fs_failure_at_binary_rename_triggers_cleanup() {
         let fs = RecordingCommitFs::failing_at(4);
-        let plan = plan_posix_commit(
+        let plan = plan_commit(
             Path::new("/bin"),
             b"binary".to_vec(),
             Path::new("/cfg"),
@@ -1254,7 +1254,7 @@ mod tests {
     #[test]
     fn recording_fs_failure_at_binary_fsync_stops_before_rename() {
         let fs = RecordingCommitFs::failing_at(3);
-        let plan = plan_posix_commit(
+        let plan = plan_commit(
             Path::new("/bin"),
             b"binary".to_vec(),
             Path::new("/cfg"),
