@@ -3,10 +3,8 @@
 //! Intended use is a single-line `build.rs` in any crate that masks
 //! string literals:
 //!
-//! ```ignore
-//! fn main() {
-//!     litmask_build::emit();
-//! }
+//! ```no_run
+//! litmask_build::emit();
 //! ```
 //!
 //! `emit()` generates the per-build random seed, derives the

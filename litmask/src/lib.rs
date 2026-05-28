@@ -9,14 +9,12 @@
 //! (the default [`EnvVarProvider`] reads `LITMASK_UNLOCK_KEY` from
 //! the environment).
 //!
-//! ```ignore
-//! use litmask::{init, mask};
-//!
-//! fn main() -> Result<(), litmask::InitError> {
-//!     litmask::init!()?;
-//!     println!("{}", mask!("sensitive data"));
-//!     Ok(())
-//! }
+//! ```no_run
+//! # fn main() -> Result<(), litmask::InitError> {
+//! litmask::init!()?;
+//! println!("{}", litmask::mask!("sensitive data"));
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! ## Security levels
@@ -79,9 +77,13 @@
 //! and cannot inhabit `'static` storage. If a call site needs
 //! `&str`, bind once:
 //!
-//! ```ignore
-//! let secret = mask!("my secret");
+//! ```no_run
+//! # fn main() -> Result<(), litmask::InitError> {
+//! # litmask::init!()?;
+//! let secret = litmask::mask!("my secret");
 //! let s: &str = &secret;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! When the threat model permits weaker guarantees (no AEAD,
