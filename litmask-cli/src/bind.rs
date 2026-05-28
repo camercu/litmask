@@ -158,8 +158,11 @@ pub(crate) fn plan_bind(
     let mask_key: [u8; KEY_LEN] = mask_key.as_slice().try_into().expect("KEY_LEN bytes");
     let mask_key = Zeroizing::new(mask_key);
 
-    let new_unlock_key =
-        litmask_internal::derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id.as_bytes(), &salt);
+    let new_unlock_key = Zeroizing::new(litmask_internal::derive_hw_key(
+        HW_ID_DERIVATION_CONTEXT,
+        machine_id.as_bytes(),
+        &salt,
+    ));
 
     // Re-encrypt mask_key under the new unlock_key, reusing the
     // existing nonce. Reuse is safe: the (key, nonce) pair never
@@ -419,6 +422,7 @@ pub(crate) fn commit(
     // Crash before this rename leaves both originals intact (retryable).
     if let Err(e) = commit_fs.rename(&temp_binary, binary_path) {
         commit_fs.remove_file(&temp_binary);
+        commit_fs.remove_file(&temp_config);
         return Err(e);
     }
 
@@ -1055,6 +1059,22 @@ mod tests {
         assert!(matches!(&fsync_dirs[1], FsCall::SyncDirBestEffort(p) if p == Path::new("/b")));
     }
 
+    #[test]
+    fn commit_fsyncs_only_config_parent_when_binary_has_no_parent() {
+        let fs = RecordingCommitFs::new();
+        commit(Path::new(""), Path::new("/x/cfg"), &test_payload(), &fs)
+            .expect("no failures injected");
+        let fsync_dirs: Vec<_> = fs
+            .calls()
+            .iter()
+            .filter_map(|c| match c {
+                FsCall::SyncDirBestEffort(p) => Some(p.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fsync_dirs, vec![PathBuf::from("/x")]);
+    }
+
     #[rstest]
     #[case::config_write(0, 1)]
     #[case::binary_write(2, 3)]
@@ -1071,14 +1091,22 @@ mod tests {
     }
 
     #[rstest]
-    #[case::binary_rename(5)]
-    #[case::config_rename(6)]
-    fn commit_rename_failure_cleans_up_tempfile(#[case] fail_at: usize) {
+    #[case::binary_rename(5, 2)]
+    #[case::config_rename(6, 1)]
+    fn commit_rename_failure_cleans_up_tempfiles(
+        #[case] fail_at: usize,
+        #[case] expected_removals: usize,
+    ) {
         let fs = RecordingCommitFs::failing_at(fail_at);
         commit(Path::new("/bin"), Path::new("/cfg"), &test_payload(), &fs).unwrap_err();
-        assert!(
-            matches!(fs.calls().last(), Some(FsCall::RemoveFile(_))),
-            "must clean up orphaned tempfile after rename failure",
+        let removals = fs
+            .calls()
+            .iter()
+            .filter(|c| matches!(c, FsCall::RemoveFile(_)))
+            .count();
+        assert_eq!(
+            removals, expected_removals,
+            "must clean up all orphaned tempfiles after rename failure",
         );
     }
 }
