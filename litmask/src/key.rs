@@ -41,33 +41,15 @@ impl PartialEq for UnlockKey {
         // XOR each 8-byte chunk, saturating-add the results. Any
         // differing byte produces a non-zero chunk that can never
         // wrap back to zero through saturating addition.
-        let mut acc = 0u64;
-        let mut i = 0;
-        while i < KEY_LEN {
-            let a = u64::from_ne_bytes([
-                self.0[i],
-                self.0[i + 1],
-                self.0[i + 2],
-                self.0[i + 3],
-                self.0[i + 4],
-                self.0[i + 5],
-                self.0[i + 6],
-                self.0[i + 7],
-            ]);
-            let b = u64::from_ne_bytes([
-                other.0[i],
-                other.0[i + 1],
-                other.0[i + 2],
-                other.0[i + 3],
-                other.0[i + 4],
-                other.0[i + 5],
-                other.0[i + 6],
-                other.0[i + 7],
-            ]);
-            acc = acc.saturating_add(a ^ b);
-            i += 8;
-        }
-        acc == 0
+        self.0
+            .chunks_exact(8)
+            .zip(other.0.chunks_exact(8))
+            .fold(0u64, |acc, (a, b)| {
+                let a = u64::from_ne_bytes(a.try_into().unwrap());
+                let b = u64::from_ne_bytes(b.try_into().unwrap());
+                acc.saturating_add(a ^ b)
+            })
+            == 0
     }
 }
 
