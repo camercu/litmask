@@ -16,6 +16,9 @@ use crate::internal::{KEY_LEN, base64url};
 /// `Clone` is intentionally not implemented; duplicating a
 /// zero-on-drop secret should be opt-in and obvious at the call site.
 ///
+/// Equality comparison is constant-time (branchless XOR-chunk
+/// accumulation) to prevent timing side-channels.
+///
 /// # Examples
 ///
 /// ```
@@ -29,6 +32,46 @@ use crate::internal::{KEY_LEN, base64url};
 /// ```
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct UnlockKey([u8; KEY_LEN]);
+
+// KEY_LEN (32) divides evenly into 4 × u64 chunks.
+const _: () = assert!(KEY_LEN % 8 == 0);
+
+impl PartialEq for UnlockKey {
+    fn eq(&self, other: &Self) -> bool {
+        // XOR each 8-byte chunk, saturating-add the results. Any
+        // differing byte produces a non-zero chunk that can never
+        // wrap back to zero through saturating addition.
+        let mut acc = 0u64;
+        let mut i = 0;
+        while i < KEY_LEN {
+            let a = u64::from_ne_bytes([
+                self.0[i],
+                self.0[i + 1],
+                self.0[i + 2],
+                self.0[i + 3],
+                self.0[i + 4],
+                self.0[i + 5],
+                self.0[i + 6],
+                self.0[i + 7],
+            ]);
+            let b = u64::from_ne_bytes([
+                other.0[i],
+                other.0[i + 1],
+                other.0[i + 2],
+                other.0[i + 3],
+                other.0[i + 4],
+                other.0[i + 5],
+                other.0[i + 6],
+                other.0[i + 7],
+            ]);
+            acc = acc.saturating_add(a ^ b);
+            i += 8;
+        }
+        acc == 0
+    }
+}
+
+impl Eq for UnlockKey {}
 
 impl UnlockKey {
     /// Decode a base64url-encoded 32-byte key. Padded inputs and any
@@ -152,6 +195,29 @@ mod tests {
     }
 
     #[test]
+    fn equal_keys_are_equal() {
+        let a = UnlockKey([0x42u8; KEY_LEN]);
+        let b = UnlockKey([0x42u8; KEY_LEN]);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn different_keys_are_not_equal() {
+        let a = UnlockKey([0x42u8; KEY_LEN]);
+        let b = UnlockKey([0x43u8; KEY_LEN]);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn single_bit_difference_detected() {
+        let a = UnlockKey([0x00u8; KEY_LEN]);
+        let mut bytes = [0x00u8; KEY_LEN];
+        bytes[KEY_LEN - 1] = 0x01;
+        let b = UnlockKey(bytes);
+        assert_ne!(a, b);
+    }
+
+    #[test]
     fn debug_does_not_print_key_material() {
         let bytes = [0xCAu8; KEY_LEN];
         let key = UnlockKey(bytes);
@@ -191,6 +257,16 @@ mod tests {
         // guarantees the candidate input is valid base64url, so the
         // failure mode under test is specifically the length check,
         // not the alphabet check.
+        #[test]
+        fn proptest_partial_eq_matches_iff_bytes_equal(
+            a in proptest::array::uniform32(proptest::num::u8::ANY),
+            b in proptest::array::uniform32(proptest::num::u8::ANY),
+        ) {
+            let ka = UnlockKey(a);
+            let kb = UnlockKey(b);
+            proptest::prop_assert_eq!(ka == kb, a == b);
+        }
+
         #[test]
         fn proptest_from_base64url_rejects_wrong_length(
             bytes in proptest::collection::vec(proptest::num::u8::ANY, 0..=64)
