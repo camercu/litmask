@@ -176,44 +176,30 @@ pub fn __weak_decode<const N: usize>(
     })
 }
 
-/// Per-call-site cache type for `weak_mask!()`. The proc-macro
-/// emits a `static` of this type at each invocation site; the first
-/// runtime access through [`__weak_decode`] populates it with the
-/// decoded `String`, and subsequent accesses return a borrow.
+/// Per-call-site once-init cache for `weak_mask!()` expansions.
+///
+/// Generic over the stored type `T`. The proc-macro emits a `static`
+/// of the appropriate alias at each invocation site; the first
+/// runtime access populates it, and subsequent accesses borrow.
 ///
 /// Two backends, selected by feature flag:
 ///
-/// - `feature = "std"` → `std::sync::OnceLock<String>`. Standard
-///   library primitive, optimal under hosted targets.
-/// - `not(feature = "std")` → `once_cell::race::OnceBox<String>`.
-///   The same `race::OnceBox` primitive the runtime's global
-///   `MASK_KEY` cell uses under `no_std + alloc`.
+/// - `feature = "std"` → `std::sync::OnceLock<T>`.
+/// - `not(feature = "std")` → `once_cell::race::OnceBox<T>`.
 ///
 /// The two backends have differently-shaped `get_or_init` APIs
 /// (`OnceLock` accepts `FnOnce() -> T`; `OnceBox` accepts `FnOnce()
-/// -> Box<T>`). The shim wraps both behind a unified
-/// `FnOnce() -> String` interface so callers don't have to feature-
-/// gate at every call site.
-///
-/// # Why a struct and not a type alias
-///
-/// A bare `pub type WeakCell = <backend>` would force callers (the
-/// emitted `weak_mask!()` expansion) to know the backend's
-/// `get_or_init` shape per feature. The struct wrapper localizes
-/// that conditional inside this module so the proc-macro emits one
-/// shape regardless of which feature is active.
+/// -> Box<T>`). The struct wraps both behind a unified interface so
+/// callers and proc-macro emissions are feature-flag-free.
 #[doc(hidden)]
-pub struct WeakCell {
+pub struct WeakCache<T> {
     #[cfg(feature = "std")]
-    inner: std::sync::OnceLock<String>,
+    inner: std::sync::OnceLock<T>,
     #[cfg(not(feature = "std"))]
-    inner: once_cell::race::OnceBox<String>,
+    inner: once_cell::race::OnceBox<T>,
 }
 
-impl WeakCell {
-    /// Construct an empty cell. `const fn` so the proc-macro can
-    /// emit `static __WEAK_CACHE: WeakCell = WeakCell::new();`
-    /// without a lazy initializer.
+impl<T> WeakCache<T> {
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -224,70 +210,39 @@ impl WeakCell {
         }
     }
 
-    /// Initialize the cell on first call; return a `&str` borrowing
-    /// the cached `String`. The closure runs at most once even
-    /// under concurrent first-callers (`OnceLock` / `OnceBox` both
-    /// guarantee this).
-    pub fn get_or_init<F: FnOnce() -> String>(&'static self, f: F) -> &'static str {
+    pub fn get_or_init<F: FnOnce() -> T>(&'static self, f: F) -> &'static T::Target
+    where
+        T: core::ops::Deref,
+    {
         #[cfg(feature = "std")]
         {
-            self.inner.get_or_init(f).as_str()
+            self.inner.get_or_init(f)
         }
         #[cfg(not(feature = "std"))]
         {
-            self.inner
-                .get_or_init(|| alloc::boxed::Box::new(f()))
-                .as_str()
+            self.inner.get_or_init(|| alloc::boxed::Box::new(f()))
         }
     }
 }
 
-impl Default for WeakCell {
+impl<T> Default for WeakCache<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Per-call-site cache for `weak_mask!(b"...")`. Same architecture as
-/// [`WeakCell`] but stores `Vec<u8>` and returns `&'static [u8]`.
+/// `weak_mask!("...")` cache — stores `String`, returns `&'static str`.
 #[doc(hidden)]
-pub struct WeakByteCell {
-    #[cfg(feature = "std")]
-    inner: std::sync::OnceLock<alloc::vec::Vec<u8>>,
-    #[cfg(not(feature = "std"))]
-    inner: once_cell::race::OnceBox<alloc::vec::Vec<u8>>,
-}
+pub type WeakCell = WeakCache<String>;
 
-impl WeakByteCell {
-    #[must_use]
-    pub const fn new() -> Self {
-        Self {
-            #[cfg(feature = "std")]
-            inner: std::sync::OnceLock::new(),
-            #[cfg(not(feature = "std"))]
-            inner: once_cell::race::OnceBox::new(),
-        }
-    }
+/// `weak_mask!(b"...")` cache — stores `Vec<u8>`, returns `&'static [u8]`.
+#[doc(hidden)]
+pub type WeakByteCell = WeakCache<alloc::vec::Vec<u8>>;
 
-    pub fn get_or_init<F: FnOnce() -> alloc::vec::Vec<u8>>(&'static self, f: F) -> &'static [u8] {
-        #[cfg(feature = "std")]
-        {
-            self.inner.get_or_init(f).as_slice()
-        }
-        #[cfg(not(feature = "std"))]
-        {
-            self.inner
-                .get_or_init(|| alloc::boxed::Box::new(f()))
-                .as_slice()
-        }
-    }
-}
-
-impl Default for WeakByteCell {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// `weak_mask!(c"...")` cache — stores `CString`, returns `&'static CStr`.
+#[cfg(feature = "std")]
+#[doc(hidden)]
+pub type WeakCStrCell = WeakCache<std::ffi::CString>;
 
 /// XOR-decode byte-string obfuscated data and cache the result.
 /// Returns `&'static [u8]`. No UTF-8 validation — raw bytes pass
@@ -303,39 +258,6 @@ pub fn __weak_decode_bytes<const N: usize>(
         let obf = core::hint::black_box(&obf[..]);
         crate::internal::xor_cycle(obf, wrapper)
     })
-}
-
-/// Per-call-site cache for `weak_mask!(c"...")`. Stores a `CString`
-/// and returns `&'static CStr`. Only available under the `std`
-/// feature, matching `mask!(c"...")`'s feature gate.
-#[cfg(feature = "std")]
-#[doc(hidden)]
-pub struct WeakCStrCell {
-    inner: std::sync::OnceLock<std::ffi::CString>,
-}
-
-#[cfg(feature = "std")]
-impl WeakCStrCell {
-    #[must_use]
-    pub const fn new() -> Self {
-        Self {
-            inner: std::sync::OnceLock::new(),
-        }
-    }
-
-    pub fn get_or_init<F: FnOnce() -> std::ffi::CString>(
-        &'static self,
-        f: F,
-    ) -> &'static std::ffi::CStr {
-        self.inner.get_or_init(f).as_c_str()
-    }
-}
-
-#[cfg(feature = "std")]
-impl Default for WeakCStrCell {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 /// XOR-decode C-string obfuscated data, construct a `CString`, and
