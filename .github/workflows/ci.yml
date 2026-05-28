@@ -229,8 +229,10 @@ jobs:
         with:
           workspaces: ". -> target"
 
-      - name: Build workspace
-        run: cargo build --workspace
+      - name: Build workspace + example
+        run: |
+          cargo build --workspace
+          cargo build --example hello_world
 
       - name: Test CLI
         run: cargo test -p litmask-cli
