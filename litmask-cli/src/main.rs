@@ -1,10 +1,10 @@
 //! `litmask` CLI — companion tool for `bind` and `inspect`.
 //!
 //! Each subcommand lives in a module split into a pure planner
-//! ([`inspect::plan`] / [`bind::plan_bind`] + [`bind::plan_commit`])
-//! and a thin imperative shell (`run`). `main` is responsible only
-//! for argument parsing (via `clap`) and mapping the shell's
-//! `Result<Outcome, ShellError>` to an `ExitCode`.
+//! ([`inspect::plan`] / [`bind::plan_bind`]) and a thin imperative
+//! shell (`run`). `main` is responsible only for argument parsing
+//! (via `clap`) and mapping the shell's `Result<Outcome, ShellError>`
+//! to an `ExitCode`.
 
 use std::path::PathBuf;
 use std::process::ExitCode;

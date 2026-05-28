@@ -6,8 +6,7 @@
 //! can relay it through the environment variable without switching
 //! to `HardwareIdProvider`.
 //!
-//! Functional core / imperative shell split with plan-execute
-//! atomicity:
+//! Functional core / imperative shell split:
 //!
 //! 1. **Plan ([`plan_bind`]):** pure function over (config text,
 //!    binary bytes, salt, machine id). Returns a [`BindOutcome`].
@@ -16,16 +15,11 @@
 //!    structurally enforced because the shell cannot start writing
 //!    until the plan succeeds.
 //!
-//! 2. **Commit plan ([`plan_commit`]):** another pure
-//!    function that turns the bind plan's payload into a
-//!    `Vec<Operation>` whose order encodes the atomic commit protocol.
-//!    A unit test pins this order at the value level so a future
-//!    bug that swaps fsync and rename surfaces in CI rather than
-//!    after a power loss in production.
-//!
-//! 3. **Execute ([`execute`]):** thin imperative loop that applies
-//!    the operations in order. The first failure short-circuits
-//!    with the failing op's index for attribution.
+//! 2. **Commit ([`commit`]):** writes the plan's payload to disk
+//!    via the [`CommitFs`] trait using the POSIX atomic-rename
+//!    protocol (write tempfile → fsync → rename). The trait seam
+//!    lets tests inject failures and verify ordering without
+//!    touching the filesystem.
 
 use std::fs;
 use std::io::{self, Write};
@@ -45,8 +39,8 @@ use zeroize::Zeroizing;
 /// stdout + exit code.
 #[derive(Debug)]
 pub(crate) enum BindOutcome {
-    /// Bind plan succeeded. `Commit` is the input to the commit
-    /// planner ([`plan_commit`]).
+    /// Bind plan succeeded. `Commit` carries the payload for
+    /// [`commit`].
     Success(Commit),
     /// Locator not present in the binary.
     NotFound,
@@ -251,16 +245,16 @@ fn render_config(unlock_key: &[u8; KEY_LEN], locator: &[u8; NONCE_LEN]) -> Strin
 }
 
 /// Filesystem operations required by the atomic commit
-/// protocol. [`execute`] dispatches each [`Operation`] through this
-/// trait, which lets the production path use real I/O
-/// ([`StdCommitFs`]) while tests inject a recording double
-/// (`RecordingCommitFs` in the test module) for failure-injection
-/// and sequence verification without touching the filesystem.
+/// protocol. [`commit`] dispatches through this trait, which lets
+/// the production path use real I/O ([`StdCommitFs`]) while tests
+/// inject a recording double (`RecordingCommitFs` in the test
+/// module) for failure-injection and sequence verification without
+/// touching the filesystem.
 ///
 /// Platform-specific implementations (e.g. Windows
 /// `MoveFileExW(MOVEFILE_WRITE_THROUGH)`) implement this trait
 /// with the platform's atomicity guarantees; all commit-protocol
-/// logic in [`execute`] stays platform-agnostic.
+/// logic in [`commit`] stays platform-agnostic.
 pub(crate) trait CommitFs {
     fn write_file(&self, path: &Path, bytes: &[u8]) -> io::Result<()>;
     fn sync_file(&self, path: &Path) -> io::Result<()>;
@@ -390,152 +384,54 @@ fn win_rename_write_through(from: &Path, to: &Path) -> io::Result<()> {
     }
 }
 
-/// One step of the atomic commit protocol. The plan is a
-/// `Vec<Operation>`; the executor applies them in order, surfacing
-/// the first failure as the bind result. Variants are deliberately
-/// narrow so the commit ordering is a structural property of the
-/// plan rather than a property of imperative flow.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Operation {
-    /// Truncate `path` to zero and write `bytes`.
-    WriteFile { path: PathBuf, bytes: Vec<u8> },
-    /// Open `path`, call `sync_all()`. Hard error on failure; the
-    /// protocol depends on the file being durable before
-    /// proceeding.
-    FsyncFile { path: PathBuf },
-    /// `rename(from, to)`. POSIX atomic same-filesystem. Cleanup
-    /// (removing the orphaned tempfile if rename fails) is the
-    /// executor's responsibility — see `execute`.
-    Rename { from: PathBuf, to: PathBuf },
-    /// Copy filesystem permissions from `from` to `to`. Inserted
-    /// after writing the binary tempfile so the replacement inherits
-    /// the original's mode bits (notably the execute bit).
-    CopyPermissions { from: PathBuf, to: PathBuf },
-    /// `fsync` on a directory handle. Best-effort: platforms that
-    /// refuse a directory fsync (some FUSE mounts, certain BSD
-    /// configurations) are tolerated rather than aborting the
-    /// commit — the prior Rename already provides local
-    /// atomicity. Failure to `sync_all` the parent dir is OK; we
-    /// log a debug note and move on.
-    FsyncDirBestEffort { path: PathBuf },
-}
-
-/// Plan the POSIX atomic commit. Pure: same inputs in,
-/// byte-identical operation list out. The unit tests pin the
-/// step ordering at the value level so a future bug that swaps
-/// fsync and rename surfaces in CI.
-pub(crate) fn plan_commit(
+/// Atomically commit the bind payload to disk. Follows the
+/// write-tempfile → fsync → rename protocol; same-dir tempfiles
+/// ensure `rename(2)` stays atomic on POSIX.
+///
+/// On rename failure the orphaned tempfile is best-effort cleaned
+/// up before returning the error.
+pub(crate) fn commit(
     binary_path: &Path,
-    new_binary: Vec<u8>,
     config_path: &Path,
-    new_config: String,
-) -> Vec<Operation> {
+    payload: &Commit,
+    commit_fs: &dyn CommitFs,
+) -> io::Result<()> {
     let temp_config = tempfile_alongside(config_path);
     let temp_binary = tempfile_alongside(binary_path);
-    let config_parent = config_path.parent().map(Path::to_path_buf);
-    let binary_parent = binary_path.parent().map(Path::to_path_buf);
-    let mut plan = vec![
-        // Step 2: write new config to a same-dir tempfile.
-        // Same-dir is mandatory for `rename(2)` to be atomic
-        // (cross-filesystem renames degrade to copy+unlink).
-        Operation::WriteFile {
-            path: temp_config.clone(),
-            bytes: new_config.into_bytes(),
-        },
-        // Step 3: fsync the config tempfile.
-        Operation::FsyncFile {
-            path: temp_config.clone(),
-        },
-        // Step 4: write new binary to a same-dir tempfile.
-        Operation::WriteFile {
-            path: temp_binary.clone(),
-            bytes: new_binary,
-        },
-        // Step 4b: copy original binary's permissions (execute bit)
-        // to the tempfile before fsync.
-        Operation::CopyPermissions {
-            from: binary_path.to_path_buf(),
-            to: temp_binary.clone(),
-        },
-        // Step 5: fsync the binary tempfile.
-        Operation::FsyncFile {
-            path: temp_binary.clone(),
-        },
-        // Step 6: rename temp binary → binary. Crash before this
-        // step leaves both originals intact (retryable).
-        Operation::Rename {
-            from: temp_binary,
-            to: binary_path.to_path_buf(),
-        },
-        // Step 7: rename temp config → config. Crash between
-        // steps 6 and 7 leaves new binary + old config
-        // (inconsistent but documented; recovery = rebind).
-        Operation::Rename {
-            from: temp_config,
-            to: config_path.to_path_buf(),
-        },
-    ];
-    // Step 8: fsync parent directories so renames survive crash.
-    if let Some(parent) = binary_parent {
-        plan.push(Operation::FsyncDirBestEffort { path: parent });
-    }
-    if let Some(parent) = config_parent {
-        // Deduplicate when binary and config share a parent.
-        if plan.last().is_none_or(|op| match op {
-            Operation::FsyncDirBestEffort { path } => path != &parent,
-            _ => true,
-        }) {
-            plan.push(Operation::FsyncDirBestEffort { path: parent });
-        }
-    }
-    plan
-}
 
-/// Failure shape from [`execute`]. `op_index` attributes the
-/// failure to a specific plan step so the operator (or a CI
-/// diagnostic) can identify exactly which boundary was crossed
-/// before the I/O failed.
-#[derive(Debug)]
-pub(crate) struct ExecuteError {
-    pub(crate) op_index: usize,
-    pub(crate) cause: io::Error,
-}
+    commit_fs.write_file(&temp_config, payload.new_config_text.as_bytes())?;
+    commit_fs.sync_file(&temp_config)?;
 
-/// Apply the plan in order. The first operation to fail
-/// short-circuits the execution with the failing index. On
-/// `Rename` failure the orphaned tempfile is best-effort cleaned
-/// up before returning the error — leaving a `.bind-<pid>.tmp`
-/// behind would clutter the operator's working dir without
-/// changing the (binary, config) consistency state.
-pub(crate) fn execute(plan: &[Operation], commit_fs: &dyn CommitFs) -> Result<(), ExecuteError> {
-    for (op_index, op) in plan.iter().enumerate() {
-        match op {
-            Operation::WriteFile { path, bytes } => {
-                commit_fs
-                    .write_file(path, bytes)
-                    .map_err(|cause| ExecuteError { op_index, cause })?;
-            }
-            Operation::FsyncFile { path } => {
-                commit_fs
-                    .sync_file(path)
-                    .map_err(|cause| ExecuteError { op_index, cause })?;
-            }
-            Operation::CopyPermissions { from, to } => {
-                commit_fs
-                    .copy_permissions(from, to)
-                    .map_err(|cause| ExecuteError { op_index, cause })?;
-            }
-            Operation::Rename { from, to } => {
-                if let Err(cause) = commit_fs.rename(from, to) {
-                    commit_fs.remove_file(from);
-                    return Err(ExecuteError { op_index, cause });
-                }
-            }
-            Operation::FsyncDirBestEffort { path } => {
-                commit_fs.sync_dir_best_effort(path);
-            }
-        }
+    commit_fs.write_file(&temp_binary, &payload.new_binary_bytes)?;
+    commit_fs.copy_permissions(binary_path, &temp_binary)?;
+    commit_fs.sync_file(&temp_binary)?;
+
+    // Crash before this rename leaves both originals intact (retryable).
+    if let Err(e) = commit_fs.rename(&temp_binary, binary_path) {
+        commit_fs.remove_file(&temp_binary);
+        return Err(e);
     }
+
+    // Crash between the two renames leaves new binary + old config
+    // (inconsistent but documented; recovery = rebind).
+    if let Err(e) = commit_fs.rename(&temp_config, config_path) {
+        commit_fs.remove_file(&temp_config);
+        return Err(e);
+    }
+
+    // Fsync parent directories so renames survive crash.
+    if let Some(bin_parent) = binary_path.parent() {
+        commit_fs.sync_dir_best_effort(bin_parent);
+        match config_path.parent() {
+            Some(cfg_parent) if cfg_parent != bin_parent => {
+                commit_fs.sync_dir_best_effort(cfg_parent);
+            }
+            _ => {}
+        }
+    } else if let Some(cfg_parent) = config_path.parent() {
+        commit_fs.sync_dir_best_effort(cfg_parent);
+    }
+
     Ok(())
 }
 
@@ -592,14 +488,14 @@ fn resign_macos(_binary_path: &Path) {}
 
 /// Shell-layer failure shapes. These cover the I/O that happens
 /// outside the pure planner (file reads, machine-uid lookup, the
-/// final commit execute). Each maps to a specific exit code at
-/// the CLI top level.
+/// atomic commit). Each maps to a specific exit code at the CLI
+/// top level.
 #[derive(Debug)]
 pub(crate) enum ShellError {
     ConfigUnreadable,
     BinaryUnreadable,
     HardwareIdUnavailable,
-    CommitFailed(ExecuteError),
+    CommitFailed(io::Error),
 }
 
 impl ShellError {
@@ -608,13 +504,13 @@ impl ShellError {
             Self::ConfigUnreadable => "config file is missing or unreadable".to_string(),
             Self::BinaryUnreadable => "target binary is missing or unreadable".to_string(),
             Self::HardwareIdUnavailable => "hardware_id_unavailable".to_string(),
-            Self::CommitFailed(e) => format!("commit failed at op[{}]: {}", e.op_index, e.cause),
+            Self::CommitFailed(e) => format!("commit failed: {e}"),
         }
     }
 }
 
 /// Imperative shell entry point. Reads files + machine-uid, calls
-/// [`plan_bind`], and on Success executes the atomic commit plan.
+/// [`plan_bind`], and on success commits the payload atomically.
 pub(crate) fn run(
     binary_path: &Path,
     config_path: &Path,
@@ -626,18 +522,12 @@ pub(crate) fn run(
 
     let outcome = plan_bind(&config_text, &binary_bytes, salt_b64, &machine_id);
 
-    if let BindOutcome::Success(commit) = &outcome {
-        let plan = plan_commit(
-            binary_path,
-            commit.new_binary_bytes.clone(),
-            config_path,
-            commit.new_config_text.clone(),
-        );
+    if let BindOutcome::Success(payload) = &outcome {
         #[cfg(windows)]
         let commit_fs: &dyn CommitFs = &WindowsCommitFs;
         #[cfg(not(windows))]
         let commit_fs: &dyn CommitFs = &StdCommitFs;
-        execute(&plan, commit_fs).map_err(ShellError::CommitFailed)?;
+        commit(binary_path, config_path, payload, commit_fs).map_err(ShellError::CommitFailed)?;
         resign_macos(binary_path);
     } else if let Some(tag) = outcome.stdout_tag() {
         println!("{tag}");
@@ -941,183 +831,21 @@ mod tests {
         assert_eq!(BindOutcome::ConfigMalformed.stdout_tag(), None);
     }
 
-    // ── plan_commit: §1.7.7 ordering as data ───────────
+    // ── commit: end-to-end on real filesystem (StdCommitFs) ────
 
     #[test]
-    fn plan_commit_emits_eight_ops_in_spec_order() {
-        let plan = plan_commit(
-            Path::new("/path/to/binary"),
-            b"new binary bytes".to_vec(),
-            Path::new("/path/to/litmask.config"),
-            "new config text".to_string(),
-        );
-        // 4 write/fsync + 1 copy_permissions + 2 renames + 1 deduped
-        // parent fsync (binary and config share `/path/to`).
-        assert_eq!(plan.len(), 8);
-
-        // Step 2 — WriteFile(temp_config).
-        let Operation::WriteFile {
-            path: temp_config,
-            bytes: config_bytes,
-        } = &plan[0]
-        else {
-            panic!("step 2 must be WriteFile(temp_config), got {:?}", plan[0]);
-        };
-        assert_eq!(temp_config.parent(), Some(Path::new("/path/to")));
-        let temp_name = temp_config
-            .file_name()
-            .and_then(|n| n.to_str())
-            .expect("temp path file_name str");
-        #[allow(clippy::case_sensitive_file_extension_comparisons)]
-        let temp_name_ok = temp_name.contains(".bind-") && temp_name.ends_with(".tmp");
-        assert!(
-            temp_name_ok,
-            "tempfile name shape mismatch: {temp_config:?}"
-        );
-        assert_eq!(config_bytes.as_slice(), b"new config text");
-
-        // Step 3 — FsyncFile(temp_config).
-        match &plan[1] {
-            Operation::FsyncFile { path } => assert_eq!(path, temp_config),
-            other => panic!("step 3 must be FsyncFile(temp_config), got {other:?}"),
-        }
-
-        // Step 4 — WriteFile(temp_binary).
-        let Operation::WriteFile {
-            path: temp_binary,
-            bytes: binary_bytes,
-        } = &plan[2]
-        else {
-            panic!("step 4 must be WriteFile(temp_binary), got {:?}", plan[2]);
-        };
-        assert_eq!(temp_binary.parent(), Some(Path::new("/path/to")));
-        assert_eq!(binary_bytes.as_slice(), b"new binary bytes");
-
-        // Step 4b — CopyPermissions(binary → temp_binary).
-        match &plan[3] {
-            Operation::CopyPermissions { from, to } => {
-                assert_eq!(from, Path::new("/path/to/binary"));
-                assert_eq!(to, temp_binary);
-            }
-            other => panic!("step 4b must be CopyPermissions(binary → temp_binary), got {other:?}"),
-        }
-
-        // Step 5 — FsyncFile(temp_binary).
-        match &plan[4] {
-            Operation::FsyncFile { path } => assert_eq!(path, temp_binary),
-            other => panic!("step 5 must be FsyncFile(temp_binary), got {other:?}"),
-        }
-
-        // Step 6 — Rename(temp_binary → binary).
-        match &plan[5] {
-            Operation::Rename { from, to } => {
-                assert_eq!(from, temp_binary);
-                assert_eq!(to, Path::new("/path/to/binary"));
-            }
-            other => panic!("step 6 must be Rename(binary), got {other:?}"),
-        }
-
-        // Step 7 — Rename(temp_config → config).
-        match &plan[6] {
-            Operation::Rename { from, to } => {
-                assert_eq!(from, temp_config);
-                assert_eq!(to, Path::new("/path/to/litmask.config"));
-            }
-            other => panic!("step 7 must be Rename(config), got {other:?}"),
-        }
-
-        // Step 8 — FsyncDirBestEffort(shared parent).
-        match &plan[7] {
-            Operation::FsyncDirBestEffort { path } => {
-                assert_eq!(path, Path::new("/path/to"));
-            }
-            other => panic!("step 8 must be FsyncDirBestEffort, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn plan_commit_tempfile_and_target_share_parent_dir() {
-        // Same-dir is mandatory for rename(2) to be atomic. Pin
-        // it at the plan level so a future refactor that moved
-        // the tempfile (e.g., to /tmp) fails the unit test before
-        // shipping.
-        let plan = plan_commit(
-            Path::new("/x/binary"),
-            vec![],
-            Path::new("/x/litmask.config"),
-            String::new(),
-        );
-        let Operation::WriteFile {
-            path: temp_config, ..
-        } = &plan[0]
-        else {
-            panic!()
-        };
-        let Operation::WriteFile {
-            path: temp_binary, ..
-        } = &plan[2]
-        else {
-            panic!()
-        };
-        let Operation::Rename {
-            from: bin_from,
-            to: bin_to,
-        } = &plan[5]
-        else {
-            panic!()
-        };
-        let Operation::Rename {
-            from: cfg_from,
-            to: cfg_to,
-        } = &plan[6]
-        else {
-            panic!()
-        };
-        assert_eq!(temp_config.parent(), Some(Path::new("/x")));
-        assert_eq!(temp_binary.parent(), Some(Path::new("/x")));
-        assert_eq!(cfg_from, temp_config);
-        assert_eq!(cfg_to.parent(), Some(Path::new("/x")));
-        assert_eq!(bin_from, temp_binary);
-        assert_eq!(bin_to.parent(), Some(Path::new("/x")));
-    }
-
-    #[test]
-    fn plan_commit_omits_parent_fsync_when_config_has_no_parent() {
-        let plan = plan_commit(
-            Path::new("binary"),
-            vec![],
-            Path::new("config"),
-            String::new(),
-        );
-        // `Path::new("config").parent()` returns `Some("")`, which
-        // resolves to the empty path. We still emit FsyncDirBestEffort
-        // on it (executor open() of the empty path will fail and the
-        // best-effort branch absorbs it) — but only one of them.
-        assert_eq!(
-            plan.iter()
-                .filter(|op| matches!(op, Operation::FsyncDirBestEffort { .. }))
-                .count(),
-            1,
-        );
-    }
-
-    // ── execute: end-to-end on tempfiles (StdCommitFs) ────────
-
-    #[test]
-    fn execute_writes_binary_and_renames_temp_config() {
+    fn commit_writes_binary_and_config_atomically() {
         let dir = tempfile::TempDir::new().unwrap();
         let binary = dir.path().join("binary");
         let config = dir.path().join("litmask.config");
         fs::write(&binary, b"old binary contents").unwrap();
         fs::write(&config, b"old config contents").unwrap();
 
-        let plan = plan_commit(
-            &binary,
-            b"new binary contents".to_vec(),
-            &config,
-            "new config contents".to_string(),
-        );
-        execute(&plan, &StdCommitFs).expect("execute should succeed");
+        let payload = Commit {
+            new_binary_bytes: b"new binary contents".to_vec(),
+            new_config_text: "new config contents".to_string(),
+        };
+        commit(&binary, &config, &payload, &StdCommitFs).expect("commit should succeed");
 
         assert_eq!(fs::read(&binary).unwrap(), b"new binary contents");
         assert_eq!(fs::read(&config).unwrap(), b"new config contents");
@@ -1128,42 +856,7 @@ mod tests {
         assert_eq!(remaining.len(), 2);
     }
 
-    #[test]
-    fn execute_reports_op_index_of_first_failure() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let plan = vec![
-            Operation::WriteFile {
-                path: dir.path().join("a"),
-                bytes: b"a".to_vec(),
-            },
-            Operation::FsyncFile {
-                path: dir.path().join("does-not-exist"),
-            },
-        ];
-        let err = execute(&plan, &StdCommitFs).expect_err("op[1] must fail");
-        assert_eq!(err.op_index, 1);
-    }
-
-    #[test]
-    fn execute_cleans_up_tempfile_on_rename_failure() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let temp = dir.path().join(".litmask.config.bind-1.tmp");
-        let nonexistent_dest = dir.path().join("subdir-not-created").join("config");
-        fs::write(&temp, b"orphan").unwrap();
-        let plan = vec![Operation::Rename {
-            from: temp.clone(),
-            to: nonexistent_dest,
-        }];
-        let err =
-            execute(&plan, &StdCommitFs).expect_err("rename into nonexistent subdir must fail");
-        assert_eq!(err.op_index, 0);
-        assert!(
-            !temp.exists(),
-            "executor must clean up orphaned tempfile after rename failure",
-        );
-    }
-
-    // ── execute: RecordingCommitFs (failure injection) ───────
+    // ── commit: RecordingCommitFs (ordering + failure injection) ──
 
     use std::cell::RefCell;
 
@@ -1255,16 +948,18 @@ mod tests {
         }
     }
 
+    fn test_payload() -> Commit {
+        Commit {
+            new_binary_bytes: b"binary".to_vec(),
+            new_config_text: "config".to_string(),
+        }
+    }
+
     #[test]
-    fn recording_fs_captures_full_commit_sequence() {
+    fn commit_sequence_matches_atomic_rename_protocol() {
         let fs = RecordingCommitFs::new();
-        let plan = plan_commit(
-            Path::new("/bin"),
-            b"binary".to_vec(),
-            Path::new("/cfg"),
-            "config".to_string(),
-        );
-        execute(&plan, &fs).expect("no failures injected");
+        commit(Path::new("/bin"), Path::new("/cfg"), &test_payload(), &fs)
+            .expect("no failures injected");
         let calls = fs.calls();
         assert_eq!(calls.len(), 8);
         assert!(matches!(&calls[0], FsCall::WriteFile(p) if p != Path::new("/cfg")));
@@ -1278,68 +973,128 @@ mod tests {
     }
 
     #[test]
-    fn recording_fs_failure_at_config_temp_write_stops_immediately() {
+    fn commit_tempfiles_share_parent_with_targets() {
+        let fs = RecordingCommitFs::new();
+        commit(
+            Path::new("/x/binary"),
+            Path::new("/x/litmask.config"),
+            &test_payload(),
+            &fs,
+        )
+        .expect("no failures injected");
+        let calls = fs.calls();
+        let write_parents: Vec<_> = calls
+            .iter()
+            .filter_map(|c| match c {
+                FsCall::WriteFile(p) => p.parent().map(Path::to_path_buf),
+                _ => None,
+            })
+            .collect();
+        let rename_parents: Vec<_> = calls
+            .iter()
+            .filter_map(|c| match c {
+                FsCall::Rename { to, .. } => to.parent().map(Path::to_path_buf),
+                _ => None,
+            })
+            .collect();
+        for (w, r) in write_parents.iter().zip(&rename_parents) {
+            assert_eq!(
+                w, r,
+                "tempfile and target must share parent for atomic rename"
+            );
+        }
+    }
+
+    #[test]
+    fn commit_deduplicates_parent_fsync_when_same_dir() {
+        let fs = RecordingCommitFs::new();
+        commit(
+            Path::new("/x/bin"),
+            Path::new("/x/cfg"),
+            &test_payload(),
+            &fs,
+        )
+        .expect("no failures injected");
+        let fsync_count = fs
+            .calls()
+            .iter()
+            .filter(|c| matches!(c, FsCall::SyncDirBestEffort(_)))
+            .count();
+        assert_eq!(fsync_count, 1);
+    }
+
+    #[test]
+    fn commit_fsyncs_both_parents_when_different_dirs() {
+        let fs = RecordingCommitFs::new();
+        commit(
+            Path::new("/a/bin"),
+            Path::new("/b/cfg"),
+            &test_payload(),
+            &fs,
+        )
+        .expect("no failures injected");
+        let fsync_dirs: Vec<_> = fs
+            .calls()
+            .iter()
+            .filter(|c| matches!(c, FsCall::SyncDirBestEffort(_)))
+            .cloned()
+            .collect();
+        assert_eq!(fsync_dirs.len(), 2);
+        assert!(matches!(&fsync_dirs[0], FsCall::SyncDirBestEffort(p) if p == Path::new("/a")));
+        assert!(matches!(&fsync_dirs[1], FsCall::SyncDirBestEffort(p) if p == Path::new("/b")));
+    }
+
+    #[test]
+    fn commit_failure_at_config_write_stops_immediately() {
         let fs = RecordingCommitFs::failing_at(0);
-        let plan = plan_commit(
-            Path::new("/bin"),
-            b"binary".to_vec(),
-            Path::new("/cfg"),
-            "config".to_string(),
-        );
-        let err = execute(&plan, &fs).expect_err("op 0 injected");
-        assert_eq!(err.op_index, 0);
+        commit(Path::new("/bin"), Path::new("/cfg"), &test_payload(), &fs)
+            .expect_err("call 0 injected");
         assert_eq!(fs.calls().len(), 1, "must stop after first failure");
     }
 
     #[test]
-    fn recording_fs_failure_at_binary_temp_write_stops_before_rename() {
+    fn commit_failure_at_binary_write_stops_before_rename() {
         let fs = RecordingCommitFs::failing_at(2);
-        let plan = plan_commit(
-            Path::new("/bin"),
-            b"binary".to_vec(),
-            Path::new("/cfg"),
-            "config".to_string(),
-        );
-        let err = execute(&plan, &fs).expect_err("op 2 injected");
-        assert_eq!(err.op_index, 2);
+        commit(Path::new("/bin"), Path::new("/cfg"), &test_payload(), &fs)
+            .expect_err("call 2 injected");
         let calls = fs.calls();
         assert_eq!(calls.len(), 3);
         assert!(!calls.iter().any(|c| matches!(c, FsCall::Rename { .. })));
     }
 
     #[test]
-    fn recording_fs_failure_at_binary_rename_triggers_cleanup() {
-        let fs = RecordingCommitFs::failing_at(5);
-        let plan = plan_commit(
-            Path::new("/bin"),
-            b"binary".to_vec(),
-            Path::new("/cfg"),
-            "config".to_string(),
-        );
-        let err = execute(&plan, &fs).expect_err("binary rename injected");
-        assert_eq!(err.op_index, 5);
-        let calls = fs.calls();
-        assert!(
-            matches!(calls.last(), Some(FsCall::RemoveFile(_))),
-            "executor must attempt tempfile cleanup after rename failure",
-        );
-    }
-
-    #[test]
-    fn recording_fs_failure_at_binary_fsync_stops_before_rename() {
+    fn commit_failure_at_binary_fsync_stops_before_rename() {
         let fs = RecordingCommitFs::failing_at(4);
-        let plan = plan_commit(
-            Path::new("/bin"),
-            b"binary".to_vec(),
-            Path::new("/cfg"),
-            "config".to_string(),
-        );
-        let err = execute(&plan, &fs).expect_err("fsync injected");
-        assert_eq!(err.op_index, 4);
+        commit(Path::new("/bin"), Path::new("/cfg"), &test_payload(), &fs)
+            .expect_err("call 4 injected");
         assert!(
             !fs.calls()
                 .iter()
                 .any(|c| matches!(c, FsCall::Rename { .. }))
+        );
+    }
+
+    #[test]
+    fn commit_failure_at_binary_rename_triggers_cleanup() {
+        let fs = RecordingCommitFs::failing_at(5);
+        commit(Path::new("/bin"), Path::new("/cfg"), &test_payload(), &fs)
+            .expect_err("binary rename injected");
+        let calls = fs.calls();
+        assert!(
+            matches!(calls.last(), Some(FsCall::RemoveFile(_))),
+            "must clean up orphaned tempfile after rename failure",
+        );
+    }
+
+    #[test]
+    fn commit_failure_at_config_rename_triggers_cleanup() {
+        let fs = RecordingCommitFs::failing_at(6);
+        commit(Path::new("/bin"), Path::new("/cfg"), &test_payload(), &fs)
+            .expect_err("config rename injected");
+        let calls = fs.calls();
+        assert!(
+            matches!(calls.last(), Some(FsCall::RemoveFile(_))),
+            "must clean up orphaned tempfile after rename failure",
         );
     }
 }
