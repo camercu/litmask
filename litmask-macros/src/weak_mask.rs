@@ -25,7 +25,7 @@ use syn::parse::{Parse, ParseStream};
 use syn::{LitByteStr, LitCStr, LitStr};
 use zeroize::Zeroize;
 
-use litmask_internal::{WRAPPER_LEN, xor_cycle};
+use litmask_internal::{WRAPPER_LEN, derive_weak_xor_key, xor_cycle};
 
 use crate::common::{FailTag, byte_array_token, compile_error, load_out_dir_artifact};
 
@@ -76,8 +76,10 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     };
 
     let mut wrapper = load_out_dir_artifact::<WRAPPER_LEN>("litmask_wrapper.bin");
-    let encoded = xor_cycle(plaintext, &wrapper);
+    let mut weak_key = derive_weak_xor_key(&wrapper);
     wrapper.zeroize();
+    let encoded = xor_cycle(plaintext, &weak_key);
+    weak_key.zeroize();
     let encoded_lit = byte_array_token(&encoded);
     let encoded_len = encoded.len();
 

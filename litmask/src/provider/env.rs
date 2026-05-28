@@ -38,9 +38,9 @@ impl EnvVarProvider {
 
 impl Default for EnvVarProvider {
     /// Reads from `LITMASK_UNLOCK_KEY`. The variable name itself is
-    /// obfuscated against the per-build wrapper bytes via the public
-    /// [`crate::weak_mask!`] macro, so the literal does not appear in
-    /// `.rodata` of user binaries.
+    /// obfuscated against the per-build wrapper header bytes via the
+    /// public [`crate::weak_mask!`] macro, so the literal does not
+    /// appear in `.rodata` of user binaries.
     fn default() -> Self {
         Self::new(crate::weak_mask!("LITMASK_UNLOCK_KEY"))
     }

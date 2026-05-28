@@ -590,6 +590,35 @@ pub fn derive_hw_key(context: &str, machine_id: &[u8], salt: &[u8]) -> [u8; KEY_
     *mac.as_bytes()
 }
 
+/// Length of the derived `weak_mask!` XOR key: bit-rotated nonce
+/// expansion (32) + BLAKE3 keyed hash (32) = 64 bytes.
+pub const WEAK_XOR_KEY_LEN: usize = KEY_LEN + KEY_LEN;
+
+/// Derive the XOR key used by `weak_mask!` from the wrapper nonce.
+///
+/// Returns `rotated(32) || BLAKE3::keyed_hash(rotated, nonce)(32)`:
+/// 64 bytes total. The first half expands the 12-byte nonce into 32
+/// bytes via position-dependent bit rotation; the second half
+/// stretches it through BLAKE3 keyed mode. No string literals are
+/// used — domain separation comes from BLAKE3's keyed-mode IV.
+/// Keying on the nonce (stable across `bind`) lets `weak_mask!`
+/// literals survive wrapper re-encryption.
+#[must_use]
+pub fn derive_weak_xor_key(wrapper: &[u8; WRAPPER_LEN]) -> [u8; WEAK_XOR_KEY_LEN] {
+    let nonce = &wrapper[NONCE_OFFSET..NONCE_OFFSET + NONCE_LEN];
+    let mut rotated = [0u8; KEY_LEN];
+    for i in 0..KEY_LEN {
+        #[allow(clippy::cast_possible_truncation)]
+        let shift = (i as u32) % 8;
+        rotated[i] = nonce[i % NONCE_LEN].rotate_left(shift);
+    }
+    let hashed = blake3::keyed_hash(&rotated, nonce);
+    let mut out = [0u8; WEAK_XOR_KEY_LEN];
+    out[..KEY_LEN].copy_from_slice(&rotated);
+    out[KEY_LEN..].copy_from_slice(hashed.as_bytes());
+    out
+}
+
 /// Render the data fields of a `litmask.config` TOML file.
 ///
 /// Returns the `unlock_key`, `locator`, and `length` fields as a TOML

@@ -169,9 +169,10 @@ pub fn __weak_decode<const N: usize>(
     cache: &'static WeakCell,
 ) -> &'static str {
     cache.get_or_init(|| {
-        let wrapper = core::hint::black_box(&wrapper[..]);
+        let weak_key = crate::internal::derive_weak_xor_key(wrapper);
+        let key = core::hint::black_box(weak_key.as_slice());
         let obf = core::hint::black_box(&obf[..]);
-        let decoded = crate::internal::xor_cycle(obf, wrapper);
+        let decoded = crate::internal::xor_cycle(obf, key);
         String::from_utf8(decoded).unwrap_or_else(|_| panic!("invalid utf-8"))
     })
 }
@@ -254,9 +255,10 @@ pub fn __weak_decode_bytes<const N: usize>(
     cache: &'static WeakByteCell,
 ) -> &'static [u8] {
     cache.get_or_init(|| {
-        let wrapper = core::hint::black_box(&wrapper[..]);
+        let weak_key = crate::internal::derive_weak_xor_key(wrapper);
+        let key = core::hint::black_box(weak_key.as_slice());
         let obf = core::hint::black_box(&obf[..]);
-        crate::internal::xor_cycle(obf, wrapper)
+        crate::internal::xor_cycle(obf, key)
     })
 }
 
@@ -274,9 +276,10 @@ pub fn __weak_decode_cstr<const N: usize>(
     cache: &'static WeakCStrCell,
 ) -> &'static std::ffi::CStr {
     cache.get_or_init(|| {
-        let wrapper = core::hint::black_box(&wrapper[..]);
+        let weak_key = crate::internal::derive_weak_xor_key(wrapper);
+        let key = core::hint::black_box(weak_key.as_slice());
         let obf = core::hint::black_box(&obf[..]);
-        let decoded = crate::internal::xor_cycle(obf, wrapper);
+        let decoded = crate::internal::xor_cycle(obf, key);
         std::ffi::CString::new(decoded).unwrap()
     })
 }
