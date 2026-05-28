@@ -134,15 +134,88 @@ jobs:
           name: fuzz-crashes
           path: litmask/fuzz/artifacts/
 
-  windows:
-    name: Windows
-    runs-on: windows-latest
+  # ── Platform smoke tests ──────────────────────────────────
+
+  smoke-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: ubuntu
+          - os: macos-latest
+            name: macos
+    runs-on: ${{ matrix.os }}
+    name: smoke (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v6
 
       - name: Parse .tool-versions
         id: tools
+        run: |
+          while read -r name version; do
+            echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
+          done < <(grep -v '^#' .tool-versions | grep -v '^$')
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.tools.outputs.rust }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: |
+          cargo build --example hello_world
+          cargo build -p litmask-cli
+
+      - name: Smoke test
+        run: |
+          sh scripts/platform-smoke.sh \
+            target/debug/examples/hello_world \
+            target/debug/litmask.config \
+            target/debug/litmask
+
+  smoke-almalinux:
+    runs-on: ubuntu-latest
+    name: smoke (almalinux)
+    container: almalinux:9
+    steps:
+      - name: Install dependencies
+        run: dnf install -y gcc make git
+
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: |
+          . "$HOME/.cargo/env"
+          cargo build --example hello_world
+          cargo build -p litmask-cli
+
+      - name: Smoke test
+        run: |
+          . "$HOME/.cargo/env"
+          sh scripts/platform-smoke.sh \
+            target/debug/examples/hello_world \
+            target/debug/litmask.config \
+            target/debug/litmask
+
+  smoke-windows:
+    name: smoke (windows)
+    runs-on: windows-latest
+    defaults:
+      run:
         shell: bash
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Parse .tool-versions
+        id: tools
         run: |
           while read -r name version; do
             echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
@@ -159,8 +232,58 @@ jobs:
       - name: Build workspace
         run: cargo build --workspace
 
-      - name: Test CLI (includes bind integration tests)
+      - name: Test CLI
         run: cargo test -p litmask-cli
+
+      - name: Smoke test
+        run: |
+          sh scripts/platform-smoke.sh \
+            target/debug/examples/hello_world.exe \
+            target/debug/litmask.config \
+            target/debug/litmask.exe
+
+  smoke-bsd:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - name: freebsd
+            version: '14.2'
+            smoke_flags: ''
+          - name: openbsd
+            version: '7.8'
+            smoke_flags: '--expect-unavailable'
+    runs-on: ubuntu-latest
+    name: smoke (${{ matrix.os.name }})
+    steps:
+      - uses: actions/checkout@v6
+      - uses: cross-platform-actions/action@v1.0.0
+        with:
+          operating_system: ${{ matrix.os.name }}
+          version: ${{ matrix.os.version }}
+          shell: sh
+          run: |
+            set -eu
+
+            case "$(uname)" in
+              OpenBSD)
+                sudo pkg_add rust
+                ;;
+              *)
+                curl --proto '=https' --tlsv1.2 -sSf --retry 3 --retry-delay 5 \
+                  https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+                . "$HOME/.cargo/env"
+                ;;
+            esac
+
+            cargo build --example hello_world
+            cargo build -p litmask-cli
+
+            sh scripts/platform-smoke.sh \
+              target/debug/examples/hello_world \
+              target/debug/litmask.config \
+              target/debug/litmask \
+              ${{ matrix.os.smoke_flags }}
 
   commitlint:
     # Runs on both pull_request and push so direct-to-main commits
