@@ -34,26 +34,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // of `litmask.config`. For a binary blob (HSM-rendered key, vault
     // template, etc.) use `FileProvider::with_encoding(path,
     // KeyEncoding::Raw)`.
-    let path = std::env::var("LITMASK_UNLOCK_KEY_FILE").unwrap_or_else(|_| {
-        // The justfile's `test-examples` recipe sources the key from
-        // `target/<profile>/litmask.config` and exports
-        // `LITMASK_UNLOCK_KEY` to the example's environment. To keep
-        // this example self-contained when run via `cargo run
-        // --example file_provider` without explicit setup, fall back
-        // to writing that env-var value into a temp file and
-        // pointing the provider at it.
-        let key_b64 = std::env::var("LITMASK_UNLOCK_KEY").expect(
-            "set LITMASK_UNLOCK_KEY_FILE to the key-file path, or LITMASK_UNLOCK_KEY to the \
-             base64url-encoded key (used as a fallback to materialize a temp file).",
-        );
+    // The justfile's `test-examples` recipe sources the key from
+    // `target/<profile>/litmask.config` and exports
+    // `LITMASK_UNLOCK_KEY` to the example's environment. To keep
+    // this example self-contained when run via `cargo run
+    // --example file_provider` without explicit setup, fall back
+    // to writing that env-var value into a temp file and
+    // pointing the provider at it.
+    let path = if let Ok(p) = std::env::var("LITMASK_UNLOCK_KEY_FILE") {
+        p
+    } else {
+        let key_b64 = std::env::var("LITMASK_UNLOCK_KEY")?;
         let mut tmp = std::env::temp_dir();
         tmp.push(format!(
             "litmask_file_provider_example_{}.key",
             std::process::id()
         ));
-        std::fs::write(&tmp, key_b64).expect("write temp key file");
+        std::fs::write(&tmp, &key_b64)?;
         tmp.to_string_lossy().into_owned()
-    });
+    };
 
     init_with!(FileProvider::new(&path))?;
     println!(

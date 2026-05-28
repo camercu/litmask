@@ -33,8 +33,7 @@
 use litmask::{StaticProvider, UnlockKey, init_with, mask};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let key_b64 = std::env::var("LITMASK_UNLOCK_KEY")
-        .expect("set LITMASK_UNLOCK_KEY to the build's base64url-encoded unlock key");
+    let key_b64 = std::env::var("LITMASK_UNLOCK_KEY")?;
     let key = UnlockKey::from_base64url(&key_b64)?;
     init_with!(StaticProvider::new(key))?;
     println!(
