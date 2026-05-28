@@ -656,26 +656,30 @@ write fails partway through, the bind operation MUST:
 3. `fsync` the config tempfile.
 4. Write new binary contents to a tempfile in the same directory as the
    original binary.
-5. `fsync` the binary tempfile.
-6. `rename` the binary tempfile to the binary path (atomic on POSIX).
-7. `rename` the config tempfile to `litmask.config` (atomic on POSIX).
-8. `fsync` parent directories of the binary and config so the renames are
+5. Copy the original binary's file permissions to the binary tempfile
+   (preserves the executable bit).
+6. `fsync` the binary tempfile.
+7. `rename` the binary tempfile to the binary path (atomic on POSIX).
+8. `rename` the config tempfile to `litmask.config` (atomic on POSIX).
+9. `fsync` parent directories of the binary and config so the renames are
    durable across crashes.
 
 **On Windows:**
-Same steps 1-5, but:
-6-7. Use `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH`
+Same steps 1-6, but:
+7-8. Use `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH`
    flags for each rename. `MOVEFILE_WRITE_THROUGH` ensures the rename is
    flushed to disk before returning, providing equivalent durability to
-   POSIX step 8. No separate directory-level fsync is needed.
+   POSIX step 9. No separate directory-level fsync is needed.
 
 If any step fails, the binary and original `litmask.config` are left in the
 most consistent recoverable state:
-- Steps 1-5 fail: nothing modified; tempfiles are partial/orphaned at worst.
-- Step 6 fails: original binary and config intact. Retry bind.
-- Step 7 fails: new binary with new wrapper, old config with old
-  `unlock_key`. Recovery requires rebind.
-- Step 8 fails: renames succeeded but may not survive a crash. On reboot,
+- Steps 1-6 fail: nothing modified; tempfiles are partial/orphaned at worst.
+- Step 7 fails: original binary and config intact. Both tempfiles are
+  best-effort cleaned up. Retry bind.
+- Step 8 fails: new binary with new wrapper, old config with old
+  `unlock_key`. Config tempfile is best-effort cleaned up. Recovery
+  requires rebind.
+- Step 9 fails: renames succeeded but may not survive a crash. On reboot,
   either rename may revert; rebind will be needed.
 
 ### §1.8 API Surface
@@ -1923,8 +1927,11 @@ BLAKE3-keyed-hash.
 
 §2.5.4.3 — `HardwareIdProvider::unlock_key()` SHALL:
 - Read the machine ID via `machine-uid::get()`
-- Apply BLAKE3-keyed-hash with the salt (or zero salt if none) to derive a
-  32-byte key
+- Derive a 32-byte key via `BLAKE3::derive_key(context, len(machine_id) ||
+  machine_id || salt)`, where `len` is a 4-byte little-endian length prefix
+  and `salt` defaults to the empty byte string when no salt is configured.
+  The length prefix prevents concatenation ambiguity between `machine_id`
+  and `salt`.
 - Return `Err(KeyError::Provider(...))` if `machine-uid` fails
 - Return `Ok(UnlockKey(derived_bytes))` otherwise
 
@@ -2058,6 +2065,8 @@ on failure conditions:
 - EX_NOINPUT (66) and `not_found` if no locator match occurs
 - EX_DATAERR (65) and `decryption_failed` on AEAD authentication failure
   during wrapper decryption
+- EX_DATAERR (65) and `unsupported_format` if the wrapper's format-version
+  byte is not `FORMAT_V1`
 - EX_UNAVAILABLE (69) and `hardware_id_unavailable` if the hardware ID
   cannot be read
 - EX_OK (0) on success
