@@ -264,6 +264,32 @@ pub(crate) trait CommitFs {
     fn remove_file(&self, path: &Path);
 }
 
+fn write_file_impl(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let mut f = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)?;
+    f.write_all(bytes)
+}
+
+// Windows `FlushFileBuffers` requires a write-capable handle;
+// `File::open` (read-only) returns `ACCESS_DENIED`. Opening
+// with `.write(true)` without `.truncate(true)` is safe — it
+// does not modify existing content.
+fn sync_file_impl(path: &Path) -> io::Result<()> {
+    let f = fs::OpenOptions::new().write(true).open(path)?;
+    f.sync_all()
+}
+
+fn copy_permissions_impl(from: &Path, to: &Path) -> io::Result<()> {
+    fs::set_permissions(to, fs::metadata(from)?.permissions())
+}
+
+fn remove_file_impl(path: &Path) {
+    let _ = fs::remove_file(path);
+}
+
 /// Production [`CommitFs`] using `std::fs`. Suitable for POSIX and
 /// any platform where `std::fs::rename` provides atomic
 /// same-filesystem replacement.
@@ -272,25 +298,15 @@ pub(crate) struct StdCommitFs;
 
 impl CommitFs for StdCommitFs {
     fn write_file(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
-        let mut f = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)?;
-        f.write_all(bytes)
+        write_file_impl(path, bytes)
     }
 
     fn sync_file(&self, path: &Path) -> io::Result<()> {
-        // Windows `FlushFileBuffers` requires a write-capable handle;
-        // `File::open` (read-only) returns `ACCESS_DENIED`. Opening
-        // with `.write(true)` without `.truncate(true)` is safe — it
-        // does not modify existing content.
-        let f = fs::OpenOptions::new().write(true).open(path)?;
-        f.sync_all()
+        sync_file_impl(path)
     }
 
     fn copy_permissions(&self, from: &Path, to: &Path) -> io::Result<()> {
-        fs::set_permissions(to, fs::metadata(from)?.permissions())
+        copy_permissions_impl(from, to)
     }
 
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
@@ -304,7 +320,7 @@ impl CommitFs for StdCommitFs {
     }
 
     fn remove_file(&self, path: &Path) {
-        let _ = fs::remove_file(path);
+        remove_file_impl(path);
     }
 }
 
@@ -319,21 +335,15 @@ pub(crate) struct WindowsCommitFs;
 #[cfg(windows)]
 impl CommitFs for WindowsCommitFs {
     fn write_file(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
-        let mut f = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)?;
-        f.write_all(bytes)
+        write_file_impl(path, bytes)
     }
 
     fn sync_file(&self, path: &Path) -> io::Result<()> {
-        let f = fs::OpenOptions::new().write(true).open(path)?;
-        f.sync_all()
+        sync_file_impl(path)
     }
 
     fn copy_permissions(&self, from: &Path, to: &Path) -> io::Result<()> {
-        fs::set_permissions(to, fs::metadata(from)?.permissions())
+        copy_permissions_impl(from, to)
     }
 
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
@@ -343,7 +353,7 @@ impl CommitFs for WindowsCommitFs {
     fn sync_dir_best_effort(&self, _path: &Path) {}
 
     fn remove_file(&self, path: &Path) {
-        let _ = fs::remove_file(path);
+        remove_file_impl(path);
     }
 }
 
