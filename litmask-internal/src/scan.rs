@@ -2,6 +2,10 @@
 //! compiled artifact. Shared by `litmask-cli` (inspect + bind) and
 //! fuzzing harnesses.
 
+extern crate alloc;
+
+use alloc::vec::Vec;
+
 use crate::{NONCE_LEN, WRAPPER_LEN};
 
 /// Outcome of searching a binary for the wrapper locator.
@@ -9,10 +13,12 @@ use crate::{NONCE_LEN, WRAPPER_LEN};
 pub enum LocateOutcome {
     /// No match found (or all matches lack room for a full wrapper).
     None,
-    /// Exactly one match at the given byte offset.
-    Single(usize),
-    /// Two or more valid matches — ambiguous.
-    Multiple,
+    /// One or more matches whose full `WRAPPER_LEN`-byte content is
+    /// identical. Compilers/linkers may duplicate `include_bytes!`
+    /// data; callers that modify the wrapper must patch every offset.
+    Found(Vec<usize>),
+    /// Two or more matches with differing wrapper content.
+    Ambiguous,
 }
 
 /// Count occurrences of `needle` in `haystack`.
@@ -30,24 +36,35 @@ pub fn count_occurrences(haystack: &[u8], needle: &[u8; NONCE_LEN]) -> usize {
 
 /// Locate the wrapper in `haystack` by searching for `locator`.
 ///
-/// Returns [`LocateOutcome::Single`] only when exactly one match has
-/// room for a full [`WRAPPER_LEN`]-byte wrapper following it.
+/// Returns [`LocateOutcome::Found`] when all matches carry identical
+/// `WRAPPER_LEN`-byte content (the common case is one match; the
+/// multi-match case covers compiler-duplicated `include_bytes!` data).
+/// Returns [`LocateOutcome::Ambiguous`] only when matches differ.
 #[must_use]
 pub fn locate_wrapper(haystack: &[u8], locator: &[u8; NONCE_LEN]) -> LocateOutcome {
     if haystack.len() < WRAPPER_LEN {
         return LocateOutcome::None;
     }
-    let mut hits = haystack
+    let offsets: Vec<usize> = haystack
         .windows(NONCE_LEN)
         .enumerate()
         .filter(|(_, w)| *w == locator)
         .filter(|(i, _)| i + WRAPPER_LEN <= haystack.len())
-        .map(|(i, _)| i);
-    let Some(first) = hits.next() else {
-        return LocateOutcome::None;
-    };
-    if hits.next().is_some() {
-        return LocateOutcome::Multiple;
+        .map(|(i, _)| i)
+        .collect();
+    match offsets.len() {
+        0 => LocateOutcome::None,
+        1 => LocateOutcome::Found(offsets),
+        _ => {
+            let first = &haystack[offsets[0]..offsets[0] + WRAPPER_LEN];
+            if offsets[1..]
+                .iter()
+                .all(|&o| haystack[o..o + WRAPPER_LEN] == *first)
+            {
+                LocateOutcome::Found(offsets)
+            } else {
+                LocateOutcome::Ambiguous
+            }
+        }
     }
-    LocateOutcome::Single(first)
 }

@@ -128,20 +128,15 @@ pub(crate) fn plan_bind(
         return BindOutcome::ConfigMalformed;
     };
 
-    let offset = match locate_wrapper(binary_bytes, &parsed_config.locator) {
-        LocateOutcome::Single(o) => o,
+    let offsets = match locate_wrapper(binary_bytes, &parsed_config.locator) {
+        LocateOutcome::Found(o) => o,
         LocateOutcome::None => return BindOutcome::NotFound,
-        LocateOutcome::Multiple => return BindOutcome::Ambiguous,
+        LocateOutcome::Ambiguous => return BindOutcome::Ambiguous,
     };
+    let offset = offsets[0];
     let Ok(wrapper): Result<[u8; WRAPPER_LEN], _> =
         binary_bytes[offset..offset + WRAPPER_LEN].try_into()
     else {
-        // `locate_wrapper` already filtered offsets that don't have
-        // room for a full WRAPPER_LEN slice (see its `i + WRAPPER_LEN
-        // <= haystack.len()` filter). Reaching this branch would be a
-        // logic bug in the locator, not a user-input failure — panic
-        // loudly rather than misclassify it as `ConfigMalformed` and
-        // send the operator looking at their `litmask.config`.
         unreachable!(
             "locate_wrapper returned offset {offset} but slice into binary_bytes[..{}] is not WRAPPER_LEN bytes — programmer bug in litmask-cli's bind locator",
             offset + WRAPPER_LEN,
@@ -203,7 +198,9 @@ pub(crate) fn plan_bind(
     new_wrapper[NONCE_OFFSET..NONCE_OFFSET + NONCE_LEN].copy_from_slice(&nonce);
     new_wrapper[HEADER_LEN..].copy_from_slice(&new_body);
     let mut new_binary_bytes = binary_bytes.to_vec();
-    new_binary_bytes[offset..offset + WRAPPER_LEN].copy_from_slice(&new_wrapper);
+    for &off in &offsets {
+        new_binary_bytes[off..off + WRAPPER_LEN].copy_from_slice(&new_wrapper);
+    }
 
     // Locator stays put because the nonce did — only `unlock_key`
     // rotates, so the rendered config differs from the input only
@@ -554,6 +551,45 @@ fn tempfile_alongside(target: &Path) -> PathBuf {
     parent.join(format!(".{}.bind-{}.tmp", name, std::process::id()))
 }
 
+/// Re-sign the binary with an ad-hoc signature on macOS.
+///
+/// `bind` patches the binary in-place, which invalidates any existing
+/// code signature. On ARM64 macOS the kernel kills unsigned binaries
+/// (SIGKILL). Warns to stderr on failure but does not abort — the
+/// bind itself succeeded and the user may re-sign manually.
+#[cfg(target_os = "macos")]
+fn resign_macos(binary_path: &Path) {
+    let result = std::process::Command::new("codesign")
+        .args(["-s", "-", "-f"])
+        .arg(binary_path)
+        .stdout(std::process::Stdio::null())
+        .output();
+    match result {
+        Ok(output) if output.status.success() => {}
+        Ok(output) => {
+            let code = output
+                .status
+                .code()
+                .map_or("(signal)".to_string(), |c| c.to_string());
+            eprintln!(
+                "warning: codesign exited {code} — the bound binary may not run on ARM64 macOS"
+            );
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if !stderr.is_empty() {
+                eprint!("{stderr}");
+            }
+        }
+        Err(e) => {
+            eprintln!(
+                "warning: codesign not found ({e}) — the bound binary may not run on ARM64 macOS"
+            );
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn resign_macos(_binary_path: &Path) {}
+
 /// Shell-layer failure shapes. These cover the I/O that happens
 /// outside the pure planner (file reads, machine-uid lookup, the
 /// final commit execute). Each maps to a specific exit code at
@@ -602,6 +638,7 @@ pub(crate) fn run(
         #[cfg(not(windows))]
         let commit_fs: &dyn CommitFs = &StdCommitFs;
         execute(&plan, commit_fs).map_err(ShellError::CommitFailed)?;
+        resign_macos(binary_path);
     } else if let Some(tag) = outcome.stdout_tag() {
         println!("{tag}");
     }
@@ -708,13 +745,45 @@ mod tests {
     }
 
     #[test]
-    fn plan_bind_ambiguous_when_locator_appears_twice() {
+    fn plan_bind_succeeds_with_identical_duplicate_wrappers() {
         let unlock = [0xAAu8; KEY_LEN];
         let mask = [0xBBu8; KEY_LEN];
         let nonce = [0xCCu8; NONCE_LEN];
         let wrapper = build_wrapper(&unlock, &mask, &nonce, CIPHER_CHACHA20_POLY1305);
         let cfg = config_text(&unlock, &locator_of(&wrapper));
         let binary = binary_with(&wrapper, 2);
+
+        let outcome = plan_bind(&cfg, &binary, None, MACHINE_ID_FIXTURE);
+        let BindOutcome::Success(commit) = outcome else {
+            panic!("expected Success for identical duplicates, got {outcome:?}");
+        };
+        assert_eq!(commit.new_binary_bytes.len(), binary.len());
+    }
+
+    #[test]
+    fn plan_bind_ambiguous_when_wrappers_differ() {
+        let unlock = [0xAAu8; KEY_LEN];
+        let nonce = [0xCCu8; NONCE_LEN];
+        let wrapper_a = build_wrapper(
+            &unlock,
+            &[0xBBu8; KEY_LEN],
+            &nonce,
+            CIPHER_CHACHA20_POLY1305,
+        );
+        let wrapper_b = build_wrapper(
+            &unlock,
+            &[0xDDu8; KEY_LEN],
+            &nonce,
+            CIPHER_CHACHA20_POLY1305,
+        );
+        let locator = locator_of(&wrapper_a);
+        assert_eq!(locator, locator_of(&wrapper_b));
+        let cfg = config_text(&unlock, &locator);
+        let mut binary = vec![0u8; 64];
+        binary.extend_from_slice(&wrapper_a);
+        binary.extend(vec![0u8; 64]);
+        binary.extend_from_slice(&wrapper_b);
+        binary.extend(vec![0u8; 64]);
         assert!(matches!(
             plan_bind(&cfg, &binary, None, MACHINE_ID_FIXTURE),
             BindOutcome::Ambiguous,

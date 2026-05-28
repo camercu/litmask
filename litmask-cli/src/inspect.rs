@@ -17,7 +17,7 @@
 use std::fs;
 use std::path::Path;
 
-use litmask_internal::scan::count_occurrences;
+use litmask_internal::scan::{LocateOutcome, count_occurrences, locate_wrapper};
 
 use crate::config;
 
@@ -61,10 +61,10 @@ pub(crate) fn plan(config_text: &str, binary_bytes: &[u8]) -> Outcome {
     let Ok(locator) = config::parse_locator_only(config_text) else {
         return Outcome::ConfigMalformed;
     };
-    match count_occurrences(binary_bytes, &locator) {
-        0 => Outcome::NotFound,
-        1 => Outcome::Verified,
-        n => Outcome::Ambiguous(n),
+    match locate_wrapper(binary_bytes, &locator) {
+        LocateOutcome::Found(_) => Outcome::Verified,
+        LocateOutcome::None => Outcome::NotFound,
+        LocateOutcome::Ambiguous => Outcome::Ambiguous(count_occurrences(binary_bytes, &locator)),
     }
 }
 
@@ -104,8 +104,8 @@ impl ShellError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use litmask_internal::NONCE_LEN;
     use litmask_internal::base64url;
+    use litmask_internal::{NONCE_LEN, WRAPPER_LEN};
 
     const LOCATOR: [u8; NONCE_LEN] = [0xCDu8; NONCE_LEN];
 
@@ -134,11 +134,24 @@ mod tests {
     }
 
     #[test]
-    fn plan_three_matches_yields_ambiguous_three() {
+    fn plan_identical_duplicates_yields_verified() {
         let cfg = config_with_locator(&LOCATOR);
         let mut binary = vec![0u8; 1024];
-        for offset in [100, 400, 700] {
-            binary[offset..offset + NONCE_LEN].copy_from_slice(&LOCATOR);
+        let mut wrapper = [0x42u8; WRAPPER_LEN];
+        wrapper[..NONCE_LEN].copy_from_slice(&LOCATOR);
+        for offset in [100, 400] {
+            binary[offset..offset + WRAPPER_LEN].copy_from_slice(&wrapper);
+        }
+        assert_eq!(plan(&cfg, &binary), Outcome::Verified);
+    }
+
+    #[test]
+    fn plan_differing_wrappers_yields_ambiguous() {
+        let cfg = config_with_locator(&LOCATOR);
+        let mut binary = vec![0u8; 1024];
+        for (i, offset) in [100, 400, 700].iter().enumerate() {
+            binary[*offset..*offset + NONCE_LEN].copy_from_slice(&LOCATOR);
+            binary[*offset + NONCE_LEN] = (i + 1) as u8;
         }
         assert_eq!(plan(&cfg, &binary), Outcome::Ambiguous(3));
     }

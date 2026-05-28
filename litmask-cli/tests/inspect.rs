@@ -31,9 +31,11 @@ fn end_to_end_single_match_exits_zero_and_prints_verified() {
     let config_path = dir.path().join("litmask.config");
 
     // Write a binary that contains the locator exactly once + a
-    // config that points at it.
+    // config that points at it. Padded to WRAPPER_LEN so
+    // locate_wrapper accepts the match.
     let mut bytes = b"prefix-padding-".to_vec();
     bytes.extend_from_slice(LOCATOR);
+    bytes.extend(vec![0u8; WRAPPER_LEN - NONCE_LEN]);
     bytes.extend_from_slice(b" suffix-padding");
     {
         let mut f = fs::File::create(&binary_path).expect("create binary");
@@ -77,6 +79,7 @@ fn end_to_end_aes_gcm_wrapper_inspects_as_verified() {
     let locator: [u8; NONCE_LEN] = *b"AESLOCTR-012";
     let mut bytes = b"prefix-padding-".to_vec();
     bytes.extend_from_slice(&locator);
+    bytes.extend(vec![0u8; WRAPPER_LEN - NONCE_LEN]);
     bytes.extend_from_slice(b" suffix-padding");
     {
         let mut f = fs::File::create(&binary_path).expect("create binary");
