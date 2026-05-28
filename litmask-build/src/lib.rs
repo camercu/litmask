@@ -306,13 +306,13 @@ fn profile_dir_of(out_dir: &Path) -> PathBuf {
 }
 
 fn write_config(path: &Path, unlock_key: &[u8; KEY_LEN], wrapper: &[u8; WRAPPER_LEN]) {
-    let unlock_key_text = base64url::encode(unlock_key);
-    let locator_text = base64url::encode(&wrapper[..NONCE_LEN]);
-
+    let locator: [u8; NONCE_LEN] = wrapper[..NONCE_LEN]
+        .try_into()
+        .expect("wrapper prefix is NONCE_LEN bytes");
     let body = format!(
-        "{CONFIG_HEADER}\nunlock_key = \"{unlock_key_text}\"\nlocator = \"{locator_text}\"\nlength = {WRAPPER_LEN}\n"
+        "{CONFIG_HEADER}\n{}",
+        litmask_internal::render_config_fields(unlock_key, &locator),
     );
-
     fs::write(path, body).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
 

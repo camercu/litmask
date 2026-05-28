@@ -276,10 +276,8 @@ fn render_config(unlock_key: &[u8; KEY_LEN], locator: &[u8; NONCE_LEN]) -> Strin
         "# litmask.config — bound by litmask-cli.\n\
          # SECRET: contains the runtime `unlock_key` for this build. Do not commit.\n\
          # This file is written by litmask-cli's bind step; the binary's embedded wrapper has\n\
-         # been re-encrypted under the new unlock_key recorded below.\n\
-         \nunlock_key = \"{}\"\nlocator = \"{}\"\nlength = {WRAPPER_LEN}\n",
-        base64url::encode(unlock_key),
-        base64url::encode(locator),
+         # been re-encrypted under the new unlock_key recorded below.\n\n{}",
+        litmask_internal::render_config_fields(unlock_key, locator),
     )
 }
 
