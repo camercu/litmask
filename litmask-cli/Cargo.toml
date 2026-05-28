@@ -9,20 +9,13 @@ repository.workspace = true
 publish.workspace = true
 include = ["src/**/*"]
 
-# The CLI links BOTH ciphers and dispatches at runtime on the
-# wrapper's cipher-id byte. Direct AEAD deps avoid routing through
-# litmask-internal's feature-gated dispatch, which would propagate
-# `aes-gcm` to the runtime crate via workspace unification and flip
-# its CURRENT_CIPHER, breaking proc-macro/runtime cipher alignment.
+# `all-ciphers` compiles both AEAD backends inside litmask-internal
+# without activating the `chacha20-poly1305` or `aes-gcm` features.
+# This avoids workspace feature-unification flipping `CURRENT_CIPHER`
+# in the runtime/proc-macro crates while letting the CLI dispatch on
+# the wrapper's cipher-id byte through a single canonical code path.
 [dependencies]
-litmask-internal = { workspace = true, features = ["chacha20-poly1305"] }
-aes-gcm = { version = "0.10", default-features = false, features = [
-  "alloc",
-  "aes",
-] }
-chacha20poly1305 = { version = "0.10", default-features = false, features = [
-  "alloc",
-] }
+litmask-internal = { workspace = true, features = ["all-ciphers"] }
 # `derive` enables the `#[derive(Parser)]` macro that drives the
 # CLI's argument schema. `clap` is the de-facto Rust CLI parser
 # (used by cargo itself); pulling it in eliminates the hand-rolled

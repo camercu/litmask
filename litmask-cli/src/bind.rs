@@ -31,19 +31,9 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-// Both AEAD crates re-export the same `Aead` and `KeyInit` traits
-// from upstream `aead`; pulling them once via the chacha import is
-// enough for both ciphers' `.encrypt` / `.decrypt` / `::new` calls.
-use aes_gcm::{Aes256Gcm, Nonce as AesNonce};
-use chacha20poly1305::aead::{Aead as _, KeyInit as _, generic_array::GenericArray};
-use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChaNonce};
-// Wire-format constants and the hw-id derivation context are imported
-// from `litmask_internal` so the CLI shares a single canonical source
-// with the runtime crate. A drift here would silently break bind ↔
-// runtime interop: every freshly bound binary would fail to unlock.
 use litmask_internal::scan::{LocateOutcome, locate_wrapper};
 use litmask_internal::{
-    CIPHER_AES_256_GCM, CIPHER_CHACHA20_POLY1305, CIPHER_OFFSET, FORMAT_V1, HEADER_LEN,
+    CIPHER_AES_256_GCM, CIPHER_CHACHA20_POLY1305, CIPHER_OFFSET, CipherId, FORMAT_V1, HEADER_LEN,
     HW_ID_DERIVATION_CONTEXT, KEY_LEN, NONCE_LEN, NONCE_OFFSET, TAG_LEN, VERSION_OFFSET,
     WRAPPER_LEN, base64url,
 };
@@ -239,17 +229,8 @@ fn aead_decrypt_dispatch(
     nonce: &[u8; NONCE_LEN],
     body: &[u8],
 ) -> Option<Vec<u8>> {
-    match cipher_byte {
-        CIPHER_CHACHA20_POLY1305 => {
-            let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(key));
-            cipher.decrypt(ChaNonce::from_slice(nonce), body).ok()
-        }
-        CIPHER_AES_256_GCM => {
-            let cipher = Aes256Gcm::new(GenericArray::from_slice(key));
-            cipher.decrypt(AesNonce::from_slice(nonce), body).ok()
-        }
-        _ => None,
-    }
+    let cipher_id = CipherId::try_from(cipher_byte).ok()?;
+    litmask_internal::aead_decrypt(cipher_id, key, nonce, body).ok()
 }
 
 fn aead_encrypt_dispatch(
@@ -258,17 +239,8 @@ fn aead_encrypt_dispatch(
     nonce: &[u8; NONCE_LEN],
     plaintext: &[u8],
 ) -> Option<Vec<u8>> {
-    match cipher_byte {
-        CIPHER_CHACHA20_POLY1305 => {
-            let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(key));
-            cipher.encrypt(ChaNonce::from_slice(nonce), plaintext).ok()
-        }
-        CIPHER_AES_256_GCM => {
-            let cipher = Aes256Gcm::new(GenericArray::from_slice(key));
-            cipher.encrypt(AesNonce::from_slice(nonce), plaintext).ok()
-        }
-        _ => None,
-    }
+    let cipher_id = CipherId::try_from(cipher_byte).ok()?;
+    litmask_internal::aead_encrypt(cipher_id, key, nonce, plaintext).ok()
 }
 
 fn render_config(unlock_key: &[u8; KEY_LEN], locator: &[u8; NONCE_LEN]) -> String {

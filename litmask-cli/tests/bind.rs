@@ -12,15 +12,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use aes_gcm::{Aes256Gcm, Nonce as AesNonce};
-use chacha20poly1305::aead::{Aead, KeyInit, generic_array::GenericArray};
-use chacha20poly1305::{ChaCha20Poly1305, Nonce};
-// Pull the wire-format constants from `litmask-internal` rather than
-// redefining them here: a future header tweak that drifts these
-// values would silently break this fixture while the production
-// path still matched.
 use litmask_internal::{
-    CipherId, FormatVersion, HEADER_LEN, KEY_LEN, NONCE_LEN, WRAPPER_LEN, base64url,
+    CipherId, FormatVersion, HEADER_LEN, KEY_LEN, NONCE_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN,
+    base64url,
 };
 use tempfile::TempDir;
 
@@ -28,38 +22,16 @@ fn cli_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_litmask"))
 }
 
-fn build_wrapper(
+fn build_test_wrapper(
+    cipher_id: CipherId,
     unlock_key: &[u8; KEY_LEN],
     mask_key: &[u8; KEY_LEN],
     nonce: &[u8; NONCE_LEN],
 ) -> [u8; WRAPPER_LEN] {
-    let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(unlock_key));
-    let body = cipher
-        .encrypt(Nonce::from_slice(nonce), mask_key.as_slice())
-        .expect("encrypt");
-    let mut out = [0u8; WRAPPER_LEN];
-    out[0] = FormatVersion::CURRENT.to_byte();
-    out[1] = CipherId::ChaCha20Poly1305.to_byte();
-    out[2..HEADER_LEN].copy_from_slice(nonce);
-    out[HEADER_LEN..].copy_from_slice(&body);
-    out
-}
-
-fn build_aes_gcm_wrapper(
-    unlock_key: &[u8; KEY_LEN],
-    mask_key: &[u8; KEY_LEN],
-    nonce: &[u8; NONCE_LEN],
-) -> [u8; WRAPPER_LEN] {
-    let cipher = Aes256Gcm::new(GenericArray::from_slice(unlock_key));
-    let body = cipher
-        .encrypt(AesNonce::from_slice(nonce), mask_key.as_slice())
-        .expect("encrypt");
-    let mut out = [0u8; WRAPPER_LEN];
-    out[0] = FormatVersion::CURRENT.to_byte();
-    out[1] = CipherId::Aes256Gcm.to_byte();
-    out[2..HEADER_LEN].copy_from_slice(nonce);
-    out[HEADER_LEN..].copy_from_slice(&body);
-    out
+    let body =
+        litmask_internal::aead_encrypt(cipher_id, unlock_key, nonce, mask_key).expect("encrypt");
+    let body: &[u8; WRAPPER_BODY_LEN] = body.as_slice().try_into().expect("WRAPPER_BODY_LEN");
+    litmask_internal::assemble_wrapper(FormatVersion::CURRENT, cipher_id, nonce, body)
 }
 
 #[test]
@@ -70,7 +42,7 @@ fn end_to_end_happy_path_rebinds_wrapper_and_updates_config() {
     let unlock = [0xAAu8; KEY_LEN];
     let mask = [0xBBu8; KEY_LEN];
     let nonce = [0xCCu8; NONCE_LEN];
-    let wrapper = build_wrapper(&unlock, &mask, &nonce);
+    let wrapper = build_test_wrapper(CipherId::ChaCha20Poly1305, &unlock, &mask, &nonce);
     let locator: [u8; NONCE_LEN] = wrapper[..NONCE_LEN].try_into().unwrap();
 
     let mut bytes = vec![0u8; 64];
@@ -123,10 +95,13 @@ fn end_to_end_happy_path_rebinds_wrapper_and_updates_config() {
         .position(|w| w == locator)
         .expect("locator preserved across rebind");
     let new_wrapper = &binary_after[offset..offset + WRAPPER_LEN];
-    let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(&new_unlock));
-    let recovered = cipher
-        .decrypt(Nonce::from_slice(&nonce), &new_wrapper[HEADER_LEN..])
-        .expect("decrypt under rebound unlock_key");
+    let recovered = litmask_internal::aead_decrypt(
+        CipherId::ChaCha20Poly1305,
+        &new_unlock,
+        &nonce,
+        &new_wrapper[HEADER_LEN..],
+    )
+    .expect("decrypt under rebound unlock_key");
     assert_eq!(recovered, mask.to_vec());
 }
 
@@ -138,7 +113,7 @@ fn end_to_end_aes_gcm_wrapper_rebinds_successfully() {
     let unlock = [0x11u8; KEY_LEN];
     let mask = [0x22u8; KEY_LEN];
     let nonce = [0x33u8; NONCE_LEN];
-    let wrapper = build_aes_gcm_wrapper(&unlock, &mask, &nonce);
+    let wrapper = build_test_wrapper(CipherId::Aes256Gcm, &unlock, &mask, &nonce);
     let locator: [u8; NONCE_LEN] = wrapper[..NONCE_LEN].try_into().unwrap();
 
     let mut bytes = vec![0u8; 64];
@@ -183,10 +158,13 @@ fn end_to_end_aes_gcm_wrapper_rebinds_successfully() {
         .position(|w| w == locator)
         .expect("locator preserved across rebind");
     let new_wrapper = &binary_after[offset..offset + WRAPPER_LEN];
-    let cipher = Aes256Gcm::new(GenericArray::from_slice(&new_unlock));
-    let recovered = cipher
-        .decrypt(AesNonce::from_slice(&nonce), &new_wrapper[HEADER_LEN..])
-        .expect("decrypt aes-gcm under rebound unlock_key");
+    let recovered = litmask_internal::aead_decrypt(
+        CipherId::Aes256Gcm,
+        &new_unlock,
+        &nonce,
+        &new_wrapper[HEADER_LEN..],
+    )
+    .expect("decrypt aes-gcm under rebound unlock_key");
     assert_eq!(recovered, mask.to_vec());
 }
 

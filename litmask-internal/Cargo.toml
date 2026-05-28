@@ -18,6 +18,12 @@ include = ["src/**/*"]
 default = ["chacha20-poly1305"]
 chacha20-poly1305 = ["dep:chacha20poly1305"]
 aes-gcm = ["dep:aes-gcm"]
+# Compile both cipher backends without selecting either as
+# `CURRENT_CIPHER`. The CLI uses this for runtime dispatch on the
+# wrapper's cipher-id byte. Because neither `chacha20-poly1305`
+# nor `aes-gcm` features are implied, workspace feature-unification
+# cannot flip `CURRENT_CIPHER` in dependent crates.
+all-ciphers = ["dep:chacha20poly1305", "dep:aes-gcm"]
 
 [dependencies]
 aes-gcm = { version = "0.10", default-features = false, features = [

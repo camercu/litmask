@@ -7,10 +7,9 @@
 
 use zeroize::Zeroizing;
 
-use crate::{
-    AeadError, KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, WrapperParseError, aead_decrypt,
-    parse_wrapper,
-};
+use crate::{AeadError, KEY_LEN, WRAPPER_LEN, WrapperParseError, aead_decrypt, parse_wrapper};
+#[cfg(any(feature = "chacha20-poly1305", feature = "aes-gcm"))]
+use crate::{NONCE_LEN, TAG_LEN};
 
 /// Errors surfaced by pure decryption helpers. Converted to panics by
 /// the runtime imperative shell; the typed form here lets unit tests
@@ -94,11 +93,15 @@ pub fn decrypt_wrapper(
 /// in a binary uses the same cipher as the wrapper, fixed at build
 /// time to the value [`crate::CURRENT_CIPHER`] resolves to.
 ///
+/// Not available under `all-ciphers` alone — that feature compiles
+/// both backends without selecting `CURRENT_CIPHER`.
+///
 /// # Errors
 ///
 /// Returns [`DecryptError::BlobTooShort`] when `blob` is shorter than
 /// `NONCE_LEN + TAG_LEN`, and [`DecryptError::AuthenticationFailed`]
 /// when the AEAD tag check fails.
+#[cfg(any(feature = "chacha20-poly1305", feature = "aes-gcm"))]
 pub fn decrypt_blob(
     mask_key: &[u8; KEY_LEN],
     blob: &[u8],
