@@ -20,6 +20,10 @@ fi
 # §2.13.2.2 — marker must not be recoverable by strings(1).
 # Falls back to grep -a on platforms without strings (Windows Git Bash).
 assert_marker_absent() {
+    if [ ! -f "$1" ]; then
+        echo "FAIL ($2): binary not found: $1"
+        exit 1
+    fi
     if command -v strings >/dev/null 2>&1; then
         if strings "$1" | grep -q "$MARKER"; then
             echo "FAIL ($2): marker found by strings"
