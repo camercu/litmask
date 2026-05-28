@@ -16,7 +16,7 @@ fuzz_target!(|data: &[u8]| {
 
     match outcome {
         LocateOutcome::None => {}
-        LocateOutcome::Single(_) => assert!(count >= 1),
-        LocateOutcome::Multiple => assert!(count >= 2),
+        LocateOutcome::Found(offsets) => assert!(count >= offsets.len()),
+        LocateOutcome::Ambiguous => assert!(count >= 2),
     }
 });
