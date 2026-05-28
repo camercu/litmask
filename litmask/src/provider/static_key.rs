@@ -42,6 +42,14 @@ pub struct StaticProvider<S: Zeroize = [u8; KEY_LEN]> {
     key_bytes: S,
 }
 
+impl<S: Zeroize> core::fmt::Debug for StaticProvider<S> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("StaticProvider")
+            .field("key_bytes", &"[REDACTED]")
+            .finish()
+    }
+}
+
 impl StaticProvider<[u8; KEY_LEN]> {
     /// Construct a provider that returns `key` on every call.
     ///
@@ -87,6 +95,15 @@ impl KeyProvider for StaticProvider<[u8; KEY_LEN]> {
 mod tests {
     use super::*;
     use core::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn debug_redacts_key_material() {
+        let p = StaticProvider::new(UnlockKey::from_raw([0xCAu8; KEY_LEN]));
+        let dbg = alloc::format!("{p:?}");
+        assert!(dbg.contains("REDACTED"), "Debug must redact key bytes");
+        assert!(!dbg.contains("ca"), "Debug must not leak key material");
+        assert!(!dbg.contains("CA"), "Debug must not leak key material");
+    }
 
     #[test]
     fn static_provider_round_trips_key_bytes_verbatim() {

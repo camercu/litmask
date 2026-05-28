@@ -39,11 +39,12 @@ pub enum KeyEncoding {
 ///
 /// # Examples
 ///
-/// ```ignore
-/// use litmask::FileProvider;
-///
-/// let provider = FileProvider::new("/run/secrets/litmask_key");
-/// litmask::init_with!(provider).expect("init");
+/// ```no_run
+/// # fn main() -> Result<(), litmask::InitError> {
+/// let provider = litmask::FileProvider::new("/run/secrets/litmask_key");
+/// litmask::init_with!(provider)?;
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// `FileProvider::new(path)` decodes the contents as base64url.
@@ -71,6 +72,7 @@ pub enum KeyEncoding {
 /// (directory permissions, OS-level ACLs, dedicated secret-mount
 /// points like Kubernetes' projected volumes) rather than this
 /// provider alone for trust.
+#[derive(Debug)]
 pub struct FileProvider {
     path: std::path::PathBuf,
     encoding: KeyEncoding,
@@ -265,6 +267,14 @@ mod tests {
         path.push("litmask-fileprovider-definitely-not-existing-xyz-42");
         let _ = std::fs::remove_file(&path);
         assert!(matches!(read_file_bytes(&path), Err(KeyError::NotFound),));
+    }
+
+    #[test]
+    fn debug_shows_path_and_encoding() {
+        let p = FileProvider::new("/run/secrets/key");
+        let dbg = alloc::format!("{p:?}");
+        assert!(dbg.contains("/run/secrets/key"), "Debug must show the path");
+        assert!(dbg.contains("Base64Url"), "Debug must show the encoding");
     }
 
     #[test]

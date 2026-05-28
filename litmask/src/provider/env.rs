@@ -11,12 +11,14 @@ use crate::provider::KeyProvider;
 ///
 /// # Examples
 ///
-/// ```ignore
-/// use litmask::EnvVarProvider;
-///
-/// let provider = EnvVarProvider::new("MY_APP_KEY");
-/// litmask::init_with!(provider).expect("init");
+/// ```no_run
+/// # fn main() -> Result<(), litmask::InitError> {
+/// let provider = litmask::EnvVarProvider::new("MY_APP_KEY");
+/// litmask::init_with!(provider)?;
+/// # Ok(())
+/// # }
 /// ```
+#[derive(Debug)]
 pub struct EnvVarProvider {
     name: &'static str,
 }
@@ -89,6 +91,13 @@ mod tests {
 
     fn z(s: &str) -> Zeroizing<String> {
         Zeroizing::new(s.to_string())
+    }
+
+    #[test]
+    fn debug_shows_var_name() {
+        let p = EnvVarProvider::new("MY_KEY");
+        let dbg = alloc::format!("{p:?}");
+        assert!(dbg.contains("MY_KEY"), "Debug must show the var name");
     }
 
     #[test]

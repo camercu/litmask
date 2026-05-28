@@ -15,11 +15,12 @@ use crate::provider::KeyProvider;
 ///
 /// # Examples
 ///
-/// ```ignore
-/// use litmask::HardwareIdProvider;
-///
-/// let provider = HardwareIdProvider::with_salt(b"myapp-v1");
-/// litmask::init_with!(provider).expect("init");
+/// ```no_run
+/// # fn main() -> Result<(), litmask::InitError> {
+/// let provider = litmask::HardwareIdProvider::with_salt(b"myapp-v1");
+/// litmask::init_with!(provider)?;
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// # Salt
@@ -37,6 +38,7 @@ use crate::provider::KeyProvider;
 /// the upstream error. Cross-compilation users targeting such
 /// environments MUST verify behavior on the target before relying
 /// on this provider.
+#[derive(Debug)]
 pub struct HardwareIdProvider {
     salt: Option<&'static [u8]>,
 }
@@ -129,6 +131,20 @@ impl core::error::Error for MachineUidError {}
 mod tests {
     use super::*;
     use crate::internal::HW_ID_DERIVATION_CONTEXT;
+
+    #[test]
+    fn debug_shows_salt() {
+        let p = HardwareIdProvider::with_salt(b"myapp-v1");
+        let dbg = alloc::format!("{p:?}");
+        assert!(dbg.contains("salt"), "Debug must mention salt field");
+    }
+
+    #[test]
+    fn debug_no_salt_shows_none() {
+        let p = HardwareIdProvider::new();
+        let dbg = alloc::format!("{p:?}");
+        assert!(dbg.contains("None"), "Debug must show None when no salt");
+    }
 
     #[test]
     fn hardware_id_provider_default_matches_new() {
