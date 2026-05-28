@@ -151,7 +151,10 @@ mod tests {
         let mut binary = vec![0u8; 1024];
         for (i, offset) in [100, 400, 700].iter().enumerate() {
             binary[*offset..*offset + NONCE_LEN].copy_from_slice(&LOCATOR);
-            binary[*offset + NONCE_LEN] = (i + 1) as u8;
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                binary[*offset + NONCE_LEN] = (i + 1) as u8;
+            }
         }
         assert_eq!(plan(&cfg, &binary), Outcome::Ambiguous(3));
     }
