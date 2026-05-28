@@ -580,14 +580,18 @@ pub fn nonce_for_call_site(
 /// through `weak_mask!()` so the literal doesn't appear in user
 /// binaries; the CLI imports [`HW_ID_DERIVATION_CONTEXT`] directly.
 ///
-/// Derivation: `blake3::derive_key(context, salt)` produces a 32-byte
-/// key, then `blake3::keyed_hash(key, machine_id)` binds the machine
-/// identity into the output without revealing it.
+/// Derivation: `BLAKE3::derive_key(context, len(machine_id) ||
+/// machine_id || salt)`. Length-prefixing `machine_id` prevents
+/// concatenation ambiguity — without it, `(id=b"ab", salt=b"cd")`
+/// and `(id=b"abc", salt=b"d")` would hash the same input.
 #[must_use]
 pub fn derive_hw_key(context: &str, machine_id: &[u8], salt: &[u8]) -> [u8; KEY_LEN] {
-    let key = blake3::derive_key(context, salt);
-    let mac = blake3::keyed_hash(&key, machine_id);
-    *mac.as_bytes()
+    let mut hasher = blake3::Hasher::new_derive_key(context);
+    #[allow(clippy::cast_possible_truncation)] // machine IDs are trivially <4 GiB
+    hasher.update(&(machine_id.len() as u32).to_le_bytes());
+    hasher.update(machine_id);
+    hasher.update(salt);
+    *hasher.finalize().as_bytes()
 }
 
 /// Length of the derived `weak_mask!` XOR key: bit-rotated nonce
@@ -974,6 +978,13 @@ mod tests {
         let key = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"any-host", b"");
         assert_eq!(key.len(), KEY_LEN);
         assert!(key.iter().any(|&b| b != 0));
+    }
+
+    #[test]
+    fn derive_hw_key_no_concatenation_ambiguity() {
+        let a = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"ab", b"cd");
+        let b = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"abc", b"d");
+        assert_ne!(a, b);
     }
 
     // ── render_config_fields ─────────────────────────────────
