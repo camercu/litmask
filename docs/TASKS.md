@@ -990,14 +990,13 @@ codes per §2.9.1.3.
 - [x] Failure injected after binary write but before rename leaves
       original config intact (so retry is safe) — verified by
       `recording_fs_failure_at_binary_fsync_stops_before_rename`:
-      no `Rename` op executes after fsync failure at step 5, so
+      no rename call occurs after fsync failure at step 5, so
       original config is untouched; protocol ordering pinned by
-      `plan_commit_emits_eight_ops_in_spec_order`.
+      `commit_sequence_matches_atomic_rename_protocol`.
 - [x] Parent-directory fsync is performed on POSIX (verified via strace
       or instrumented test) — pinned by
-      `plan_commit_emits_eight_ops_in_spec_order` (step 7 is
-      `FsyncDirBestEffort`); `recording_fs_captures_full_commit_sequence`
-      verifies the executor dispatches it; `execute_writes_binary_and_renames_temp_config`
+      `commit_sequence_matches_atomic_rename_protocol` (step 8 is
+      `SyncDirBestEffort`); `commit_writes_binary_and_config_atomically`
       exercises the real `StdCommitFs` path on the host OS.
 
 ---

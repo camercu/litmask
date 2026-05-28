@@ -133,21 +133,22 @@ Documented in THREAT_MODEL.md timing section.
 **Status: pass**
 
 POSIX atomic commit protocol pinned by
-`plan_commit_emits_eight_ops_in_spec_order` unit test. The test
-asserts the exact operation sequence:
+`commit_sequence_matches_atomic_rename_protocol` unit test. The test
+asserts the exact call sequence through the `CommitFs` trait:
 
 1. Write temp config
 2. Fsync temp config
 3. Write temp binary
-4. Fsync temp binary
-5. Rename temp binary → binary
-6. Rename temp config → config
-7-8. Fsync parent directories (best-effort)
+4. Copy permissions
+5. Fsync temp binary
+6. Rename temp binary → binary
+7. Rename temp config → config
+8. Fsync parent directories (best-effort, deduplicated)
 
 Both files use temp+rename so a crash during any write step leaves the
 originals intact (retryable).
 
-`execute_writes_binary_and_renames_temp_config` exercises the real
+`commit_writes_binary_and_config_atomically` exercises the real
 `StdCommitFs` path on the host OS.
 
 Windows bind uses `MoveFileExW` with `MOVEFILE_WRITE_THROUGH`.
