@@ -46,9 +46,23 @@ _Avoid_: "ciphertext" alone (ambiguous with the wrapper's ciphertext field);
 "encrypted literal".
 
 **Locator**:
-The first 12 bytes of the **wrapper**. Used by [`litmask bind`](#operations)
-to find the wrapper inside a binary by scanning. Stored in `litmask.config`.
+The first 12 bytes of the **wrapper** (coincides with the version byte,
+cipher-id byte, and the first 10 bytes of the **nonce**). Used by
+`litmask bind` and `litmask inspect` to find the wrapper inside a
+binary by scanning. Stored in `litmask.config`. Compilers may
+duplicate `include_bytes!` data, producing multiple identical copies;
+the scanner treats byte-identical copies as a single logical match.
 _Avoid_: "wrapper prefix", "header".
+
+**Weak key**:
+A 64-byte XOR key derived deterministically from the wrapper **nonce**:
+32 bytes of position-dependent bit rotations of the nonce, concatenated
+with 32 bytes from `BLAKE3::keyed_hash(rotated, nonce)`. Used by
+`weak_mask!` to obfuscate literals. The derivation uses no string
+literals (avoiding binary fingerprints) and depends only on the nonce
+(stable across **bind**), so `weak_mask!` literals survive wrapper
+re-encryption.
+_Avoid_: "XOR key", "obfuscation key".
 
 **Nonce**:
 A 12-byte AEAD nonce. Two kinds, deterministically derived via BLAKE3:
@@ -71,10 +85,14 @@ its variants. **Unmask** is the inverse runtime operation.
 the **mask key**; tampering detected by tag verification.
 
 **`weak_mask!`**: Anti-`strings(1)` obfuscation. XORs the literal
-against the **wrapper** bytes; both ciphertext and key live in the
+against the **weak key** (derived from the wrapper **nonce** via
+bit rotation + BLAKE3 keyed hash; see **weak key** below). Both
+the obfuscated bytes and the nonce they derive from live in the
 same binary, so a disassembler-equipped attacker recovers the
 plaintext trivially. Reserved for strings that must be readable
-before `init!()` runs (env-var names, default file paths).
+before `init!()` runs (env-var names, default file paths). Because
+the derivation uses only the nonce (stable across **bind**),
+`weak_mask!` literals survive wrapper re-encryption.
 _Avoid_: "soft mask", "light mask".
 
 **`init!` / `init_with!`**: Declarative macros that decrypt the
@@ -95,7 +113,10 @@ Secret; do not commit. Consumed by the runtime (via env var) and by
 
 **Bind** (verb): Rebind a binary to a new **unlock key**, typically
 derived from the target machine's hardware ID. Performed by
-`litmask bind`.
+`litmask bind`. Patches all identical wrapper copies in the binary.
+On macOS, re-signs with an ad-hoc code signature (the patch
+invalidates the existing signature, and ARM64 macOS kills unsigned
+binaries); warns to stderr on failure.
 
 ## Relationships
 
@@ -130,8 +151,11 @@ derived from the target machine's hardware ID. Performed by
 > **wrapper** with the current **unlock key**, derives a new **unlock
 > key** from the target machine, re-encrypts the same **mask key** under
 > the new **unlock key**, and patches the **wrapper** in place. The
-> **locator** changes because the wrapper's first 12 bytes are its
-> nonce, which is regenerated."
+> **nonce** is reused (safe because the key changed), so the
+> **locator** stays the same and `weak_mask!` literals still decode
+> correctly. If the compiler duplicated the wrapper, bind patches
+> every copy. On macOS, bind re-signs the binary with an ad-hoc
+> code signature."
 >
 > **Dev:** "Why have both `mask!` and `weak_mask!`?"
 >
@@ -140,10 +164,11 @@ derived from the target machine's hardware ID. Performed by
 > which env var to read for the **unlock key**. So that one string —
 > the default `LITMASK_UNLOCK_KEY` literal — has to be readable
 > before `init!()`. `weak_mask!` covers that bootstrap window: XOR
-> the literal against the **wrapper** bytes (already in `.rodata`),
-> recover at first access. The 'weak' is because the **wrapper** is
-> right there in the binary; anyone with a disassembler reverses it
-> instantly. That's fine — it's an env var name, not a secret."
+> the literal against the **weak key** (derived from the wrapper
+> **nonce**), recover at first access. The 'weak' is because the
+> **nonce** is right there in the binary; anyone with a disassembler
+> derives the same **weak key** and reverses it instantly. That's
+> fine — it's an env var name, not a secret."
 
 ## Flagged ambiguities
 

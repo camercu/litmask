@@ -534,9 +534,12 @@ variation.
 Generalizing this property: litmask MUST NOT contribute fixed byte signatures
 to user binaries. Any ancillary literal that the library needs to embed (the
 default env-var name, future default file paths for `FileProvider`, etc.) MUST
-be obfuscated against the per-build wrapper bytes via the public `weak_mask!()`
-macro (§1.8.1). The resulting `.rodata` representation varies per build with
-the wrapper's random ciphertext, leaving no grep-across-binaries fingerprint.
+be obfuscated via the public `weak_mask!()` macro (§1.8.1), which XORs the
+literal against a 64-byte key derived from the wrapper nonce (bit rotation +
+BLAKE3 keyed hash). The derivation uses no string literals and depends only on
+the nonce (stable across bind), so `weak_mask!` literals survive wrapper
+re-encryption. The resulting `.rodata` representation varies per build with the
+nonce's random bytes, leaving no grep-across-binaries fingerprint.
 
 #### §1.7.2 Per-string ciphertext blob format
 
@@ -619,14 +622,23 @@ their `unlock_key` is provisioned at deployment time using the value from
 The bind operation:
 1. Reads current `litmask.config` (containing current `unlock_key` and
    `locator`).
-2. Scans target binary for the locator.
+2. Scans target binary for the locator. Byte-identical duplicate wrappers
+   (from compiler-duplicated `include_bytes!` data) are treated as a single
+   logical match; all copies are patched in step 7. Differing wrappers at
+   the same locator are rejected as ambiguous.
 3. Reads `length` bytes at the located offset → encrypted `mask_key` wrapper.
 4. Decrypts wrapper with current `unlock_key` → recovered `mask_key`.
 5. Derives new `unlock_key` from target machine's hardware ID (with optional
    user-supplied salt).
-6. Re-encrypts `mask_key` with new `unlock_key` → new wrapper.
-7. Atomically commits both binary patch and config update via the protocol
-   in §1.7.7.
+6. Re-encrypts `mask_key` with new `unlock_key`, reusing the existing nonce
+   (safe: the key changed, so the (key, nonce) pair is fresh) → new wrapper.
+   The locator is preserved because the nonce is unchanged.
+7. Atomically commits both binary patch (all wrapper copies) and config
+   update via the protocol in §1.7.7.
+8. On macOS, re-signs the binary with an ad-hoc code signature (`codesign
+   -s - -f`). The in-place binary patch invalidates any existing signature;
+   ARM64 macOS kills unsigned binaries with SIGKILL. Failure warns to
+   stderr but does not abort the bind.
 
 First-bind and subsequent rebinds use the same code path; the only difference
 is that the "current `unlock_key`" on first bind is the build-time random
@@ -678,7 +690,7 @@ mask_println!(template, args...)// masked println to stdout (std)
 mask_write!(dst, template, args...)  // masked write to any writer
 mask_writeln!(dst, template, args...)// masked writeln to any writer
 unmasked!(literal)          // explicit opt-out, returns literal unchanged
-weak_mask!(literal)         // XOR-with-wrapper obfuscation; weaker than mask!
+weak_mask!(literal)         // XOR-with-nonce-derived-key obfuscation; weaker than mask!
 mask_include_str!("path")   // file contents → masked String
 mask_include_bytes!("path") // file contents → masked Vec<u8>
 mask_concat!(args...)       // compile-time concat → masked String
@@ -694,13 +706,16 @@ has populated the runtime mask key. It MUST be used exclusively for
 strings needed during the pre-`init!()` bootstrap window — env var
 names, default file paths, and other non-secret metadata that the
 provider needs in order to locate the unlock key. The threat model is
-strictly weaker than `mask!`: the literal is XOR-ed against the
-per-build wrapper bytes (which themselves live in the user binary), so
-an attacker with both the obfuscated bytes and the wrapper recovers
-the plaintext trivially. `weak_mask!` defends against `strings(1)` and
-Level 1 inspection only. Real secrets always use `mask!` after
-`init!()` has succeeded. Decode happens once per call site (cached in
-a `OnceLock`).
+strictly weaker than `mask!`: the literal is XOR-ed against a 64-byte
+key derived from the wrapper nonce (position-dependent bit rotation +
+BLAKE3 keyed hash). The nonce lives in the user binary, so an attacker
+with a disassembler derives the same key and recovers the plaintext
+trivially. The derivation uses no string literals (no binary
+fingerprint) and depends only on the nonce (stable across bind), so
+`weak_mask!` literals survive wrapper re-encryption. `weak_mask!`
+defends against `strings(1)` and Level 1 inspection only. Real secrets
+always use `mask!` after `init!()` has succeeded. Decode happens once
+per call site (cached in a `OnceLock`).
 
 `weak_mask!` accepts the same three literal kinds as `mask!`:
 - `weak_mask!("text")` → `&'static str`
@@ -1324,8 +1339,10 @@ carefully:
    success and failure paths.
 
 5. **Locator collision.** A 12-byte locator has ~2^-66 collision probability
-   in a 1 GB binary. The CLI MUST handle the multiple-match case explicitly
-   (not pick the first; emit an "ambiguous binary" error).
+   in a 1 GB binary. Compilers may also duplicate `include_bytes!` data,
+   producing multiple byte-identical wrapper copies. The CLI MUST distinguish
+   identical duplicates (treat as one logical match, patch all copies) from
+   genuinely differing wrappers at the same locator (emit "ambiguous" error).
 
 6. **Library-contributed plaintext.** The library ships short identifier-like
    strings (`Debug` variant names, `Display` tags) but no English error
@@ -2036,8 +2053,8 @@ does NOT accept a `--provider` flag in v1; future versions may extend it.
 
 §2.9.1.3 — `bind` SHALL exit with the following codes and printed messages
 on failure conditions:
-- EX_DATAERR (65) and `ambiguous` if multiple locator matches occur in the
-  binary
+- EX_DATAERR (65) and `ambiguous` if locator matches with differing wrapper
+  content occur in the binary (byte-identical duplicates are not ambiguous)
 - EX_NOINPUT (66) and `not_found` if no locator match occurs
 - EX_DATAERR (65) and `decryption_failed` on AEAD authentication failure
   during wrapper decryption
@@ -2049,8 +2066,11 @@ on failure conditions:
 any step before the in-place write fails.
 
 §2.9.1.5 — `bind` SHALL preserve all binary metadata not within the rebound
-region (symbol tables, section headers, signatures — though re-signing is
-the user's responsibility).
+region (symbol tables, section headers). On macOS, `bind` SHALL re-sign the
+binary with an ad-hoc code signature (`codesign -s - -f`) after patching,
+because the in-place write invalidates the existing signature and ARM64 macOS
+kills unsigned binaries. Failure warns to stderr but does not abort the bind.
+On other platforms the user is responsible for any required re-signing.
 
 §2.9.1.6 — `bind` SHALL select the
 cipher used for wrapper decryption and re-encryption based on the
@@ -2067,9 +2087,10 @@ to any future CLI subcommand that decrypts a wrapper.
 verify that the locator in `--config` is findable in the binary.
 
 §2.9.2.2 — `inspect` SHALL exit with:
-- EX_OK (0) and print `verified` if exactly one match is found
-- EX_DATAERR (65) and print `ambiguous:<count>` if multiple matches are
+- EX_OK (0) and print `verified` if one or more byte-identical matches are
   found
+- EX_DATAERR (65) and print `ambiguous:<count>` if matches with differing
+  wrapper content are found
 - EX_NOINPUT (66) and print `not_found` if no match is found
 
 §2.9.2.3 — `inspect` SHALL NOT modify the binary or the config.
