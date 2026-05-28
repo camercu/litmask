@@ -86,6 +86,7 @@ required-features = ["hw-id"]
 litmask-internal.workspace = true
 proptest = "1"
 regex = "1"
+rstest = "0.26"
 trybuild = "1"
 
 [lints]

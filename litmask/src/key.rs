@@ -143,37 +143,16 @@ mod tests {
         assert_eq!(key.0, [0u8; KEY_LEN]);
     }
 
-    #[test]
-    fn from_base64url_rejects_padded_input() {
-        // 32 bytes encodes to 43 url-safe chars (no padding); the
-        // padded RFC 4648 form appends "=" — must be rejected.
-        let padded = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-        let err = UnlockKey::from_base64url(padded).unwrap_err();
-        assert!(matches!(err, KeyError::InvalidFormat));
-    }
-
-    #[test]
-    fn from_base64url_rejects_wrong_length_short() {
-        // 24 bytes encodes to 32 url-safe chars; shorter than 32-byte key.
-        let short = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-        let err = UnlockKey::from_base64url(short).unwrap_err();
-        assert!(matches!(err, KeyError::InvalidFormat));
-    }
-
-    #[test]
-    fn from_base64url_rejects_wrong_length_long() {
-        // 48 bytes encodes to 64 url-safe chars; longer than 32-byte key.
-        let long = "A".repeat(64);
-        let err = UnlockKey::from_base64url(&long).unwrap_err();
-        assert!(matches!(err, KeyError::InvalidFormat));
-    }
-
-    #[test]
-    fn from_base64url_rejects_non_alphabet_chars() {
-        // '+' and '/' are standard base64 alphabet but NOT url-safe.
-        let bad = "++++/////+++++++++/////++++++++++/////++++++";
-        let err = UnlockKey::from_base64url(bad).unwrap_err();
-        assert!(matches!(err, KeyError::InvalidFormat));
+    #[rstest::rstest]
+    #[case::padded("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")]
+    #[case::too_short("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
+    #[case::too_long(&"A".repeat(64))]
+    #[case::non_url_safe_chars("++++/////+++++++++/////++++++++++/////++++++")]
+    fn from_base64url_rejects_invalid_input(#[case] input: &str) {
+        assert!(matches!(
+            UnlockKey::from_base64url(input),
+            Err(KeyError::InvalidFormat),
+        ));
     }
 
     #[test]

@@ -548,6 +548,7 @@ pub(crate) fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     const MACHINE_ID_FIXTURE: &str = "fixed-test-machine-id";
 
@@ -1054,56 +1055,29 @@ mod tests {
         assert!(matches!(&fsync_dirs[1], FsCall::SyncDirBestEffort(p) if p == Path::new("/b")));
     }
 
-    #[test]
-    fn commit_failure_at_config_write_stops_immediately() {
-        let fs = RecordingCommitFs::failing_at(0);
-        commit(Path::new("/bin"), Path::new("/cfg"), &test_payload(), &fs)
-            .expect_err("call 0 injected");
-        assert_eq!(fs.calls().len(), 1, "must stop after first failure");
-    }
-
-    #[test]
-    fn commit_failure_at_binary_write_stops_before_rename() {
-        let fs = RecordingCommitFs::failing_at(2);
-        commit(Path::new("/bin"), Path::new("/cfg"), &test_payload(), &fs)
-            .expect_err("call 2 injected");
+    #[rstest]
+    #[case::config_write(0, 1)]
+    #[case::binary_write(2, 3)]
+    #[case::binary_fsync(4, 5)]
+    fn commit_failure_before_rename_stops_early(
+        #[case] fail_at: usize,
+        #[case] expected_calls: usize,
+    ) {
+        let fs = RecordingCommitFs::failing_at(fail_at);
+        commit(Path::new("/bin"), Path::new("/cfg"), &test_payload(), &fs).unwrap_err();
         let calls = fs.calls();
-        assert_eq!(calls.len(), 3);
+        assert_eq!(calls.len(), expected_calls);
         assert!(!calls.iter().any(|c| matches!(c, FsCall::Rename { .. })));
     }
 
-    #[test]
-    fn commit_failure_at_binary_fsync_stops_before_rename() {
-        let fs = RecordingCommitFs::failing_at(4);
-        commit(Path::new("/bin"), Path::new("/cfg"), &test_payload(), &fs)
-            .expect_err("call 4 injected");
+    #[rstest]
+    #[case::binary_rename(5)]
+    #[case::config_rename(6)]
+    fn commit_rename_failure_cleans_up_tempfile(#[case] fail_at: usize) {
+        let fs = RecordingCommitFs::failing_at(fail_at);
+        commit(Path::new("/bin"), Path::new("/cfg"), &test_payload(), &fs).unwrap_err();
         assert!(
-            !fs.calls()
-                .iter()
-                .any(|c| matches!(c, FsCall::Rename { .. }))
-        );
-    }
-
-    #[test]
-    fn commit_failure_at_binary_rename_triggers_cleanup() {
-        let fs = RecordingCommitFs::failing_at(5);
-        commit(Path::new("/bin"), Path::new("/cfg"), &test_payload(), &fs)
-            .expect_err("binary rename injected");
-        let calls = fs.calls();
-        assert!(
-            matches!(calls.last(), Some(FsCall::RemoveFile(_))),
-            "must clean up orphaned tempfile after rename failure",
-        );
-    }
-
-    #[test]
-    fn commit_failure_at_config_rename_triggers_cleanup() {
-        let fs = RecordingCommitFs::failing_at(6);
-        commit(Path::new("/bin"), Path::new("/cfg"), &test_payload(), &fs)
-            .expect_err("config rename injected");
-        let calls = fs.calls();
-        assert!(
-            matches!(calls.last(), Some(FsCall::RemoveFile(_))),
+            matches!(fs.calls().last(), Some(FsCall::RemoveFile(_))),
             "must clean up orphaned tempfile after rename failure",
         );
     }

@@ -167,23 +167,30 @@ impl From<KeyError> for InitError {
 mod tests {
     use super::*;
     use alloc::format;
+    use rstest::rstest;
 
-    #[test]
-    fn key_error_display_tags() {
-        assert_eq!(format!("{}", KeyError::NotFound), "not_found");
-        assert_eq!(format!("{}", KeyError::InvalidFormat), "invalid_format");
+    #[rstest]
+    #[case::not_found(KeyError::NotFound, "not_found")]
+    #[case::invalid_format(KeyError::InvalidFormat, "invalid_format")]
+    fn key_error_display_tag(#[case] err: KeyError, #[case] expected: &str) {
+        assert_eq!(format!("{err}"), expected);
     }
 
-    #[test]
-    fn init_error_display_tags() {
-        assert_eq!(
-            format!("{}", InitError::KeyProvider(KeyError::NotFound)),
-            "key_provider:not_found",
-        );
-        assert_eq!(
-            format!("{}", InitError::KeyProvider(KeyError::InvalidFormat)),
-            "key_provider:invalid_format",
-        );
+    #[rstest]
+    #[case::key_not_found(InitError::KeyProvider(KeyError::NotFound), "key_provider:not_found")]
+    #[case::key_invalid_format(
+        InitError::KeyProvider(KeyError::InvalidFormat),
+        "key_provider:invalid_format"
+    )]
+    #[case::key_permission(
+        InitError::KeyProvider(KeyError::Permission),
+        "key_provider:permission"
+    )]
+    #[case::decryption(InitError::Decryption, "decryption_failed")]
+    #[case::unsupported_format(InitError::UnsupportedFormat, "unsupported_format")]
+    #[case::unsupported_cipher(InitError::UnsupportedCipher, "unsupported_cipher")]
+    fn init_error_display_tag(#[case] err: InitError, #[case] expected: &str) {
+        assert_eq!(format!("{err}"), expected);
     }
 
     #[test]
@@ -204,44 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn decryption_variant_display_tag_is_decryption_failed() {
-        // Display contributes to operator-facing error logs; the tag
-        // must be short and free of litmask-specific vocabulary to
-        // satisfy the minimal-plaintext aim of the error surface.
-        // §1.9.3 normatively pins the tag at `"decryption_failed"`.
-        assert_eq!(format!("{}", InitError::Decryption), "decryption_failed");
-    }
-
-    #[test]
-    fn key_provider_permission_display_tag() {
-        assert_eq!(
-            format!("{}", InitError::KeyProvider(KeyError::Permission)),
-            "key_provider:permission",
-        );
-    }
-
-    #[test]
-    fn unsupported_format_display_tag() {
-        assert_eq!(
-            format!("{}", InitError::UnsupportedFormat),
-            "unsupported_format",
-        );
-    }
-
-    #[test]
-    fn unsupported_cipher_display_tag() {
-        assert_eq!(
-            format!("{}", InitError::UnsupportedCipher),
-            "unsupported_cipher",
-        );
-    }
-
-    #[test]
     fn display_tags_contain_no_english_explanation_substrings() {
-        // The minimal-plaintext goal of the error surface rules out
-        // English phrases that would identify failure semantics in
-        // a leaked log line. Pin the absence of canonical English
-        // terms across every variant.
         let cases = [
             InitError::KeyProvider(KeyError::NotFound),
             InitError::KeyProvider(KeyError::Permission),
@@ -263,65 +233,30 @@ mod tests {
 
     #[test]
     fn decryption_variant_has_no_inner_source() {
-        // `Decryption` is a terminal cause — AEAD failure has no
-        // typed inner; chained errors would either leak structure or
-        // require carrying a non-Send error around.
         use core::error::Error;
         assert!(InitError::Decryption.source().is_none());
     }
 
     // ── sysexit_code mapping (§1.9.7) ─────────────────────────
 
-    #[test]
-    fn sysexit_code_key_provider_not_found_is_ex_config_78() {
-        assert_eq!(
-            InitError::KeyProvider(KeyError::NotFound).sysexit_code(),
-            78,
-        );
+    #[rstest]
+    #[case::key_not_found(InitError::KeyProvider(KeyError::NotFound), 78)]
+    #[case::key_permission(InitError::KeyProvider(KeyError::Permission), 77)]
+    #[case::key_invalid_format(InitError::KeyProvider(KeyError::InvalidFormat), 65)]
+    #[case::decryption(InitError::Decryption, 65)]
+    #[case::unsupported_format(InitError::UnsupportedFormat, 70)]
+    #[case::unsupported_cipher(InitError::UnsupportedCipher, 70)]
+    fn init_error_sysexit_code(#[case] err: InitError, #[case] expected: i32) {
+        assert_eq!(err.sysexit_code(), expected);
     }
 
     #[test]
-    fn sysexit_code_key_provider_permission_is_ex_noperm_77() {
-        assert_eq!(
-            InitError::KeyProvider(KeyError::Permission).sysexit_code(),
-            77,
-        );
-    }
-
-    #[test]
-    fn sysexit_code_key_provider_invalid_format_is_ex_dataerr_65() {
-        assert_eq!(
-            InitError::KeyProvider(KeyError::InvalidFormat).sysexit_code(),
-            65,
-        );
-    }
-
-    #[test]
-    fn sysexit_code_key_provider_provider_inner_is_ex_unavailable_69() {
-        // Boxed provider error → EX_UNAVAILABLE. The inner type
-        // could carry rich detail; the exit code stays the same
-        // regardless of the inner so the caller's exit-code matcher
-        // does not have to inspect Box<dyn Error>.
+    fn sysexit_code_key_provider_boxed_inner_is_ex_unavailable_69() {
         let inner: alloc::boxed::Box<dyn core::error::Error + Send + Sync + 'static> =
             alloc::boxed::Box::new(core::fmt::Error);
         assert_eq!(
             InitError::KeyProvider(KeyError::Provider(inner)).sysexit_code(),
             69,
         );
-    }
-
-    #[test]
-    fn sysexit_code_decryption_is_ex_dataerr_65() {
-        assert_eq!(InitError::Decryption.sysexit_code(), 65);
-    }
-
-    #[test]
-    fn sysexit_code_unsupported_format_is_ex_software_70() {
-        assert_eq!(InitError::UnsupportedFormat.sysexit_code(), 70);
-    }
-
-    #[test]
-    fn sysexit_code_unsupported_cipher_is_ex_software_70() {
-        assert_eq!(InitError::UnsupportedCipher.sysexit_code(), 70);
     }
 }

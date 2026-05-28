@@ -187,32 +187,18 @@ mod tests {
 
     // ── Outcome.exit_code / stdout_tag pairings ────────────────
 
-    #[test]
-    fn outcome_verified_exits_zero_with_verified_tag() {
-        let o = Outcome::Verified;
-        assert_eq!(o.exit_code(), 0);
-        assert_eq!(o.stdout_tag().as_deref(), Some("verified"));
-    }
-
-    #[test]
-    fn outcome_not_found_exits_66_with_not_found_tag() {
-        let o = Outcome::NotFound;
-        assert_eq!(o.exit_code(), 66);
-        assert_eq!(o.stdout_tag().as_deref(), Some("not_found"));
-    }
-
-    #[test]
-    fn outcome_ambiguous_exits_65_with_ambiguous_count() {
-        let o = Outcome::Ambiguous(7);
-        assert_eq!(o.exit_code(), 65);
-        assert_eq!(o.stdout_tag().as_deref(), Some("ambiguous:7"));
-    }
-
-    #[test]
-    fn outcome_config_malformed_exits_64_with_no_stdout() {
-        let o = Outcome::ConfigMalformed;
-        assert_eq!(o.exit_code(), 64);
-        assert_eq!(o.stdout_tag(), None);
+    #[rstest::rstest]
+    #[case::verified(Outcome::Verified, 0, Some("verified"))]
+    #[case::not_found(Outcome::NotFound, 66, Some("not_found"))]
+    #[case::ambiguous(Outcome::Ambiguous(7), 65, Some("ambiguous:7"))]
+    #[case::config_malformed(Outcome::ConfigMalformed, 64, None)]
+    fn outcome_exit_code_and_stdout_tag(
+        #[case] outcome: Outcome,
+        #[case] exit_code: u8,
+        #[case] tag: Option<&str>,
+    ) {
+        assert_eq!(outcome.exit_code(), exit_code);
+        assert_eq!(outcome.stdout_tag().as_deref(), tag);
     }
 
     // ── count_occurrences edge cases ─────────────────────────
