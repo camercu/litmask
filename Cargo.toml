@@ -14,6 +14,8 @@ edition = "2024"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/camercu/litmask"
+keywords = ["obfuscation", "encryption", "string-literals", "compile-time"]
+categories = ["cryptography", "no-std"]
 # crates.io publish is intentionally disabled at the workspace level.
 # Two effects:
 # (1) cargo publish errors out unconditionally for every member — the
