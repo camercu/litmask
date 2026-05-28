@@ -179,10 +179,8 @@ pub(crate) fn plan_bind(
     let mask_key: [u8; KEY_LEN] = mask_key.as_slice().try_into().expect("KEY_LEN bytes");
     let mask_key = Zeroizing::new(mask_key);
 
-    // Derive the new unlock_key from machine id + salt. Mirrors
-    // `litmask::provider::derive_hw_key` exactly so a runtime
-    // `HardwareIdProvider` recovers the same key.
-    let new_unlock_key = derive_hw_unlock_key(&salt, machine_id);
+    let new_unlock_key =
+        litmask_internal::derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id.as_bytes(), &salt);
 
     // Re-encrypt mask_key under the new unlock_key, reusing the
     // existing nonce. Reuse is safe: the (key, nonce) pair never
@@ -271,12 +269,6 @@ fn aead_encrypt_dispatch(
         }
         _ => None,
     }
-}
-
-fn derive_hw_unlock_key(salt: &[u8], machine_id: &str) -> [u8; KEY_LEN] {
-    let key = blake3::derive_key(HW_ID_DERIVATION_CONTEXT, salt);
-    let mac = blake3::keyed_hash(&key, machine_id.as_bytes());
-    *mac.as_bytes()
 }
 
 fn render_config(unlock_key: &[u8; KEY_LEN], locator: &[u8; NONCE_LEN]) -> String {

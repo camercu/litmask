@@ -4,20 +4,8 @@
 use zeroize::Zeroizing;
 
 use crate::error::KeyError;
-use crate::internal::KEY_LEN;
 use crate::key::UnlockKey;
 use crate::provider::KeyProvider;
-
-// The BLAKE3 `derive_key` context for hw-id key derivation is the
-// short literal `"hw-v1"`. The runtime call site below routes it
-// through `crate::weak_mask!()` so the string is obfuscated in user
-// binaries (the runtime path is the one place this constant would
-// otherwise land in `strings(1)` output). `litmask-cli`'s `bind`
-// subcommand imports the canonical value from
-// `litmask_internal::HW_ID_DERIVATION_CONTEXT` directly — CLI tools
-// don't need the obfuscation. The literal-vs-const drift between
-// the two sides is pinned by `weak_mask_literal_matches_const` in
-// the test module below.
 
 /// Derives a 32-byte unlock key from the host's machine ID.
 /// `unlock_key()` is deterministic per host: two calls on the same
@@ -102,10 +90,10 @@ impl KeyProvider for HardwareIdProvider {
         // runtime derivations produce different keys; the drift is
         // pinned by the `weak_mask_literal_matches_const` unit
         // test below.
-        Ok(UnlockKey::from_raw(derive_hw_key(
+        Ok(UnlockKey::from_raw(crate::internal::derive_hw_key(
             crate::weak_mask!("hw-v1"),
             machine_id.as_bytes(),
-            self.salt,
+            self.salt.unwrap_or(&[]),
         )))
     }
 }
@@ -137,85 +125,10 @@ impl core::fmt::Display for MachineUidError {
 
 impl core::error::Error for MachineUidError {}
 
-/// Pure BLAKE3-keyed-hash derivation: produce a 32-byte unlock key
-/// from `(context, machine_id, salt)`. `context` is the BLAKE3
-/// `derive_key` domain separator; the runtime caller passes the
-/// `weak_mask!`-decoded form so tests can supply
-/// `HW_ID_DERIVATION_CONTEXT` directly without depending on
-/// `weak_mask!`'s wrapper-XOR machinery.
-///
-/// Derivation: `blake3::derive_key` over the salt (or the empty
-/// byte string when no salt) produces a 32-byte BLAKE3 key, then
-/// `blake3::keyed_hash` of `machine_id` under that key. The
-/// derive-key step domain-separates from every other BLAKE3 use in
-/// the workspace; the keyed hash binds the machine id into the
-/// 32-byte output without revealing the bare machine id in the
-/// output.
-fn derive_hw_key(context: &str, machine_id: &[u8], salt: Option<&'static [u8]>) -> [u8; KEY_LEN] {
-    let salt_bytes = salt.unwrap_or(&[]);
-    let key = blake3::derive_key(context, salt_bytes);
-    let mac = blake3::keyed_hash(&key, machine_id);
-    *mac.as_bytes()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::internal::HW_ID_DERIVATION_CONTEXT;
-
-    #[test]
-    fn derive_hw_key_is_deterministic_for_same_inputs() {
-        // The runtime deployment depends on this property: the
-        // build's wrapper is encrypted under derive_hw_key(ctx,
-        // machine_id, salt) at build time; the binary recovers the
-        // same key at runtime. A non-deterministic derivation would
-        // brick every hw-id deployment.
-        let machine_id = b"fixed-test-machine-id";
-        let a = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, None);
-        let b = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, None);
-        assert_eq!(a, b);
-        let a_salt = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, Some(b"salt-A"));
-        let b_salt = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, Some(b"salt-A"));
-        assert_eq!(a_salt, b_salt);
-    }
-
-    #[test]
-    fn derive_hw_key_differs_across_salts() {
-        // Different salts on the same machine-id MUST produce
-        // distinct keys; otherwise two products sharing a host
-        // would also share an unlock key, defeating the purpose of
-        // per-product salting.
-        let machine_id = b"fixed-test-machine-id";
-        let unsalted = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, None);
-        let salt_a = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, Some(b"salt-A"));
-        let salt_b = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, Some(b"salt-B"));
-        assert_ne!(unsalted, salt_a);
-        assert_ne!(unsalted, salt_b);
-        assert_ne!(salt_a, salt_b);
-    }
-
-    #[test]
-    fn derive_hw_key_differs_across_machine_ids() {
-        // Two distinct hosts MUST produce distinct keys for the same
-        // salt; the hardware binding is the whole point.
-        let salt = Some(b"shared-salt".as_slice());
-        let host_a = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"host-A", salt);
-        let host_b = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"host-B", salt);
-        assert_ne!(host_a, host_b);
-    }
-
-    #[test]
-    fn derive_hw_key_returns_full_32_bytes() {
-        // BLAKE3 output is 32 bytes; the helper relies on that to
-        // populate the UnlockKey buffer directly. A future BLAKE3
-        // API change that shortened the output would silently zero-
-        // pad the tail of the key — the property test pins the
-        // current shape.
-        let key = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"any-host", None);
-        assert_eq!(key.len(), KEY_LEN);
-        // Sanity: BLAKE3 of a fixed input is not the all-zero vector.
-        assert!(key.iter().any(|&b| b != 0));
-    }
 
     #[test]
     fn hardware_id_provider_default_matches_new() {

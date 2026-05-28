@@ -579,6 +579,23 @@ pub fn nonce_for_call_site(
     out
 }
 
+/// Derive a 32-byte key from `(context, machine_id, salt)` via BLAKE3.
+///
+/// Shared by [`HardwareIdProvider`](https://docs.rs/litmask) (runtime)
+/// and `litmask-cli bind` (CLI). The runtime caller passes the context
+/// through `weak_mask!()` so the literal doesn't appear in user
+/// binaries; the CLI imports [`HW_ID_DERIVATION_CONTEXT`] directly.
+///
+/// Derivation: `blake3::derive_key(context, salt)` produces a 32-byte
+/// key, then `blake3::keyed_hash(key, machine_id)` binds the machine
+/// identity into the output without revealing it.
+#[must_use]
+pub fn derive_hw_key(context: &str, machine_id: &[u8], salt: &[u8]) -> [u8; KEY_LEN] {
+    let key = blake3::derive_key(context, salt);
+    let mac = blake3::keyed_hash(&key, machine_id);
+    *mac.as_bytes()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -877,5 +894,43 @@ mod tests {
             proptest::prop_assert_eq!(parsed.nonce, &nonce);
             proptest::prop_assert_eq!(parsed.body, &body);
         }
+    }
+
+    // ── derive_hw_key ────────────────────────────────────────
+
+    #[test]
+    fn derive_hw_key_is_deterministic() {
+        let a = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"host-1", b"");
+        let b = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"host-1", b"");
+        assert_eq!(a, b);
+        let a_s = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"host-1", b"salt-A");
+        let b_s = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"host-1", b"salt-A");
+        assert_eq!(a_s, b_s);
+    }
+
+    #[test]
+    fn derive_hw_key_differs_across_salts() {
+        let machine_id = b"fixed-test-machine-id";
+        let unsalted = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, b"");
+        let salt_a = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, b"salt-A");
+        let salt_b = derive_hw_key(HW_ID_DERIVATION_CONTEXT, machine_id, b"salt-B");
+        assert_ne!(unsalted, salt_a);
+        assert_ne!(unsalted, salt_b);
+        assert_ne!(salt_a, salt_b);
+    }
+
+    #[test]
+    fn derive_hw_key_differs_across_machine_ids() {
+        let salt = b"shared-salt";
+        let host_a = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"host-A", salt);
+        let host_b = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"host-B", salt);
+        assert_ne!(host_a, host_b);
+    }
+
+    #[test]
+    fn derive_hw_key_returns_full_32_bytes() {
+        let key = derive_hw_key(HW_ID_DERIVATION_CONTEXT, b"any-host", b"");
+        assert_eq!(key.len(), KEY_LEN);
+        assert!(key.iter().any(|&b| b != 0));
     }
 }
