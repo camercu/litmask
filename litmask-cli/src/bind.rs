@@ -252,7 +252,7 @@ fn render_config(unlock_key: &[u8; KEY_LEN], locator: &[u8; NONCE_LEN]) -> Strin
 /// Default methods cover the platform-agnostic operations
 /// (`write_file`, `sync_file`, `copy_permissions`, `remove_file`).
 /// Platform-specific impls override only `rename` and
-/// `sync_dir_best_effort` — e.g. [`WindowsCommitFs`] uses
+/// `sync_dir_best_effort` — e.g. `WindowsCommitFs` uses
 /// `MoveFileExW(MOVEFILE_WRITE_THROUGH)` for the rename step.
 ///
 /// Tests inject a recording double (`RecordingCommitFs`) that
