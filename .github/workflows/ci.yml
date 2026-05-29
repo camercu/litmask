@@ -44,8 +44,50 @@ jobs:
         with:
           tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }},cargo-llvm-cov@${{ steps.tools.outputs.cargo_llvm_cov }}
 
-      - name: just ci
-        run: just ci
+      - name: Format check
+        run: just fmt-check
+
+      - name: Lint
+        run: just lint
+
+      - name: Test (unit)
+        run: just test-unit
+
+      - name: Test (doc)
+        run: just test-doc
+
+      - name: Test (all features)
+        run: just test-all-features
+
+      - name: Test (no default features)
+        run: just test-no-default
+
+      - name: Test (aes-gcm)
+        run: just test-aes-gcm
+
+      - name: Test (hw-id)
+        run: just test-hw-id
+
+      - name: Test (examples)
+        run: just test-examples
+
+      - name: Build
+        run: just build
+
+      - name: Check (no default features)
+        run: just check-no-default
+
+      - name: Check (no_std)
+        run: just check-no-std
+
+      - name: Check (cross)
+        run: just check-cross
+
+      - name: Doc
+        run: just doc
+
+      - name: Coverage
+        run: just ci-coverage
 
   stable-advisory:
     # Latest-stable rustc / clippy run against the workspace. Failures

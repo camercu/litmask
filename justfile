@@ -48,8 +48,12 @@ lint-deny:
 # Two passes because nextest does not yet support doc-tests upstream;
 # `cargo test --doc` covers them, `nextest` covers unit + integration
 # tests with parallel execution + better output.
-test:
+test: test-unit test-doc
+
+test-unit:
     cargo nextest run --workspace
+
+test-doc:
     cargo test --workspace --doc
 
 # Unit tests only — integration tests and examples import std-gated
@@ -149,6 +153,12 @@ alias cov-lcov := coverage-lcov
 
 build:
     cargo build --workspace --all-targets
+
+# Generate cargo's built-in timing report for crate compilation.
+# Opens target/cargo-timings/cargo-timing.html showing per-crate
+# compile durations, parallelism, and the critical path.
+build-timings:
+    cargo build --workspace --all-targets --timings
 
 # Verify the runtime crate compiles with `--no-default-features --features alloc`
 # (the no_std + alloc configuration). `test-no-default` runs unit tests under
@@ -255,7 +265,44 @@ pre-push:
 
 # ── CI ──────────────────────────────────────────────────────
 
-ci: fmt-check lint test test-all-features test-no-default test-aes-gcm test-hw-id test-examples build check-no-default check-no-std check-cross doc ci-coverage
+ci: fmt-check lint test-unit test-doc test-all-features test-no-default test-aes-gcm test-hw-id test-examples build check-no-default check-no-std check-cross doc ci-coverage
+
+# Run the full CI gate with wall-clock timing per step. Prints a
+# summary table at the end showing each step's duration, sorted
+# slowest-first so optimization targets are immediately visible.
+ci-timed:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    steps=(
+        fmt-check
+        lint
+        test-unit
+        test-doc
+        test-all-features
+        test-no-default
+        test-aes-gcm
+        test-hw-id
+        test-examples
+        build
+        check-no-default
+        check-no-std
+        check-cross
+        doc
+        ci-coverage
+    )
+    timings=()
+    ci_start=$(date +%s)
+    for step in "${steps[@]}"; do
+        printf '\n══ %s ══\n' "$step"
+        start=$(date +%s)
+        just "$step"
+        elapsed=$(( $(date +%s) - start ))
+        timings+=("$(printf '%4ds  %s' "$elapsed" "$step")")
+    done
+    ci_elapsed=$(( $(date +%s) - ci_start ))
+    printf '\n══ Timing summary (slowest first) ══\n'
+    printf '%s\n' "${timings[@]}" | sort -rn
+    printf '\nTotal: %ds\n' "$ci_elapsed"
 
 # Best-effort coverage summary. Prints to stdout but does not fail CI
 # pre-1.0 (no minimum threshold set).
