@@ -525,3 +525,45 @@ fn rewrite_spec_refs(spec: &str, resolved: &[usize]) -> String {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_spec_passes_through() {
+        assert_eq!(rewrite_spec_refs("", &[]), "");
+    }
+
+    #[test]
+    fn spec_without_dollar_tokens_passes_through() {
+        assert_eq!(rewrite_spec_refs(">10", &[]), ">10");
+        assert_eq!(rewrite_spec_refs("?", &[]), "?");
+        assert_eq!(rewrite_spec_refs("#?", &[]), "#?");
+    }
+
+    #[test]
+    fn single_dollar_token_rewritten() {
+        assert_eq!(rewrite_spec_refs("w$", &[3]), "3$");
+    }
+
+    #[test]
+    fn width_and_precision_tokens_rewritten() {
+        assert_eq!(rewrite_spec_refs(">w$.p$", &[0, 1]), ">0$.1$");
+    }
+
+    #[test]
+    fn duplicate_binding_indices_preserved() {
+        assert_eq!(rewrite_spec_refs(">w$.w$", &[0, 0]), ">0$.0$");
+    }
+
+    #[test]
+    fn numeric_token_before_dollar() {
+        assert_eq!(rewrite_spec_refs("0$", &[5]), "5$");
+    }
+
+    #[test]
+    fn token_chars_without_dollar_pass_through() {
+        assert_eq!(rewrite_spec_refs(">abc", &[]), ">abc");
+    }
+}
