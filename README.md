@@ -34,13 +34,9 @@ strings target/release/my_app | grep "sensitive data"   # no output
 
 ## Quick start
 
-```toml
-# Cargo.toml
-[dependencies]
-litmask = "0.7"
-
-[build-dependencies]
-litmask-build = "0.7"
+```sh
+cargo add litmask
+cargo add --build litmask-build
 ```
 
 ```rust
@@ -95,7 +91,7 @@ with weaker guarantees, use `weak_mask!`.
 ```rust
 use litmask::{HardwareIdProvider, weak_mask};
 
-let provider = HardwareIdProvider::with_salt(weak_mask!("myapp-v1").as_bytes());
+let provider = HardwareIdProvider::with_salt(weak_mask!(b"myapp-v1"));
 litmask::init_with!(provider)?;
 ```
 
