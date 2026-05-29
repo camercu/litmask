@@ -1,3 +1,45 @@
+## [0.9.0](https://github.com/camercu/litmask/compare/v0.8.0...v0.9.0) (2026-05-29)
+
+### ⚠ BREAKING CHANGES
+
+* **crypto:** derive_hw_key output changes for all inputs. No
+deployed binaries exist yet so no migration needed.
+* **bind:** LocateOutcome::Single/Multiple renamed to
+Found/Ambiguous (internal crate, not public API).
+* **cli:** the installed binary is now `litmask` instead of
+`litmask-cli`. Users need `litmask bind` / `litmask inspect` in
+scripts and CI. The crate name remains `litmask-cli` for cargo.
+
+### Features
+
+* add mask_print!, mask_println!, mask_write!, mask_writeln! macros ([4f43a45](https://github.com/camercu/litmask/commit/4f43a4527762a6b387686a684634bb816c440364))
+* **cli:** rename binary from litmask-cli to litmask ([43f6f11](https://github.com/camercu/litmask/commit/43f6f11f567eb1172c61f620dbe150dcfdc7ee4c))
+* extend weak_mask! to accept b"..." and c"..." literals ([6c14241](https://github.com/camercu/litmask/commit/6c1424156ad732b068a1dfb2b86be95c828cd1df))
+* **internal:** add all-ciphers feature for dual-cipher builds ([7770da6](https://github.com/camercu/litmask/commit/7770da66b7decbd54e4cbc030e59996c1b578176))
+* **key:** add constant-time PartialEq/Eq to UnlockKey ([b729828](https://github.com/camercu/litmask/commit/b729828b83a918eb04e03799982372cc6121800e))
+* **provider:** add Debug impl to all provider types ([8f8b69c](https://github.com/camercu/litmask/commit/8f8b69c892d1dff4d61d470e280fe45dba52ee31))
+
+### Bug Fixes
+
+* **bind:** handle identical wrapper duplicates from include_bytes ([053f64b](https://github.com/camercu/litmask/commit/053f64b0fb32f19decca7b94c91c0bf82cf6425c))
+* **ci:** build hello_world example in Windows smoke job ([86ea2b4](https://github.com/camercu/litmask/commit/86ea2b4abcde5d406b8d4a32254a73a9cce7ba49))
+* **ci:** scope push trigger to main, fix POSIX boolean check ([1ce0d48](https://github.com/camercu/litmask/commit/1ce0d4838b6a88c9fa83d728e72d6198c9d179d5))
+* **cli:** preserve file permissions during bind commit ([d2c9364](https://github.com/camercu/litmask/commit/d2c93643b1f71c60b7d545422266778af6bdcacc))
+* **cli:** suppress cast_possible_truncation lint in test ([b0833a3](https://github.com/camercu/litmask/commit/b0833a325f9d8bf87f46f941efdad3d8637e0690))
+* **cli:** use temp+rename for binary write in bind commit protocol ([b49585f](https://github.com/camercu/litmask/commit/b49585f6d7a133e4bd37df88d9a66bb7d7e804f6))
+* **cli:** zeroize derived unlock_key and clean up orphaned tempfiles in bind ([94bb171](https://github.com/camercu/litmask/commit/94bb171279bc20c7f415d8aa9a9d3ca4223a89df))
+* **crypto:** rewrite derive_hw_key as single-step BLAKE3 with length prefix ([ccc7d16](https://github.com/camercu/litmask/commit/ccc7d163c22227cb378f0f0ac104ddacdb66c666))
+* **fuzz:** update locator_scan target for renamed LocateOutcome variants ([34f9c7d](https://github.com/camercu/litmask/commit/34f9c7dbd77fff67fe858eaf80487d40d60a3686))
+* **macros:** emit no_std-safe paths from mask_format! ([21a5e1f](https://github.com/camercu/litmask/commit/21a5e1f9ab0e44f021c19b30f9943b9e2ddc1d66))
+* **runtime:** replace bare unwrap in __weak_decode with non-identifying panic ([2925046](https://github.com/camercu/litmask/commit/292504653287eb34bd80863407cdcea54a345a15))
+* scan doc accuracy, AGENTS key source, macros default-features ([da7ffd9](https://github.com/camercu/litmask/commit/da7ffd96b62f40e928fac8116a098d488f008d7a))
+* **smoke:** fail early when target binary is missing ([e6d986c](https://github.com/camercu/litmask/commit/e6d986cce7215e276e3f4173c0b022ddc47d256a))
+* **weak-mask:** derive XOR key from nonce rotation + BLAKE3 keyed hash ([37780fe](https://github.com/camercu/litmask/commit/37780fef03927b57a3e3ae3c1b6fab5b1dc52b72))
+
+### Performance Improvements
+
+* **ci:** drop redundant test-all-features and test-hw-id from CI gate ([c159afe](https://github.com/camercu/litmask/commit/c159afe441af91a6a6b1efab22d07931129a6e88))
+
 ## [0.8.0](https://github.com/camercu/litmask/compare/v0.7.0...v0.8.0) (2026-05-27)
 
 ### ⚠ BREAKING CHANGES
