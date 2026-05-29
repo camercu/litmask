@@ -10,8 +10,9 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use proc_macro2::TokenStream;
-use quote::quote;
-use syn::LitStr;
+use quote::{ToTokens, quote};
+use syn::parse::ParseStream;
+use syn::{LitByteStr, LitCStr, LitStr};
 use zeroize::{Zeroize, Zeroizing};
 
 use litmask_internal::{
@@ -125,9 +126,8 @@ pub(crate) fn read_lit_str_path<T>(
 ) -> Result<(LitStr, T), syn::Error> {
     let path_lit = require_lit_str(input, macro_name, "requires a string literal path")?;
     let path_str = path_lit.value();
-    let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR")
-        .unwrap_or_else(|| panic!("{macro_name}!: CARGO_MANIFEST_DIR not set"));
-    let resolved = PathBuf::from(manifest_dir).join(&path_str);
+    let dir = manifest_dir().unwrap_or_else(|| panic!("{macro_name}!: CARGO_MANIFEST_DIR not set"));
+    let resolved = PathBuf::from(dir).join(&path_str);
     let content = reader(&resolved).map_err(|e| {
         compile_error(
             path_lit.span(),
@@ -137,6 +137,15 @@ pub(crate) fn read_lit_str_path<T>(
         )
     })?;
     Ok((path_lit, content))
+}
+
+/// Cached `CARGO_MANIFEST_DIR` value. Read once on first access and
+/// reused for every subsequent call in the proc-macro process.
+pub(crate) fn manifest_dir() -> Option<&'static str> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| std::env::var("CARGO_MANIFEST_DIR").ok())
+        .as_deref()
 }
 
 /// Process-lifetime cache of `OUT_DIR` artifact contents keyed by file
@@ -193,6 +202,61 @@ fn read_out_dir_file(name: &str) -> Zeroizing<Vec<u8>> {
 /// obfuscated bytes as a `const` array in the caller's code.
 pub(crate) fn byte_array_token(bytes: &[u8]) -> TokenStream {
     quote! { [ #(#bytes),* ] }
+}
+
+/// The three string-like literal kinds accepted by `mask!`,
+/// `unmasked!`, and `weak_mask!`. Each variant preserves the
+/// literal's source span so per-call-site nonce derivation works
+/// even when `#[mask_all]` synthesizes multiple `mask!` calls
+/// within one expansion.
+pub(crate) enum StringLiteral {
+    Str(LitStr),
+    ByteStr(LitByteStr),
+    CStr(LitCStr),
+}
+
+impl StringLiteral {
+    pub(crate) fn parse_from(input: ParseStream, macro_name: &str) -> syn::Result<Self> {
+        if input.peek(LitStr) {
+            return input.parse().map(Self::Str);
+        }
+        if input.peek(LitByteStr) {
+            return input.parse().map(Self::ByteStr);
+        }
+        if input.peek(LitCStr) {
+            return input.parse().map(Self::CStr);
+        }
+        Err(compile_error(
+            input.span(),
+            macro_name,
+            FailTag::NonLiteral,
+            "accepts string, byte string, or C string literals",
+        ))
+    }
+}
+
+impl ToTokens for StringLiteral {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::Str(lit) => lit.to_tokens(tokens),
+            Self::ByteStr(lit) => lit.to_tokens(tokens),
+            Self::CStr(lit) => lit.to_tokens(tokens),
+        }
+    }
+}
+
+/// Parse a `proc_macro::TokenStream` as a [`StringLiteral`]. On
+/// failure, returns the compile-error token stream directly so the
+/// caller can early-return it.
+pub(crate) fn parse_string_literal(
+    input: proc_macro::TokenStream,
+    macro_name: &str,
+) -> Result<StringLiteral, proc_macro::TokenStream> {
+    syn::parse::Parser::parse(
+        |stream: ParseStream| StringLiteral::parse_from(stream, macro_name),
+        input,
+    )
+    .map_err(|e| e.to_compile_error().into())
 }
 
 /// Strip the consumer crate's `CARGO_MANIFEST_DIR` prefix from a
@@ -290,8 +354,7 @@ fn mask_plaintext(mut plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKin
     let mut seed = load_out_dir_artifact::<KEY_LEN>("litmask_seed.bin");
 
     let pm_span = span.unwrap();
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").ok();
-    let file = canonicalize_file_path(pm_span.file(), manifest_dir.as_deref());
+    let file = canonicalize_file_path(pm_span.file(), manifest_dir());
     let line = u32::try_from(pm_span.line()).unwrap_or(u32::MAX);
     let column = u32::try_from(pm_span.column()).unwrap_or(u32::MAX);
     let nonce = nonce_for_call_site(&seed, &file, line, column, &plaintext);

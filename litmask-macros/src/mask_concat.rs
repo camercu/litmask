@@ -85,7 +85,7 @@ impl MaskConcatArg {
             }
             Self::IncludeStr(path_lit, _) => {
                 let path_str = path_lit.value();
-                let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR").ok_or_else(|| {
+                let dir = crate::common::manifest_dir().ok_or_else(|| {
                     compile_error(
                         path_lit.span(),
                         MACRO_NAME,
@@ -93,7 +93,7 @@ impl MaskConcatArg {
                         "nested include_str!: CARGO_MANIFEST_DIR not set",
                     )
                 })?;
-                let resolved = PathBuf::from(manifest_dir).join(&path_str);
+                let resolved = PathBuf::from(dir).join(&path_str);
                 fs::read_to_string(&resolved).map_err(|e| {
                     compile_error(
                         path_lit.span(),
@@ -172,17 +172,7 @@ fn invalid_arg(span: proc_macro2::Span) -> syn::Error {
 /// `invalid-arg` rejection via [`invalid_arg`].
 fn resolve_expr_literal(expr: &syn::Expr) -> Option<String> {
     match expr {
-        syn::Expr::Lit(lit_expr) => match &lit_expr.lit {
-            syn::Lit::Str(s) => Some(s.value()),
-            syn::Lit::Int(n) => Some(n.base10_digits().to_string()),
-            syn::Lit::Float(f) => Some(f.base10_digits().to_string()),
-            syn::Lit::Bool(b) => Some(b.value.to_string()),
-            syn::Lit::Char(c) => Some(c.value().to_string()),
-            // LitByteStr / LitByte / LitCStr / Verbatim: stdlib
-            // `concat!` rejects byte-shaped literals at top level;
-            // mirror that.
-            _ => None,
-        },
+        syn::Expr::Lit(le) => stringify_lit(&le.lit, false),
         // Stdlib `concat!(-3, -2.5)` accepts unary-negated numeric
         // literals; rustc parses `-3` as `Neg(LitInt(3))` rather
         // than a single LitInt, so we handle the unary wrapping
@@ -191,14 +181,28 @@ fn resolve_expr_literal(expr: &syn::Expr) -> Option<String> {
             op: syn::UnOp::Neg(_),
             expr: inner,
             ..
-        }) => match inner.as_ref() {
-            syn::Expr::Lit(lit_expr) => match &lit_expr.lit {
-                syn::Lit::Int(n) => Some(format!("-{}", n.base10_digits())),
-                syn::Lit::Float(f) => Some(format!("-{}", f.base10_digits())),
-                _ => None,
-            },
-            _ => None,
-        },
+        }) => {
+            let syn::Expr::Lit(le) = inner.as_ref() else {
+                return None;
+            };
+            stringify_lit(&le.lit, true)
+        }
+        _ => None,
+    }
+}
+
+/// Stringify one literal for `concat!`-compatible output. `negated`
+/// is true when the literal was wrapped in unary `-`; only numeric
+/// kinds accept negation — string/bool/char do not.
+fn stringify_lit(lit: &syn::Lit, negated: bool) -> Option<String> {
+    match lit {
+        syn::Lit::Str(s) if !negated => Some(s.value()),
+        syn::Lit::Int(n) if negated => Some(format!("-{}", n.base10_digits())),
+        syn::Lit::Int(n) => Some(n.base10_digits().to_string()),
+        syn::Lit::Float(f) if negated => Some(format!("-{}", f.base10_digits())),
+        syn::Lit::Float(f) => Some(f.base10_digits().to_string()),
+        syn::Lit::Bool(b) if !negated => Some(b.value.to_string()),
+        syn::Lit::Char(c) if !negated => Some(c.value().to_string()),
         _ => None,
     }
 }

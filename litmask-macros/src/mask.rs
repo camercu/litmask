@@ -10,13 +10,10 @@
 //! removed.
 
 use proc_macro::TokenStream;
-use syn::parse::{Parse, ParseStream};
-use syn::{LitByteStr, LitCStr, LitStr, parse_macro_input};
 
-use crate::common::{FailTag, compile_error, mask_bytes, mask_cstr, mask_str};
+use crate::common::{StringLiteral, mask_bytes, mask_cstr, mask_str, parse_string_literal};
 
 const MACRO_NAME: &str = "mask";
-const INVALID_LITERAL_DETAIL: &str = "accepts string, byte string, or C string literals";
 
 /// Implementation of the `#[proc_macro] mask` entry point. Re-exported
 /// at the crate root via a one-line wrapper.
@@ -28,47 +25,18 @@ const INVALID_LITERAL_DETAIL: &str = "accepts string, byte string, or C string l
 /// the `no-std` feature combination instead of a downstream
 /// "`CString` not found" diagnostic.
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
-    let parsed = parse_macro_input!(input as MaskInput);
+    let parsed = match parse_string_literal(input, MACRO_NAME) {
+        Ok(lit) => lit,
+        Err(ts) => return ts,
+    };
     match parsed {
         // `LitCStr::value` returns a `CString`; into_bytes() drops the
         // NUL terminator. We re-add the NUL at decode time via
         // `CString::new` so the encrypted blob holds only the payload,
         // not the terminator.
-        MaskInput::Str(lit) => mask_str(lit.span(), lit.value().into_bytes()),
-        MaskInput::ByteStr(lit) => mask_bytes(lit.span(), lit.value()),
-        MaskInput::CStr(lit) => mask_cstr(lit.span(), lit.value().into_bytes()),
+        StringLiteral::Str(lit) => mask_str(lit.span(), lit.value().into_bytes()),
+        StringLiteral::ByteStr(lit) => mask_bytes(lit.span(), lit.value()),
+        StringLiteral::CStr(lit) => mask_cstr(lit.span(), lit.value().into_bytes()),
     }
     .into()
-}
-
-/// Parsed `mask!` input: one of the three accepted literal kinds.
-/// The per-literal span is preserved through `quote!` interpolation,
-/// so a `mask!()` invocation synthesized by `#[mask_all]` carries the
-/// user's source span (not the attribute's), even when several
-/// synthesized calls share an outer span — the per-literal span gives
-/// the most granular `(file, line, column)` available.
-enum MaskInput {
-    Str(LitStr),
-    ByteStr(LitByteStr),
-    CStr(LitCStr),
-}
-
-impl Parse for MaskInput {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        if input.peek(LitStr) {
-            return input.parse().map(Self::Str);
-        }
-        if input.peek(LitByteStr) {
-            return input.parse().map(Self::ByteStr);
-        }
-        if input.peek(LitCStr) {
-            return input.parse().map(Self::CStr);
-        }
-        Err(compile_error(
-            input.span(),
-            MACRO_NAME,
-            FailTag::NonLiteral,
-            INVALID_LITERAL_DETAIL,
-        ))
-    }
 }
