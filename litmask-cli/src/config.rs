@@ -15,15 +15,25 @@
 //! function and one typed error surface — drift between the two
 //! subcommands' TOML expectations cannot happen.
 
+use std::fmt;
+
 use litmask_internal::{KEY_LEN, NONCE_LEN, base64url};
 use zeroize::{Zeroize, Zeroizing};
 
 /// Decoded `litmask.config` payload. `unlock_key` is zeroized on
 /// drop so the secret does not linger in freed memory.
-#[derive(Debug)]
 pub(crate) struct LitmaskConfig {
     pub(crate) unlock_key: [u8; KEY_LEN],
     pub(crate) locator: [u8; NONCE_LEN],
+}
+
+impl fmt::Debug for LitmaskConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LitmaskConfig")
+            .field("unlock_key", &"[REDACTED]")
+            .field("locator", &self.locator)
+            .finish()
+    }
 }
 
 impl Drop for LitmaskConfig {

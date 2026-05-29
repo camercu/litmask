@@ -151,6 +151,7 @@ pub(crate) fn plan_bind(
 
     let Some(mask_key) =
         aead_decrypt_dispatch(cipher_byte, &parsed_config.unlock_key, &nonce, body)
+            .map(Zeroizing::new)
             .filter(|p| p.len() == KEY_LEN)
     else {
         return BindOutcome::DecryptionFailed;
@@ -182,11 +183,10 @@ pub(crate) fn plan_bind(
                 "AEAD encrypt refused a 32-byte mask_key under a validated cipher/key/nonce — programmer bug in litmask-cli's bind dispatch",
             )
         });
-    assert!(
-        new_body.len() == KEY_LEN + TAG_LEN,
-        "AEAD encrypt returned wrong-length body: expected {} bytes, got {}",
-        KEY_LEN + TAG_LEN,
+    assert_eq!(
         new_body.len(),
+        KEY_LEN + TAG_LEN,
+        "AEAD encrypt returned wrong-length body",
     );
 
     let mut new_wrapper = [0u8; WRAPPER_LEN];
