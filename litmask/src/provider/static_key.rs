@@ -93,6 +93,7 @@ impl KeyProvider for StaticProvider<[u8; KEY_LEN]> {
 
 #[cfg(all(test, feature = "std"))]
 mod tests {
+    use super::super::test_util::Counted;
     use super::*;
     use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -107,9 +108,6 @@ mod tests {
 
     #[test]
     fn static_provider_round_trips_key_bytes_verbatim() {
-        // The provider must return the exact bytes it was constructed
-        // with — anything else would silently break every test that
-        // wires StaticProvider against a pre-baked unlock_key.
         let bytes: [u8; KEY_LEN] = [0x42u8; KEY_LEN];
         let p = StaticProvider::new(UnlockKey::from_raw(bytes));
         let recovered = p.unlock_key().expect("StaticProvider always Ok");
@@ -125,49 +123,17 @@ mod tests {
         assert_eq!(a.as_bytes(), b.as_bytes());
     }
 
-    /// Storage wrapper whose `Zeroize` impl bumps a caller-supplied
-    /// `AtomicUsize` in addition to wiping the held bytes. Mirrors
-    /// the `Counted` newtype in
-    /// `crate::provider::file::tests` — substituting it for the
-    /// production `[u8; KEY_LEN]` storage is what makes the
-    /// "Drop wipes the held bytes" contract observable without
-    /// reading dropped memory (UB).
-    struct Counted {
-        bytes: [u8; KEY_LEN],
-        counter: &'static AtomicUsize,
-    }
-
-    impl Zeroize for Counted {
-        fn zeroize(&mut self) {
-            self.bytes.zeroize();
-            self.counter.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-
     #[test]
-    fn static_provider_drop_zeroizes_held_storage_exactly_once() {
-        // Without the test seam, this test could only assert
-        // `p.key_bytes == bytes` BEFORE drop (reading after drop is
-        // UB) — passing even if the production Drop impl were
-        // deleted. The `Counted` storage routes the wipe through an
-        // observable side effect so a missing or stubbed Drop fails
-        // the assertion below.
+    fn static_provider_drop_zeroizes_held_storage() {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let provider = StaticProvider {
-            key_bytes: Counted {
-                bytes: [0xEEu8; KEY_LEN],
-                counter: &COUNTER,
-            },
+            key_bytes: Counted::new([0xEEu8; KEY_LEN], &COUNTER),
         };
-        // Sanity: nothing should have zeroized yet. A spurious
-        // construction-time wipe would inflate the count below and
-        // mask a missing Drop.
         assert_eq!(COUNTER.load(Ordering::SeqCst), 0);
         drop(provider);
-        // Exactly one wipe: the Drop impl runs once on the held
-        // storage. Removing the Drop leaves this at 0; an
-        // accidental double-drop (e.g. via mem::replace + manual
-        // drop) leaves it at 2.
-        assert_eq!(COUNTER.load(Ordering::SeqCst), 1);
+        // Two wipes: StaticProvider::drop calls key_bytes.zeroize()
+        // (1), then Counted's own Drop calls zeroize() again (2).
+        // Removing StaticProvider::drop would leave this at 1.
+        assert_eq!(COUNTER.load(Ordering::SeqCst), 2);
     }
 }

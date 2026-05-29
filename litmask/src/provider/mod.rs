@@ -68,6 +68,45 @@ const _: fn() = || {
 };
 
 #[cfg(test)]
+pub(crate) mod test_util {
+    use core::sync::atomic::{AtomicUsize, Ordering};
+    use zeroize::Zeroize;
+
+    /// Wrapper that bumps a caller-supplied `AtomicUsize` from its
+    /// `Zeroize` impl. Lets tests assert that a zeroize-on-drop
+    /// contract fired without reading dropped memory (UB).
+    pub(crate) struct Counted<T: Zeroize> {
+        pub(crate) inner: T,
+        counter: &'static AtomicUsize,
+    }
+
+    impl<T: Zeroize> Counted<T> {
+        pub(crate) fn new(inner: T, counter: &'static AtomicUsize) -> Self {
+            Self { inner, counter }
+        }
+    }
+
+    impl<T: Zeroize> Zeroize for Counted<T> {
+        fn zeroize(&mut self) {
+            self.inner.zeroize();
+            self.counter.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    impl<T: Zeroize> Drop for Counted<T> {
+        fn drop(&mut self) {
+            self.zeroize();
+        }
+    }
+
+    impl<T: Zeroize + AsRef<[u8]>> AsRef<[u8]> for Counted<T> {
+        fn as_ref(&self) -> &[u8] {
+            self.inner.as_ref()
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::internal::KEY_LEN;

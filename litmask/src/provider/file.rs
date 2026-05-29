@@ -154,63 +154,17 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_util::Counted;
     use super::*;
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     const VALID_BASE64URL_32B: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-
-    /// Newtype that bumps a caller-supplied `AtomicUsize` from its
-    /// `Zeroize` impl. The `Drop` impl calls `zeroize`, mirroring the
-    /// `Zeroizing<Vec<u8>>` wrapper used by the production code path,
-    /// so the test can assert the wipe ran without reading dropped
-    /// memory (which would be UB). Without this seam a future
-    /// refactor that retained a borrow of the file buffer — and
-    /// thereby prevented its drop — would silently bypass the
-    /// zeroize guarantee.
-    ///
-    /// The counter is borrowed (`&'static AtomicUsize`) rather than a
-    /// module-level static so each test owns its own counter and the
-    /// shared cargo-test thread pool cannot interleave increments
-    /// across tests.
-    struct Counted {
-        bytes: alloc::vec::Vec<u8>,
-        counter: &'static AtomicUsize,
-    }
-
-    impl Counted {
-        fn new(bytes: alloc::vec::Vec<u8>, counter: &'static AtomicUsize) -> Self {
-            Self { bytes, counter }
-        }
-    }
-
-    impl AsRef<[u8]> for Counted {
-        fn as_ref(&self) -> &[u8] {
-            &self.bytes
-        }
-    }
-
-    impl Zeroize for Counted {
-        fn zeroize(&mut self) {
-            self.bytes.zeroize();
-            self.counter.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-
-    impl Drop for Counted {
-        fn drop(&mut self) {
-            self.zeroize();
-        }
-    }
 
     #[test]
     fn extract_key_from_buffer_zeroizes_input_exactly_once() {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let buf = Counted::new(VALID_BASE64URL_32B.as_bytes().to_vec(), &COUNTER);
         let key = extract_key_from_buffer(buf, KeyEncoding::Base64Url).expect("32-byte key");
-        // Exactly one zeroize: the helper consumes the buffer and
-        // its Drop fires at function return. Two zeroizes would
-        // mean an accidental clone-and-zeroize round-trip; zero
-        // means the buffer was leaked past the function.
         assert_eq!(COUNTER.load(Ordering::SeqCst), 1);
         assert_eq!(key.as_bytes(), &[0u8; KEY_LEN]);
     }
@@ -251,9 +205,6 @@ mod tests {
     #[test]
     fn extract_key_from_buffer_base64url_rejects_non_utf8() {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
-        // A non-UTF-8 byte cannot be a valid base64url codepoint;
-        // strict failure beats silently truncating to the UTF-8
-        // prefix and pretending the rest is padding.
         let buf = Counted::new(alloc::vec![0xFFu8; 4], &COUNTER);
         assert!(matches!(
             extract_key_from_buffer(buf, KeyEncoding::Base64Url),
