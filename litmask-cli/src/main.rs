@@ -6,7 +6,7 @@
 //! (via `clap`) and mapping the shell's `Result<Outcome, ShellError>`
 //! to an `ExitCode`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -107,7 +107,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn dispatch_inspect(binary: &std::path::Path, config: &std::path::Path) -> ExitCode {
+fn dispatch_inspect(binary: &Path, config: &Path) -> ExitCode {
     match inspect::run(binary, config) {
         Ok(outcome) => ExitCode::from(outcome.exit_code()),
         Err(e) => {
@@ -117,11 +117,7 @@ fn dispatch_inspect(binary: &std::path::Path, config: &std::path::Path) -> ExitC
     }
 }
 
-fn dispatch_bind(
-    binary: &std::path::Path,
-    config: &std::path::Path,
-    salt: Option<&str>,
-) -> ExitCode {
+fn dispatch_bind(binary: &Path, config: &Path, salt: Option<&str>) -> ExitCode {
     match bind::run(binary, config, salt) {
         Ok(outcome) => ExitCode::from(outcome.exit_code()),
         Err(e @ (bind::ShellError::ConfigUnreadable | bind::ShellError::BinaryUnreadable)) => {

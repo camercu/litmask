@@ -14,6 +14,7 @@
 //! | `NotFound` | 66 (`EX_NOINPUT`) | `not_found` |
 //! | `ConfigMalformed` | 64 (`EX_USAGE`) | (stderr message at shell) |
 
+use std::borrow::Cow;
 use std::fs;
 use std::path::Path;
 
@@ -45,11 +46,11 @@ impl Outcome {
 
     /// Stdout tag for the outcome, or `None` when the shell should
     /// stay silent on stdout (and emit a stderr message instead).
-    pub(crate) fn stdout_tag(&self) -> Option<String> {
+    pub(crate) fn stdout_tag(&self) -> Option<Cow<'static, str>> {
         match self {
-            Self::Verified => Some("verified".to_string()),
-            Self::Ambiguous(n) => Some(format!("ambiguous:{n}")),
-            Self::NotFound => Some("not_found".to_string()),
+            Self::Verified => Some(Cow::Borrowed("verified")),
+            Self::Ambiguous(n) => Some(Cow::Owned(format!("ambiguous:{n}"))),
+            Self::NotFound => Some(Cow::Borrowed("not_found")),
             Self::ConfigMalformed => None,
         }
     }
