@@ -11,13 +11,6 @@
 //! identify the code as litmask-related and leak into user binaries;
 //! `match X { Ok(_) => …, Err(_) => panic!() }` is the only form
 //! that keeps the unwind path identifier-free.
-#![allow(
-    clippy::single_match_else,
-    clippy::match_wild_err_arm,
-    clippy::manual_let_else,
-    clippy::needless_pass_by_value,
-    clippy::must_use_candidate
-)]
 
 use alloc::string::String;
 
@@ -86,6 +79,7 @@ mod cell {
 /// surface as [`InitError::UnsupportedFormat`] or
 /// [`InitError::UnsupportedCipher`].
 #[doc(hidden)]
+#[allow(clippy::needless_pass_by_value, clippy::match_wild_err_arm)]
 pub fn __init_with_wrapper<P: KeyProvider>(
     provider: P,
     wrapper: &[u8; WRAPPER_LEN],
@@ -134,20 +128,29 @@ pub fn __init_with_wrapper<P: KeyProvider>(
 /// failure, lazy-init provider failure, or wrapper format / cipher-id
 /// mismatch.
 #[doc(hidden)]
+#[allow(clippy::must_use_candidate)]
 pub fn __decrypt(blob: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> alloc::vec::Vec<u8> {
     let mask_key = mask_key_or_lazy_init(wrapper);
     decrypt_blob_or_panic(mask_key.as_bytes(), blob)
 }
 
+/// XOR-decode obfuscated bytes against the per-build weak key derived
+/// from the wrapper header.
+///
+/// The `black_box` calls hide the const-folded inputs from LLVM.
+/// Without them the optimizer can constant-fold the XOR cycle and
+/// materialize the decoded plaintext directly in `.rodata`, defeating
+/// `weak_mask!()`'s anti-`strings(1)` purpose.
+fn weak_xor_decode(obf: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> alloc::vec::Vec<u8> {
+    let weak_key = crate::internal::derive_weak_xor_key(wrapper);
+    let key = core::hint::black_box(weak_key.as_slice());
+    let obf = core::hint::black_box(obf);
+    crate::internal::xor_cycle(obf, key)
+}
+
 /// Decode a `weak_mask!()`-obfuscated literal on first call and cache
 /// the result for the program's lifetime, returning a stable
 /// `&'static str` borrowed from the cache.
-///
-/// The two `black_box` calls hide the const-folded inputs (the
-/// per-call-site `__WEAK_OBF` array and the per-build `include_bytes!`
-/// wrapper) from LLVM. Without them the optimizer can constant-fold
-/// the XOR-cycle and materialize the decoded plaintext directly in
-/// `.rodata`, defeating `weak_mask!()`'s anti-`strings(1)` purpose.
 ///
 /// The cache parameter is the [`WeakCell`] shim — under the `std`
 /// feature it wraps `std::sync::OnceLock<String>`, under
@@ -169,10 +172,7 @@ pub fn __weak_decode<const N: usize>(
     cache: &'static WeakCell,
 ) -> &'static str {
     cache.get_or_init(|| {
-        let weak_key = crate::internal::derive_weak_xor_key(wrapper);
-        let key = core::hint::black_box(weak_key.as_slice());
-        let obf = core::hint::black_box(&obf[..]);
-        let decoded = crate::internal::xor_cycle(obf, key);
+        let decoded = weak_xor_decode(obf, wrapper);
         String::from_utf8(decoded).unwrap_or_else(|_| panic!("invalid utf-8"))
     })
 }
@@ -254,12 +254,7 @@ pub fn __weak_decode_bytes<const N: usize>(
     wrapper: &'static [u8; WRAPPER_LEN],
     cache: &'static WeakByteCell,
 ) -> &'static [u8] {
-    cache.get_or_init(|| {
-        let weak_key = crate::internal::derive_weak_xor_key(wrapper);
-        let key = core::hint::black_box(weak_key.as_slice());
-        let obf = core::hint::black_box(&obf[..]);
-        crate::internal::xor_cycle(obf, key)
-    })
+    cache.get_or_init(|| weak_xor_decode(obf, wrapper))
 }
 
 /// XOR-decode C-string obfuscated data, construct a `CString`, and
@@ -275,15 +270,14 @@ pub fn __weak_decode_cstr<const N: usize>(
     wrapper: &'static [u8; WRAPPER_LEN],
     cache: &'static WeakCStrCell,
 ) -> &'static std::ffi::CStr {
-    cache.get_or_init(|| {
-        let weak_key = crate::internal::derive_weak_xor_key(wrapper);
-        let key = core::hint::black_box(weak_key.as_slice());
-        let obf = core::hint::black_box(&obf[..]);
-        let decoded = crate::internal::xor_cycle(obf, key);
-        std::ffi::CString::new(decoded).unwrap()
-    })
+    cache.get_or_init(|| std::ffi::CString::new(weak_xor_decode(obf, wrapper)).unwrap())
 }
 
+#[allow(
+    clippy::single_match_else,
+    clippy::match_wild_err_arm,
+    clippy::manual_let_else
+)]
 fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {
     cell::get_or_init(|| {
         // Under no_std there is no default provider — lazy init only
@@ -313,6 +307,7 @@ fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {
 // `InitError::Decryption` instead. Without the cfg gate this would
 // be dead code under `--no-default-features`.
 #[cfg(feature = "std")]
+#[allow(clippy::single_match_else, clippy::match_wild_err_arm)]
 fn decrypt_wrapper_or_panic(
     unlock_key: &[u8; crate::internal::KEY_LEN],
     wrapper: &[u8; WRAPPER_LEN],
@@ -323,6 +318,7 @@ fn decrypt_wrapper_or_panic(
     }
 }
 
+#[allow(clippy::single_match_else, clippy::match_wild_err_arm)]
 fn decrypt_blob_or_panic(
     mask_key: &[u8; crate::internal::KEY_LEN],
     blob: &[u8],
