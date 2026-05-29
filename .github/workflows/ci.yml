@@ -56,17 +56,11 @@ jobs:
       - name: Test (doc)
         run: just test-doc
 
-      - name: Test (all features)
-        run: just test-all-features
-
       - name: Test (no default features)
         run: just test-no-default
 
       - name: Test (aes-gcm)
         run: just test-aes-gcm
-
-      - name: Test (hw-id)
-        run: just test-hw-id
 
       - name: Test (examples)
         run: just test-examples

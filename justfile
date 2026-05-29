@@ -265,7 +265,7 @@ pre-push:
 
 # ── CI ──────────────────────────────────────────────────────
 
-ci: fmt-check lint test-unit test-doc test-all-features test-no-default test-aes-gcm test-hw-id test-examples build check-no-default check-no-std check-cross doc ci-coverage
+ci: fmt-check lint test-unit test-doc test-no-default test-aes-gcm test-examples build check-no-default check-no-std check-cross doc ci-coverage
 
 # Run the full CI gate with wall-clock timing per step. Prints a
 # summary table at the end showing each step's duration, sorted
@@ -278,10 +278,8 @@ ci-timed:
         lint
         test-unit
         test-doc
-        test-all-features
         test-no-default
         test-aes-gcm
-        test-hw-id
         test-examples
         build
         check-no-default
@@ -307,7 +305,7 @@ ci-timed:
 # Best-effort coverage summary. Prints to stdout but does not fail CI
 # pre-1.0 (no minimum threshold set).
 ci-coverage:
-    -cargo llvm-cov nextest --workspace --all-features
+    cargo llvm-cov nextest --workspace --all-features
 
 # Stable-channel best-effort sanity check; runs in a continue-on-error
 # CI job so toolchain regressions surface without blocking PR merge.
