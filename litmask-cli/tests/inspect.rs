@@ -114,9 +114,37 @@ fn end_to_end_aes_gcm_wrapper_inspects_as_verified() {
 }
 
 #[test]
+fn end_to_end_not_found_exits_66_and_prints_tag() {
+    let dir = TempDir::new().expect("tempdir");
+    let binary_path = dir.path().join("binary");
+    let config_path = dir.path().join("litmask.config");
+
+    fs::write(&binary_path, vec![0u8; 1024]).expect("write binary");
+    fs::write(
+        &config_path,
+        format!(
+            "unlock_key = \"placeholder\"\nlocator = \"{}\"\nlength = {WRAPPER_LEN}\n",
+            base64url::encode(LOCATOR),
+        ),
+    )
+    .expect("write config");
+
+    let out = Command::new(cli_binary())
+        .args([
+            "inspect",
+            binary_path.to_str().unwrap(),
+            "--config",
+            config_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn cli");
+    assert_eq!(out.status.code(), Some(66));
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert_eq!(stdout.trim(), "not_found");
+}
+
+#[test]
 fn end_to_end_missing_arguments_exit_64() {
-    // Confirms the args-parse → ExitCode wiring in main. Branch
-    // coverage for every parse_args path is in main::tests.
     let out = Command::new(cli_binary())
         .arg("inspect")
         .output()

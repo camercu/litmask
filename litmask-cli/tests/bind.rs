@@ -169,6 +169,39 @@ fn end_to_end_aes_gcm_wrapper_rebinds_successfully() {
 }
 
 #[test]
+fn end_to_end_not_found_exits_66_and_prints_tag() {
+    let dir = TempDir::new().expect("tempdir");
+    let binary_path = dir.path().join("binary");
+    let config_path = dir.path().join("litmask.config");
+    let unlock = [0xAAu8; KEY_LEN];
+    let locator = [0xCDu8; NONCE_LEN];
+
+    fs::write(&binary_path, vec![0u8; 1024]).expect("write binary");
+    fs::write(
+        &config_path,
+        format!(
+            "unlock_key = \"{}\"\nlocator = \"{}\"\nlength = {WRAPPER_LEN}\n",
+            base64url::encode(&unlock),
+            base64url::encode(&locator),
+        ),
+    )
+    .expect("write config");
+
+    let out = Command::new(cli_binary())
+        .args([
+            "bind",
+            binary_path.to_str().unwrap(),
+            "--config",
+            config_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn cli");
+    assert_eq!(out.status.code(), Some(66));
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert_eq!(stdout.trim(), "not_found");
+}
+
+#[test]
 fn end_to_end_missing_arguments_exit_64() {
     let out = Command::new(cli_binary())
         .arg("bind")
