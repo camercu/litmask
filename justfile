@@ -21,6 +21,11 @@ fmt-taplo:
 fmt-check:
     cargo fmt --all --check
 
+# ── Cleaning ───────────────────────────────────────────────
+
+clean:
+    cargo clean
+
 # ── Linting ─────────────────────────────────────────────────
 
 lint: fmt-check lint-clippy lint-typos lint-taplo lint-deny
