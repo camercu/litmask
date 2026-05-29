@@ -165,7 +165,7 @@ jobs:
 
       - name: Upload crashes
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-crashes
           path: litmask/fuzz/artifacts/
@@ -295,7 +295,7 @@ jobs:
     name: smoke (${{ matrix.os.name }})
     steps:
       - uses: actions/checkout@v6
-      - uses: cross-platform-actions/action@v1.0.0
+      - uses: cross-platform-actions/action@v1.1.0
         with:
           operating_system: ${{ matrix.os.name }}
           version: ${{ matrix.os.version }}
