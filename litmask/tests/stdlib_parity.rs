@@ -44,14 +44,14 @@ fn mask_format_matches_format() {
         mask_format!(
             "{name} | {:>width$} | {:.2} | {:#x}",
             42,
-            3.14159,
+            1.23456,
             255u32,
             width = w
         ),
         format!(
             "{name} | {:>width$} | {:.2} | {:#x}",
             42,
-            3.14159,
+            1.23456,
             255u32,
             width = w
         ),
