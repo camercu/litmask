@@ -50,9 +50,9 @@ const CONFIG_HEADER: &str = "\
 /// # Panics
 ///
 /// Panics on any I/O failure or unsupported environment. Build scripts
-/// run in tightly controlled contexts (cargo sets `OUT_DIR`,
-/// `CARGO_MANIFEST_DIR`, `PROFILE`); a failure of any of these is a
-/// build-system bug, not a user error.
+/// run in tightly controlled contexts (cargo sets `OUT_DIR` and
+/// `PROFILE`); a failure of either is a build-system bug, not a user
+/// error.
 pub fn emit() {
     // Re-run when the user changes the seed env var or edits their
     // build script.
@@ -83,7 +83,7 @@ pub fn emit() {
     // copy of the seed.
 }
 
-/// The five byte arrays produced from a single build seed: the seed
+/// The four byte arrays produced from a single build seed: the seed
 /// itself, the derived `mask_key` and `unlock_key`, and the assembled
 /// `wrapper` that encrypts the mask key under the unlock key.
 ///
