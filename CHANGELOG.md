@@ -1,3 +1,39 @@
+## [0.10.0](https://github.com/camercu/litmask/compare/v0.9.0...v0.10.0) (2026-05-30)
+
+### ⚠ BREAKING CHANGES
+
+* **macros:** empty mask_concat!, include path resolution, mask_file
+output, and the env error formats change observable behavior.
+* **internal:** alters derive_hw_key output. Binaries already bound by
+litmask-cli must be re-bound with a matching cli version; the cli and
+the embedded runtime are versioned in lockstep.
+* **internal:** `litmask_internal::cipher` is now `litmask_internal::decrypt`.
+
+- Rename cipher.rs → decrypt.rs to reflect its actual content
+  (decrypt-only helpers, not cipher selection/dispatch).
+- Replace `pub use mod::*` glob re-exports with explicit item lists
+  so the crate's public API surface is self-documenting.
+- Add feature-mapping comment to aead.rs import block clarifying
+  which features pull which backends.
+- Update all downstream references (litmask runtime, litmask-build).
+
+* **internal:** rename cipher module to decrypt, replace glob re-exports ([9a13575](https://github.com/camercu/litmask/commit/9a135756efb2783063661d67b4b122a78229b0aa))
+* **internal:** widen hw-key length prefix to u64 ([ee2fe4e](https://github.com/camercu/litmask/commit/ee2fe4e85d947b7112bf51b9fedcfe0688a94b40))
+
+### Features
+
+* **macros:** make mask_* macros drop-in parity with stdlib ([7491b22](https://github.com/camercu/litmask/commit/7491b22e494109ae5b37853984e0b4391565d3b5))
+
+### Bug Fixes
+
+* **cli:** escape WindowsCommitFs doc link unresolvable on non-Windows ([968baad](https://github.com/camercu/litmask/commit/968baad3b43279adc7c5443daaf209a32595b5b4))
+* **cli:** zeroize mask_key decrypt result and redact Debug output ([afa2e45](https://github.com/camercu/litmask/commit/afa2e45cf2475b492663ee4d5ca432058ed92ad5))
+* **internal:** distinguish payload-length from authentication error ([9c0efa4](https://github.com/camercu/litmask/commit/9c0efa4bbd3636d3e8a9f7f1c43f4dbfc1d00bf8))
+
+### Performance Improvements
+
+* **ci:** merge coverage into test pass and background it ([1d935a1](https://github.com/camercu/litmask/commit/1d935a12c867c3a3fda59c6bbc2fc3fadff66306))
+
 ## [0.9.0](https://github.com/camercu/litmask/compare/v0.8.0...v0.9.0) (2026-05-29)
 
 ### ⚠ BREAKING CHANGES
