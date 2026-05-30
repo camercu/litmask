@@ -1,4 +1,20 @@
 //! AEAD encrypt/decrypt dispatch across compile-time-selected ciphers.
+//!
+//! # Cipher selection
+//!
+//! [`CURRENT_CIPHER`] names the single cipher this build encrypts and
+//! blob-decrypts with. When both cipher features are active (e.g.
+//! `cargo build -p litmask --features aes-gcm` keeps the default
+//! `chacha20-poly1305` alive under Cargo feature unification, or
+//! `cargo test --all-features`), `aes-gcm` wins: passing it is an
+//! explicit opt-in to AES-256-GCM. For a strict single-cipher build
+//! with no `chacha20poly1305` crate in the dep tree, use
+//! `--no-default-features --features std,aes-gcm`.
+//!
+//! [`CURRENT_CIPHER`] governs only [`aead_encrypt`] and the
+//! blob-decrypt path; it is absent under `all-ciphers` alone. The
+//! dual-cipher consumer (`litmask-cli`) ignores it entirely and
+//! dispatches on the wrapper's cipher-id byte at runtime.
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -33,29 +49,13 @@ use aes_gcm::KeyInit as _;
 #[cfg(any(feature = "chacha20-poly1305", feature = "all-ciphers"))]
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit as _};
 
-/// The cipher this build was compiled to handle, exposed as a
-/// compile-time constant for build-side helpers (`litmask-build`)
-/// and the runtime crate's wrapper-cipher-id check.
-///
-/// Precedence when both features are enabled (e.g., `cargo build -p
-/// litmask --features aes-gcm` with default features still active):
-/// `aes-gcm` wins. The aes-gcm feature is an explicit opt-in — a
-/// user passing it intends to use AES-256-GCM even when Cargo's
-/// feature-unification model keeps the default `chacha20-poly1305`
-/// feature alongside it. For a strict single-cipher build (no
-/// chacha20poly1305 crate in the dep tree), pass
-/// `--no-default-features --features std,aes-gcm`.
-///
-/// When both cipher features are active (as in `litmask-cli`'s
-/// dual-cipher build or `cargo test --all-features`), AES-GCM wins
-/// because the `#[cfg(feature = "aes-gcm")]` arm is unconditional.
-/// The CLI's `decrypt_wrapper` ignores this constant and dispatches
-/// at runtime based on the wrapper's cipher-id byte; the constant
-/// matters only for `decrypt_blob` and the proc-macro encrypt path.
+/// The single cipher this build encrypts and blob-decrypts with. See
+/// the [module docs](self#cipher-selection) for the selection rules
+/// when multiple cipher features are active.
 #[cfg(feature = "aes-gcm")]
 pub const CURRENT_CIPHER: CipherId = CipherId::Aes256Gcm;
 
-/// See [`CURRENT_CIPHER`] for the cross-cfg documentation.
+/// See [`CURRENT_CIPHER`].
 #[cfg(all(feature = "chacha20-poly1305", not(feature = "aes-gcm")))]
 pub const CURRENT_CIPHER: CipherId = CipherId::ChaCha20Poly1305;
 
