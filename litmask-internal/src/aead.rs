@@ -5,10 +5,14 @@ use core::fmt;
 
 use crate::{CipherId, KEY_LEN, NONCE_LEN};
 
-// Both crates re-export the same `Aead`, `KeyInit`, and
-// `GenericArray` traits from the upstream `aead` crate, so
-// importing from either path is enough. The cfgs guarantee at
-// least one import is in scope under any valid feature combination.
+// Feature → import mapping for the shared AEAD trait surface:
+//
+//  chacha only (default)    → traits from chacha20poly1305, ChaCha20Poly1305 cipher
+//  aes-gcm only             → traits from aes-gcm,          Aes256Gcm cipher
+//  both / all-ciphers       → traits from chacha20poly1305,  both ciphers
+//
+// `Aead`, `KeyInit`, and `GenericArray` are re-exported identically by
+// both backend crates; importing from either path is sufficient.
 #[cfg(all(
     feature = "aes-gcm",
     not(feature = "chacha20-poly1305"),

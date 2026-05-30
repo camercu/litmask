@@ -525,7 +525,7 @@ mod tests {
     /// startup.
     #[test]
     fn build_artifacts_wrapper_round_trips_under_unlock_key() {
-        use litmask_internal::cipher::decrypt_wrapper;
+        use litmask_internal::decrypt::decrypt_wrapper;
         let seed = [0x33u8; KEY_LEN];
         let artifacts = BuildArtifacts::derive(&seed);
         let recovered =

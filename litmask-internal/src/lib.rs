@@ -29,19 +29,26 @@ compile_error!(
 );
 
 mod aead;
-pub use self::aead::*;
+#[cfg(any(feature = "chacha20-poly1305", feature = "aes-gcm"))]
+pub use self::aead::CURRENT_CIPHER;
+pub use self::aead::{AeadError, aead_decrypt, aead_encrypt};
 
 mod kdf;
-pub use kdf::*;
+pub use kdf::{HW_ID_DERIVATION_CONTEXT, WEAK_XOR_KEY_LEN, derive_hw_key, derive_weak_xor_key};
 
 mod nonce;
-pub use nonce::*;
+pub use nonce::{nonce_for_call_site, nonce_for_wrapper};
 
 mod wire;
-pub use wire::*;
+pub use wire::{
+    CIPHER_AES_256_GCM, CIPHER_CHACHA20_POLY1305, CIPHER_OFFSET, CipherId, FORMAT_V1,
+    FormatVersion, HEADER_LEN, KEY_LEN, NONCE_LEN, NONCE_OFFSET, ParsedWrapper, TAG_LEN,
+    UnknownCipherId, UnknownFormatVersion, VERSION_OFFSET, WRAPPER_BODY_LEN, WRAPPER_LEN,
+    WrapperParseError, assemble_wrapper, parse_wrapper, wrapper_nonce,
+};
 
 pub mod base64url;
-pub mod cipher;
+pub mod decrypt;
 pub mod format_parser;
 pub mod scan;
 
