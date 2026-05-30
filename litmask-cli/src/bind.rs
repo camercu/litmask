@@ -27,9 +27,8 @@ use std::path::{Path, PathBuf};
 
 use litmask_internal::scan::{LocateOutcome, locate_wrapper};
 use litmask_internal::{
-    CIPHER_AES_256_GCM, CIPHER_CHACHA20_POLY1305, CIPHER_OFFSET, CipherId, FORMAT_V1, HEADER_LEN,
-    HW_ID_DERIVATION_CONTEXT, KEY_LEN, NONCE_LEN, NONCE_OFFSET, TAG_LEN, VERSION_OFFSET,
-    WRAPPER_LEN, base64url,
+    FormatVersion, HW_ID_DERIVATION_CONTEXT, KEY_LEN, NONCE_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN,
+    WrapperParseError, base64url,
 };
 use zeroize::Zeroizing;
 
@@ -137,26 +136,27 @@ pub(crate) fn plan_bind(
         );
     };
 
-    if wrapper[VERSION_OFFSET] != FORMAT_V1 {
-        return BindOutcome::UnsupportedFormat;
-    }
-    let cipher_byte = wrapper[CIPHER_OFFSET];
-    if cipher_byte != CIPHER_CHACHA20_POLY1305 && cipher_byte != CIPHER_AES_256_GCM {
-        return BindOutcome::UnsupportedCipher;
-    }
-    let nonce: [u8; NONCE_LEN] = wrapper[NONCE_OFFSET..NONCE_OFFSET + NONCE_LEN]
-        .try_into()
-        .expect("12-byte slice");
-    let body = &wrapper[HEADER_LEN..];
+    let parsed = match litmask_internal::parse_wrapper(&wrapper) {
+        Ok(p) => p,
+        Err(WrapperParseError::UnknownCipherId(_)) => return BindOutcome::UnsupportedCipher,
+        // `WrapperParseError` is `#[non_exhaustive]`; any future
+        // structural reject means the wrapper is unusable to us, so
+        // surface it as an unsupported format rather than a config error.
+        Err(_) => return BindOutcome::UnsupportedFormat,
+    };
+    let cipher = parsed.cipher;
+    let nonce = parsed.nonce;
 
-    let Some(mask_key) =
-        aead_decrypt_dispatch(cipher_byte, &parsed_config.unlock_key, &nonce, body)
-            .map(Zeroizing::new)
-            .filter(|p| p.len() == KEY_LEN)
-    else {
+    let plaintext = Zeroizing::new(
+        match litmask_internal::aead_decrypt(cipher, &parsed_config.unlock_key, nonce, parsed.body)
+        {
+            Ok(p) => p,
+            Err(_) => return BindOutcome::DecryptionFailed,
+        },
+    );
+    let Ok(mask_key) = <[u8; KEY_LEN]>::try_from(plaintext.as_slice()) else {
         return BindOutcome::DecryptionFailed;
     };
-    let mask_key: [u8; KEY_LEN] = mask_key.as_slice().try_into().expect("KEY_LEN bytes");
     let mask_key = Zeroizing::new(mask_key);
 
     let new_unlock_key = Zeroizing::new(litmask_internal::derive_hw_key(
@@ -167,33 +167,28 @@ pub(crate) fn plan_bind(
 
     // Re-encrypt mask_key under the new unlock_key, reusing the
     // existing nonce. Reuse is safe: the (key, nonce) pair never
-    // repeats because the key changed. `aead_encrypt_dispatch`
-    // returning `None` here would be a programmer bug: we've
-    // already validated `cipher_byte` against the two known
-    // constants (UnsupportedCipher branch above) and the AEAD
-    // implementations cannot fail for a 32-byte plaintext under
-    // a valid 32-byte key + 12-byte nonce. Panic on that
-    // contract violation rather than misclassify it as a
-    // user-input error (`ConfigMalformed`) — operators reading
-    // the diagnostic should see "this is a bug, file an issue",
-    // not "fix your config".
-    let new_body = aead_encrypt_dispatch(cipher_byte, &new_unlock_key, &nonce, mask_key.as_slice())
-        .unwrap_or_else(|| {
+    // repeats because the key changed. `aead_encrypt` returning
+    // `Err` here would be a programmer bug: `parse_wrapper`
+    // already validated the cipher, and the AEAD implementations
+    // cannot fail for a 32-byte plaintext under a valid 32-byte
+    // key + 12-byte nonce. Panic on that contract violation
+    // rather than misclassify it as a user-input error
+    // (`ConfigMalformed`) — operators reading the diagnostic
+    // should see "this is a bug, file an issue", not "fix your
+    // config".
+    let new_body = litmask_internal::aead_encrypt(cipher, &new_unlock_key, nonce, mask_key.as_slice())
+        .unwrap_or_else(|_| {
             unreachable!(
                 "AEAD encrypt refused a 32-byte mask_key under a validated cipher/key/nonce — programmer bug in litmask-cli's bind dispatch",
             )
         });
-    assert_eq!(
-        new_body.len(),
-        KEY_LEN + TAG_LEN,
-        "AEAD encrypt returned wrong-length body",
-    );
+    let new_body: &[u8; WRAPPER_BODY_LEN] = new_body
+        .as_slice()
+        .try_into()
+        .expect("AEAD output of 32-byte plaintext is WRAPPER_BODY_LEN bytes");
 
-    let mut new_wrapper = [0u8; WRAPPER_LEN];
-    new_wrapper[VERSION_OFFSET] = FORMAT_V1;
-    new_wrapper[CIPHER_OFFSET] = cipher_byte;
-    new_wrapper[NONCE_OFFSET..NONCE_OFFSET + NONCE_LEN].copy_from_slice(&nonce);
-    new_wrapper[HEADER_LEN..].copy_from_slice(&new_body);
+    let new_wrapper =
+        litmask_internal::assemble_wrapper(FormatVersion::CURRENT, cipher, nonce, new_body);
     let mut new_binary_bytes = binary_bytes.to_vec();
     for &off in &offsets {
         new_binary_bytes[off..off + WRAPPER_LEN].copy_from_slice(&new_wrapper);
@@ -215,26 +210,6 @@ fn decode_salt(salt_b64: Option<&str>) -> Result<Vec<u8>, ()> {
         None => Ok(Vec::new()),
         Some(s) => base64url::decode(s).map_err(|_| ()),
     }
-}
-
-fn aead_decrypt_dispatch(
-    cipher_byte: u8,
-    key: &[u8; KEY_LEN],
-    nonce: &[u8; NONCE_LEN],
-    body: &[u8],
-) -> Option<Vec<u8>> {
-    let cipher_id = CipherId::try_from(cipher_byte).ok()?;
-    litmask_internal::aead_decrypt(cipher_id, key, nonce, body).ok()
-}
-
-fn aead_encrypt_dispatch(
-    cipher_byte: u8,
-    key: &[u8; KEY_LEN],
-    nonce: &[u8; NONCE_LEN],
-    plaintext: &[u8],
-) -> Option<Vec<u8>> {
-    let cipher_id = CipherId::try_from(cipher_byte).ok()?;
-    litmask_internal::aead_encrypt(cipher_id, key, nonce, plaintext).ok()
 }
 
 fn render_config(unlock_key: &[u8; KEY_LEN], locator: &[u8; NONCE_LEN]) -> String {
@@ -514,6 +489,7 @@ pub(crate) fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use litmask_internal::{CIPHER_OFFSET, CipherId, HEADER_LEN, VERSION_OFFSET};
     use rstest::rstest;
 
     const MACHINE_ID_FIXTURE: &str = "fixed-test-machine-id";
@@ -522,17 +498,12 @@ mod tests {
         unlock_key: &[u8; KEY_LEN],
         mask_key: &[u8; KEY_LEN],
         nonce: &[u8; NONCE_LEN],
-        cipher_byte: u8,
+        cipher: CipherId,
     ) -> [u8; WRAPPER_LEN] {
         let body =
-            aead_encrypt_dispatch(cipher_byte, unlock_key, nonce, mask_key).expect("encrypt");
-        assert_eq!(body.len(), KEY_LEN + TAG_LEN);
-        let mut out = [0u8; WRAPPER_LEN];
-        out[VERSION_OFFSET] = FORMAT_V1;
-        out[CIPHER_OFFSET] = cipher_byte;
-        out[NONCE_OFFSET..NONCE_OFFSET + NONCE_LEN].copy_from_slice(nonce);
-        out[HEADER_LEN..].copy_from_slice(&body);
-        out
+            litmask_internal::aead_encrypt(cipher, unlock_key, nonce, mask_key).expect("encrypt");
+        let body: &[u8; WRAPPER_BODY_LEN] = body.as_slice().try_into().expect("WRAPPER_BODY_LEN");
+        litmask_internal::assemble_wrapper(FormatVersion::CURRENT, cipher, nonce, body)
     }
 
     fn config_text(unlock_key: &[u8; KEY_LEN], locator: &[u8; NONCE_LEN]) -> String {
@@ -564,7 +535,7 @@ mod tests {
         let unlock = [0xAAu8; KEY_LEN];
         let mask = [0xBBu8; KEY_LEN];
         let nonce = [0xCCu8; NONCE_LEN];
-        let wrapper = build_wrapper(&unlock, &mask, &nonce, CIPHER_CHACHA20_POLY1305);
+        let wrapper = build_wrapper(&unlock, &mask, &nonce, CipherId::ChaCha20Poly1305);
         let locator = locator_of(&wrapper);
         let cfg = config_text(&unlock, &locator);
         let binary = binary_with(&wrapper, 1);
@@ -591,8 +562,8 @@ mod tests {
             .position(|w| w == locator)
             .expect("locator preserved");
         let new_wrapper = &commit.new_binary_bytes[offset..offset + WRAPPER_LEN];
-        let recovered = aead_decrypt_dispatch(
-            CIPHER_CHACHA20_POLY1305,
+        let recovered = litmask_internal::aead_decrypt(
+            CipherId::ChaCha20Poly1305,
             &new_unlock,
             &nonce,
             &new_wrapper[HEADER_LEN..],
@@ -616,7 +587,7 @@ mod tests {
         let unlock = [0xAAu8; KEY_LEN];
         let mask = [0xBBu8; KEY_LEN];
         let nonce = [0xCCu8; NONCE_LEN];
-        let wrapper = build_wrapper(&unlock, &mask, &nonce, CIPHER_CHACHA20_POLY1305);
+        let wrapper = build_wrapper(&unlock, &mask, &nonce, CipherId::ChaCha20Poly1305);
         let cfg = config_text(&unlock, &locator_of(&wrapper));
         let binary = binary_with(&wrapper, 2);
 
@@ -635,13 +606,13 @@ mod tests {
             &unlock,
             &[0xBBu8; KEY_LEN],
             &nonce,
-            CIPHER_CHACHA20_POLY1305,
+            CipherId::ChaCha20Poly1305,
         );
         let wrapper_b = build_wrapper(
             &unlock,
             &[0xDDu8; KEY_LEN],
             &nonce,
-            CIPHER_CHACHA20_POLY1305,
+            CipherId::ChaCha20Poly1305,
         );
         let locator = locator_of(&wrapper_a);
         assert_eq!(locator, locator_of(&wrapper_b));
@@ -663,7 +634,7 @@ mod tests {
         let wrong = [0x99u8; KEY_LEN];
         let mask = [0xBBu8; KEY_LEN];
         let nonce = [0xCCu8; NONCE_LEN];
-        let wrapper = build_wrapper(&unlock, &mask, &nonce, CIPHER_CHACHA20_POLY1305);
+        let wrapper = build_wrapper(&unlock, &mask, &nonce, CipherId::ChaCha20Poly1305);
         let cfg = config_text(&wrong, &locator_of(&wrapper));
         let binary = binary_with(&wrapper, 1);
         assert!(matches!(
@@ -677,7 +648,7 @@ mod tests {
         let unlock = [0xAAu8; KEY_LEN];
         let mask = [0xBBu8; KEY_LEN];
         let nonce = [0xCCu8; NONCE_LEN];
-        let mut wrapper = build_wrapper(&unlock, &mask, &nonce, CIPHER_CHACHA20_POLY1305);
+        let mut wrapper = build_wrapper(&unlock, &mask, &nonce, CipherId::ChaCha20Poly1305);
         wrapper[VERSION_OFFSET] = 0x99;
         let cfg = config_text(&unlock, &locator_of(&wrapper));
         let binary = binary_with(&wrapper, 1);
@@ -692,7 +663,7 @@ mod tests {
         let unlock = [0xAAu8; KEY_LEN];
         let mask = [0xBBu8; KEY_LEN];
         let nonce = [0xCCu8; NONCE_LEN];
-        let mut wrapper = build_wrapper(&unlock, &mask, &nonce, CIPHER_CHACHA20_POLY1305);
+        let mut wrapper = build_wrapper(&unlock, &mask, &nonce, CipherId::ChaCha20Poly1305);
         wrapper[CIPHER_OFFSET] = 0x77; // neither 0x01 nor 0x02
         let cfg = config_text(&unlock, &locator_of(&wrapper));
         let binary = binary_with(&wrapper, 1);
@@ -709,7 +680,7 @@ mod tests {
         let unlock = [0x11u8; KEY_LEN];
         let mask = [0x22u8; KEY_LEN];
         let nonce = [0x33u8; NONCE_LEN];
-        let wrapper = build_wrapper(&unlock, &mask, &nonce, CIPHER_AES_256_GCM);
+        let wrapper = build_wrapper(&unlock, &mask, &nonce, CipherId::Aes256Gcm);
         let cfg = config_text(&unlock, &locator_of(&wrapper));
         let binary = binary_with(&wrapper, 1);
         let outcome = plan_bind(&cfg, &binary, None, MACHINE_ID_FIXTURE);
@@ -750,7 +721,7 @@ mod tests {
         let unlock = [0xAAu8; KEY_LEN];
         let mask = [0xBBu8; KEY_LEN];
         let nonce = [0xCCu8; NONCE_LEN];
-        let wrapper = build_wrapper(&unlock, &mask, &nonce, CIPHER_CHACHA20_POLY1305);
+        let wrapper = build_wrapper(&unlock, &mask, &nonce, CipherId::ChaCha20Poly1305);
         let cfg = config_text(&unlock, &locator_of(&wrapper));
         let binary = binary_with(&wrapper, 1);
 
