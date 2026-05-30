@@ -115,7 +115,7 @@ pub(crate) fn plan_bind(
     salt_b64: Option<&str>,
     machine_id: &str,
 ) -> BindOutcome {
-    let Ok(salt) = decode_salt(salt_b64) else {
+    let Some(salt) = decode_salt(salt_b64) else {
         return BindOutcome::SaltInvalid;
     };
     let Ok(parsed_config) = crate::config::parse(config_text) else {
@@ -128,12 +128,14 @@ pub(crate) fn plan_bind(
         LocateOutcome::Ambiguous => return BindOutcome::Ambiguous,
     };
     let offset = offsets[0];
-    let Ok(wrapper): Result<[u8; WRAPPER_LEN], _> =
-        binary_bytes[offset..offset + WRAPPER_LEN].try_into()
+    // `.get` (not direct indexing) so an out-of-range offset surfaces
+    // this diagnostic rather than a generic slice-index panic.
+    let Some(wrapper) = binary_bytes
+        .get(offset..offset + WRAPPER_LEN)
+        .and_then(|s| <[u8; WRAPPER_LEN]>::try_from(s).ok())
     else {
         unreachable!(
-            "locate_wrapper returned offset {offset} but slice into binary_bytes[..{}] is not WRAPPER_LEN bytes — programmer bug in litmask-cli's bind locator",
-            offset + WRAPPER_LEN,
+            "locate_wrapper returned offset {offset} with fewer than WRAPPER_LEN bytes remaining — programmer bug in litmask-cli's bind locator",
         );
     };
 
@@ -206,10 +208,12 @@ pub(crate) fn plan_bind(
     })
 }
 
-fn decode_salt(salt_b64: Option<&str>) -> Result<Vec<u8>, ()> {
+/// Decode the optional `--salt` argument. Absent salt yields an empty
+/// byte string; `None` signals the argument was not valid base64url.
+fn decode_salt(salt_b64: Option<&str>) -> Option<Vec<u8>> {
     match salt_b64 {
-        None => Ok(Vec::new()),
-        Some(s) => base64url::decode(s).map_err(|_| ()),
+        None => Some(Vec::new()),
+        Some(s) => base64url::decode(s).ok(),
     }
 }
 
