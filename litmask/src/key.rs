@@ -129,13 +129,16 @@ impl core::fmt::Debug for MaskKey {
     }
 }
 
+/// Canonical 32-byte test key (all zeros) encoded as 43-char
+/// base64url, no padding. Shared crate-wide so the key/env/file unit
+/// tests assert against one fixture instead of three drifting copies.
+#[cfg(test)]
+pub(crate) const VALID_BASE64URL_32B: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use alloc::format;
-
-    /// Canonical 32-byte test key encoded as 43-char base64url (no padding).
-    const VALID_BASE64URL_32B: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     #[test]
     fn from_base64url_accepts_valid_32_byte_key() {

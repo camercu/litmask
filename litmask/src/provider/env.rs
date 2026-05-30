@@ -85,9 +85,8 @@ fn parse_env_value(value: Option<Zeroizing<alloc::string::String>>) -> Result<Un
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::key::VALID_BASE64URL_32B;
     use alloc::string::{String, ToString};
-
-    const VALID_BASE64URL_32B: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     fn z(s: &str) -> Zeroizing<String> {
         Zeroizing::new(s.to_string())

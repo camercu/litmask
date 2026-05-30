@@ -156,9 +156,8 @@ where
 mod tests {
     use super::super::test_util::Counted;
     use super::*;
+    use crate::key::VALID_BASE64URL_32B;
     use core::sync::atomic::{AtomicUsize, Ordering};
-
-    const VALID_BASE64URL_32B: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     #[test]
     fn extract_key_from_buffer_zeroizes_input_exactly_once() {
