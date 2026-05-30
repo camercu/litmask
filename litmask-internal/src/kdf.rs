@@ -1,6 +1,6 @@
 //! Key derivation: hardware-id key and weak XOR key.
 
-use crate::{KEY_LEN, NONCE_LEN, NONCE_OFFSET, WRAPPER_LEN};
+use crate::{KEY_LEN, NONCE_LEN, WRAPPER_LEN, wrapper_nonce};
 
 /// BLAKE3 `derive_key` domain separator for the hardware-id key
 /// derivation. Shared verbatim by:
@@ -60,7 +60,7 @@ pub fn derive_hw_key(context: &str, machine_id: &[u8], salt: &[u8]) -> [u8; KEY_
 /// literals survive wrapper re-encryption.
 #[must_use]
 pub fn derive_weak_xor_key(wrapper: &[u8; WRAPPER_LEN]) -> [u8; WEAK_XOR_KEY_LEN] {
-    let nonce = &wrapper[NONCE_OFFSET..NONCE_OFFSET + NONCE_LEN];
+    let nonce: &[u8] = wrapper_nonce(wrapper);
     let mut rotated = [0u8; KEY_LEN];
     for i in 0..KEY_LEN {
         #[allow(clippy::cast_possible_truncation)]

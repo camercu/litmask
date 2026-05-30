@@ -59,6 +59,9 @@ pub const CIPHER_AES_256_GCM: u8 = 0x02;
 /// Wire-format version of the encrypted-`mask_key` wrapper. Encoded as
 /// a single byte at offset 0 of every wrapper.
 ///
+/// `Display` is intentionally omitted — human-readable variant names
+/// would be recognizable string signatures in user binaries.
+///
 /// Marked `#[non_exhaustive]` so adding a future format version is
 /// non-breaking for downstream exhaustive matches.
 #[repr(u8)]
@@ -108,6 +111,9 @@ impl TryFrom<u8> for FormatVersion {
 /// AEAD cipher identifier. Encoded as a single byte at offset 1 of
 /// every wrapper. Used by runtime tooling to confirm the wrapper was
 /// produced with the cipher the current binary was compiled to handle.
+///
+/// `Display` is intentionally omitted — human-readable cipher names
+/// would be recognizable string signatures in user binaries.
 ///
 /// Marked `#[non_exhaustive]` so adding AES-256-GCM (and any future
 /// cipher) is non-breaking for downstream exhaustive matches.
@@ -173,17 +179,29 @@ pub struct ParsedWrapper<'a> {
 #[non_exhaustive]
 pub enum WrapperParseError {
     /// Header byte 0 is not a recognized [`FormatVersion`] value.
-    UnknownFormatVersion(u8),
+    UnknownFormatVersion(UnknownFormatVersion),
     /// Header byte 1 is not a recognized [`CipherId`] value.
-    UnknownCipherId(u8),
+    UnknownCipherId(UnknownCipherId),
 }
 
 impl fmt::Display for WrapperParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnknownFormatVersion(v) => write!(f, "unknown format version: {v:#04x}"),
-            Self::UnknownCipherId(c) => write!(f, "unknown cipher: {c:#04x}"),
+            Self::UnknownFormatVersion(e) => e.fmt(f),
+            Self::UnknownCipherId(e) => e.fmt(f),
         }
+    }
+}
+
+impl From<UnknownFormatVersion> for WrapperParseError {
+    fn from(e: UnknownFormatVersion) -> Self {
+        Self::UnknownFormatVersion(e)
+    }
+}
+
+impl From<UnknownCipherId> for WrapperParseError {
+    fn from(e: UnknownCipherId) -> Self {
+        Self::UnknownCipherId(e)
     }
 }
 
@@ -219,6 +237,20 @@ const _: () = assert!(CIPHER_AES_256_GCM == CipherId::Aes256Gcm as u8);
 
 // ── Functions ───────────────────────────────────────────────────
 
+/// Extract the AEAD nonce from a raw wrapper byte array without
+/// parsing or validating the header fields.
+///
+/// # Panics
+///
+/// Never panics — the compile-time asserts in this module guarantee
+/// `NONCE_OFFSET + NONCE_LEN == HEADER_LEN <= WRAPPER_LEN`.
+#[must_use]
+pub fn wrapper_nonce(wrapper: &[u8; WRAPPER_LEN]) -> &[u8; NONCE_LEN] {
+    wrapper[NONCE_OFFSET..HEADER_LEN]
+        .try_into()
+        .expect("nonce slice is NONCE_LEN bytes by construction")
+}
+
 /// Build a wrapper byte array from typed header fields and the
 /// AEAD-encrypted body.
 #[must_use]
@@ -250,10 +282,8 @@ pub fn assemble_wrapper(
 /// slice-to-array conversions are sanity guards against future drift
 /// in the wrapper header layout.
 pub fn parse_wrapper(bytes: &[u8; WRAPPER_LEN]) -> Result<ParsedWrapper<'_>, WrapperParseError> {
-    let version = FormatVersion::try_from(bytes[VERSION_OFFSET])
-        .map_err(|e| WrapperParseError::UnknownFormatVersion(e.0))?;
-    let cipher = CipherId::try_from(bytes[CIPHER_OFFSET])
-        .map_err(|e| WrapperParseError::UnknownCipherId(e.0))?;
+    let version = FormatVersion::try_from(bytes[VERSION_OFFSET])?;
+    let cipher = CipherId::try_from(bytes[CIPHER_OFFSET])?;
     let nonce: &[u8; NONCE_LEN] = (&bytes[NONCE_OFFSET..HEADER_LEN])
         .try_into()
         .expect("nonce slice is NONCE_LEN bytes by construction");
@@ -329,7 +359,7 @@ mod tests {
         wrapper[0] = 0x99;
         assert_eq!(
             parse_wrapper(&wrapper).unwrap_err(),
-            WrapperParseError::UnknownFormatVersion(0x99),
+            WrapperParseError::UnknownFormatVersion(UnknownFormatVersion(0x99)),
         );
     }
 
@@ -346,7 +376,7 @@ mod tests {
         wrapper[1] = 0x99;
         assert_eq!(
             parse_wrapper(&wrapper).unwrap_err(),
-            WrapperParseError::UnknownCipherId(0x99),
+            WrapperParseError::UnknownCipherId(UnknownCipherId(0x99)),
         );
     }
 
