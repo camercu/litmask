@@ -14,6 +14,7 @@ use clap::{Parser, Subcommand};
 mod bind;
 mod config;
 mod exit;
+mod inputs;
 mod inspect;
 
 /// `litmask` companion tool for inspecting and rebinding
@@ -113,7 +114,7 @@ fn dispatch_inspect(binary: &Path, config: &Path) -> ExitCode {
 fn dispatch_bind(binary: &Path, config: &Path, salt: Option<&str>) -> ExitCode {
     match bind::run(binary, config, salt) {
         Ok(outcome) => ExitCode::from(outcome.exit_code()),
-        Err(e @ (bind::ShellError::ConfigUnreadable | bind::ShellError::BinaryUnreadable)) => {
+        Err(e @ bind::ShellError::Input(_)) => {
             eprintln!("litmask: {}", e.message());
             ExitCode::from(exit::USAGE)
         }

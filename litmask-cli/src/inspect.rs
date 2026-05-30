@@ -15,7 +15,6 @@
 //! | `ConfigMalformed` | 64 (`EX_USAGE`) | (stderr message at shell) |
 
 use std::borrow::Cow;
-use std::fs;
 use std::path::Path;
 
 use litmask_internal::scan::{LocateOutcome, count_occurrences, locate_wrapper};
@@ -75,32 +74,16 @@ pub(crate) fn plan(config_text: &str, binary_bytes: &[u8]) -> Outcome {
 /// `Err` covers shell-only failures (file I/O); everything that
 /// the planner can decide flows through `Ok(Outcome)` so the
 /// caller can map it uniformly.
-pub(crate) fn run(binary_path: &Path, config_path: &Path) -> Result<Outcome, ShellError> {
-    let config_text = fs::read_to_string(config_path).map_err(|_| ShellError::ConfigUnreadable)?;
-    let binary_bytes = fs::read(binary_path).map_err(|_| ShellError::BinaryUnreadable)?;
+pub(crate) fn run(
+    binary_path: &Path,
+    config_path: &Path,
+) -> Result<Outcome, crate::inputs::InputError> {
+    let (config_text, binary_bytes) = crate::inputs::read(binary_path, config_path)?;
     let outcome = plan(&config_text, &binary_bytes);
     if let Some(tag) = outcome.stdout_tag() {
         println!("{tag}");
     }
     Ok(outcome)
-}
-
-/// Shell-layer failures — the I/O steps that happen before the
-/// planner ever runs. All map to `EX_USAGE` at the caller because
-/// they indicate the operator's inputs (paths) are wrong.
-#[derive(Debug)]
-pub(crate) enum ShellError {
-    ConfigUnreadable,
-    BinaryUnreadable,
-}
-
-impl ShellError {
-    pub(crate) fn message(&self) -> &'static str {
-        match self {
-            Self::ConfigUnreadable => "config file is missing or unreadable",
-            Self::BinaryUnreadable => "target binary is missing or unreadable",
-        }
-    }
 }
 
 #[cfg(test)]

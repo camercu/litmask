@@ -444,8 +444,7 @@ fn resign_macos(_binary_path: &Path) {}
 /// top level.
 #[derive(Debug)]
 pub(crate) enum ShellError {
-    ConfigUnreadable,
-    BinaryUnreadable,
+    Input(crate::inputs::InputError),
     HardwareIdUnavailable,
     CommitFailed(io::Error),
 }
@@ -453,8 +452,7 @@ pub(crate) enum ShellError {
 impl ShellError {
     pub(crate) fn message(&self) -> String {
         match self {
-            Self::ConfigUnreadable => "config file is missing or unreadable".to_string(),
-            Self::BinaryUnreadable => "target binary is missing or unreadable".to_string(),
+            Self::Input(e) => e.message().to_string(),
             Self::HardwareIdUnavailable => "hardware_id_unavailable".to_string(),
             Self::CommitFailed(e) => format!("commit failed: {e}"),
         }
@@ -468,8 +466,8 @@ pub(crate) fn run(
     config_path: &Path,
     salt_b64: Option<&str>,
 ) -> Result<BindOutcome, ShellError> {
-    let config_text = fs::read_to_string(config_path).map_err(|_| ShellError::ConfigUnreadable)?;
-    let binary_bytes = fs::read(binary_path).map_err(|_| ShellError::BinaryUnreadable)?;
+    let (config_text, binary_bytes) =
+        crate::inputs::read(binary_path, config_path).map_err(ShellError::Input)?;
     let machine_id = machine_uid::get().map_err(|_| ShellError::HardwareIdUnavailable)?;
 
     let outcome = plan_bind(&config_text, &binary_bytes, salt_b64, &machine_id);
