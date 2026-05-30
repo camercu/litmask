@@ -65,7 +65,7 @@ pub fn emit() {
     let profile_dir = profile_dir_of(&out_dir);
     let profile = Profile::from_env();
 
-    let (mut seed, seed_source) = source_seed(&profile_dir);
+    let (mut seed, seed_source) = source_seed(&profile_dir, profile);
 
     // A release build whose seed was freshly generated (no
     // `LITMASK_RNG_SEED` supplied) has no persistence path, so the
@@ -215,12 +215,8 @@ impl Profile {
 /// 1. `LITMASK_RNG_SEED` env var (base64url, 32 bytes), regardless of profile.
 /// 2. Profile-dir persist file (debug profile only).
 /// 3. Fresh OS-RNG generation (with persist write on debug; no persist on release).
-fn source_seed(profile_dir: &Path) -> ([u8; KEY_LEN], SeedSource) {
-    source_seed_with_env_and_profile(
-        profile_dir,
-        std::env::var_os("LITMASK_RNG_SEED"),
-        Profile::from_env(),
-    )
+fn source_seed(profile_dir: &Path, profile: Profile) -> ([u8; KEY_LEN], SeedSource) {
+    source_seed_with_env_and_profile(profile_dir, std::env::var_os("LITMASK_RNG_SEED"), profile)
 }
 
 /// `source_seed`'s pure core: takes the env value and profile
@@ -440,7 +436,7 @@ mod tests {
             // pre-populated by the parent. Asserts the outer wrapper
             // honored it.
             let dir = std::env::var(DIR_VAR).expect("DIR_VAR set by parent");
-            let (seed, source) = source_seed(Path::new(&dir));
+            let (seed, source) = source_seed(Path::new(&dir), Profile::Debug);
             assert_eq!(source, SeedSource::Env, "outer wrapper must read env");
             assert_eq!(seed, [0xCDu8; KEY_LEN], "env-decoded seed mismatch");
             return;
