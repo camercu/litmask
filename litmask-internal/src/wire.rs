@@ -289,9 +289,7 @@ pub fn parse_wrapper(bytes: &[u8; WRAPPER_LEN]) -> Result<ParsedWrapper<'_>, Wra
     // the value — see `ParsedWrapper` for why it is not retained.
     FormatVersion::try_from(bytes[VERSION_OFFSET])?;
     let cipher = CipherId::try_from(bytes[CIPHER_OFFSET])?;
-    let nonce: &[u8; NONCE_LEN] = (&bytes[NONCE_OFFSET..HEADER_LEN])
-        .try_into()
-        .expect("nonce slice is NONCE_LEN bytes by construction");
+    let nonce = wrapper_nonce(bytes);
     let body: &[u8; WRAPPER_BODY_LEN] = (&bytes[HEADER_LEN..])
         .try_into()
         .expect("body slice is WRAPPER_BODY_LEN bytes by construction");

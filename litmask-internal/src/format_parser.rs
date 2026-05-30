@@ -174,14 +174,26 @@ fn resolve_value_ref(
         *next_auto = next_auto
             .checked_add(1)
             .ok_or(TemplateParseError::TooManyAutoPositional)?;
-        Ok(TemplateRef::Positional(i))
-    } else if header.chars().all(|c| c.is_ascii_digit()) {
-        let i = header
+        return Ok(TemplateRef::Positional(i));
+    }
+    classify_token(header, || TemplateParseError::InvalidPositionalIndex)
+}
+
+/// Classify a non-empty token as a positional index (all-digit) or a
+/// named reference. `on_overflow` supplies the error when an all-digit
+/// token does not fit `usize`; the two call sites report different
+/// variants for the same overflow.
+fn classify_token(
+    token: &str,
+    on_overflow: impl FnOnce() -> TemplateParseError,
+) -> Result<TemplateRef, TemplateParseError> {
+    if token.chars().all(|c| c.is_ascii_digit()) {
+        token
             .parse::<usize>()
-            .map_err(|_| TemplateParseError::InvalidPositionalIndex)?;
-        Ok(TemplateRef::Positional(i))
+            .map(TemplateRef::Positional)
+            .map_err(|_| on_overflow())
     } else {
-        Ok(TemplateRef::Named(header.to_string()))
+        Ok(TemplateRef::Named(token.to_string()))
     }
 }
 
@@ -209,7 +221,9 @@ fn consume_placeholder_spec(
                 if is_token_char(c) {
                     token.push(c);
                 } else if c == '$' && !token.is_empty() {
-                    spec_refs.push(make_template_ref(&token)?);
+                    spec_refs.push(classify_token(&token, || {
+                        TemplateParseError::OverflowingIndex(token.clone())
+                    })?);
                     token.clear();
                 } else {
                     token.clear();
@@ -218,17 +232,6 @@ fn consume_placeholder_spec(
         }
     }
     Ok((spec_raw, spec_refs))
-}
-
-fn make_template_ref(token: &str) -> Result<TemplateRef, TemplateParseError> {
-    if token.chars().all(|c| c.is_ascii_digit()) {
-        let i = token
-            .parse::<usize>()
-            .map_err(|_| TemplateParseError::OverflowingIndex(token.to_string()))?;
-        Ok(TemplateRef::Positional(i))
-    } else {
-        Ok(TemplateRef::Named(token.to_string()))
-    }
 }
 
 /// Whether `c` is valid inside a placeholder name or numeric index.
