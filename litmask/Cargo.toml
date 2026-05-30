@@ -8,11 +8,22 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 build = "build.rs"
+# Shared workspace README; `cargo` flattens the parent path into the
+# package root on publish so the crates.io page renders it.
+readme = "../README.md"
 # Explicit allowlist for `cargo publish`. `tests/` is dev-only (runs in
 # this workspace's CI, not for downstream consumers) and is excluded to
 # keep the published crate small; `examples/` ships so the rendered
-# docs.rs page can link to working samples.
-include = ["src/**/*", "build.rs", "examples/**/*"]
+# docs.rs page can link to working samples. The LICENSE-* entries are
+# symlinks to the workspace-root originals (dual MIT/Apache-2.0) that
+# `cargo` dereferences into the package.
+include = [
+  "src/**/*",
+  "build.rs",
+  "examples/**/*",
+  "LICENSE-MIT",
+  "LICENSE-APACHE",
+]
 
 [features]
 # Cipher selection (§1.5.1). Default pulls in ChaCha20-Poly1305 via
