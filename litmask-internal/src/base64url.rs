@@ -14,6 +14,8 @@
 //! The wrapper is a runtime-crate concern; this module stays minimal
 //! so the build crate can use it without a `zeroize` dependency.
 
+use core::fmt;
+
 use base64ct::{Base64UrlUnpadded, Encoding};
 
 /// Encode raw bytes as RFC 4648 §5 url-safe base64 without padding.
@@ -46,6 +48,15 @@ pub enum DecodeError {
     /// Input contained non-url-safe-alphabet characters or otherwise
     /// failed base64 decoding.
     Invalid,
+}
+
+impl fmt::Display for DecodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Padded => f.write_str("padded input rejected"),
+            Self::Invalid => f.write_str("invalid encoding"),
+        }
+    }
 }
 
 #[cfg(test)]
