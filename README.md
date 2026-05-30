@@ -1,5 +1,11 @@
 # litmask
 
+[![crates.io](https://img.shields.io/crates/v/litmask.svg)](https://crates.io/crates/litmask)
+[![docs.rs](https://img.shields.io/docsrs/litmask)](https://docs.rs/litmask)
+[![CI](https://github.com/camercu/litmask/actions/workflows/ci.yml/badge.svg)](https://github.com/camercu/litmask/actions/workflows/ci.yml)
+[![MSRV](https://img.shields.io/badge/rustc-1.88+-blue.svg)](https://github.com/camercu/litmask)
+[![License](https://img.shields.io/crates/l/litmask.svg)](#license)
+
 **Hide string literals from `strings(1)` and hex editors.** AEAD-encrypt
 every string constant at compile time, decrypt at runtime. Drop-in
 macros, layered key management, `no_std` ready.
@@ -18,6 +24,10 @@ fn main() -> Result<(), litmask::InitError> {
 strings target/release/my_app | grep "sensitive data"   # no output
 ```
 
+`mask!` returns an owned `String` (decryption happens at runtime), not
+`&str` — bind `let s: &str = &mask!("...");` when you need a borrow. See
+[Macros](#macros) for the full caveat and `weak_mask!`.
+
 ## Why litmask
 
 | | `obfstr` | `litcrypt` | **`litmask`** |
@@ -34,6 +44,8 @@ strings target/release/my_app | grep "sensitive data"   # no output
 
 ## Quick start
 
+Requires Rust 1.88+.
+
 ```sh
 cargo add litmask
 cargo add --build litmask-build
@@ -49,6 +61,29 @@ cargo build
 LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' target/debug/litmask.config) \
     cargo run
 ```
+
+`litmask_build::emit()` writes `litmask.config` to the build profile
+directory (`target/debug/` here). The `awk` one-liner reads its
+`unlock_key` and exports it as `LITMASK_UNLOCK_KEY`, which the default
+`EnvVarProvider` uses to unwrap the mask key at runtime.
+
+## How it works
+
+litmask splits encryption across build time and run time:
+
+1. **Build** — `litmask_build::emit()` (in `build.rs`) generates a random
+   seed, derives the `mask_key`, and writes `litmask.config` plus the env
+   vars the proc macro reads.
+2. **Compile** — each `mask!` literal is AEAD-encrypted during macro
+   expansion and the ciphertext is embedded in the binary as `&[u8]`. The
+   plaintext never appears in the output.
+3. **Run** — `init!()` unwraps the `mask_key` using an `unlock_key`
+   supplied by a [`KeyProvider`](#key-providers); `mask!` then decrypts
+   each blob on demand.
+
+The `unlock_key` is the only secret that lives outside the binary, so key
+management reduces to *how you deliver the unlock_key* — environment
+variable, file, hardware ID, or a provider you write.
 
 ## Macros
 
