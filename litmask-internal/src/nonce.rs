@@ -18,14 +18,18 @@ const NONCE_TAG_CALL_SITE: &[u8] = b"call-site";
 /// binaries. Must differ from `NONCE_TAG_CALL_SITE`.
 const NONCE_TAG_WRAPPER: &[u8] = b"wrapper";
 
+/// Take the first [`NONCE_LEN`] bytes of a BLAKE3 digest as the nonce.
+fn truncate_to_nonce(digest: &blake3::Hash) -> [u8; NONCE_LEN] {
+    let mut out = [0u8; NONCE_LEN];
+    out.copy_from_slice(&digest.as_bytes()[..NONCE_LEN]);
+    out
+}
+
 /// Derive the wrapper nonce: first [`NONCE_LEN`] bytes of the keyed
 /// BLAKE3 hash of a fixed domain-separator string under `seed`.
 #[must_use]
 pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
-    let digest = blake3::keyed_hash(seed, NONCE_TAG_WRAPPER);
-    let mut out = [0u8; NONCE_LEN];
-    out.copy_from_slice(&digest.as_bytes()[..NONCE_LEN]);
-    out
+    truncate_to_nonce(&blake3::keyed_hash(seed, NONCE_TAG_WRAPPER))
 }
 
 /// Derive a per-call-site nonce: first [`NONCE_LEN`] bytes of the
@@ -83,10 +87,7 @@ pub fn nonce_for_call_site(
     hasher.update(&line.to_le_bytes());
     hasher.update(&column.to_le_bytes());
     hasher.update(plaintext);
-    let digest = hasher.finalize();
-    let mut out = [0u8; NONCE_LEN];
-    out.copy_from_slice(&digest.as_bytes()[..NONCE_LEN]);
-    out
+    truncate_to_nonce(&hasher.finalize())
 }
 
 #[cfg(test)]
