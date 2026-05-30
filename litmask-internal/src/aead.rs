@@ -111,6 +111,11 @@ macro_rules! dispatch_cipher {
 /// encrypt step reports failure; for the ChaCha20-Poly1305 inputs litmask
 /// produces this is not reachable in practice, but the result type
 /// matches [`aead_decrypt`] so callers can share a control-flow path.
+///
+/// # Panics
+///
+/// Panics with `unreachable!()` if called with a [`CipherId`] whose
+/// AEAD implementation is not compiled into this build.
 pub fn aead_encrypt(
     cipher_id: CipherId,
     key: &[u8; KEY_LEN],

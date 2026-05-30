@@ -32,46 +32,31 @@ pub fn nonce_for_wrapper(seed: &[u8; KEY_LEN]) -> [u8; NONCE_LEN] {
     truncate_to_nonce(&blake3::keyed_hash(seed, NONCE_TAG_WRAPPER))
 }
 
-/// Derive a per-call-site nonce: first [`NONCE_LEN`] bytes of the
-/// keyed BLAKE3 hash of the `b"call-site"` domain separator
-/// followed by the call site's `file` path, `line`, `column`, and
-/// the `plaintext` being encrypted — all keyed on `seed`.
+/// Derive a per-call-site nonce: first [`NONCE_LEN`] bytes of a keyed
+/// BLAKE3 hash over the `b"call-site"` separator, the length-prefixed
+/// `file`, `line`, `column`, and the `plaintext` — all keyed on `seed`.
 ///
-/// **Why include plaintext.** `mask_format!` synthesizes one `mask!()`
-/// per template fragment with all fragments routed through the
-/// `mask_format!` invocation's span, so the `(file, line, column)`
-/// triple alone is not unique across mask invocations within a
-/// single proc-macro expansion. Mixing the plaintext into the
-/// keyed hash guarantees that two `mask!()` calls with distinct
-/// plaintexts at the same span get distinct nonces — required for
-/// AEAD security, since encrypting two plaintexts under one
-/// `(key, nonce)` pair would XOR-leak their contents.
+/// **Plaintext is mixed in** because `mask_format!` routes every
+/// fragment's synthesized `mask!()` through one span, so
+/// `(file, line, column)` alone is not unique within an expansion.
+/// Distinct plaintexts must get distinct nonces: reusing a
+/// `(key, nonce)` pair across two plaintexts XOR-leaks both.
 ///
-/// **Why (file, line, column) at all.** Keying on source
-/// coordinates instead of an expansion-order counter makes nonces
-/// stable under parallel macro expansion (`-Z threads=N`): two
-/// `mask!()` calls at distinct source positions receive distinct
-/// nonces regardless of which rustc thread visited first. The
-/// counter-based scheme this replaces relied on sequential
-/// expansion and would race under parallelization.
+/// **Source coordinates** (rather than an expansion-order counter)
+/// keep nonces stable under parallel macro expansion (`-Z threads=N`);
+/// a counter would race on visitation order.
 ///
-/// **Encoding.** `line` and `column` are 4-byte little-endian.
-/// `file` carries an 8-byte little-endian length prefix so its
-/// byte stream cannot be ambiguously decoded as a distinct tuple
-/// whose file/line boundary lies elsewhere. `plaintext` is the
-/// trailing variable-length field, so any change to its bytes
-/// changes the hash output directly — no length prefix needed.
+/// **Encoding.** `line`/`column` are 4-byte little-endian; `file`
+/// carries an 8-byte little-endian length prefix so its bytes cannot
+/// be reparsed as a different tuple. `plaintext` trails as the
+/// variable-length field — any change to it changes the hash, so it
+/// needs no prefix.
 ///
-/// **Seed keying.** The seed-keyed hash is hardening, not a
-/// security boundary: the nonce ships in plaintext at the head of
-/// every blob. Keying on the seed prevents source coordinates and
-/// plaintext-length patterns from showing up as recognizable
-/// structure in `.rodata`.
-///
-/// **Domain separation.** The call-site domain separator
-/// (`b"call-site"`) differs from the wrapper's
-/// (`b"wrapper"`), so the call-site nonce space is
-/// disjoint from the wrapper's at the same seed.
+/// **Seed keying** is hardening, not a boundary (the nonce ships in
+/// plaintext at the head of every blob): it keeps source coordinates
+/// and length patterns out of `.rodata` as recognizable structure. The
+/// `b"call-site"` separator keeps this nonce space disjoint from the
+/// wrapper's (`b"wrapper"`) under one seed.
 #[must_use]
 pub fn nonce_for_call_site(
     seed: &[u8; KEY_LEN],
