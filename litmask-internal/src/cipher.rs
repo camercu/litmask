@@ -1,9 +1,11 @@
-//! ChaCha20-Poly1305 AEAD decrypt path (functional core).
+//! AEAD decrypt path (functional core).
 //!
 //! Stateless decrypt operations plus higher-level pure helpers that
 //! validate the wrapper format. Encryption is performed only at build
 //! time (in the build-script helper) and at proc-macro expansion time;
 //! the runtime crate decrypts only.
+
+use core::fmt;
 
 use zeroize::Zeroizing;
 
@@ -28,6 +30,20 @@ pub enum DecryptError {
     /// AEAD authentication failed (wrong unlock or mask key, or
     /// tampered ciphertext).
     AuthenticationFailed,
+    /// Decrypted payload length does not match the expected key size.
+    InvalidPayloadLength,
+}
+
+impl fmt::Display for DecryptError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedFormat => f.write_str("unsupported format version"),
+            Self::UnsupportedCipher => f.write_str("unsupported cipher"),
+            Self::BlobTooShort => f.write_str("encrypted data too short"),
+            Self::AuthenticationFailed => f.write_str("authentication failed"),
+            Self::InvalidPayloadLength => f.write_str("invalid decrypted payload length"),
+        }
+    }
 }
 
 impl From<AeadError> for DecryptError {
@@ -83,7 +99,7 @@ pub fn decrypt_wrapper(
     plaintext
         .as_slice()
         .try_into()
-        .map_err(|_| DecryptError::AuthenticationFailed)
+        .map_err(|_| DecryptError::InvalidPayloadLength)
 }
 
 /// Decrypt a per-string blob.
