@@ -36,14 +36,17 @@ pub const WEAK_XOR_KEY_LEN: usize = KEY_LEN + KEY_LEN;
 /// binaries; the CLI imports [`HW_ID_DERIVATION_CONTEXT`] directly.
 ///
 /// Derivation: `BLAKE3::derive_key(context, len(machine_id) ||
-/// machine_id || salt)`. Length-prefixing `machine_id` prevents
-/// concatenation ambiguity — without it, `(id=b"ab", salt=b"cd")`
-/// and `(id=b"abc", salt=b"d")` would hash the same input.
+/// machine_id || salt)`, where `len` is an 8-byte little-endian length
+/// prefix. Length-prefixing `machine_id` prevents concatenation
+/// ambiguity — without it, `(id=b"ab", salt=b"cd")` and
+/// `(id=b"abc", salt=b"d")` would hash the same input. The 8-byte
+/// width matches the call-site nonce's `file` prefix
+/// ([`nonce_for_call_site`](crate::nonce_for_call_site)) so the crate
+/// uses one length-prefix convention throughout.
 #[must_use]
 pub fn derive_hw_key(context: &str, machine_id: &[u8], salt: &[u8]) -> [u8; KEY_LEN] {
     let mut hasher = blake3::Hasher::new_derive_key(context);
-    #[allow(clippy::cast_possible_truncation)] // machine IDs are trivially <4 GiB
-    hasher.update(&(machine_id.len() as u32).to_le_bytes());
+    hasher.update(&(machine_id.len() as u64).to_le_bytes());
     hasher.update(machine_id);
     hasher.update(salt);
     *hasher.finalize().as_bytes()

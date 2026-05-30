@@ -1928,7 +1928,7 @@ BLAKE3-keyed-hash.
 §2.5.4.3 — `HardwareIdProvider::unlock_key()` SHALL:
 - Read the machine ID via `machine-uid::get()`
 - Derive a 32-byte key via `BLAKE3::derive_key(context, len(machine_id) ||
-  machine_id || salt)`, where `len` is a 4-byte little-endian length prefix
+  machine_id || salt)`, where `len` is an 8-byte little-endian length prefix
   and `salt` defaults to the empty byte string when no salt is configured.
   The length prefix prevents concatenation ambiguity between `machine_id`
   and `salt`.
