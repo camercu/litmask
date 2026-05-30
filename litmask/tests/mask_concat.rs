@@ -33,7 +33,7 @@ fn mask_concat_nested_concat() {
 #[test]
 fn mask_concat_nested_include_str() {
     common::init_once();
-    let s: String = mask_concat!("prefix:", include_str!("examples/fixtures/quote.txt"));
+    let s: String = mask_concat!("prefix:", include_str!("../examples/fixtures/quote.txt"));
     assert!(s.starts_with("prefix:"));
     assert!(s.contains("vermilion-axolotl-7e2d4a"));
 }
@@ -69,4 +69,41 @@ fn mask_concat_negative_integer() {
     common::init_once();
     let s: String = mask_concat!("n=", -3);
     assert_eq!(s, "n=-3");
+}
+
+#[test]
+fn mask_concat_empty_matches_stdlib() {
+    common::init_once();
+    // Stdlib `concat!()` yields `""`; `mask_concat!()` mirrors that.
+    let s: String = mask_concat!();
+    assert_eq!(s, concat!());
+    assert_eq!(s, "");
+}
+
+#[test]
+fn mask_concat_integer_radixes_match_stdlib() {
+    common::init_once();
+    // Hex/octal/binary integer literals stringify to decimal, exactly
+    // like stdlib `concat!`.
+    let s: String = mask_concat!(0x10, "-", 0o17, "-", 0b101, "-", 1_000);
+    assert_eq!(s, concat!(0x10, "-", 0o17, "-", 0b101, "-", 1_000));
+    assert_eq!(s, "16-15-5-1000");
+}
+
+#[test]
+fn mask_concat_float_forms_match_stdlib() {
+    common::init_once();
+    // Plain, fractional, and exponent float literals stringify
+    // identically to stdlib `concat!`.
+    let s: String = mask_concat!(1.0, "-", 1e3, "-", 1.5e2, "-", 2.5f64);
+    assert_eq!(s, concat!(1.0, "-", 1e3, "-", 1.5e2, "-", 2.5f64));
+    assert_eq!(s, "1.0-1e3-1.5e2-2.5");
+}
+
+#[test]
+fn mask_concat_nested_empty_concat_matches_stdlib() {
+    common::init_once();
+    let s: String = mask_concat!("a", concat!(), "b");
+    assert_eq!(s, concat!("a", concat!(), "b"));
+    assert_eq!(s, "ab");
 }

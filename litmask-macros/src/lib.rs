@@ -173,13 +173,19 @@ pub fn mask_env(input: TokenStream) -> TokenStream {
 
 /// Mask a build-time environment-variable value at compile time,
 /// returning `Some(String)` when set and `None::<String>` when
-/// unset. Mirrors stdlib `option_env!`'s contract — the unset case
-/// is a legitimate runtime `None`, not a compile error.
+/// unset. Mirrors stdlib `option_env!`'s contract exactly — an unset
+/// variable is a legitimate runtime `None`, but a variable that is
+/// present with a non-UTF-8 value is a compile error (NOT `None`).
 ///
 /// # Errors
 ///
 /// - Non-string-literal argument: `mask_option_env! requires a
 ///   string literal name`.
+/// - Variable present but not valid UTF-8: `mask_option_env!
+///   unicode-failure: environment variable NAME is set but its value
+///   is not valid UTF-8` (matches stdlib `option_env!`, which also
+///   rejects non-Unicode values at compile time rather than yielding
+///   `None`).
 #[proc_macro]
 pub fn mask_option_env(input: TokenStream) -> TokenStream {
     mask_option_env::expand(input)

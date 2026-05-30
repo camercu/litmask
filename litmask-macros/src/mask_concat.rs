@@ -8,7 +8,6 @@
 //! substitution table.
 
 use std::fs;
-use std::path::PathBuf;
 
 use proc_macro::TokenStream;
 use syn::parse::{Parse, ParseStream};
@@ -16,7 +15,7 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{LitStr, Token, parse_macro_input};
 
-use crate::common::{FailTag, compile_error, mask_str};
+use crate::common::{FailTag, compile_error, env_failure, include_relative_path, mask_str};
 
 const MACRO_NAME: &str = "mask_concat";
 const INVALID_DETAIL: &str =
@@ -24,20 +23,16 @@ const INVALID_DETAIL: &str =
 
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let MaskConcatArgs(args) = parse_macro_input!(input as MaskConcatArgs);
-    if args.is_empty() {
-        return compile_error(
-            proc_macro2::Span::call_site(),
-            MACRO_NAME,
-            FailTag::EmptyArgs,
-            "requires at least one argument",
-        )
-        .to_compile_error()
-        .into();
-    }
-    let span = args.first().expect("non-empty").span();
+    // Empty argument list mirrors stdlib `concat!()` → `""` (no error).
+    let span = args
+        .first()
+        .map_or_else(proc_macro2::Span::call_site, MaskConcatArg::span);
+    // Nested `include_str!` resolves relative to the file containing
+    // the `mask_concat!` invocation, matching stdlib `include_str!`.
+    let call_file = proc_macro::Span::call_site().file();
     let mut acc = String::new();
     for arg in &args {
-        match arg.resolve() {
+        match arg.resolve(&call_file) {
             Ok(s) => acc.push_str(&s),
             Err(e) => return e.to_compile_error().into(),
         }
@@ -73,27 +68,19 @@ impl MaskConcatArg {
         }
     }
 
-    fn resolve(&self) -> syn::Result<String> {
+    fn resolve(&self, call_file: &str) -> syn::Result<String> {
         match self {
             Self::Resolved(value, _) => Ok(value.clone()),
             Self::Concat(args, _) => {
                 let mut s = String::new();
                 for arg in args {
-                    s.push_str(&arg.resolve()?);
+                    s.push_str(&arg.resolve(call_file)?);
                 }
                 Ok(s)
             }
             Self::IncludeStr(path_lit, _) => {
                 let path_str = path_lit.value();
-                let dir = crate::common::manifest_dir().ok_or_else(|| {
-                    compile_error(
-                        path_lit.span(),
-                        MACRO_NAME,
-                        FailTag::ReadFailure,
-                        "nested include_str!: CARGO_MANIFEST_DIR not set",
-                    )
-                })?;
-                let resolved = PathBuf::from(dir).join(&path_str);
+                let resolved = include_relative_path(call_file, &path_str);
                 fs::read_to_string(&resolved).map_err(|e| {
                     compile_error(
                         path_lit.span(),
@@ -106,18 +93,7 @@ impl MaskConcatArg {
             Self::Env(name_lit, _) => {
                 let name = name_lit.value();
                 std::env::var(&name).map_err(|e| {
-                    let (tag, detail) = match e {
-                        std::env::VarError::NotPresent => (
-                            FailTag::Unset,
-                            format!("nested env!: environment variable `{name}` is not set"),
-                        ),
-                        std::env::VarError::NotUnicode(_) => (
-                            FailTag::UnicodeFailure,
-                            format!(
-                                "nested env!: environment variable `{name}` is set but its value is not valid UTF-8"
-                            ),
-                        ),
-                    };
+                    let (tag, detail) = env_failure(&e, &name, "nested env!: ");
                     compile_error(name_lit.span(), MACRO_NAME, tag, &detail)
                 })
             }

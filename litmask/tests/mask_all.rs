@@ -163,9 +163,10 @@ fn mask_all_skips_pattern_literals_while_let() {
 #[mask_all]
 mod include_str_wrapped {
     pub fn fixture() -> String {
-        // Shares the fixture file with `mask_all_demo`; path resolves
-        // relative to `CARGO_MANIFEST_DIR` (= `litmask/`).
-        include_str!("examples/fixtures/mask_all_include_str.txt").to_string()
+        // `#[mask_all]` rewrites this `include_str!` to
+        // `mask_include_str!`, which resolves the path relative to this
+        // source file (stdlib `include_str!` semantics).
+        include_str!("../examples/fixtures/mask_all_include_str.txt").to_string()
     }
 }
 
@@ -631,8 +632,9 @@ fn mask_all_leaves_debug_assert_ne_untouched() {
 mod include_bytes_rewritten {
     pub fn fixture() -> Vec<u8> {
         // mask_all rewrites `include_bytes!(...)` to
-        // `mask_include_bytes!(...)` which returns `Vec<u8>`.
-        include_bytes!("examples/fixtures/binary_blob.bin")
+        // `mask_include_bytes!(...)` which returns `Vec<u8>` and
+        // resolves the path relative to this source file.
+        include_bytes!("../examples/fixtures/binary_blob.bin")
     }
 }
 

@@ -1,7 +1,6 @@
-//! When the named env var is unset, `mask_env!` consults the
-//! optional second-arg custom message (mirroring stdlib `env!`).
-//! The custom message appears in place of the default
-//! "is not set" tail.
+//! When the named env var is unset, `mask_env!` emits the optional
+//! second-arg custom message verbatim — no `mask_env!` prefix —
+//! exactly as stdlib `env!("NAME", "msg")` does (spec §2.1.6.3).
 
 use litmask::mask_env;
 

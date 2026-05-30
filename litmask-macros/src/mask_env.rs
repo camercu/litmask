@@ -11,7 +11,7 @@ use proc_macro::TokenStream;
 use syn::parse::{Parse, ParseStream};
 use syn::{LitStr, Token, parse_macro_input};
 
-use crate::common::{FailTag, compile_error, mask_str};
+use crate::common::{FailTag, compile_error, env_failure, mask_str};
 
 const MACRO_NAME: &str = "mask_env";
 const NON_LITERAL_DETAIL: &str = "requires a string literal name";
@@ -51,29 +51,20 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let name_value = name.value();
     match std::env::var(&name_value) {
         Ok(value) => mask_str(name.span(), value.into_bytes()).into(),
-        Err(VarError::NotPresent) => {
-            let err = match &custom_msg {
-                // A user-supplied custom message replaces the prose
-                // entirely (mirrors stdlib `env!`'s contract). The
-                // §1.9.6 macro-name + tag prefix is still emitted so
-                // tooling can pattern-match on `mask_env! unset:`.
-                Some(m) => compile_error(name.span(), MACRO_NAME, FailTag::Unset, &m.value()),
-                None => compile_error(
-                    name.span(),
-                    MACRO_NAME,
-                    FailTag::Unset,
-                    &format!("environment variable `{name_value}` is not set"),
-                ),
-            };
-            err.to_compile_error().into()
+        // A user-supplied custom message is emitted verbatim for the
+        // unset case, exactly mirroring stdlib `env!("NAME", "msg")`
+        // (per spec §2.1.6.3): no §1.9.6 macro-name/tag prefix, since
+        // the user owns the entire diagnostic text. All other failures
+        // (unset-without-message, non-UTF-8) keep the §1.9.6 format.
+        Err(VarError::NotPresent) if custom_msg.is_some() => {
+            let msg = custom_msg.expect("checked is_some").value();
+            syn::Error::new(name.span(), msg).to_compile_error().into()
         }
-        Err(VarError::NotUnicode(_)) => compile_error(
-            name.span(),
-            MACRO_NAME,
-            FailTag::UnicodeFailure,
-            &format!("environment variable `{name_value}` is set but its value is not valid UTF-8"),
-        )
-        .to_compile_error()
-        .into(),
+        Err(err) => {
+            let (tag, detail) = env_failure(&err, &name_value, "");
+            compile_error(name.span(), MACRO_NAME, tag, &detail)
+                .to_compile_error()
+                .into()
+        }
     }
 }

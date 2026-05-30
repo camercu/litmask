@@ -1,0 +1,5 @@
+error: mask_format! named-unused: named argument `unused` is never referenced (give it a placeholder or remove it from the call)
+ --> tests/compile/mask_format_named_unused.rs:8:26
+  |
+8 |     let _ = mask_format!("{}", "used", unused = 2);
+  |                          ^^^^

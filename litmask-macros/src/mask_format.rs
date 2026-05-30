@@ -140,10 +140,10 @@ fn as_named_arg(expr: &Expr) -> Option<NamedArg> {
         return None;
     }
     let seg = &path.path.segments[0];
-    if !seg.arguments.is_none() {
-        return None;
+    match seg.arguments {
+        syn::PathArguments::None => Some((seg.ident.clone(), (*assign.right).clone())),
+        _ => None,
     }
-    Some((seg.ident.clone(), (*assign.right).clone()))
 }
 
 fn mask_format_expand(parsed: &MaskFormatInput) -> syn::Result<TokenStream2> {
@@ -167,6 +167,7 @@ fn mask_format_expand(parsed: &MaskFormatInput) -> syn::Result<TokenStream2> {
     let mut bindings = Bindings::new(positional_count, &named);
     let resolved = resolve_placeholders(&placeholders, &mut bindings, template_span)?;
     check_unused_positionals(&resolved, positional_count, template_span)?;
+    check_unused_named(&resolved, &named, &bindings, template_span)?;
 
     // `mixed_site` hygiene on the LHS keeps each `mask_format_arg_<i>`
     // binding isolated from the caller's namespace — required because
@@ -194,19 +195,19 @@ fn mask_format_expand(parsed: &MaskFormatInput) -> syn::Result<TokenStream2> {
     // tail expression.
     let out_ident = syn::Ident::new("mask_format_out", proc_macro2::Span::mixed_site());
 
-    // Each placeholder's `format_args!` template + ref list is
-    // identical between the runtime write and the compile-time
-    // type-check; compute once, share between both builders.
+    // Per-placeholder `format_args!` template + ref list, consumed by
+    // `build_writes`. Each placeholder's `write_fmt` call type-checks
+    // its spec against the bound argument, so spec/type mismatches
+    // (e.g. `{:x}` on a `&str`) surface as the natural `E0277` at the
+    // call site — no separate compile-time check is needed.
     let emissions: Vec<(String, Vec<usize>)> =
         resolved.iter().map(build_placeholder_emission).collect();
 
     let writes = build_writes(&fragments, &resolved, &emissions, &arg_idents, &out_ident);
-    let arg_checks = build_arg_checks(&emissions, &arg_idents);
 
     Ok(quote! {
         {
             #(#arg_bindings)*
-            #(#arg_checks)*
             let mut #out_ident = ::litmask::__internal::__String::new();
             #(#writes)*
             #out_ident
@@ -269,6 +270,42 @@ fn check_unused_positionals(
     Ok(())
 }
 
+/// Mirror `format!`'s "named argument never used" hard error: every
+/// declared named argument must be referenced by at least one
+/// placeholder. Without this, a stray `name = expr` compiled silently
+/// (only the generated binding went unused), diverging from `format!`.
+/// Named bindings occupy indices `[P, P+N)` in the layout described on
+/// [`Bindings`], matching `Bindings::new`'s assignment order.
+fn check_unused_named(
+    resolved: &[ResolvedPlaceholder],
+    named: &[NamedArg],
+    bindings: &Bindings,
+    template_span: proc_macro2::Span,
+) -> syn::Result<()> {
+    let mut used = vec![false; named.len()];
+    let base = bindings.positional_count;
+    for r in resolved {
+        for idx in std::iter::once(r.value_idx).chain(r.spec_idxs.iter().copied()) {
+            if (base..base + named.len()).contains(&idx) {
+                used[idx - base] = true;
+            }
+        }
+    }
+    for (i, (name, _)) in named.iter().enumerate() {
+        if !used[i] {
+            return Err(compile_error(
+                template_span,
+                MACRO_NAME,
+                FailTag::NamedUnused,
+                &format!(
+                    "named argument `{name}` is never referenced (give it a placeholder or remove it from the call)",
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Interleave fragment + placeholder writes. Each fragment is masked
 /// individually via `mask!()`; each placeholder lands as its own
 /// `format_args!` over only the bindings it references, with the spec
@@ -302,26 +339,8 @@ fn build_writes(
     writes
 }
 
-/// Per-placeholder compile-time type-check, separate from the
-/// runtime write. Catches spec/type incompatibility early without
-/// leaking the surrounding template text — each `format_args!`
-/// here carries only one placeholder's spec plus its bindings.
-fn build_arg_checks(
-    emissions: &[(String, Vec<usize>)],
-    arg_idents: &[syn::Ident],
-) -> Vec<TokenStream2> {
-    emissions
-        .iter()
-        .map(|emission| {
-            let args = placeholder_format_args(emission, arg_idents);
-            quote! { let _ = #args; }
-        })
-        .collect()
-}
-
 /// Render a single placeholder's `format_args!(template, refs...)`
-/// call. Shared by the runtime write path and the compile-time
-/// type-check path; both wrap the same call in different shells.
+/// call for the runtime `write_fmt`.
 fn placeholder_format_args(
     emission: &(String, Vec<usize>),
     arg_idents: &[syn::Ident],

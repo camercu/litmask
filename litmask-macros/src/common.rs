@@ -1,5 +1,5 @@
 //! Helpers shared across the `mask`, `weak_mask`, `mask_format`, and
-//! `unmasked` macros: `OUT_DIR` artifact loading + byte-array token
+//! `unmasked` macros: `OUT_DIR` artifact loading + byte-string literal
 //! emission. Each per-macro module owns its own input grammar and
 //! expansion logic; this module owns the small set of utilities that
 //! cross those seams.
@@ -30,11 +30,11 @@ pub(crate) enum FailTag {
     Unset,
     UnicodeFailure,
     InvalidArg,
-    EmptyArgs,
     ArgsNotAllowed,
     DuplicateName,
     PositionalAfterNamed,
     PositionalUnused,
+    NamedUnused,
     PositionalOutOfRange,
     InvalidPlaceholder,
     TemplateSyntax,
@@ -48,11 +48,11 @@ impl FailTag {
             Self::Unset => "unset",
             Self::UnicodeFailure => "unicode-failure",
             Self::InvalidArg => "invalid-arg",
-            Self::EmptyArgs => "empty-args",
             Self::ArgsNotAllowed => "args-not-allowed",
             Self::DuplicateName => "duplicate-name",
             Self::PositionalAfterNamed => "positional-after-named",
             Self::PositionalUnused => "positional-unused",
+            Self::NamedUnused => "named-unused",
             Self::PositionalOutOfRange => "positional-out-of-range",
             Self::InvalidPlaceholder => "invalid-placeholder",
             Self::TemplateSyntax => "template-syntax",
@@ -99,9 +99,11 @@ pub(crate) fn require_lit_str(
 }
 
 /// Parse `input` as a single-string-literal path argument, resolve it
-/// against the consumer crate's `CARGO_MANIFEST_DIR`, and read the
-/// file via `reader`. Returns the parsed `LitStr` (for span-preserving
-/// downstream emission) plus the read content on success.
+/// the way stdlib `include_str!` does — relative to the source file
+/// containing the invocation (see [`include_relative_path`]) — and
+/// read the file via `reader`. Returns the parsed `LitStr` (for
+/// span-preserving downstream emission) plus the read content on
+/// success.
 ///
 /// `reader` decides the read shape: pass `std::fs::read_to_string` for
 /// `mask_include_str!` (UTF-8 validated at proc-macro time) or
@@ -111,14 +113,8 @@ pub(crate) fn require_lit_str(
 /// runtime.
 ///
 /// Error detail echoes the user's literal path, not the resolved
-/// absolute path, so trybuild snapshots stay portable and local FS
-/// layout doesn't leak into diagnostics.
-///
-/// # Panics
-///
-/// Panics at proc-macro expansion time if `CARGO_MANIFEST_DIR` is unset.
-/// Cargo always sets this for user crates; an unset value indicates a
-/// build invoked outside cargo's normal envelope.
+/// path, so trybuild snapshots stay portable and local FS layout
+/// doesn't leak into diagnostics.
 pub(crate) fn read_lit_str_path<T>(
     input: proc_macro::TokenStream,
     macro_name: &'static str,
@@ -126,8 +122,8 @@ pub(crate) fn read_lit_str_path<T>(
 ) -> Result<(LitStr, T), syn::Error> {
     let path_lit = require_lit_str(input, macro_name, "requires a string literal path")?;
     let path_str = path_lit.value();
-    let dir = manifest_dir().unwrap_or_else(|| panic!("{macro_name}!: CARGO_MANIFEST_DIR not set"));
-    let resolved = PathBuf::from(dir).join(&path_str);
+    let call_file = proc_macro::Span::call_site().file();
+    let resolved = include_relative_path(&call_file, &path_str);
     let content = reader(&resolved).map_err(|e| {
         compile_error(
             path_lit.span(),
@@ -137,6 +133,44 @@ pub(crate) fn read_lit_str_path<T>(
         )
     })?;
     Ok((path_lit, content))
+}
+
+/// Resolve an `include_str!`/`include_bytes!`-style path argument the
+/// way stdlib does: relative to the directory of the source file that
+/// contains the macro invocation, NOT the crate manifest. `call_file`
+/// is `proc_macro::Span::file()` of the call site, which rustc
+/// expresses relative to its own working directory; joining the user
+/// path onto that file's parent reproduces the compiler's own
+/// resolution, so `mask_include_str!` is a drop-in for `include_str!`.
+///
+/// The returned path is left in the same (relative-or-absolute) form
+/// as `call_file`; a relative result reads correctly because the
+/// proc-macro process shares rustc's working directory.
+pub(crate) fn include_relative_path(call_file: &str, user_path: &str) -> PathBuf {
+    std::path::Path::new(call_file)
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new(""))
+        .join(user_path)
+}
+
+/// Map a `std::env::var` failure to its §1.9.6 `(tag, detail)` pair.
+/// Single source of truth for the env-var diagnostic wording shared by
+/// `mask_env!`, `mask_option_env!`, and `mask_concat!`'s nested `env!`.
+/// `prefix` distinguishes a direct macro ("") from a nested form
+/// ("nested env!: ").
+pub(crate) fn env_failure(err: &std::env::VarError, name: &str, prefix: &str) -> (FailTag, String) {
+    match err {
+        std::env::VarError::NotPresent => (
+            FailTag::Unset,
+            format!("{prefix}environment variable `{name}` is not set"),
+        ),
+        std::env::VarError::NotUnicode(_) => (
+            FailTag::UnicodeFailure,
+            format!(
+                "{prefix}environment variable `{name}` is set but its value is not valid UTF-8"
+            ),
+        ),
+    }
 }
 
 /// Cached `CARGO_MANIFEST_DIR` value. Read once on first access and
@@ -197,11 +231,16 @@ fn read_out_dir_file(name: &str) -> Zeroizing<Vec<u8>> {
     Zeroizing::new(bytes)
 }
 
-/// Emit a byte slice as a `[u8; N]` array literal token. Used by the
-/// `mask!` and `weak_mask!` expansions to inline the encrypted /
-/// obfuscated bytes as a `const` array in the caller's code.
-pub(crate) fn byte_array_token(bytes: &[u8]) -> TokenStream {
-    quote! { [ #(#bytes),* ] }
+/// Emit a byte slice as a byte-string literal token (`b"..."`), typed
+/// `&'static [u8; N]`. Used by the `mask!` and `weak_mask!` expansions
+/// to inline the encrypted / obfuscated bytes as a `const` in the
+/// caller's code. A byte-string literal is one token regardless of
+/// length, so it keeps macro expansion and downstream parsing cheap
+/// for large blobs (e.g. `mask_include_bytes!` of a sizeable file) —
+/// a comma-separated `[u8; N]` array literal would emit `N` tokens.
+pub(crate) fn byte_string_literal(bytes: &[u8]) -> TokenStream {
+    let lit = proc_macro2::Literal::byte_string(bytes);
+    quote! { #lit }
 }
 
 /// The three string-like literal kinds accepted by `mask!`,
@@ -245,18 +284,18 @@ impl ToTokens for StringLiteral {
     }
 }
 
-/// Parse a `proc_macro::TokenStream` as a [`StringLiteral`]. On
-/// failure, returns the compile-error token stream directly so the
-/// caller can early-return it.
+/// Parse a `proc_macro::TokenStream` as a [`StringLiteral`]. Returns a
+/// `syn::Error` on failure; callers lower it to a token stream at the
+/// `expand` boundary via `.to_compile_error().into()`, matching the
+/// error-handling idiom used by every other `mask_*!` macro.
 pub(crate) fn parse_string_literal(
     input: proc_macro::TokenStream,
     macro_name: &str,
-) -> Result<StringLiteral, proc_macro::TokenStream> {
+) -> syn::Result<StringLiteral> {
     syn::parse::Parser::parse(
         |stream: ParseStream| StringLiteral::parse_from(stream, macro_name),
         input,
     )
-    .map_err(|e| e.to_compile_error().into())
 }
 
 /// Strip the consumer crate's `CARGO_MANIFEST_DIR` prefix from a
@@ -370,7 +409,7 @@ fn mask_plaintext(mut plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKin
     plaintext.zeroize();
 
     let blob: Vec<u8> = [nonce.as_slice(), &ciphertext_and_tag].concat();
-    let blob_lit = byte_array_token(&blob);
+    let blob_lit = byte_string_literal(&blob);
     let blob_len = blob.len();
     // Wire-format contract: every blob is `nonce (NONCE_LEN) ||
     // ciphertext (plaintext.len()) || tag (TAG_LEN)`. plaintext was
@@ -398,7 +437,7 @@ fn mask_plaintext(mut plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKin
 
     quote! {
         {
-            const #blob_ident: &[u8; #blob_len] = &#blob_lit;
+            const #blob_ident: &[u8; #blob_len] = #blob_lit;
             #decrypt_expr
         }
     }
@@ -407,6 +446,39 @@ fn mask_plaintext(mut plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // `env_failure` is the pure decision function behind the env
+    // macros' diagnostics: given a `VarError`, it picks the §1.9.6 tag
+    // and message. Testing it here (rather than driving the macros with
+    // a mutated process environment) mirrors the `parse_env_value`
+    // precedent in `litmask/src/provider/env.rs` — the workspace
+    // `forbid(unsafe_code)` lint rules out the `env::set_var` approach
+    // a macro-level test would need. The tag classification is the
+    // externally-visible behavior #3 changed: `NotUnicode` is now an
+    // error category, not a silent `None`.
+    #[test]
+    fn env_failure_not_present_classifies_as_unset() {
+        let (tag, detail) = env_failure(&std::env::VarError::NotPresent, "FOO", "");
+        assert!(matches!(tag, FailTag::Unset));
+        assert_eq!(detail, "environment variable `FOO` is not set");
+    }
+
+    #[test]
+    fn env_failure_not_unicode_classifies_as_unicode_failure() {
+        let err = std::env::VarError::NotUnicode(std::ffi::OsString::from("x"));
+        let (tag, detail) = env_failure(&err, "FOO", "");
+        assert!(matches!(tag, FailTag::UnicodeFailure));
+        assert_eq!(
+            detail,
+            "environment variable `FOO` is set but its value is not valid UTF-8"
+        );
+    }
+
+    #[test]
+    fn env_failure_prefix_is_prepended() {
+        let (_, detail) = env_failure(&std::env::VarError::NotPresent, "BAR", "nested env!: ");
+        assert_eq!(detail, "nested env!: environment variable `BAR` is not set");
+    }
 
     #[test]
     fn canonicalize_strips_unix_manifest_dir_prefix() {

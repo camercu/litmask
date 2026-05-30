@@ -18,7 +18,7 @@ const MACRO_NAME: &str = "unmasked";
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let lit = match parse_string_literal(input, MACRO_NAME) {
         Ok(lit) => lit,
-        Err(ts) => return ts,
+        Err(e) => return e.to_compile_error().into(),
     };
     quote!(#lit).into()
 }

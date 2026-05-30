@@ -13,6 +13,8 @@ use crate::common::{mask_bytes, read_lit_str_path};
 const MACRO_NAME: &str = "mask_include_bytes";
 
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
+    // Closure (not bare `fs::read`) is load-bearing — see the note in
+    // `mask_include_str` for the higher-ranked-lifetime reason.
     match read_lit_str_path(input, MACRO_NAME, |p| fs::read(p)) {
         Ok((path_lit, content)) => mask_bytes(path_lit.span(), content).into(),
         Err(e) => e.to_compile_error().into(),

@@ -11,6 +11,6 @@
 use litmask::mask_include_str;
 
 fn main() {
-    let quote: String = mask_include_str!("examples/fixtures/quote.txt");
+    let quote: String = mask_include_str!("fixtures/quote.txt");
     println!("quote={quote:?}");
 }

@@ -27,7 +27,7 @@ const MACRO_NAME: &str = "mask";
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let parsed = match parse_string_literal(input, MACRO_NAME) {
         Ok(lit) => lit,
-        Err(ts) => return ts,
+        Err(e) => return e.to_compile_error().into(),
     };
     match parsed {
         // `LitCStr::value` returns a `CString`; into_bytes() drops the

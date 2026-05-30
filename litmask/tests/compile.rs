@@ -28,6 +28,7 @@ fn compile_fixtures() {
     t.compile_fail("tests/compile/mask_format_type_incompatible_spec.rs");
     t.compile_fail("tests/compile/mask_format_duplicate_named_arg.rs");
     t.compile_fail("tests/compile/mask_format_positional_after_named.rs");
+    t.compile_fail("tests/compile/mask_format_named_unused.rs");
     t.compile_fail("tests/compile/mask_format_invalid_placeholder_name.rs");
     t.compile_fail("tests/compile/mask_all_pattern_warning.rs");
     t.compile_fail("tests/compile/mask_all_non_module_target.rs");
@@ -42,7 +43,6 @@ fn compile_fixtures() {
     t.compile_fail("tests/compile/mask_include_str_missing_file.rs");
     t.compile_fail("tests/compile/mask_include_bytes_non_literal.rs");
     t.compile_fail("tests/compile/mask_include_bytes_missing_file.rs");
-    t.compile_fail("tests/compile/mask_concat_empty.rs");
     t.compile_fail("tests/compile/mask_concat_invalid_arg.rs");
     t.compile_fail("tests/compile/mask_concat_rejects_unmasked.rs");
     t.compile_fail("tests/compile/mask_env_non_literal.rs");

@@ -1,5 +1,5 @@
-error: mask_env! unset: custom: please run with FOO set
-  --> tests/compile/mask_env_unset_with_custom_message.rs:10:9
-   |
-10 |         "LITMASK_TRYBUILD_DEFINITELY_UNSET_X9Z42",
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: custom: please run with FOO set
+ --> tests/compile/mask_env_unset_with_custom_message.rs:9:9
+  |
+9 |         "LITMASK_TRYBUILD_DEFINITELY_UNSET_X9Z42",
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,14 +1,18 @@
 //! `mask_file!` proc-macro: read the call site's source path via
 //! `proc_macro::Span::call_site().file()` at proc-macro time,
-//! canonicalize against `CARGO_MANIFEST_DIR`, AEAD-encrypt, and
-//! expand to a runtime decrypt call returning `String`.
+//! AEAD-encrypt, and expand to a runtime decrypt call returning
+//! `String`.
 //!
-//! Mirrors stdlib `file!()` but produces a masked output: the raw
-//! source path never lands in `.rodata` as plaintext.
+//! The returned value mirrors stdlib `file!()` exactly — `Span::file()`
+//! yields the same path `file!()` would at the same span — but masked
+//! so the source path never lands in `.rodata` as plaintext. The
+//! `CARGO_MANIFEST_DIR`-stripping in [`crate::common::mask_str`]'s
+//! nonce derivation is a separate, reproducibility-only concern and
+//! does not touch the value handed back to the caller.
 
 use proc_macro::TokenStream;
 
-use crate::common::{FailTag, canonicalize_file_path, compile_error, manifest_dir, mask_str};
+use crate::common::{FailTag, compile_error, mask_str};
 
 const MACRO_NAME: &str = "mask_file";
 
@@ -25,8 +29,6 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         .to_compile_error()
         .into();
     }
-    let pm_span = proc_macro::Span::call_site();
-    let raw_file = pm_span.file();
-    let file = canonicalize_file_path(raw_file, manifest_dir());
+    let file = proc_macro::Span::call_site().file();
     mask_str(proc_macro2::Span::call_site(), file.into_bytes()).into()
 }

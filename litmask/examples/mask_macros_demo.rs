@@ -10,7 +10,7 @@ use litmask::{
 
 fn main() {
     // ── Returns String ──
-    let from_file: String = mask_include_str!("examples/fixtures/quote.txt");
+    let from_file: String = mask_include_str!("fixtures/quote.txt");
     println!("include_str_len={}", from_file.len());
 
     // mask_concat accepts string + int + float + bool + char +
@@ -28,7 +28,7 @@ fn main() {
     println!("file_path_len={}", path.len());
 
     // ── Returns Vec<u8> ──
-    let raw_bytes: Vec<u8> = mask_include_bytes!("examples/fixtures/binary_blob.bin");
+    let raw_bytes: Vec<u8> = mask_include_bytes!("fixtures/binary_blob.bin");
     println!("include_bytes_len={}", raw_bytes.len());
 
     // ── Returns Option<String> ──

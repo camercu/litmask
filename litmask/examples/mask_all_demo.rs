@@ -33,7 +33,7 @@ mod demo {
         // `include_str!` and `concat!` invocations are wrapped in
         // `mask!()` by the walker so the resulting strings are absent
         // from the binary plaintext.
-        let included = include_str!("examples/fixtures/mask_all_include_str.txt");
+        let included = include_str!("fixtures/mask_all_include_str.txt");
         let assembled = concat!("rhodium-", "lemur-", "5c2a93-mask-all-macro");
         println!("included ={}", included.trim());
         println!("assembled={assembled}");
@@ -127,7 +127,7 @@ mod demo {
 
         // `include_bytes!(...)` is rewritten to `mask_include_bytes!`,
         // so the file's raw bytes never appear in `.rodata`.
-        let raw_bytes = include_bytes!("examples/fixtures/binary_blob.bin");
+        let raw_bytes = include_bytes!("fixtures/binary_blob.bin");
         let raw_str = std::str::from_utf8(&raw_bytes).unwrap();
         println!("bytes_fixture={raw_str}");
 

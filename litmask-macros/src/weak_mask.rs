@@ -25,7 +25,9 @@ use zeroize::Zeroize;
 
 use litmask_internal::{WRAPPER_LEN, derive_weak_xor_key, xor_cycle};
 
-use crate::common::{StringLiteral, byte_array_token, load_out_dir_artifact, parse_string_literal};
+use crate::common::{
+    StringLiteral, byte_string_literal, load_out_dir_artifact, parse_string_literal,
+};
 
 const MACRO_NAME: &str = "weak_mask";
 
@@ -45,7 +47,7 @@ enum WeakKind {
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let lit = match parse_string_literal(input, MACRO_NAME) {
         Ok(lit) => lit,
-        Err(ts) => return ts,
+        Err(e) => return e.to_compile_error().into(),
     };
 
     let (plaintext, kind) = match lit {
@@ -59,7 +61,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     wrapper.zeroize();
     let encoded = xor_cycle(&plaintext, &weak_key);
     weak_key.zeroize();
-    let encoded_lit = byte_array_token(&encoded);
+    let encoded_lit = byte_string_literal(&encoded);
     let encoded_len = encoded.len();
 
     let obf_ident = syn::Ident::new("__WEAK_OBF", proc_macro2::Span::mixed_site());
@@ -68,7 +70,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     match kind {
         WeakKind::Str => quote! {
             {
-                const #obf_ident: &[u8; #encoded_len] = &#encoded_lit;
+                const #obf_ident: &[u8; #encoded_len] = #encoded_lit;
                 static #cache_ident: ::litmask::__internal::WeakCell =
                     ::litmask::__internal::WeakCell::new();
                 ::litmask::__internal::__weak_decode(
@@ -80,7 +82,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         },
         WeakKind::Bytes => quote! {
             {
-                const #obf_ident: &[u8; #encoded_len] = &#encoded_lit;
+                const #obf_ident: &[u8; #encoded_len] = #encoded_lit;
                 static #cache_ident: ::litmask::__internal::WeakByteCell =
                     ::litmask::__internal::WeakByteCell::new();
                 ::litmask::__internal::__weak_decode_bytes(
@@ -92,7 +94,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         },
         WeakKind::CStr => quote! {
             {
-                const #obf_ident: &[u8; #encoded_len] = &#encoded_lit;
+                const #obf_ident: &[u8; #encoded_len] = #encoded_lit;
                 ::litmask::__weak_decode_cstr_call!(#obf_ident, ::litmask::__wrapper_bytes!())
             }
         },
