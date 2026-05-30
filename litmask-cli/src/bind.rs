@@ -69,14 +69,15 @@ pub(crate) struct Commit {
 
 impl BindOutcome {
     pub(crate) fn exit_code(&self) -> u8 {
+        use crate::exit;
         match self {
-            Self::Success(_) => 0,
+            Self::Success(_) => exit::OK,
             Self::Ambiguous
             | Self::DecryptionFailed
             | Self::UnsupportedCipher
-            | Self::UnsupportedFormat => 65,
-            Self::NotFound => 66,
-            Self::SaltInvalid | Self::ConfigMalformed => 64,
+            | Self::UnsupportedFormat => exit::DATAERR,
+            Self::NotFound => exit::NOINPUT,
+            Self::SaltInvalid | Self::ConfigMalformed => exit::USAGE,
         }
     }
 

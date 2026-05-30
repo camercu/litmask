@@ -13,15 +13,8 @@ use clap::{Parser, Subcommand};
 
 mod bind;
 mod config;
+mod exit;
 mod inspect;
-
-/// `EX_USAGE` (64): argument-parsing or operator-input failure.
-const EX_USAGE: u8 = 64;
-/// `EX_UNAVAILABLE` (69): upstream service (machine-uid) refused.
-const EX_UNAVAILABLE: u8 = 69;
-/// `EX_SOFTWARE` (70): unexpected internal failure (atomic commit
-/// I/O, etc.).
-const EX_SOFTWARE: u8 = 70;
 
 /// `litmask` companion tool for inspecting and rebinding
 /// litmask-built binaries.
@@ -92,7 +85,7 @@ fn main() -> ExitCode {
             let _ = err.print();
             return match kind {
                 ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => ExitCode::SUCCESS,
-                _ => ExitCode::from(EX_USAGE),
+                _ => ExitCode::from(exit::USAGE),
             };
         }
     };
@@ -112,7 +105,7 @@ fn dispatch_inspect(binary: &Path, config: &Path) -> ExitCode {
         Ok(outcome) => ExitCode::from(outcome.exit_code()),
         Err(e) => {
             eprintln!("litmask: {}", e.message());
-            ExitCode::from(EX_USAGE)
+            ExitCode::from(exit::USAGE)
         }
     }
 }
@@ -122,17 +115,17 @@ fn dispatch_bind(binary: &Path, config: &Path, salt: Option<&str>) -> ExitCode {
         Ok(outcome) => ExitCode::from(outcome.exit_code()),
         Err(e @ (bind::ShellError::ConfigUnreadable | bind::ShellError::BinaryUnreadable)) => {
             eprintln!("litmask: {}", e.message());
-            ExitCode::from(EX_USAGE)
+            ExitCode::from(exit::USAGE)
         }
         Err(bind::ShellError::HardwareIdUnavailable) => {
             // §2.9.1.3: hardware-id failure surfaces on stdout
             // with the documented tag and exits EX_UNAVAILABLE.
             println!("hardware_id_unavailable");
-            ExitCode::from(EX_UNAVAILABLE)
+            ExitCode::from(exit::UNAVAILABLE)
         }
         Err(e @ bind::ShellError::CommitFailed(_)) => {
             eprintln!("litmask: {}", e.message());
-            ExitCode::from(EX_SOFTWARE)
+            ExitCode::from(exit::SOFTWARE)
         }
     }
 }

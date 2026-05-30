@@ -36,11 +36,12 @@ pub(crate) enum Outcome {
 
 impl Outcome {
     pub(crate) fn exit_code(&self) -> u8 {
+        use crate::exit;
         match self {
-            Self::Verified => 0,
-            Self::Ambiguous(_) => 65,
-            Self::NotFound => 66,
-            Self::ConfigMalformed => 64,
+            Self::Verified => exit::OK,
+            Self::Ambiguous(_) => exit::DATAERR,
+            Self::NotFound => exit::NOINPUT,
+            Self::ConfigMalformed => exit::USAGE,
         }
     }
 
