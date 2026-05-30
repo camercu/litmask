@@ -50,8 +50,8 @@ use aes_gcm::KeyInit as _;
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit as _};
 
 /// The single cipher this build encrypts and blob-decrypts with. See
-/// the [module docs](self#cipher-selection) for the selection rules
-/// when multiple cipher features are active.
+/// the module-level docs for the selection rules when multiple cipher
+/// features are active.
 #[cfg(feature = "aes-gcm")]
 pub const CURRENT_CIPHER: CipherId = CipherId::Aes256Gcm;
 
