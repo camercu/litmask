@@ -97,6 +97,11 @@ impl fmt::Display for TemplateParseError {
 ///
 /// Returns [`TemplateParseError`] on malformed templates (unmatched
 /// braces, invalid placeholder characters, etc.).
+// The `fragments.last_mut().unwrap()` calls below are infallible:
+// `fragments` is seeded with one element and only ever grows (push,
+// never pop), so `last_mut()` is always `Some`. The lint flags that
+// unwrap as a panic path; allow it rather than document a `# Panics`
+// section that would falsely claim a reachable panic.
 #[allow(clippy::missing_panics_doc)]
 pub fn parse_mask_format_template(
     s: &str,
