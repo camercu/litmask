@@ -25,11 +25,11 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use litmask_internal::scan::{LocateOutcome, locate_wrapper};
 use litmask_internal::{
     FormatVersion, HW_ID_DERIVATION_CONTEXT, KEY_LEN, NONCE_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN,
     WrapperParseError, base64url,
 };
+use litmask_internal::{LocateOutcome, locate_wrapper};
 use zeroize::Zeroizing;
 
 /// Outcome of [`plan_bind`]. The `Success` variant carries the new

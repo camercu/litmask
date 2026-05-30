@@ -17,7 +17,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 
-use litmask_internal::scan::{LocateOutcome, count_occurrences, locate_wrapper};
+use litmask_internal::{LocateOutcome, count_occurrences, locate_wrapper};
 
 use crate::config;
 

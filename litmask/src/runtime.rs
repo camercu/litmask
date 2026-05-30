@@ -1,5 +1,5 @@
-//! Imperative shell over the pure decryption core in
-//! [`litmask_internal::decrypt`].
+//! Imperative shell over the pure decryption core
+//! ([`litmask_internal::decrypt_wrapper`]).
 //!
 //! The process-global mask key lives in a `OnceLock` populated by
 //! [`__init_with_wrapper`] (the target of `init!` / `init_with!`) or
@@ -15,7 +15,7 @@
 use alloc::string::String;
 
 use crate::error::InitError;
-use crate::internal::{WRAPPER_LEN, decrypt};
+use crate::internal::{DecryptError, WRAPPER_LEN, decrypt_blob, decrypt_wrapper};
 use crate::key::MaskKey;
 use crate::provider::KeyProvider;
 
@@ -88,15 +88,15 @@ pub fn __init_with_wrapper<P: KeyProvider>(
         return Ok(());
     }
     let unlock_key = provider.unlock_key()?;
-    let mask_key_bytes = match decrypt::decrypt_wrapper(unlock_key.as_bytes(), wrapper) {
+    let mask_key_bytes = match decrypt_wrapper(unlock_key.as_bytes(), wrapper) {
         Ok(bytes) => bytes,
-        Err(decrypt::DecryptError::AuthenticationFailed) => {
+        Err(DecryptError::AuthenticationFailed) => {
             return Err(InitError::Decryption);
         }
-        Err(decrypt::DecryptError::UnsupportedFormat) => {
+        Err(DecryptError::UnsupportedFormat) => {
             return Err(InitError::UnsupportedFormat);
         }
-        Err(decrypt::DecryptError::UnsupportedCipher) => {
+        Err(DecryptError::UnsupportedCipher) => {
             return Err(InitError::UnsupportedCipher);
         }
         // `BlobTooShort` cannot reach this branch — `WRAPPER_LEN`
@@ -312,7 +312,7 @@ fn decrypt_wrapper_or_panic(
     unlock_key: &[u8; crate::internal::KEY_LEN],
     wrapper: &[u8; WRAPPER_LEN],
 ) -> [u8; crate::internal::KEY_LEN] {
-    match decrypt::decrypt_wrapper(unlock_key, wrapper) {
+    match decrypt_wrapper(unlock_key, wrapper) {
         Ok(bytes) => bytes,
         Err(_) => panic!(),
     }
@@ -323,7 +323,7 @@ fn decrypt_blob_or_panic(
     mask_key: &[u8; crate::internal::KEY_LEN],
     blob: &[u8],
 ) -> alloc::vec::Vec<u8> {
-    match decrypt::decrypt_blob(mask_key, blob) {
+    match decrypt_blob(mask_key, blob) {
         Ok(plaintext) => plaintext,
         Err(_) => panic!(),
     }

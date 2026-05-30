@@ -17,9 +17,7 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{Expr, LitStr, Token, parse_macro_input};
 
-use litmask_internal::format_parser::{
-    ParsedPlaceholder, TemplateRef, is_token_char, parse_mask_format_template,
-};
+use litmask_internal::{ParsedPlaceholder, TemplateRef, is_token_char, parse_mask_format_template};
 
 use crate::common::{FailTag, compile_error};
 

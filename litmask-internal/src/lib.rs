@@ -41,16 +41,32 @@ pub use nonce::{nonce_for_call_site, nonce_for_wrapper};
 
 mod wire;
 pub use wire::{
-    CIPHER_AES_256_GCM, CIPHER_CHACHA20_POLY1305, CIPHER_OFFSET, CipherId, FORMAT_V1,
-    FormatVersion, HEADER_LEN, KEY_LEN, NONCE_LEN, NONCE_OFFSET, ParsedWrapper, TAG_LEN,
-    UnknownCipherId, UnknownFormatVersion, VERSION_OFFSET, WRAPPER_BODY_LEN, WRAPPER_LEN,
-    WrapperParseError, assemble_wrapper, parse_wrapper, wrapper_nonce,
+    CIPHER_OFFSET, CipherId, FormatVersion, HEADER_LEN, KEY_LEN, NONCE_LEN, NONCE_OFFSET,
+    ParsedWrapper, TAG_LEN, UnknownCipherId, UnknownFormatVersion, VERSION_OFFSET,
+    WRAPPER_BODY_LEN, WRAPPER_LEN, WrapperParseError, assemble_wrapper, parse_wrapper,
+};
+// `wrapper_nonce` has no out-of-crate callers (consumers derive the
+// wrapper nonce via `nonce_for_wrapper`); keep it crate-private.
+pub(crate) use wire::wrapper_nonce;
+
+// Deliberately kept a namespaced `pub mod` rather than flattened like
+// the helpers below: its public verbs are the generic `encode` /
+// `decode`, which read clearly only when module-qualified
+// (`base64url::encode`).
+pub mod base64url;
+
+mod decrypt;
+#[cfg(any(feature = "chacha20-poly1305", feature = "aes-gcm"))]
+pub use decrypt::decrypt_blob;
+pub use decrypt::{DecryptError, decrypt_wrapper};
+
+mod format_parser;
+pub use format_parser::{
+    ParsedPlaceholder, TemplateParseError, TemplateRef, is_token_char, parse_mask_format_template,
 };
 
-pub mod base64url;
-pub mod decrypt;
-pub mod format_parser;
-pub mod scan;
+mod scan;
+pub use scan::{LocateOutcome, count_occurrences, locate_wrapper};
 
 mod config;
 pub use config::render_config_fields;

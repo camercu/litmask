@@ -35,25 +35,6 @@ pub const WRAPPER_BODY_LEN: usize = KEY_LEN + TAG_LEN;
 /// Total wrapper byte count: header + 32-byte encrypted `mask_key` + tag.
 pub const WRAPPER_LEN: usize = HEADER_LEN + KEY_LEN + TAG_LEN;
 
-// ── Wire-format discriminants ───────────────────────────────────
-
-/// On-the-wire byte representing [`FormatVersion::V1`] — the only
-/// version current builds produce. Re-exposed as a `u8` constant so
-/// downstream consumers (notably `litmask-cli` whose dual-cipher
-/// dispatch needs compile-time literals for `match` arms) don't
-/// have to write `FormatVersion::V1.to_byte()` at every call site.
-pub const FORMAT_V1: u8 = 0x01;
-
-/// On-the-wire byte representing [`CipherId::ChaCha20Poly1305`].
-/// Mirrors `CipherId::ChaCha20Poly1305 as u8`; exposed as a free
-/// constant so `match cipher_byte` arms in downstream crates can
-/// pattern-match without the discriminant cast.
-pub const CIPHER_CHACHA20_POLY1305: u8 = 0x01;
-
-/// On-the-wire byte representing [`CipherId::Aes256Gcm`].
-/// Companion of [`CIPHER_CHACHA20_POLY1305`].
-pub const CIPHER_AES_256_GCM: u8 = 0x02;
-
 // ── Types ───────────────────────────────────────────────────────
 
 /// Wire-format version of the encrypted-`mask_key` wrapper. Encoded as
@@ -230,13 +211,6 @@ const _: () = assert!(CIPHER_OFFSET == 1);
 const _: () = assert!(NONCE_OFFSET == 2);
 const _: () = assert!(NONCE_OFFSET + NONCE_LEN == HEADER_LEN);
 const _: () = assert!(WRAPPER_LEN == HEADER_LEN + WRAPPER_BODY_LEN);
-// Discriminant constants must equal their `CipherId` / `FormatVersion`
-// counterparts. A future variant rename or discriminant swap would
-// break the byte-level match arms in downstream crates without
-// touching the enum — this guard catches the drift at compile time.
-const _: () = assert!(FORMAT_V1 == FormatVersion::V1 as u8);
-const _: () = assert!(CIPHER_CHACHA20_POLY1305 == CipherId::ChaCha20Poly1305 as u8);
-const _: () = assert!(CIPHER_AES_256_GCM == CipherId::Aes256Gcm as u8);
 
 // ── Functions ───────────────────────────────────────────────────
 
@@ -248,7 +222,7 @@ const _: () = assert!(CIPHER_AES_256_GCM == CipherId::Aes256Gcm as u8);
 /// Never panics — the compile-time asserts in this module guarantee
 /// `NONCE_OFFSET + NONCE_LEN == HEADER_LEN <= WRAPPER_LEN`.
 #[must_use]
-pub fn wrapper_nonce(wrapper: &[u8; WRAPPER_LEN]) -> &[u8; NONCE_LEN] {
+pub(crate) fn wrapper_nonce(wrapper: &[u8; WRAPPER_LEN]) -> &[u8; NONCE_LEN] {
     wrapper[NONCE_OFFSET..HEADER_LEN]
         .try_into()
         .expect("nonce slice is NONCE_LEN bytes by construction")

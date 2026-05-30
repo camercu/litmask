@@ -1,8 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use litmask_internal::NONCE_LEN;
-use litmask_internal::scan::{LocateOutcome, count_occurrences, locate_wrapper};
+use litmask_internal::{LocateOutcome, NONCE_LEN, count_occurrences, locate_wrapper};
 
 fuzz_target!(|data: &[u8]| {
     if data.len() < NONCE_LEN {
