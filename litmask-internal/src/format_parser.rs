@@ -219,4 +219,200 @@ mod tests {
             "{:>6666666666666666666666${:\x00\x15 :\x00%A$666666666666${:\x00\x15 :\x00%A$}\np}\n";
         let _ = parse_mask_format_template(input);
     }
+
+    // ── invariant: fragments.len() == placeholders.len() + 1 ────
+
+    fn assert_invariant(frags: &[String], phs: &[ParsedPlaceholder]) {
+        assert_eq!(
+            frags.len(),
+            phs.len() + 1,
+            "invariant violated: frags={}, phs={}",
+            frags.len(),
+            phs.len(),
+        );
+    }
+
+    // ── empty / static templates ────────────────────────────────
+
+    #[test]
+    fn empty_template() {
+        let (frags, phs) = parse_mask_format_template("").unwrap();
+        assert_invariant(&frags, &phs);
+        assert_eq!(frags, &[""]);
+        assert!(phs.is_empty());
+    }
+
+    #[test]
+    fn static_text_only() {
+        let (frags, phs) = parse_mask_format_template("hello world").unwrap();
+        assert_invariant(&frags, &phs);
+        assert_eq!(frags, &["hello world"]);
+        assert!(phs.is_empty());
+    }
+
+    // ── escaped braces ──────────────────────────────────────────
+
+    #[test]
+    fn escaped_open_brace() {
+        let (frags, phs) = parse_mask_format_template("a{{b").unwrap();
+        assert_invariant(&frags, &phs);
+        assert_eq!(frags, &["a{b"]);
+        assert!(phs.is_empty());
+    }
+
+    #[test]
+    fn escaped_close_brace() {
+        let (frags, phs) = parse_mask_format_template("a}}b").unwrap();
+        assert_invariant(&frags, &phs);
+        assert_eq!(frags, &["a}b"]);
+        assert!(phs.is_empty());
+    }
+
+    #[test]
+    fn escaped_braces_adjacent_to_placeholder() {
+        let (frags, phs) = parse_mask_format_template("{{{}}}").unwrap();
+        assert_invariant(&frags, &phs);
+        assert_eq!(frags, &["{", "}"]);
+        assert_eq!(phs.len(), 1);
+        assert!(matches!(phs[0].value, TemplateRef::Positional(0)));
+    }
+
+    // ── auto-positional ─────────────────────────────────────────
+
+    #[test]
+    fn single_auto_positional() {
+        let (frags, phs) = parse_mask_format_template("x={}").unwrap();
+        assert_invariant(&frags, &phs);
+        assert_eq!(frags, &["x=", ""]);
+        assert!(matches!(phs[0].value, TemplateRef::Positional(0)));
+    }
+
+    #[test]
+    fn multiple_auto_positional() {
+        let (frags, phs) = parse_mask_format_template("{} {} {}").unwrap();
+        assert_invariant(&frags, &phs);
+        assert_eq!(frags, &["", " ", " ", ""]);
+        assert!(matches!(phs[0].value, TemplateRef::Positional(0)));
+        assert!(matches!(phs[1].value, TemplateRef::Positional(1)));
+        assert!(matches!(phs[2].value, TemplateRef::Positional(2)));
+    }
+
+    // ── explicit positional ─────────────────────────────────────
+
+    #[test]
+    fn explicit_positional_indices() {
+        let (frags, phs) = parse_mask_format_template("{1} {0} {1}").unwrap();
+        assert_invariant(&frags, &phs);
+        assert_eq!(phs.len(), 3);
+        assert!(matches!(phs[0].value, TemplateRef::Positional(1)));
+        assert!(matches!(phs[1].value, TemplateRef::Positional(0)));
+        assert!(matches!(phs[2].value, TemplateRef::Positional(1)));
+    }
+
+    // ── named placeholders ──────────────────────────────────────
+
+    #[test]
+    fn named_placeholder() {
+        let (frags, phs) = parse_mask_format_template("{name}").unwrap();
+        assert_invariant(&frags, &phs);
+        assert_eq!(phs.len(), 1);
+        match &phs[0].value {
+            TemplateRef::Named(n) => assert_eq!(n, "name"),
+            TemplateRef::Positional(_) => panic!("expected Named, got Positional"),
+        }
+    }
+
+    #[test]
+    fn named_with_underscores_and_digits() {
+        let (frags, phs) = parse_mask_format_template("{my_var_2}").unwrap();
+        assert_invariant(&frags, &phs);
+        match &phs[0].value {
+            TemplateRef::Named(n) => assert_eq!(n, "my_var_2"),
+            TemplateRef::Positional(_) => panic!("expected Named, got Positional"),
+        }
+    }
+
+    // ── format specs ────────────────────────────────────────────
+
+    #[test]
+    fn debug_spec() {
+        let (_, phs) = parse_mask_format_template("{:?}").unwrap();
+        assert_eq!(phs[0].spec_raw, "?");
+    }
+
+    #[test]
+    fn alternate_debug_spec() {
+        let (_, phs) = parse_mask_format_template("{:#?}").unwrap();
+        assert_eq!(phs[0].spec_raw, "#?");
+    }
+
+    #[test]
+    fn right_align_with_width_no_false_refs() {
+        let (_, phs) = parse_mask_format_template("{:>10}").unwrap();
+        assert_eq!(phs[0].spec_raw, ">10");
+        assert!(phs[0].spec_refs.is_empty());
+    }
+
+    // ── dynamic width / precision ───────────────────────────────
+
+    #[test]
+    fn dynamic_width_named() {
+        let (_, phs) = parse_mask_format_template("{:>w$}").unwrap();
+        assert_eq!(phs[0].spec_raw, ">w$");
+        assert_eq!(phs[0].spec_refs.len(), 1);
+        match &phs[0].spec_refs[0] {
+            TemplateRef::Named(n) => assert_eq!(n, "w"),
+            TemplateRef::Positional(_) => panic!("expected Named, got Positional"),
+        }
+    }
+
+    // ── mixed named + positional ────────────────────────────────
+
+    #[test]
+    fn mixed_named_and_positional() {
+        let (frags, phs) = parse_mask_format_template("{x} {} {y}").unwrap();
+        assert_invariant(&frags, &phs);
+        assert_eq!(phs.len(), 3);
+        match &phs[0].value {
+            TemplateRef::Named(n) => assert_eq!(n, "x"),
+            TemplateRef::Positional(_) => panic!("expected Named, got Positional"),
+        }
+        assert!(matches!(phs[1].value, TemplateRef::Positional(0)));
+        match &phs[2].value {
+            TemplateRef::Named(n) => assert_eq!(n, "y"),
+            TemplateRef::Positional(_) => panic!("expected Named, got Positional"),
+        }
+    }
+
+    // ── error cases ─────────────────────────────────────────────
+
+    #[test]
+    fn unmatched_close_brace() {
+        let err = parse_mask_format_template("a}b").unwrap_err();
+        assert!(err.contains("unmatched"), "got: {err}");
+    }
+
+    #[test]
+    fn unclosed_placeholder() {
+        let err = parse_mask_format_template("{").unwrap_err();
+        assert!(err.contains("unclosed"), "got: {err}");
+    }
+
+    #[test]
+    fn unclosed_placeholder_with_spec() {
+        let err = parse_mask_format_template("{:>10").unwrap_err();
+        assert!(err.contains("unclosed"), "got: {err}");
+    }
+
+    #[test]
+    fn nested_brace_in_spec_rejected() {
+        let err = parse_mask_format_template("{:{}}").unwrap_err();
+        assert!(err.contains("nested"), "got: {err}");
+    }
+
+    #[test]
+    fn invalid_placeholder_char() {
+        let err = parse_mask_format_template("{a+b}").unwrap_err();
+        assert!(err.contains("unexpected"), "got: {err}");
+    }
 }
