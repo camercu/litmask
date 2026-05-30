@@ -8,6 +8,7 @@
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt;
 
 /// A placeholder reference — either a positional index (from `{}`,
 /// `{N}`, or `<N>$`; bare `{}` resolves to the next auto-positional
@@ -37,18 +38,69 @@ pub struct ParsedPlaceholder {
     pub spec_raw: String,
 }
 
+/// Errors from [`parse_mask_format_template`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TemplateParseError {
+    /// Bare `}` without a matching `{`.
+    UnmatchedCloseBrace,
+    /// `{` without a closing `}`.
+    UnclosedPlaceholder,
+    /// `{` inside a format spec (e.g. `{:{}}`) — use `<name>$` instead.
+    NestedBrace,
+    /// Non-token character inside `{...}`.
+    InvalidChar(char),
+    /// More auto-positional `{}` placeholders than `usize` can index.
+    TooManyAutoPositional,
+    /// Positional index could not be parsed as `usize`.
+    InvalidPositionalIndex,
+    /// `<token>$` index in a spec overflows `usize`.
+    OverflowingIndex(String),
+}
+
+impl fmt::Display for TemplateParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnmatchedCloseBrace => f.write_str(
+                "unmatched `}` in mask_format! template; use `}}` to print a literal `}`",
+            ),
+            Self::UnclosedPlaceholder => {
+                f.write_str("unclosed `{...}` placeholder in mask_format! template")
+            }
+            Self::NestedBrace => f.write_str(
+                "nested `{` inside mask_format! placeholder spec; \
+                 use `<name>$` for dynamic width / precision",
+            ),
+            Self::InvalidChar(c) => write!(
+                f,
+                "unexpected `{c}` inside `{{...}}` placeholder in mask_format! template",
+            ),
+            Self::TooManyAutoPositional => {
+                f.write_str("too many auto-positional placeholders in mask_format! template")
+            }
+            Self::InvalidPositionalIndex => {
+                f.write_str("invalid positional index in mask_format! template")
+            }
+            Self::OverflowingIndex(token) => write!(
+                f,
+                "positional index `{token}` overflows usize in mask_format! spec",
+            ),
+        }
+    }
+}
+
 /// Walk the user's template once, emitting alternating literal
 /// fragments and parsed placeholders. The result invariant is
 /// `fragments.len() == placeholders.len() + 1`.
 ///
 /// # Errors
 ///
-/// Returns a descriptive `String` on malformed templates (unmatched
+/// Returns [`TemplateParseError`] on malformed templates (unmatched
 /// braces, invalid placeholder characters, etc.).
 #[allow(clippy::missing_panics_doc)]
 pub fn parse_mask_format_template(
     s: &str,
-) -> Result<(Vec<String>, Vec<ParsedPlaceholder>), String> {
+) -> Result<(Vec<String>, Vec<ParsedPlaceholder>), TemplateParseError> {
     let mut fragments = vec![String::new()];
     let mut placeholders: Vec<ParsedPlaceholder> = Vec::new();
     let mut next_auto = 0_usize;
@@ -71,10 +123,7 @@ pub fn parse_mask_format_template(
                     chars.next();
                     fragments.last_mut().unwrap().push('}');
                 } else {
-                    return Err(
-                        "unmatched `}` in mask_format! template; use `}}` to print a literal `}`"
-                            .to_string(),
-                    );
+                    return Err(TemplateParseError::UnmatchedCloseBrace);
                 }
             }
             c => fragments.last_mut().unwrap().push(c),
@@ -88,7 +137,7 @@ pub fn parse_mask_format_template(
 fn parse_placeholder_body(
     chars: &mut core::iter::Peekable<core::str::Chars<'_>>,
     next_auto: &mut usize,
-) -> Result<ParsedPlaceholder, String> {
+) -> Result<ParsedPlaceholder, TemplateParseError> {
     let header = consume_placeholder_header(chars)?;
     let value = resolve_value_ref(&header, next_auto)?;
     let (spec_raw, spec_refs) = consume_placeholder_spec(chars)?;
@@ -101,16 +150,14 @@ fn parse_placeholder_body(
 
 fn consume_placeholder_header(
     chars: &mut core::iter::Peekable<core::str::Chars<'_>>,
-) -> Result<String, String> {
+) -> Result<String, TemplateParseError> {
     let mut header = String::new();
     while let Some(&c) = chars.peek() {
         if c == ':' || c == '}' {
             break;
         }
         if !is_token_char(c) {
-            return Err(alloc::format!(
-                "unexpected `{c}` inside `{{...}}` placeholder in mask_format! template",
-            ));
+            return Err(TemplateParseError::InvalidChar(c));
         }
         header.push(c);
         chars.next();
@@ -118,17 +165,20 @@ fn consume_placeholder_header(
     Ok(header)
 }
 
-fn resolve_value_ref(header: &str, next_auto: &mut usize) -> Result<TemplateRef, String> {
+fn resolve_value_ref(
+    header: &str,
+    next_auto: &mut usize,
+) -> Result<TemplateRef, TemplateParseError> {
     if header.is_empty() {
         let i = *next_auto;
-        *next_auto = next_auto.checked_add(1).ok_or_else(|| {
-            "too many auto-positional placeholders in mask_format! template".to_string()
-        })?;
+        *next_auto = next_auto
+            .checked_add(1)
+            .ok_or(TemplateParseError::TooManyAutoPositional)?;
         Ok(TemplateRef::Positional(i))
     } else if header.chars().all(|c| c.is_ascii_digit()) {
         let i = header
             .parse::<usize>()
-            .map_err(|_| "invalid positional index in mask_format! template".to_string())?;
+            .map_err(|_| TemplateParseError::InvalidPositionalIndex)?;
         Ok(TemplateRef::Positional(i))
     } else {
         Ok(TemplateRef::Named(header.to_string()))
@@ -137,11 +187,11 @@ fn resolve_value_ref(header: &str, next_auto: &mut usize) -> Result<TemplateRef,
 
 fn consume_placeholder_spec(
     chars: &mut core::iter::Peekable<core::str::Chars<'_>>,
-) -> Result<(String, Vec<TemplateRef>), String> {
+) -> Result<(String, Vec<TemplateRef>), TemplateParseError> {
     match chars.next() {
         Some(':') => {}
         Some('}') => return Ok((String::new(), Vec::new())),
-        _ => return Err("unclosed `{...}` placeholder in mask_format! template".to_string()),
+        _ => return Err(TemplateParseError::UnclosedPlaceholder),
     }
 
     let mut spec_raw = String::new();
@@ -149,16 +199,11 @@ fn consume_placeholder_spec(
     let mut token = String::new();
     loop {
         let Some(c) = chars.next() else {
-            return Err("unclosed `{...}` placeholder in mask_format! template".to_string());
+            return Err(TemplateParseError::UnclosedPlaceholder);
         };
         match c {
             '}' => break,
-            '{' => {
-                return Err(
-                    "nested `{` inside mask_format! placeholder spec; use `<name>$` for dynamic width / precision"
-                        .to_string(),
-                );
-            }
+            '{' => return Err(TemplateParseError::NestedBrace),
             _ => {
                 spec_raw.push(c);
                 if is_token_char(c) {
@@ -175,11 +220,11 @@ fn consume_placeholder_spec(
     Ok((spec_raw, spec_refs))
 }
 
-fn make_template_ref(token: &str) -> Result<TemplateRef, String> {
+fn make_template_ref(token: &str) -> Result<TemplateRef, TemplateParseError> {
     if token.chars().all(|c| c.is_ascii_digit()) {
-        let i = token.parse::<usize>().map_err(|_| {
-            alloc::format!("positional index `{token}` overflows usize in mask_format! spec")
-        })?;
+        let i = token
+            .parse::<usize>()
+            .map_err(|_| TemplateParseError::OverflowingIndex(token.to_string()))?;
         Ok(TemplateRef::Positional(i))
     } else {
         Ok(TemplateRef::Named(token.to_string()))
@@ -199,11 +244,10 @@ mod tests {
     #[test]
     fn overflowing_positional_in_spec_returns_error() {
         let input = "{:>6666666666666666666666$}";
-        let err = parse_mask_format_template(input).unwrap_err();
-        assert!(
-            err.contains("overflows"),
-            "expected overflow error, got: {err}"
-        );
+        assert!(matches!(
+            parse_mask_format_template(input),
+            Err(TemplateParseError::OverflowingIndex(_)),
+        ));
     }
 
     #[test]
@@ -388,31 +432,41 @@ mod tests {
 
     #[test]
     fn unmatched_close_brace() {
-        let err = parse_mask_format_template("a}b").unwrap_err();
-        assert!(err.contains("unmatched"), "got: {err}");
+        assert_eq!(
+            parse_mask_format_template("a}b").unwrap_err(),
+            TemplateParseError::UnmatchedCloseBrace,
+        );
     }
 
     #[test]
     fn unclosed_placeholder() {
-        let err = parse_mask_format_template("{").unwrap_err();
-        assert!(err.contains("unclosed"), "got: {err}");
+        assert_eq!(
+            parse_mask_format_template("{").unwrap_err(),
+            TemplateParseError::UnclosedPlaceholder,
+        );
     }
 
     #[test]
     fn unclosed_placeholder_with_spec() {
-        let err = parse_mask_format_template("{:>10").unwrap_err();
-        assert!(err.contains("unclosed"), "got: {err}");
+        assert_eq!(
+            parse_mask_format_template("{:>10").unwrap_err(),
+            TemplateParseError::UnclosedPlaceholder,
+        );
     }
 
     #[test]
     fn nested_brace_in_spec_rejected() {
-        let err = parse_mask_format_template("{:{}}").unwrap_err();
-        assert!(err.contains("nested"), "got: {err}");
+        assert_eq!(
+            parse_mask_format_template("{:{}}").unwrap_err(),
+            TemplateParseError::NestedBrace,
+        );
     }
 
     #[test]
     fn invalid_placeholder_char() {
-        let err = parse_mask_format_template("{a+b}").unwrap_err();
-        assert!(err.contains("unexpected"), "got: {err}");
+        assert_eq!(
+            parse_mask_format_template("{a+b}").unwrap_err(),
+            TemplateParseError::InvalidChar('+'),
+        );
     }
 }

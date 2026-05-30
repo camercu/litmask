@@ -149,8 +149,14 @@ fn as_named_arg(expr: &Expr) -> Option<NamedArg> {
 fn mask_format_expand(parsed: &MaskFormatInput) -> syn::Result<TokenStream2> {
     let template_span = parsed.template.span();
     let template_value = parsed.template.value();
-    let (fragments, placeholders) = parse_mask_format_template(&template_value)
-        .map_err(|m| compile_error(template_span, MACRO_NAME, FailTag::TemplateSyntax, &m))?;
+    let (fragments, placeholders) = parse_mask_format_template(&template_value).map_err(|e| {
+        compile_error(
+            template_span,
+            MACRO_NAME,
+            FailTag::TemplateSyntax,
+            &e.to_string(),
+        )
+    })?;
 
     let (positional, named) = split_args(&parsed.args)?;
     let positional_count = positional.len();
