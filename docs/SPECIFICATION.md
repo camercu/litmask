@@ -1022,11 +1022,11 @@ proc-macro SHALL include both:
 | `unset` | `mask_env!` was given a name that resolves to no environment variable. (`mask_option_env!`'s unset case is a runtime `None`, not a compile error.) |
 | `unicode-failure` | Environment-variable value is set but not valid UTF-8. |
 | `invalid-arg` | `mask_concat!` was passed an argument that is not a string literal or a compile-time-resolvable string macro. |
-| `empty-args` | `mask_concat!` was given no arguments. |
 | `args-not-allowed` | `mask_file!` was given any argument (the macro takes none). |
 | `duplicate-name` | `mask_format!` was given the same named argument twice. |
 | `positional-after-named` | `mask_format!` was given a positional argument after a named one. |
 | `positional-unused` | `mask_format!` was given a positional argument never referenced by any placeholder. |
+| `named-unused` | `mask_format!` was given a named argument never referenced by any placeholder (mirrors `format!`'s "named argument never used"). |
 | `positional-out-of-range` | `mask_format!` template references positional index `N` but fewer than `N + 1` positional arguments were provided. |
 | `invalid-placeholder` | `mask_format!` placeholder header is not a valid Rust identifier (e.g. starts with a digit). |
 | `template-syntax` | `mask_format!` template has malformed `{...}` syntax (unmatched brace, nested `{`, unclosed placeholder, etc.). |
@@ -1479,8 +1479,10 @@ contains.
 #### §2.1.3 mask_include_str! macro
 
 §2.1.3.1 — `mask_include_str!(<path>)` SHALL accept a single string-literal
-argument naming a UTF-8 file path. The path SHALL be resolved relative to the
-consumer crate's `CARGO_MANIFEST_DIR`.
+argument naming a UTF-8 file path. The path SHALL be resolved exactly as
+stdlib `include_str!` resolves it: relative to the directory of the source
+file containing the invocation (via `proc_macro::Span::file()`), so
+`mask_include_str!` is a drop-in replacement for `include_str!`.
 
 §2.1.3.2 — The macro SHALL read the file at proc-macro time, AEAD-encrypt
 its contents per §1.5.2, and expand to a runtime decrypt call returning a
@@ -1519,8 +1521,8 @@ plaintext under the standard scrub policy.
 #### §2.1.5 mask_concat! macro
 
 §2.1.5.1 — `mask_concat!(<args>...)` SHALL accept a comma-separated
-non-empty list of arguments. The grammar mirrors stdlib `concat!`
-per §2.1.0: each argument MUST be one of:
+list of arguments. The grammar mirrors stdlib `concat!` per §2.1.0:
+each argument MUST be one of:
 
 - A string literal (`"…"`, `r"…"`, `r#"…"#`) — value used verbatim.
 - An integer literal (`42`, `7u32`) — stringified via `base10_digits()`.
@@ -1549,9 +1551,9 @@ opposite of `mask_concat!`'s job) — SHALL produce a compile error
 containing the substring "mask_concat! arguments must be string
 literals or compile-time-resolvable string macros".
 
-§2.1.5.4 — An empty argument list (`mask_concat!()`) SHALL produce a
-compile error containing the substring "mask_concat! requires at least
-one argument".
+§2.1.5.4 — An empty argument list (`mask_concat!()`) SHALL yield the
+empty string `""`, mirroring stdlib `concat!()`. It SHALL NOT be a
+compile error.
 
 §2.1.5.5 — A nested `env!` that references an unset env var SHALL
 surface the env's failure (compile error containing the substring
@@ -1615,9 +1617,12 @@ SHALL produce a compile error containing the substring "mask_file!
 takes no arguments".
 
 §2.1.8.2 — At proc-macro time, the macro SHALL read
-`proc_macro::Span::call_site().file()`, canonicalize the path per
-§1.5.2's `CARGO_MANIFEST_DIR`-stripping rule, AEAD-encrypt the result,
-and expand to a runtime decrypt call returning a value of type `String`.
+`proc_macro::Span::call_site().file()`, AEAD-encrypt that value
+unchanged, and expand to a runtime decrypt call returning a value of
+type `String`. The returned value SHALL equal stdlib `file!()` at the
+same call site, so `mask_file!` is a drop-in replacement. (The
+`CARGO_MANIFEST_DIR`-stripping of §1.5.2 applies only to nonce
+derivation, never to the value handed back to the caller.)
 
 §2.1.8.3 — The raw source path SHALL be absent from the compiled
 binary's plaintext under the standard scrub policy. (Caveat:
