@@ -161,10 +161,13 @@ impl TryFrom<u8> for CipherId {
 
 /// A parsed wrapper, decomposed into its typed header fields plus
 /// borrowed nonce and `ciphertext || tag` body.
+///
+/// The format-version byte is validated during parsing (an unknown
+/// version is rejected with [`WrapperParseError::UnknownFormatVersion`])
+/// but not retained: only one version exists and no consumer dispatches
+/// on it. Cipher, by contrast, drives runtime dispatch and is kept.
 #[derive(Debug)]
 pub struct ParsedWrapper<'a> {
-    /// Format version recorded in the wrapper header.
-    pub version: FormatVersion,
     /// Cipher identifier recorded in the wrapper header.
     pub cipher: CipherId,
     /// 12-byte AEAD nonce used to encrypt the body.
@@ -214,7 +217,7 @@ impl From<UnknownCipherId> for WrapperParseError {
 // header byte, changing TAG_LEN) silently misaligns every wrapper
 // read; these `const _` blocks fail the build instead.
 const _: () = assert!(HEADER_LEN == 2 + NONCE_LEN);
-const _: () = assert!(WRAPPER_LEN == HEADER_LEN + KEY_LEN + TAG_LEN);
+const _: () = assert!(WRAPPER_BODY_LEN == KEY_LEN + TAG_LEN);
 const _: () = assert!(NONCE_LEN < HEADER_LEN);
 const _: () = assert!(WRAPPER_LEN > HEADER_LEN);
 // Offset constants are load-bearing for the wrapper layout (§1.7.3)
@@ -282,7 +285,9 @@ pub fn assemble_wrapper(
 /// slice-to-array conversions are sanity guards against future drift
 /// in the wrapper header layout.
 pub fn parse_wrapper(bytes: &[u8; WRAPPER_LEN]) -> Result<ParsedWrapper<'_>, WrapperParseError> {
-    let version = FormatVersion::try_from(bytes[VERSION_OFFSET])?;
+    // Validate the version byte (rejects unknown versions) but discard
+    // the value — see `ParsedWrapper` for why it is not retained.
+    FormatVersion::try_from(bytes[VERSION_OFFSET])?;
     let cipher = CipherId::try_from(bytes[CIPHER_OFFSET])?;
     let nonce: &[u8; NONCE_LEN] = (&bytes[NONCE_OFFSET..HEADER_LEN])
         .try_into()
@@ -291,7 +296,6 @@ pub fn parse_wrapper(bytes: &[u8; WRAPPER_LEN]) -> Result<ParsedWrapper<'_>, Wra
         .try_into()
         .expect("body slice is WRAPPER_BODY_LEN bytes by construction");
     Ok(ParsedWrapper {
-        version,
         cipher,
         nonce,
         body,
@@ -340,7 +344,6 @@ mod tests {
             &body,
         );
         let parsed = parse_wrapper(&wrapper).expect("round-trip parses");
-        assert_eq!(parsed.version, FormatVersion::V1);
         assert_eq!(parsed.cipher, CipherId::ChaCha20Poly1305);
         assert_eq!(parsed.nonce, &nonce);
         assert_eq!(parsed.body, &body);
@@ -393,7 +396,6 @@ mod tests {
                 &body,
             );
             let parsed = parse_wrapper(&wrapper).expect("assembled wrappers always parse");
-            proptest::prop_assert_eq!(parsed.version, FormatVersion::V1);
             proptest::prop_assert_eq!(parsed.cipher, CipherId::ChaCha20Poly1305);
             proptest::prop_assert_eq!(parsed.nonce, &nonce);
             proptest::prop_assert_eq!(parsed.body, &body);
