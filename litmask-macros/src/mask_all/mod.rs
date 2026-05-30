@@ -216,85 +216,74 @@ impl MaskAllWalker {
         }
     }
 
-    /// Try to rewrite a "head, template, args..." macro via
-    /// [`Self::rewrite_template`]. If the macro's template arg is
-    /// not a `LitStr` (e.g., `format!(concat!(...), ...)`), record
-    /// a `NonLiteralTemplate` skip so the macro shows up as a
-    /// warning in non-strict mode and a hard error under
-    /// `#[mask_all(strict)]` (§2.3.2.2–§2.3.2.4, §2.3.3.1).
+    /// Rewrite a "head, template, args..." macro, or record a skip.
+    /// Classifies the body in a single pass via [`classify_template`]:
+    /// - `Literal`: emit the `mask_format!`-based rewrite.
+    /// - `NonLiteral`: the template arg exists but is not a `LitStr`
+    ///   (e.g., `format!(concat!(...), ...)`); record a
+    ///   `NonLiteralTemplate` skip so the macro warns in non-strict
+    ///   mode and hard-errors under `#[mask_all(strict)]`
+    ///   (§2.3.2.2–§2.3.2.4, §2.3.3.1).
+    /// - `Absent`: empty body, too few args, or a malformed body —
+    ///   nothing the walker could have masked, left untouched with no
+    ///   warning so rustc surfaces any genuine error from the
+    ///   original invocation.
     fn rewrite_or_warn(
         &mut self,
         em: &syn::ExprMacro,
         head_arity: usize,
         shape: RewriteShape,
     ) -> Option<Expr> {
-        if let Some(rewritten) = Self::rewrite_template(em, head_arity, shape) {
-            return Some(rewritten);
-        }
-        if has_non_literal_template(&em.mac.tokens, head_arity) {
-            self.skipped.push(SkipRecord::from_span(
-                SkipReason::NonLiteralTemplate,
-                em.mac.path.span(),
-            ));
-        }
-        None
-    }
-
-    /// Generic rewriter for "head, template, args..." macros:
-    /// - parses the body as `(head_exprs[..head_arity], template,
-    ///   rest)`,
-    /// - if the template parses as a `LitStr`, emits a `mask_format!`-
-    ///   based rewrite,
-    /// - otherwise returns `None` silently — an empty body
-    ///   (`panic!()`), a non-literal template (`format!(my_tmpl,
-    ///   ...)`), or a non-literal message (`assert!(cond, my_err)`)
-    ///   all reach this path and none contain a literal the walker
-    ///   could have masked. Genuine syntax errors inside the macro
-    ///   body still surface to the user via rustc's expansion of the
-    ///   original unaltered macro.
-    ///
-    /// `shape` controls the outer form:
-    /// - `RewriteShape::Replace`: the entire invocation becomes a
-    ///   single `mask_format!(...)` call (used for `format!`).
-    /// - `RewriteShape::Wrap`: the invocation becomes a block that
-    ///   binds the masked string and calls the original macro with
-    ///   the head positions followed by `"{}", __s` (used for
-    ///   output / write / panic / assert).
-    fn rewrite_template(
-        em: &syn::ExprMacro,
-        head_arity: usize,
-        shape: RewriteShape,
-    ) -> Option<Expr> {
-        let head_and_rest = parse_head_and_template(&em.mac.tokens, head_arity)?;
-        let HeadAndTemplate {
-            head_tokens,
-            template_and_args,
-        } = head_and_rest;
-        let macro_name = &em
-            .mac
-            .path
-            .segments
-            .last()
-            .expect("classified path has a last segment")
-            .ident;
-        let s = mixed_site_s();
-        let rewritten: Expr = match shape {
-            RewriteShape::Replace => syn::parse_quote! {
-                ::litmask::mask_format!(#template_and_args)
-            },
-            RewriteShape::Wrap => {
-                let head_prefix = if head_tokens.is_empty() {
-                    quote! {}
-                } else {
-                    quote! { #head_tokens, }
-                };
-                syn::parse_quote! {{
-                    let #s = ::litmask::mask_format!(#template_and_args);
-                    #macro_name!(#head_prefix "{}", #s)
-                }}
+        match classify_template(&em.mac.tokens, head_arity) {
+            TemplateParse::Literal(head_and_rest) => Some(build_rewrite(em, head_and_rest, shape)),
+            TemplateParse::NonLiteral => {
+                self.skipped.push(SkipRecord::from_span(
+                    SkipReason::NonLiteralTemplate,
+                    em.mac.path.span(),
+                ));
+                None
             }
-        };
-        Some(rewritten)
+            TemplateParse::Absent => None,
+        }
+    }
+}
+
+/// Build the rewritten expression for a macro whose template parsed as
+/// a `LitStr`. `shape` controls the outer form:
+/// - `RewriteShape::Replace`: the entire invocation becomes a single
+///   `mask_format!(...)` call (used for `format!`).
+/// - `RewriteShape::Wrap`: the invocation becomes a block that binds
+///   the masked string and calls the original macro with the head
+///   positions followed by `"{}", __s` (used for output / write /
+///   panic / assert).
+fn build_rewrite(em: &syn::ExprMacro, head_and_rest: HeadAndTemplate, shape: RewriteShape) -> Expr {
+    let HeadAndTemplate {
+        head_tokens,
+        template_and_args,
+    } = head_and_rest;
+    let macro_name = &em
+        .mac
+        .path
+        .segments
+        .last()
+        .expect("classified path has a last segment")
+        .ident;
+    let s = mixed_site_s();
+    match shape {
+        RewriteShape::Replace => syn::parse_quote! {
+            ::litmask::mask_format!(#template_and_args)
+        },
+        RewriteShape::Wrap => {
+            let head_prefix = if head_tokens.is_empty() {
+                quote! {}
+            } else {
+                quote! { #head_tokens, }
+            };
+            syn::parse_quote! {{
+                let #s = ::litmask::mask_format!(#template_and_args);
+                #macro_name!(#head_prefix "{}", #s)
+            }}
+        }
     }
 }
 
@@ -317,67 +306,71 @@ struct HeadAndTemplate {
     template_and_args: TokenStream2,
 }
 
-/// Parse a macro body as `head_args[..head_arity], template, rest`.
-/// Returns `None` if the body has fewer than `head_arity + 1` args,
-/// or if the argument at index `head_arity` is not a string literal.
-fn parse_head_and_template(tokens: &TokenStream2, head_arity: usize) -> Option<HeadAndTemplate> {
+/// Outcome of classifying a "head, template, args..." macro body. The
+/// three variants are mutually exclusive and cover every shape
+/// `rewrite_or_warn` must distinguish.
+enum TemplateParse {
+    /// The arg at index `head_arity` is a `LitStr`. Carries the head
+    /// tokens and template-and-args tail, ready for [`build_rewrite`].
+    Literal(HeadAndTemplate),
+    /// A template arg is present at the expected position but is not a
+    /// string literal (e.g. `format!(concat!(...), ...)` or
+    /// `assert!(cond, my_err)`). Warned per §2.3.2.2–§2.3.2.4.
+    NonLiteral,
+    /// Empty body (`panic!()`), too few args, or a malformed body. No
+    /// literal the walker could have masked; left untouched with no
+    /// warning so rustc surfaces any genuine error from the original
+    /// invocation.
+    Absent,
+}
+
+/// Classify a macro body as `head_args[..head_arity], template, rest`
+/// in a single parse pass. Walking the body once answers the three
+/// questions `rewrite_or_warn` needs — rewritable literal template,
+/// warnable non-literal template, or nothing maskable — without
+/// re-parsing the same token stream twice.
+fn classify_template(tokens: &TokenStream2, head_arity: usize) -> TemplateParse {
     use syn::parse::Parser as _;
-    let parser = move |input: syn::parse::ParseStream| -> syn::Result<HeadAndTemplate> {
+    let parser = move |input: syn::parse::ParseStream| -> syn::Result<TemplateParse> {
         let mut head_pieces: Vec<TokenStream2> = Vec::with_capacity(head_arity);
         for _ in 0..head_arity {
             let head_expr: syn::Expr = input.parse()?;
             input.parse::<syn::Token![,]>()?;
             head_pieces.push(quote! { #head_expr });
         }
-        // Peek to ensure the next token IS a string literal — non-
-        // literal templates make the parser return Err and the caller
-        // silently leaves the macro un-rewritten (no warning).
-        let _template: syn::LitStr = input.fork().parse()?;
+        // No template arg at all (e.g. `panic!()`): nothing to mask.
+        if input.is_empty() {
+            return Ok(TemplateParse::Absent);
+        }
+        // Peek the template position: a non-`LitStr` here is the
+        // warnable case, not a parse error. Drain the rest so the
+        // outer `parse2` sees a fully-consumed stream (an early
+        // return with tokens left would surface as a parse error
+        // and misclassify as `Absent`).
+        if input.fork().parse::<syn::LitStr>().is_err() {
+            let _rest: TokenStream2 = input.parse()?;
+            return Ok(TemplateParse::NonLiteral);
+        }
         let template_and_args: TokenStream2 = input.parse()?;
         let head_tokens = if head_pieces.is_empty() {
             TokenStream2::new()
         } else {
             quote! { #(#head_pieces),* }
         };
-        Ok(HeadAndTemplate {
+        Ok(TemplateParse::Literal(HeadAndTemplate {
             head_tokens,
             template_and_args,
-        })
+        }))
     };
-    parser.parse2(tokens.clone()).ok()
+    // A parse error means too few head args or a malformed body:
+    // benign, leave it untouched (rustc reports any real error).
+    parser
+        .parse2(tokens.clone())
+        .unwrap_or(TemplateParse::Absent)
 }
 
 fn mixed_site_s() -> syn::Ident {
     syn::Ident::new("__s", proc_macro2::Span::mixed_site())
-}
-
-/// True if the macro body parses as `head[..head_arity], template,
-/// ...` where `template` is present but not a `LitStr`. Used to
-/// distinguish the "non-literal template" warning case (§2.3.2.2–
-/// §2.3.2.4) from the benign cases this helper is intentionally
-/// silent on: missing args (`panic!()` with no body) and genuine
-/// syntax errors. A `false` return means the macro body either had
-/// too few args or was malformed — `rewrite_or_warn` leaves it
-/// untouched and rustc surfaces the real error from the original
-/// invocation.
-fn has_non_literal_template(tokens: &TokenStream2, head_arity: usize) -> bool {
-    use syn::parse::Parser as _;
-    let parser = move |input: syn::parse::ParseStream| -> syn::Result<bool> {
-        let args: syn::punctuated::Punctuated<syn::Expr, syn::Token![,]> =
-            syn::punctuated::Punctuated::parse_terminated(input)?;
-        let Some(template) = args.iter().nth(head_arity) else {
-            return Ok(false);
-        };
-        let is_literal_template = matches!(
-            template,
-            syn::Expr::Lit(syn::ExprLit {
-                lit: syn::Lit::Str(_),
-                ..
-            }),
-        );
-        Ok(!is_literal_template)
-    };
-    parser.parse2(tokens.clone()).unwrap_or(false)
 }
 
 impl VisitMut for MaskAllWalker {
