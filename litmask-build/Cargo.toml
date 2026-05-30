@@ -24,7 +24,6 @@ litmask-internal = { workspace = true, default-features = false }
 rand_chacha = "0.10"
 rand_core = "0.10"
 getrandom = "0.4"
-toml = "1.1"
 zeroize = "1"
 
 [dev-dependencies]
