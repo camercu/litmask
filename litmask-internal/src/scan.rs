@@ -2,8 +2,6 @@
 //! compiled artifact. Shared by `litmask-cli` (inspect + bind) and
 //! fuzzing harnesses.
 
-extern crate alloc;
-
 use alloc::vec::Vec;
 
 use crate::{NONCE_LEN, WRAPPER_LEN};
