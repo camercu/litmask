@@ -173,7 +173,7 @@ pub fn __weak_decode<const N: usize>(
 ) -> &'static str {
     cache.get_or_init(|| {
         let decoded = weak_xor_decode(obf, wrapper);
-        String::from_utf8(decoded).unwrap_or_else(|_| panic!("invalid utf-8"))
+        String::from_utf8(decoded).unwrap()
     })
 }
 
