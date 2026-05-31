@@ -31,9 +31,10 @@ pub const WEAK_XOR_KEY_LEN: usize = KEY_LEN + KEY_LEN;
 /// Derive a 32-byte key from `(context, machine_id, salt)` via BLAKE3.
 ///
 /// Shared by [`HardwareIdProvider`](https://docs.rs/litmask) (runtime)
-/// and `litmask-cli bind` (CLI). The runtime caller passes the context
-/// through `weak_mask!()` so the literal doesn't appear in user
-/// binaries; the CLI imports [`HW_ID_DERIVATION_CONTEXT`] directly.
+/// and the `litmask bind` command (CLI). The runtime caller passes
+/// the context through `weak_mask!()` so the literal doesn't appear
+/// in user binaries; the CLI imports [`HW_ID_DERIVATION_CONTEXT`]
+/// directly.
 ///
 /// Derivation: `BLAKE3::derive_key(context, len(machine_id) ||
 /// machine_id || salt)`, where `len` is an 8-byte little-endian length

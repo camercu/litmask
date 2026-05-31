@@ -1,6 +1,6 @@
 //! `litmask.config` field rendering, shared by the build helper and
-//! `litmask-cli bind` so the TOML field layout cannot drift between
-//! the two producers.
+//! the `litmask bind` command so the TOML field layout cannot drift
+//! between the two producers.
 
 use alloc::string::String;
 
@@ -10,9 +10,9 @@ use crate::{KEY_LEN, NONCE_LEN, WRAPPER_LEN, base64url};
 ///
 /// Returns the `unlock_key`, `locator`, and `length` fields as a TOML
 /// fragment (no header comments). Callers prepend their own header.
-/// Shared by `litmask-build` (build-time) and `litmask-cli bind`
-/// (post-build rebind) so the field layout cannot drift between the
-/// two producers.
+/// Shared by `litmask-build` (build-time) and the `litmask bind`
+/// command (post-build rebind) so the field layout cannot drift
+/// between the two producers.
 #[must_use]
 pub fn render_config_fields(unlock_key: &[u8; KEY_LEN], locator: &[u8; NONCE_LEN]) -> String {
     alloc::format!(

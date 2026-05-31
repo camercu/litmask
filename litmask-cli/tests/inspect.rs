@@ -1,4 +1,4 @@
-//! Integration smoke test for `litmask-cli inspect`. The branch
+//! Integration smoke test for `litmask inspect`. The branch
 //! coverage for every outcome ([`Verified`] / [`NotFound`] /
 //! [`Ambiguous`] / [`ConfigMalformed`]) lives in the
 //! `inspect::tests` unit tests; this file exists only to confirm

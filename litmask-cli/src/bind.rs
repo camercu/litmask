@@ -1,4 +1,4 @@
-//! `litmask-cli bind` subcommand.
+//! `litmask bind` subcommand.
 //!
 //! `bind` decrypts using the current config's `unlock_key` (from
 //! any provider) and re-encrypts under a hardware-derived key. The

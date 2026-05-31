@@ -319,7 +319,7 @@ fn twain_fixture_absent_from_canonical_examples() {
 /// `required-features` in `Cargo.toml`), so the workspace's default
 /// `cargo build --workspace --examples` skips it cleanly and the
 /// `test-examples` shell recipe cannot run it (init would fail with
-/// `decryption_failed` without a prior `litmask-cli bind` step).
+/// `decryption_failed` without a prior `litmask bind` step).
 /// The masking property is testable without ever executing the
 /// example: build with the feature and scrub the binary.
 ///

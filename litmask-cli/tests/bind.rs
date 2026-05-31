@@ -1,4 +1,4 @@
-//! Integration smoke test for `litmask-cli bind`. Outcome-
+//! Integration smoke test for `litmask bind`. Outcome-
 //! classification branches (`NotFound` / `Ambiguous` /
 //! `DecryptionFailed` / `SaltInvalid` / `ConfigMalformed` /
 //! `UnsupportedFormat` / `UnsupportedCipher` / `Success`) live in

@@ -1,4 +1,4 @@
-//! `litmask-cli inspect` subcommand.
+//! `litmask inspect` subcommand.
 //!
 //! Functional core / imperative shell split: [`plan`] is a pure
 //! function over (config text, binary bytes) that returns an
