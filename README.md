@@ -6,17 +6,16 @@
 [![MSRV](https://img.shields.io/badge/rustc-1.88+-blue.svg)](https://github.com/camercu/litmask)
 [![License](https://img.shields.io/crates/l/litmask.svg)](#license)
 
-**Hide string literals from `strings(1)` and hex editors.** AEAD-encrypt
+**Hide string literals from `strings(1)` and disassemblers.** AEAD-encrypt
 every string constant at compile time, decrypt at runtime. Drop-in
 macros, layered key management, `no_std` ready.
 
 ```rust
 use litmask::mask;
 
-fn main() -> Result<(), litmask::InitError> {
+fn main() -> Result<(), Box<dyn Error>> {
     litmask::init!()?;
-    println!("{}", mask!("sensitive data"));
-    Ok(())
+    proprietary_gonculator(mask!("sensitive data"))
 }
 ```
 
@@ -30,17 +29,17 @@ strings target/release/my_app | grep "sensitive data"   # no output
 
 ## Why litmask
 
-| | `obfstr` | `litcrypt` | **`litmask`** |
-|---|---|---|---|
-| Cipher | XOR | XOR | **ChaCha20-Poly1305 / AES-256-GCM** |
-| Tamper detection | No | No | **Yes (AEAD)** |
-| Key model | Compile-time random | Single env var | **Layered providers** |
-| Format strings | No | No | **`mask_format!`** |
-| Module-level | No | No | **`#[mask_all]`** |
-| Hardware binding | No | No | **`litmask bind`** |
-| Literal types | `str` | `str` | **str / bytes / cstr** |
-| `no_std` | Limited | No | **Yes** |
-| Reproducible builds | No | No | **Yes** |
+|                     | `obfstr`            | `litcrypt`     | **`litmask`**                       |
+| ------------------- | ------------------- | -------------- | ----------------------------------- |
+| Cipher              | XOR                 | XOR            | **ChaCha20-Poly1305 / AES-256-GCM** |
+| Tamper detection    | No                  | No             | **Yes (AEAD)**                      |
+| Key model           | Compile-time random | Single env var | **Layered providers**               |
+| Format strings      | No                  | No             | **`mask_format!`**                  |
+| Module-level        | No                  | No             | **`#[mask_all]`**                   |
+| Hardware binding    | No                  | No             | **`litmask bind`**                  |
+| Literal types       | `str`               | `str`          | **str / bytes / cstr**              |
+| `no_std`            | Limited             | No             | **Yes** (requires `alloc`)          |
+| Reproducible builds | No                  | No             | **Yes**                             |
 
 ## Quick start
 
@@ -76,52 +75,52 @@ litmask splits encryption across build time and run time:
    vars the proc macro reads.
 2. **Compile** — each `mask!` literal is AEAD-encrypted during macro
    expansion and the ciphertext is embedded in the binary as `&[u8]`. The
-   plaintext never appears in the output.
+   plaintext never appears in the output binary.
 3. **Run** — `init!()` unwraps the `mask_key` using an `unlock_key`
    supplied by a [`KeyProvider`](#key-providers); `mask!` then decrypts
    each blob on demand.
 
 The `unlock_key` is the only secret that lives outside the binary, so key
-management reduces to *how you deliver the unlock_key* — environment
+management reduces to _how you deliver the unlock_key_ — environment
 variable, file, hardware ID, or a provider you write.
 
 ## Macros
 
-| Macro | Returns | Replaces |
-|---|---|---|
-| `mask!("...")` | `String` | string literals |
-| `mask!(b"...")` | `Vec<u8>` | byte string literals |
-| `mask!(c"...")` | `CString` | C string literals (`std`) |
-| `mask_format!("{}", x)` | `String` | `format!` |
-| `mask_print!("{}", x)` | `()` | `print!` (`std`) |
-| `mask_println!("{}", x)` | `()` | `println!` (`std`) |
-| `mask_write!(dst, "{}", x)` | `Result` | `write!` |
-| `mask_writeln!(dst, "{}", x)` | `Result` | `writeln!` |
-| `mask_concat!(a, b)` | `String` | `concat!` |
-| `mask_env!("VAR")` | `String` | `env!` |
-| `mask_option_env!("VAR")` | `Option<String>` | `option_env!` |
-| `mask_include_str!("path")` | `String` | `include_str!` |
-| `mask_include_bytes!("path")` | `Vec<u8>` | `include_bytes!` |
-| `mask_file!()` | `String` | `file!` |
-| `weak_mask!("...")` | `&'static str` | pre-`init!` bootstrap strings |
-| `weak_mask!(b"...")` | `&'static [u8]` | pre-`init!` bootstrap bytes |
-| `weak_mask!(c"...")` | `&'static CStr` | pre-`init!` bootstrap C strings (`std`) |
-| `unmasked!("...")` | `&'static str` | opt out of `#[mask_all]` |
-| `#[mask_all]` | -- | rewrites all literals in a module |
+| Macro                         | Returns          | Replaces                                |
+| ----------------------------- | ---------------- | --------------------------------------- |
+| `mask!("...")`                | `String`         | string literals                         |
+| `mask!(b"...")`               | `Vec<u8>`        | byte string literals                    |
+| `mask!(c"...")`               | `CString`        | C string literals (`std`)               |
+| `mask_format!("{}", x)`       | `String`         | `format!`                               |
+| `mask_print!("{}", x)`        | `()`             | `print!` (`std`)                        |
+| `mask_println!("{}", x)`      | `()`             | `println!` (`std`)                      |
+| `mask_write!(dst, "{}", x)`   | `Result`         | `write!`                                |
+| `mask_writeln!(dst, "{}", x)` | `Result`         | `writeln!`                              |
+| `mask_concat!(a, b)`          | `String`         | `concat!`                               |
+| `mask_env!("VAR")`            | `String`         | `env!`                                  |
+| `mask_option_env!("VAR")`     | `Option<String>` | `option_env!`                           |
+| `mask_include_str!("path")`   | `String`         | `include_str!`                          |
+| `mask_include_bytes!("path")` | `Vec<u8>`        | `include_bytes!`                        |
+| `mask_file!()`                | `String`         | `file!`                                 |
+| `weak_mask!("...")`           | `&'static str`   | pre-`init!` bootstrap strings           |
+| `weak_mask!(b"...")`          | `&'static [u8]`  | pre-`init!` bootstrap bytes             |
+| `weak_mask!(c"...")`          | `&'static CStr`  | pre-`init!` bootstrap C strings (`std`) |
+| `unmasked!("...")`            | `&'static str`   | opt out of `#[mask_all]`                |
+| `#[mask_all]`                 | --               | rewrites all literals in a module       |
 
-`mask!` returns owned types because decryption happens at runtime. If you
-need `&str`, bind: `let s: &str = &mask!("...");`. For `&'static str`
-with weaker guarantees, use `weak_mask!`.
+`mask!` returns owned types because decryption happens at runtime. For `&str`,
+bind: `let s: &str = &mask!("...");`. If you absolutely need `&'static str`,
+use `weak_mask!`, but its key is recoverable statically from the binary.
 
 ## Key providers
 
-| Provider | Source | Feature |
-|---|---|---|
-| `EnvVarProvider` | Environment variable | default |
-| `FileProvider` | Filesystem path | default |
-| `HardwareIdProvider` | Machine ID + BLAKE3 | `hw-id` |
-| `StaticProvider` | Fixed key (tests only) | -- |
-| `impl KeyProvider` | Anything you write | -- |
+| Provider             | Source                 | Feature |
+| -------------------- | ---------------------- | ------- |
+| `EnvVarProvider`     | Environment variable   | default |
+| `FileProvider`       | Filesystem path        | default |
+| `HardwareIdProvider` | Machine ID + BLAKE3    | `hw-id` |
+| `StaticProvider`     | Fixed key (tests only) | --      |
+| `impl KeyProvider`   | Anything you write     | --      |
 
 ```rust
 use litmask::{HardwareIdProvider, weak_mask};
@@ -132,12 +131,12 @@ litmask::init_with!(provider)?;
 
 ## Security model
 
-| Configuration | Defeats |
-|---|---|
-| Default (`EnvVarProvider`) | `strings`, casual inspection |
-| `FileProvider` | Above, key sourced from a file path |
-| `HardwareIdProvider` | Above + binary redistribution |
-| Custom provider (vault, HSM) | Above + offline attackers |
+| Configuration                | Defeats                             |
+| ---------------------------- | ----------------------------------- |
+| Default (`EnvVarProvider`)   | `strings`, casual inspection        |
+| `FileProvider`               | Above, key sourced from a file path |
+| `HardwareIdProvider`         | Above + binary redistribution       |
+| Custom provider (vault, HSM) | Above + offline attackers           |
 
 **Does NOT protect against:** runtime memory inspection, debugger
 attachment, compromised runtime environments, side-channel attacks,
@@ -156,30 +155,15 @@ litmask bind target/release/my_app --config target/release/litmask.config
 ./target/release/my_app   # decrypts via HardwareIdProvider — no env var needed
 ```
 
-`bind` also works with binaries that use `EnvVarProvider` (the default).
-After binding, the config's `unlock_key` is the hardware-derived key.
-Pass it as the environment variable and decryption succeeds regardless
-of the runtime provider:
-
-```sh
-cargo build --release
-litmask bind target/release/my_app --config target/release/litmask.config
-LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' target/release/litmask.config) \
-    ./target/release/my_app
-```
-
-This is useful for deployment pipelines that bind on a target host but
-manage the unlock key externally (e.g., injected by an orchestrator).
-
 ## Features
 
-| Feature | Default | |
-|---|---|---|
-| `std` | yes | `EnvVarProvider`, `FileProvider`, `mask!(c"...")` |
-| `chacha20-poly1305` | yes | Default cipher |
-| `aes-gcm` | no | AES-256-GCM (takes precedence when enabled) |
-| `alloc` | -- | `no_std` + allocator (required for `no_std` builds) |
-| `hw-id` | no | `HardwareIdProvider` |
+| Feature             | Default |                                                     |
+| ------------------- | ------- | --------------------------------------------------- |
+| `std`               | yes     | `EnvVarProvider`, `FileProvider`, `mask!(c"...")`   |
+| `chacha20-poly1305` | yes     | Default cipher                                      |
+| `aes-gcm`           | no      | AES-256-GCM (takes precedence when enabled)         |
+| `alloc`             | --      | `no_std` + allocator (required for `no_std` builds) |
+| `hw-id`             | no      | `HardwareIdProvider`                                |
 
 ## Documentation
 

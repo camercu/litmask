@@ -8,9 +8,13 @@
 //!     > /tmp/litmask_unlock.key
 //! # 2. Run, pointing the example at that file.
 //! LITMASK_UNLOCK_KEY_FILE=/tmp/litmask_unlock.key \
-//!     cargo run --release --example file_provider
+//!     ./target/release/examples/file_provider
 //! # prints the decrypted Twain quote at runtime
 //! ```
+//!
+//! Run the prebuilt binary directly, not `cargo run` — under the
+//! release profile that reruns `build.rs`, regenerating the seed and
+//! desyncing `litmask.config` from the binary. See `hello_world.rs`.
 //!
 //! Verify the masked plaintext is absent from `.rodata` the same way
 //! `hello_world.rs` does:

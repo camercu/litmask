@@ -12,9 +12,17 @@
 //! # (no output — the plaintext is absent from the binary)
 //!
 //! LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' target/release/litmask.config) \
-//!     cargo run --release --example hello_world
+//!     ./target/release/examples/hello_world
 //! # prints the decrypted quotation at runtime
 //! ```
+//!
+//! Run the prebuilt binary directly — not `cargo run`. A release
+//! build mints a fresh RNG seed each time `build.rs` runs (the seed
+//! persists only under the debug profile), so re-invoking cargo
+//! rewrites `litmask.config` with an `unlock_key` that no longer
+//! matches the wrapper already compiled into the binary. Pin
+//! `LITMASK_RNG_SEED` if you need a reproducible build that survives
+//! repeated `cargo run`.
 //!
 //! The fixture is Mark Twain (d. 1910, US public domain), chosen so
 //! the `strings` grep above can't false-positive against std or
@@ -26,8 +34,12 @@
 use litmask::mask;
 
 fn main() {
-    println!(
-        "{}",
-        mask!("The reports of my death have been greatly exaggerated. — Mark Twain")
-    );
+    proprietary_gonculator(mask!(
+        "The reports of my death have been greatly exaggerated. — Mark Twain"
+    ));
+}
+
+fn proprietary_gonculator(data: impl AsRef<str>) {
+    // do magic stuff
+    println!("{}", data.as_ref());
 }

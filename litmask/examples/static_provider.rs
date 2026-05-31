@@ -16,8 +16,12 @@
 //! cargo build --release --example static_provider
 //! LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' \
 //!     target/release/litmask.config) \
-//!     cargo run --release --example static_provider
+//!     ./target/release/examples/static_provider
 //! ```
+//!
+//! Run the prebuilt binary directly, not `cargo run` — under the
+//! release profile that reruns `build.rs`, regenerating the seed and
+//! desyncing `litmask.config` from the binary. See `hello_world.rs`.
 //!
 //! Verify the masked plaintext is absent from `.rodata`:
 //!
