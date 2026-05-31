@@ -709,7 +709,7 @@ sourcing `unlock_key` from the host machine ID (spec §2.12.1.5).
       `std::thread::spawn` in the test)
 - [x] `litmask/examples/hw_id_provider.rs` builds with `--features hw-id`
       and runs end-to-end on a host with a stable machine ID
-      (end-to-end run requires Task 25's `litmask-cli bind`; build path
+      (end-to-end run requires Task 25's `litmask bind`; build path
       is wired and locked here)
 
 ---
@@ -776,11 +776,11 @@ with either cipher.
 - [x] `cargo tree -p litmask-cli` shows BOTH `chacha20poly1305` and
       `aes-gcm` regardless of feature flags (CLI runtime-dispatches)
 - [x] GIVEN a default-cipher-built `litmask-cli`, WHEN running
-      `litmask-cli inspect` against a binary built `--features aes-gcm`,
+      `litmask inspect` against a binary built `--features aes-gcm`,
       THEN the cipher-id byte `0x02` is detected and the inspect succeeds
       (`end_to_end_aes_gcm_wrapper_inspects_as_verified`)
 - [x] GIVEN a default-cipher-built `litmask-cli`, WHEN running
-      `litmask-cli bind` against an `--features aes-gcm` binary, THEN
+      `litmask bind` against an `--features aes-gcm` binary, THEN
       the rebind succeeds end-to-end
       (`end_to_end_aes_gcm_wrapper_rebinds_successfully`)
 
@@ -921,12 +921,12 @@ impls are unconditional, and `std::error::Error` impls are gated behind
 
 ---
 
-## Task 24: `litmask-cli inspect` (AFK)
+## Task 24: `litmask inspect` (AFK)
 
 **Implements:** §2.9.2.1–§2.9.2.3
 **Blocked by:** Task 5
 
-`litmask-cli inspect <binary> --config <litmask.config>` scans the binary
+`litmask inspect <binary> --config <litmask.config>` scans the binary
 for occurrences of the locator (12 bytes) recorded in the config and
 exits with the appropriate sysexits code. Does not modify any file.
 The `toml` crate is added as a `litmask-cli` dependency with an exact
@@ -947,12 +947,12 @@ parsing behavior cannot drift from a transitive update.
 
 ---
 
-## Task 25: `litmask-cli bind` — POSIX atomic commit (AFK)
+## Task 25: `litmask bind` — POSIX atomic commit (AFK)
 
 **Implements:** §2.9.1.1–§2.9.1.5 (POSIX), §1.7.6, §1.7.7 (POSIX), §1.7.1
 **Blocked by:** Task 24, Task 16
 
-`litmask-cli bind <binary> --config <litmask.config> [--salt <BASE64URL>]`
+`litmask bind <binary> --config <litmask.config> [--salt <BASE64URL>]`
 rebinds a binary to a hardware-derived `unlock_key`: locates the wrapper
 via the locator, decrypts with current `unlock_key`, derives new
 `unlock_key` from the host's machine ID (BLAKE3-keyed-hash with optional
@@ -1001,7 +1001,7 @@ codes per §2.9.1.3.
 
 ---
 
-## Task 26: `litmask-cli bind` — Windows atomic commit (HITL)
+## Task 26: `litmask bind` — Windows atomic commit (HITL)
 
 **Implements:** §2.9.1.1–§2.9.1.5 (Windows), §1.7.7 (Windows)
 **Blocked by:** Task 25

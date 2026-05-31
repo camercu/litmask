@@ -613,7 +613,7 @@ the build profile, falling back to `target/<profile>/` relative to
 
 #### §1.7.6 Binding workflow
 
-The `litmask-cli bind` command rebinds a binary to a hardware-derived
+The `litmask bind` command rebinds a binary to a hardware-derived
 `unlock_key`. v1 supports hardware-ID binding only. Other providers
 (`EnvVarProvider`, `FileProvider`) do not require post-build rebinding —
 their `unlock_key` is provisioned at deployment time using the value from
@@ -2054,9 +2054,9 @@ not corresponding to a `litmask` semantic) follow standard sysexits
 conventions: EX_USAGE (64) for argument errors, EX_NOINPUT (66) for missing
 files.
 
-#### §2.9.1 litmask-cli bind
+#### §2.9.1 litmask bind
 
-§2.9.1.1 — `litmask-cli bind <binary> --config <litmask.config> [--salt <BASE64URL>]`
+§2.9.1.1 — `litmask bind <binary> --config <litmask.config> [--salt <BASE64URL>]`
 SHALL rebind the binary per the workflow in §1.7.6, using the atomic commit
 protocol in §1.7.7.
 
@@ -2095,9 +2095,9 @@ to exit EX_DATAERR (65) with the message `unsupported_cipher` without
 modifying the binary or the config. The same dispatch rule SHALL apply
 to any future CLI subcommand that decrypts a wrapper.
 
-#### §2.9.2 litmask-cli inspect
+#### §2.9.2 litmask inspect
 
-§2.9.2.1 — `litmask-cli inspect <binary> --config <litmask.config>` SHALL
+§2.9.2.1 — `litmask inspect <binary> --config <litmask.config>` SHALL
 verify that the locator in `--config` is findable in the binary.
 
 §2.9.2.2 — `inspect` SHALL exit with:
@@ -2177,7 +2177,7 @@ verify the following testable assertions:
 - Tampering with any ciphertext byte causes AEAD authentication failure
 - Reproducible builds with fixed `LITMASK_RNG_SEED` produce byte-identical
   artifacts under the conditions in §1.3.3
-- `litmask-cli bind` correctly rebinds binaries to new keys
+- `litmask bind` correctly rebinds binaries to new keys
 - The atomic commit protocol from §1.7.7 holds under simulated mid-bind
   failures, including the parent-directory fsync requirement on POSIX and
   the `MOVEFILE_WRITE_THROUGH` requirement on Windows
@@ -2219,11 +2219,11 @@ SHALL fail.
 
 §2.13.2.3 — On platforms where `machine-uid` produces a stable identifier
 (Ubuntu, AlmaLinux, macOS, Windows, FreeBSD, and OpenBSD instances with
-provisioned machine ID), `litmask-cli bind` SHALL succeed and the bound
+provisioned machine ID), `litmask bind` SHALL succeed and the bound
 binary SHALL execute correctly with output matching expected plaintext.
 
 §2.13.2.4 — On platforms where `machine-uid` does NOT produce a stable
-identifier (stock OpenBSD without provisioned machine ID), `litmask-cli bind`
+identifier (stock OpenBSD without provisioned machine ID), `litmask bind`
 SHALL fail with EX_UNAVAILABLE (69) and the test SHALL assert this failure
 mode rather than treating it as a test failure. This validates §1.6.5's
 documented portability behavior.
@@ -2282,7 +2282,7 @@ Per-string key derivation is rejected, not deferred — see §1.5.5.
   Stored in `litmask.config`.
 - **binding**: The process of replacing the embedded encrypted `mask_key`
   wrapper with a re-encryption under a new `unlock_key` derived from
-  hardware ID. Performed by `litmask-cli bind`.
+  hardware ID. Performed by `litmask bind`.
 - **wrapper**: The 62-byte structure containing the encrypted `mask_key`
   along with format version, cipher id, nonce, and authentication tag.
 - **AEAD**: Authenticated Encryption with Associated Data. The cipher class
