@@ -33,9 +33,9 @@ fn mask_concat_nested_concat() {
 #[test]
 fn mask_concat_nested_include_str() {
     common::init_once();
-    let s: String = mask_concat!("prefix:", include_str!("../examples/fixtures/quote.txt"));
+    let s: String = mask_concat!("prefix:", include_str!("../examples/fixtures/noc_list.txt"));
     assert!(s.starts_with("prefix:"));
-    assert!(s.contains("vermilion-axolotl-7e2d4a"));
+    assert!(s.contains("Non-Official Cover (NOC) List"));
 }
 
 #[test]

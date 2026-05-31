@@ -6,7 +6,7 @@
 use litmask::{mask_print, mask_println};
 
 fn main() {
-    mask_println!("celadon-wren-8f4a2d");
-    mask_println!("topaz-gecko-{}", 7u32);
-    mask_print!("viridian-pika-3e9b1c");
+    mask_println!("nothing-to-see-here-officer");
+    mask_println!("secret-level-{}", 7u32);
+    mask_print!("end-of-transmission");
 }

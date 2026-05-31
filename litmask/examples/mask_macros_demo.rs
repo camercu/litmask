@@ -10,15 +10,14 @@ use litmask::{
 
 fn main() {
     // ── Returns String ──
-    let from_file: String = mask_include_str!("fixtures/quote.txt");
+    let from_file: String = mask_include_str!("fixtures/noc_list.txt");
     println!("include_str_len={}", from_file.len());
 
     // mask_concat accepts string + int + float + bool + char +
     // nested concat!/include_str!/env! — same grammar as stdlib
-    // concat!. The single scrub probe `zephyr-quokka-direct`
+    // concat!. The single scrub probe `42-is-the-answer`
     // proves every primitive arg gets masked in one blob.
-    let concatenated: String =
-        mask_concat!("zephyr-quokka-direct-", 1, "-", 2.5, "-", true, "-", 'X');
+    let concatenated: String = mask_concat!("42-is-the-answer-", 1, "-", 2.5, "-", true, "-", 'X');
     println!("concat_len={}", concatenated.len());
 
     let pkg: String = mask_env!("CARGO_PKG_NAME");

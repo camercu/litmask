@@ -12,7 +12,7 @@ use litmask::mask_include_bytes;
 fn mask_include_bytes_round_trips_to_vec() {
     common::init_once();
     let bytes: Vec<u8> = mask_include_bytes!("../examples/fixtures/binary_blob.bin");
-    let expected = "cobalt-narwhal-9c4e72-bytes-fixture";
+    let expected = "raw-bytes-on-the-lam";
     let s = std::str::from_utf8(&bytes).expect("fixture is UTF-8");
     assert!(s.contains(expected));
 }

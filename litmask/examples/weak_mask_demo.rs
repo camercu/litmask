@@ -17,8 +17,8 @@
 //!
 //! Verify masking via the strings/grep recipe in `hello_world.rs`.
 //! Two probes confirm both layers: `MYAPP_SECRET_KEY` (the env-var
-//! name, hidden by `weak_mask!`) and `emerald-puma-c2d8f4` (the
-//! payload, hidden by `mask!`).
+//! name, hidden by `weak_mask!`) and `the real secret was the friends`
+//! (the payload, hidden by `mask!`).
 
 use litmask::{EnvVarProvider, init_with, mask, weak_mask};
 
@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // macro because it's a real secret, not just lookup metadata.
     println!(
         "payload={}",
-        mask!("emerald-puma-c2d8f4 — secret payload, AEAD-encrypted")
+        mask!("the real secret was the friends we encrypted along the way")
     );
     Ok(())
 }

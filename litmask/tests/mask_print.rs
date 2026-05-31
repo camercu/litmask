@@ -113,7 +113,7 @@ fn run_mask_print_e2e() -> String {
 fn mask_println_e2e_static_text() {
     let stdout = run_mask_print_e2e();
     assert!(
-        stdout.starts_with("celadon-wren-8f4a2d\n"),
+        stdout.starts_with("nothing-to-see-here-officer\n"),
         "first line mismatch: {stdout:?}",
     );
 }
@@ -122,14 +122,14 @@ fn mask_println_e2e_static_text() {
 fn mask_println_e2e_format_args() {
     let stdout = run_mask_print_e2e();
     let lines: Vec<&str> = stdout.lines().collect();
-    assert_eq!(lines[1], "topaz-gecko-7", "formatted line mismatch");
+    assert_eq!(lines[1], "secret-level-7", "formatted line mismatch");
 }
 
 #[test]
 fn mask_print_e2e_no_trailing_newline() {
     let stdout = run_mask_print_e2e();
     assert!(
-        stdout.ends_with("viridian-pika-3e9b1c"),
+        stdout.ends_with("end-of-transmission"),
         "mask_print! must not append newline: {stdout:?}",
     );
 }

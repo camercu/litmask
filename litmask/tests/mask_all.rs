@@ -176,7 +176,7 @@ fn mask_all_wraps_include_str_in_mask() {
     let contents = include_str_wrapped::fixture();
     // The fixture file content (minus trailing newline normalization)
     // must round-trip through mask!() correctly.
-    assert!(contents.contains("selenium-pangolin-3d8a91-mask-all-macro"));
+    assert!(contents.contains("this-file-self-destructs-at-compile-time"));
 }
 
 #[mask_all]
@@ -643,7 +643,7 @@ fn mask_all_rewrites_include_bytes_to_mask_include_bytes() {
     common::init_once();
     let bytes = include_bytes_rewritten::fixture();
     let s = std::str::from_utf8(&bytes).expect("fixture is UTF-8");
-    assert!(s.contains("cobalt-narwhal-9c4e72-bytes-fixture"));
+    assert!(s.contains("raw-bytes-on-the-lam"));
 }
 
 #[mask_all]

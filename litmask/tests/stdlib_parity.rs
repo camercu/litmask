@@ -115,8 +115,8 @@ fn mask_file_matches_file() {
 #[test]
 fn mask_include_str_matches_include_str() {
     common::init_once();
-    let s: String = mask_include_str!("../examples/fixtures/quote.txt");
-    assert_eq!(s, include_str!("../examples/fixtures/quote.txt"));
+    let s: String = mask_include_str!("../examples/fixtures/noc_list.txt");
+    assert_eq!(s, include_str!("../examples/fixtures/noc_list.txt"));
 }
 
 #[test]

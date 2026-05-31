@@ -5,5 +5,5 @@
 use litmask::mask;
 
 fn main() {
-    let _: String = mask!(include_str!("examples/fixtures/quote.txt"));
+    let _: String = mask!(include_str!("examples/fixtures/noc_list.txt"));
 }

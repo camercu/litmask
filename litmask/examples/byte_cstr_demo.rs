@@ -11,8 +11,8 @@ fn main() {
     // The byte fixture is wrapped in two non-printable bytes so
     // `strings(1)` extracts the middle as one token, keeping the
     // absence assertion precise.
-    let bytes: Vec<u8> = mask!(b"\x01scarlet-onyx-narwhal-c8d7e9\x02");
-    let cstr: CString = mask!(c"navy-velvet-quokka-3f1a7b — fixture");
+    let bytes: Vec<u8> = mask!(b"\x01the-cake-is-a-lie\x02");
+    let cstr: CString = mask!(c"this-cstring-is-in-witness-protection");
 
     println!("bytes={bytes:?}");
     println!("cstr={cstr:?}");

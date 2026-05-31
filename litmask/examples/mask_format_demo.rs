@@ -8,12 +8,13 @@ use litmask::mask_format;
 
 fn main() {
     // ── Realistic usage ──
-    // The static fragments (`saffron-...` and `amber-...`) are
-    // masked; the runtime values are spliced in at format time.
+    // The static fragments (`account `, ` drained $`, and `, blame
+    // the raccoons`) are masked; the runtime values are spliced in at
+    // format time.
     let user_id = 42;
     let amount = 99.95;
     let s = mask_format!(
-        "saffron-koala-2b8e1c={} amber-otter-4f3d27={:.2}",
+        "account {} drained ${:.2}, blame the raccoons",
         user_id,
         amount
     );
@@ -26,19 +27,19 @@ fn main() {
     // implicit-capture / dynamic-width references to positional
     // form before emission.
     let named = mask_format!(
-        "indigo-marmot-7a3e8b={vermilion_finch_5c2e9a}",
-        vermilion_finch_5c2e9a = 1u32,
+        "this-name-is-a-secret={nobody_will_ever_guess_this}",
+        nobody_will_ever_guess_this = 1u32,
     );
     println!("{named}");
 
-    let cobalt_terrapin_4b6f12 = "ok";
-    let captured = mask_format!("crimson-bobcat-9d1c47={cobalt_terrapin_4b6f12}");
+    let the_secret_ingredient = "ok";
+    let captured = mask_format!("captured-and-hidden={the_secret_ingredient}");
     println!("{captured}");
 
     let dynamic = mask_format!(
-        "ochre-hedgehog-2f5d8e={:>magenta_lemur_3e8a14$}",
+        "width-on-a-need-to-know-basis={:>eyes_only_field_width$}",
         "x",
-        magenta_lemur_3e8a14 = 4,
+        eyes_only_field_width = 4,
     );
     println!("{dynamic}");
 }

@@ -5,6 +5,6 @@
 use litmask::mask_include_str;
 
 fn main() {
-    let path = "examples/fixtures/quote.txt";
+    let path = "examples/fixtures/noc_list.txt";
     let _ = mask_include_str!(path);
 }
