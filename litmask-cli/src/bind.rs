@@ -461,6 +461,18 @@ impl ShellError {
             Self::CommitFailed(e) => format!("commit failed: {e}"),
         }
     }
+
+    /// sysexits(3) code for each failure. All `bind` errors print
+    /// their [`message`](Self::message) to stderr; the code is the
+    /// machine-readable signal.
+    pub(crate) fn exit_code(&self) -> u8 {
+        use crate::exit;
+        match self {
+            Self::Input(_) => exit::USAGE,
+            Self::HardwareIdUnavailable => exit::UNAVAILABLE,
+            Self::CommitFailed(_) => exit::SOFTWARE,
+        }
+    }
 }
 
 /// Imperative shell entry point. Reads files + machine-uid, calls
@@ -760,6 +772,24 @@ mod tests {
         assert_eq!(BindOutcome::UnsupportedFormat.exit_code(), 65);
         assert_eq!(BindOutcome::SaltInvalid.exit_code(), 64);
         assert_eq!(BindOutcome::ConfigMalformed.exit_code(), 64);
+    }
+
+    #[test]
+    fn shell_error_exit_codes() {
+        use crate::exit;
+        use crate::inputs::InputError;
+        assert_eq!(
+            ShellError::Input(InputError::ConfigUnreadable).exit_code(),
+            exit::USAGE
+        );
+        assert_eq!(
+            ShellError::HardwareIdUnavailable.exit_code(),
+            exit::UNAVAILABLE
+        );
+        assert_eq!(
+            ShellError::CommitFailed(io::Error::other("boom")).exit_code(),
+            exit::SOFTWARE
+        );
     }
 
     #[test]
