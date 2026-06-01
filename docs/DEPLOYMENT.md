@@ -126,6 +126,45 @@ litmask bind /opt/my_app/my_app \
 The binary must use `HardwareIdProvider::with_salt(b"product-v1")` at
 compile time for the salt to match at runtime.
 
+### Off-box (vendor-side) binding
+
+`bind` derives the new `unlock_key` from the machine ID of *the host it
+runs on*. The simplest workflow runs `bind` on the deployment host (the
+`ssh` recipe above), so the CLI must be present there.
+
+When the CLI cannot run on the target — the customer never receives
+litmask tooling, the host is air-gapped, or you bind in a build pipeline
+— bind off-box against a machine ID the target reports:
+
+1. **Enroll.** The target host reports its machine ID. Ship a one-shot
+   helper, or run the CLI's enrollment primitive there:
+
+   ```sh
+   litmask show-hw-id
+   # FB1128DE-C00C-5643-BCF4-5487AFA3245A
+   ```
+
+   `show-hw-id` prints the exact bytes `HardwareIdProvider` feeds into
+   its key derivation — nothing secret, just the host identifier — so
+   the customer can return it over any channel.
+
+2. **Bind vendor-side.** With the reported ID, bind off-box and ship the
+   already-bound binary plus its updated config:
+
+   ```sh
+   # PLANNED — see TASKS.md Task 34. Not yet implemented.
+   litmask bind my_app \
+       --config litmask.config \
+       --machine-id FB1128DE-C00C-5643-BCF4-5487AFA3245A
+   ```
+
+   The bound binary decrypts only on the host whose ID was supplied.
+
+> **Status:** the `--machine-id` flag is not yet wired into the CLI.
+> `bind`'s pure planner already accepts a caller-supplied machine ID;
+> only the command-line surface is missing. Until it lands, off-box
+> binding requires running `bind` on the target host.
+
 ## Sysexits.h exit code reference
 
 Binaries using `InitError::sysexit_code()` exit with these codes on

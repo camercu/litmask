@@ -1285,3 +1285,35 @@ Audit surface:
       artifacts (requires second machine — verified by existing
       `reproducible_builds_produce_identical_artifacts` test on
       single machine; cross-machine deferred to CI)
+
+---
+
+## Task 34: `litmask bind --machine-id` — off-box (vendor-side) binding (AFK)
+
+**Implements:** `DEPLOYMENT.md` "Off-box (vendor-side) binding"
+**Blocked by:** Task 25
+
+`bind` derives the new `unlock_key` from the host it runs on, which
+forces the CLI onto the deployment host. Add `--machine-id <ID>` so the
+vendor can bind off-box against a machine ID a target reported (via
+`litmask show-hw-id`). When supplied, the flag replaces the local
+`machine_uid::get()` lookup; the value is the raw pre-KDF identifier, fed
+verbatim to `derive_hw_key`. The pure planner `plan_bind` already takes
+`machine_id` — only the shell `run()` and the clap surface need wiring.
+
+`--machine-id` and the implicit local lookup are mutually exclusive in
+effect: when the flag is present, `bind` never queries `machine-uid`, so
+`hardware_id_unavailable` cannot occur. The enrollment primitive
+(`show-hw-id`) already exists.
+
+### Acceptance Criteria
+
+- [ ] `bind --machine-id <ID>` derives the new key from `<ID>` and never
+      calls `machine_uid::get()` (no `hardware_id_unavailable` path)
+- [ ] Binding with `--machine-id <X>` produces a config whose
+      `unlock_key` matches a binary bound on a host whose real machine ID
+      is `<X>` (cross-checked against the `HardwareIdProvider` derivation)
+- [ ] `--machine-id` composes with `--salt`
+- [ ] Without `--machine-id`, behavior is unchanged (local lookup, exit
+      69 on `machine-uid` failure)
+- [ ] Argument-parse errors → exit 64
