@@ -81,19 +81,19 @@ impl BindOutcome {
         }
     }
 
-    /// Stdout tag. `None` means "the shell prints a
-    /// stderr message instead" (Salt/Config errors are operator-
-    /// input problems that warrant a usage message, not a
-    /// machine-parseable stdout tag).
+    /// Machine-parseable failure tag, printed to stderr by the
+    /// shell. `None` means no tag (Success carries no tag;
+    /// Salt/Config errors are operator-input problems handled with
+    /// a usage exit code and no tag).
     // `match_same_arms` would collapse `Success` and the
     // SaltInvalid/ConfigMalformed pair because both return None.
     // Keep them as separate arms — the variants are conceptually
     // distinct (Success carries the commit payload; the others
-    // are operator-input errors handled at the shell layer with
-    // stderr messages) and a future change to either branch
-    // should not have to disentangle the other.
+    // are operator-input errors handled at the shell layer) and a
+    // future change to either branch should not have to
+    // disentangle the other.
     #[allow(clippy::match_same_arms)]
-    pub(crate) fn stdout_tag(&self) -> Option<&'static str> {
+    pub(crate) fn failure_tag(&self) -> Option<&'static str> {
         match self {
             Self::Success(_) => None,
             Self::NotFound => Some("not_found"),
@@ -446,6 +446,11 @@ fn resign_macos(_binary_path: &Path) {}
 /// outside the pure planner (file reads, machine-uid lookup, the
 /// atomic commit). Each maps to a specific exit code at the CLI
 /// top level.
+/// §2.9.1.3 machine-parseable tag for a failed machine-id lookup.
+/// Single source of truth so `bind` and `show-hw-id` (main.rs)
+/// emit the identical string — the two surfaces cannot drift.
+pub(crate) const HARDWARE_ID_UNAVAILABLE: &str = "hardware_id_unavailable";
+
 #[derive(Debug)]
 pub(crate) enum ShellError {
     Input(crate::inputs::InputError),
@@ -457,7 +462,7 @@ impl ShellError {
     pub(crate) fn message(&self) -> String {
         match self {
             Self::Input(e) => e.message().to_string(),
-            Self::HardwareIdUnavailable => "hardware_id_unavailable".to_string(),
+            Self::HardwareIdUnavailable => HARDWARE_ID_UNAVAILABLE.to_string(),
             Self::CommitFailed(e) => format!("commit failed: {e}"),
         }
     }
@@ -495,8 +500,8 @@ pub(crate) fn run(
         let commit_fs: &dyn CommitFs = &StdCommitFs;
         commit(binary_path, config_path, payload, commit_fs).map_err(ShellError::CommitFailed)?;
         resign_macos(binary_path);
-    } else if let Some(tag) = outcome.stdout_tag() {
-        println!("{tag}");
+    } else if let Some(tag) = outcome.failure_tag() {
+        eprintln!("{tag}");
     }
     Ok(outcome)
 }
@@ -756,7 +761,7 @@ mod tests {
         );
     }
 
-    // ── BindOutcome.exit_code / stdout_tag pairings ────────────
+    // ── BindOutcome.exit_code / failure_tag pairings ───────────
 
     #[test]
     fn outcome_exit_codes_match_spec_2_9_1_3() {
@@ -793,23 +798,23 @@ mod tests {
     }
 
     #[test]
-    fn outcome_stdout_tags_match_spec_2_9_1_3() {
-        assert_eq!(BindOutcome::NotFound.stdout_tag(), Some("not_found"));
-        assert_eq!(BindOutcome::Ambiguous.stdout_tag(), Some("ambiguous"));
+    fn outcome_failure_tags_match_spec_2_9_1_3() {
+        assert_eq!(BindOutcome::NotFound.failure_tag(), Some("not_found"));
+        assert_eq!(BindOutcome::Ambiguous.failure_tag(), Some("ambiguous"));
         assert_eq!(
-            BindOutcome::DecryptionFailed.stdout_tag(),
+            BindOutcome::DecryptionFailed.failure_tag(),
             Some("decryption_failed"),
         );
         assert_eq!(
-            BindOutcome::UnsupportedCipher.stdout_tag(),
+            BindOutcome::UnsupportedCipher.failure_tag(),
             Some("unsupported_cipher"),
         );
         assert_eq!(
-            BindOutcome::UnsupportedFormat.stdout_tag(),
+            BindOutcome::UnsupportedFormat.failure_tag(),
             Some("unsupported_format"),
         );
-        assert_eq!(BindOutcome::SaltInvalid.stdout_tag(), None);
-        assert_eq!(BindOutcome::ConfigMalformed.stdout_tag(), None);
+        assert_eq!(BindOutcome::SaltInvalid.failure_tag(), None);
+        assert_eq!(BindOutcome::ConfigMalformed.failure_tag(), None);
     }
 
     // ── commit: end-to-end on real filesystem (StdCommitFs) ────

@@ -162,7 +162,7 @@ fn report_hw_id<E>(lookup: Result<String, E>) -> HwIdReport {
         },
         Err(_) => HwIdReport {
             stdout: None,
-            stderr: Some("hardware_id_unavailable".to_string()),
+            stderr: Some(bind::HARDWARE_ID_UNAVAILABLE.to_string()),
             code: exit::UNAVAILABLE,
         },
     }
