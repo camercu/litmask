@@ -68,6 +68,12 @@ enum Command {
         /// same host with different salts get distinct keys.
         #[arg(long)]
         salt: Option<String>,
+        /// Bind against this machine ID instead of the local host's.
+        /// Pass the value a target reported via `litmask show-hw-id`
+        /// to bind off-box (e.g. in a build pipeline). When set, the
+        /// local hardware-id lookup is skipped entirely.
+        #[arg(long)]
+        hw_id: Option<String>,
     },
     /// Print this host's machine ID — the exact bytes
     /// `HardwareIdProvider` feeds into its key derivation.
@@ -109,7 +115,8 @@ fn main() -> ExitCode {
             binary,
             config,
             salt,
-        } => dispatch_bind(&binary, &config, salt.as_deref()),
+            hw_id,
+        } => dispatch_bind(&binary, &config, salt.as_deref(), hw_id.as_deref()),
         Command::ShowHwId => dispatch_show_hw_id(),
     }
 }
@@ -124,8 +131,13 @@ fn dispatch_inspect(binary: &Path, config: &Path) -> ExitCode {
     }
 }
 
-fn dispatch_bind(binary: &Path, config: &Path, salt: Option<&str>) -> ExitCode {
-    match bind::run(binary, config, salt) {
+fn dispatch_bind(
+    binary: &Path,
+    config: &Path,
+    salt: Option<&str>,
+    hw_id: Option<&str>,
+) -> ExitCode {
+    match bind::run(binary, config, salt, hw_id) {
         Ok(outcome) => ExitCode::from(outcome.exit_code()),
         // Every bind failure — including hardware-id unavailable —
         // prints its tag to stderr and signals via the exit code,
@@ -213,6 +225,39 @@ mod tests {
         let cli = parse_argv(&["bind", "/bin", "--config", "/cfg", "--salt", "AAAA"]).unwrap();
         match cli.command {
             Command::Bind { salt, .. } => assert_eq!(salt.as_deref(), Some("AAAA")),
+            other => panic!("expected Bind, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_bind_with_hw_id() {
+        let cli = parse_argv(&["bind", "/bin", "--config", "/cfg", "--hw-id", "ABC-123"]).unwrap();
+        match cli.command {
+            Command::Bind { hw_id, .. } => assert_eq!(hw_id.as_deref(), Some("ABC-123")),
+            other => panic!("expected Bind, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_bind_hw_id_composes_with_salt() {
+        let cli = parse_argv(&[
+            "bind", "/bin", "--config", "/cfg", "--salt", "AAAA", "--hw-id", "ABC-123",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Bind { salt, hw_id, .. } => {
+                assert_eq!(salt.as_deref(), Some("AAAA"));
+                assert_eq!(hw_id.as_deref(), Some("ABC-123"));
+            }
+            other => panic!("expected Bind, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_bind_without_hw_id_defaults_none() {
+        let cli = parse_argv(&["bind", "/bin", "--config", "/cfg"]).unwrap();
+        match cli.command {
+            Command::Bind { hw_id, .. } => assert_eq!(hw_id, None),
             other => panic!("expected Bind, got {other:?}"),
         }
     }

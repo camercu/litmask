@@ -480,16 +480,32 @@ impl ShellError {
     }
 }
 
+/// Choose the machine ID `bind` derives the new key from. A
+/// `--hw-id` value is used verbatim and skips the local lookup, so
+/// a vendor can bind off-box against an ID a target reported via
+/// `show-hw-id`. Without the flag, fall back to this host's
+/// `machine-uid`, mapping its failure to `HardwareIdUnavailable`.
+fn resolve_machine_id<F, E>(flag: Option<&str>, lookup: F) -> Result<String, ShellError>
+where
+    F: FnOnce() -> Result<String, E>,
+{
+    match flag {
+        Some(id) => Ok(id.to_string()),
+        None => lookup().map_err(|_| ShellError::HardwareIdUnavailable),
+    }
+}
+
 /// Imperative shell entry point. Reads files + machine-uid, calls
 /// [`plan_bind`], and on success commits the payload atomically.
 pub(crate) fn run(
     binary_path: &Path,
     config_path: &Path,
     salt_b64: Option<&str>,
+    hw_id: Option<&str>,
 ) -> Result<BindOutcome, ShellError> {
     let (config_text, binary_bytes) =
         crate::inputs::read(binary_path, config_path).map_err(ShellError::Input)?;
-    let machine_id = machine_uid::get().map_err(|_| ShellError::HardwareIdUnavailable)?;
+    let machine_id = resolve_machine_id(hw_id, machine_uid::get)?;
 
     let outcome = plan_bind(&config_text, &binary_bytes, salt_b64, &machine_id);
 
@@ -777,6 +793,30 @@ mod tests {
         assert_eq!(BindOutcome::UnsupportedFormat.exit_code(), 65);
         assert_eq!(BindOutcome::SaltInvalid.exit_code(), 64);
         assert_eq!(BindOutcome::ConfigMalformed.exit_code(), 64);
+    }
+
+    #[test]
+    fn resolve_machine_id_prefers_flag_and_skips_lookup() {
+        let id = resolve_machine_id(Some("PROVIDED-ID"), || -> Result<String, io::Error> {
+            panic!("lookup must not run when --hw-id is supplied")
+        })
+        .unwrap();
+        assert_eq!(id, "PROVIDED-ID");
+    }
+
+    #[test]
+    fn resolve_machine_id_falls_back_to_local_lookup() {
+        let id = resolve_machine_id::<_, io::Error>(None, || Ok("LOCAL-ID".to_string())).unwrap();
+        assert_eq!(id, "LOCAL-ID");
+    }
+
+    #[test]
+    fn resolve_machine_id_maps_lookup_failure_to_unavailable() {
+        let err = resolve_machine_id(None, || -> Result<String, io::Error> {
+            Err(io::Error::other("boom"))
+        })
+        .unwrap_err();
+        assert!(matches!(err, ShellError::HardwareIdUnavailable));
     }
 
     #[test]
