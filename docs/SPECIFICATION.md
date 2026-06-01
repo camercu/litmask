@@ -2056,25 +2056,32 @@ files.
 
 #### §2.9.1 litmask bind
 
-§2.9.1.1 — `litmask bind <binary> --config <litmask.config> [--salt <BASE64URL>]`
-SHALL rebind the binary per the workflow in §1.7.6, using the atomic commit
-protocol in §1.7.7.
+§2.9.1.1 — `litmask bind <binary> --config <litmask.config> [--salt <BASE64URL>]
+[--hw-id <ID>]` SHALL rebind the binary per the workflow in §1.7.6, using the
+atomic commit protocol in §1.7.7.
 
 §2.9.1.2 — v1 SHALL support hardware-ID binding only. The `bind` command
 does NOT accept a `--provider` flag in v1; future versions may extend it.
 
-§2.9.1.3 — `bind` SHALL exit with the following codes and printed messages
-on failure conditions:
-- EX_DATAERR (65) and `ambiguous` if locator matches with differing wrapper
-  content occur in the binary (byte-identical duplicates are not ambiguous)
-- EX_NOINPUT (66) and `not_found` if no locator match occurs
-- EX_DATAERR (65) and `decryption_failed` on AEAD authentication failure
-  during wrapper decryption
-- EX_DATAERR (65) and `unsupported_format` if the wrapper's format-version
-  byte is not `FORMAT_V1`
-- EX_UNAVAILABLE (69) and `hardware_id_unavailable` if the hardware ID
-  cannot be read
+§2.9.1.3 — The CLI is a build/deployment tool and is never shipped in a
+release binary, so the no-identifying-strings rule (§1.9) does NOT apply to
+it. On each failure condition `bind` SHALL print a human-readable diagnostic
+to stderr (naming the binary and config paths and the likely cause) and exit
+with the code below. On success it SHALL print a confirmation to stdout. The
+exit code — not the message text — is the machine-readable contract:
+- EX_DATAERR (65) if locator matches with differing wrapper content occur in
+  the binary (byte-identical duplicates are not ambiguous)
+- EX_NOINPUT (66) if no locator match occurs
+- EX_DATAERR (65) on AEAD authentication failure during wrapper decryption
+- EX_DATAERR (65) if the wrapper's format-version byte is not `FORMAT_V1`
+- EX_UNAVAILABLE (69) if the hardware ID cannot be read
 - EX_OK (0) on success
+
+§2.9.1.7 — `bind --hw-id <ID>` SHALL derive the new key from `<ID>` verbatim
+and SHALL NOT call the local machine-ID lookup, so a vendor can bind off-box
+against an ID a target reported via `show-hw-id` (§2.9.3). With the flag set
+the `EX_UNAVAILABLE` (69) hardware-ID path cannot occur. `--hw-id` composes
+with `--salt`; without `--hw-id`, behavior is the local-lookup default.
 
 §2.9.1.4 — `bind` SHALL fail without modifying the binary or the config if
 any step before the in-place write fails.
@@ -2100,14 +2107,31 @@ to any future CLI subcommand that decrypts a wrapper.
 §2.9.2.1 — `litmask inspect <binary> --config <litmask.config>` SHALL
 verify that the locator in `--config` is findable in the binary.
 
-§2.9.2.2 — `inspect` SHALL exit with:
-- EX_OK (0) and print `verified` if one or more byte-identical matches are
-  found
-- EX_DATAERR (65) and print `ambiguous:<count>` if matches with differing
-  wrapper content are found
-- EX_NOINPUT (66) and print `not_found` if no match is found
+§2.9.2.2 — Per §2.9.1.3, `inspect` is a CLI tool exempt from the
+no-identifying-strings rule. On a verified match it SHALL print a
+confirmation to stdout; every other outcome SHALL print a human-readable
+diagnostic to stderr. The exit code is the machine-readable contract:
+- EX_OK (0) if one or more byte-identical matches are found (verified)
+- EX_DATAERR (65) if matches with differing wrapper content are found
+  (ambiguous)
+- EX_NOINPUT (66) if no match is found (not found)
 
 §2.9.2.3 — `inspect` SHALL NOT modify the binary or the config.
+
+#### §2.9.3 litmask show-hw-id
+
+§2.9.3.1 — `litmask show-hw-id` SHALL print this host's machine ID — the
+exact bytes `HardwareIdProvider` feeds into its key derivation (§1.7.5) — to
+stdout and exit EX_OK (0). The ID is a non-secret host identifier; it is the
+enrollment primitive for off-box binding (§2.9.1.7), letting a target report
+its ID for a vendor-side `bind`.
+
+§2.9.3.2 — If the machine ID cannot be read, `show-hw-id` SHALL print a
+human-readable diagnostic to stderr (leaving stdout empty) and exit
+EX_UNAVAILABLE (69).
+
+§2.9.3.3 — `show-hw-id` SHALL take no arguments and SHALL NOT modify any
+file.
 
 ### §2.10 Iteration 10 — no_std support
 

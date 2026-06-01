@@ -936,9 +936,9 @@ parsing behavior cannot drift from a transitive update.
 
 ### Acceptance Criteria
 
-- [x] Single match → exit 0, prints `verified`
-- [x] Multiple matches → exit 65, prints `ambiguous:<count>`
-- [x] No match → exit 66, prints `not_found`
+- [x] Single match → exit 0, stdout confirmation
+- [x] Multiple differing matches → exit 65, stderr diagnostic
+- [x] No match → exit 66, stderr diagnostic
 - [x] Binary file unchanged after invocation (mtime / sha256 match)
 - [x] Argument parsing errors → exit 64
 - [x] `Cargo.toml` for `litmask-cli` pins `toml` at an exact version
@@ -974,12 +974,12 @@ codes per §2.9.1.3.
       (the `hw_id_provider` example), which depends on running on a host
       with a stable machine ID; this part is covered by the existing
       `hw_id_provider` integration test.
-- [x] Multiple locator matches → exit 65, output `ambiguous`
-- [x] No locator match → exit 66, output `not_found`
+- [x] Multiple differing locator matches → exit 65, stderr diagnostic
+- [x] No locator match → exit 66, stderr diagnostic
 - [x] Wrong current `unlock_key` (forced by hand-edited config) → exit 65,
-      output `decryption_failed`
-- [x] On a host where `machine-uid` fails → exit 69, output
-      `hardware_id_unavailable` — code path is in `run()`;
+      stderr diagnostic
+- [x] On a host where `machine-uid` fails → exit 69, stderr diagnostic
+      — code path is in `run()`;
       runtime verification via OpenBSD job in
       `.github/workflows/platform-matrix.yml` which passes
       `--expect-unavailable` to `scripts/platform-smoke.sh`,
@@ -1288,32 +1288,34 @@ Audit surface:
 
 ---
 
-## Task 34: `litmask bind --machine-id` — off-box (vendor-side) binding (AFK)
+## Task 34: `litmask bind --hw-id` — off-box (vendor-side) binding (AFK)
 
-**Implements:** `DEPLOYMENT.md` "Off-box (vendor-side) binding"
+**Implements:** `DEPLOYMENT.md` "Off-box (vendor-side) binding", spec §2.9.1.7
 **Blocked by:** Task 25
+**Status:** DONE
 
 `bind` derives the new `unlock_key` from the host it runs on, which
-forces the CLI onto the deployment host. Add `--machine-id <ID>` so the
-vendor can bind off-box against a machine ID a target reported (via
+forces the CLI onto the deployment host. `--hw-id <ID>` lets the vendor
+bind off-box against a machine ID a target reported (via
 `litmask show-hw-id`). When supplied, the flag replaces the local
 `machine_uid::get()` lookup; the value is the raw pre-KDF identifier, fed
-verbatim to `derive_hw_key`. The pure planner `plan_bind` already takes
-`machine_id` — only the shell `run()` and the clap surface need wiring.
+verbatim to `derive_hw_key`. The pure planner `plan_bind` already took
+`machine_id` — only the shell `run()` (via `resolve_machine_id`) and the
+clap surface needed wiring.
 
-`--machine-id` and the implicit local lookup are mutually exclusive in
+`--hw-id` and the implicit local lookup are mutually exclusive in
 effect: when the flag is present, `bind` never queries `machine-uid`, so
-`hardware_id_unavailable` cannot occur. The enrollment primitive
+the hardware-id-unavailable path cannot occur. The enrollment primitive
 (`show-hw-id`) already exists.
 
 ### Acceptance Criteria
 
-- [ ] `bind --machine-id <ID>` derives the new key from `<ID>` and never
-      calls `machine_uid::get()` (no `hardware_id_unavailable` path)
-- [ ] Binding with `--machine-id <X>` produces a config whose
+- [x] `bind --hw-id <ID>` derives the new key from `<ID>` and never
+      calls `machine_uid::get()` (no hardware-id-unavailable path)
+- [x] Binding with `--hw-id <X>` produces a config whose
       `unlock_key` matches a binary bound on a host whose real machine ID
       is `<X>` (cross-checked against the `HardwareIdProvider` derivation)
-- [ ] `--machine-id` composes with `--salt`
-- [ ] Without `--machine-id`, behavior is unchanged (local lookup, exit
+- [x] `--hw-id` composes with `--salt`
+- [x] Without `--hw-id`, behavior is unchanged (local lookup, exit
       69 on `machine-uid` failure)
-- [ ] Argument-parse errors → exit 64
+- [x] Argument-parse errors → exit 64

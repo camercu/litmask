@@ -152,18 +152,15 @@ litmask tooling, the host is air-gapped, or you bind in a build pipeline
    already-bound binary plus its updated config:
 
    ```sh
-   # PLANNED — see TASKS.md Task 34. Not yet implemented.
    litmask bind my_app \
        --config litmask.config \
-       --machine-id FB1128DE-C00C-5643-BCF4-5487AFA3245A
+       --hw-id FB1128DE-C00C-5643-BCF4-5487AFA3245A
    ```
 
    The bound binary decrypts only on the host whose ID was supplied.
-
-> **Status:** the `--machine-id` flag is not yet wired into the CLI.
-> `bind`'s pure planner already accepts a caller-supplied machine ID;
-> only the command-line surface is missing. Until it lands, off-box
-> binding requires running `bind` on the target host.
+   With `--hw-id` set, `bind` skips the local machine-ID lookup
+   entirely, so it never fails for a missing hardware ID. The flag
+   composes with `--salt`.
 
 ## Sysexits.h exit code reference
 
