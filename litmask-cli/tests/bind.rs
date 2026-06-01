@@ -169,7 +169,7 @@ fn end_to_end_aes_gcm_wrapper_rebinds_successfully() {
 }
 
 #[test]
-fn end_to_end_not_found_exits_66_and_prints_tag() {
+fn end_to_end_not_found_exits_66_and_describes_to_stderr() {
     let dir = TempDir::new().expect("tempdir");
     let binary_path = dir.path().join("binary");
     let config_path = dir.path().join("litmask.config");
@@ -198,7 +198,15 @@ fn end_to_end_not_found_exits_66_and_prints_tag() {
         .expect("spawn cli");
     assert_eq!(out.status.code(), Some(66));
     let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
-    assert_eq!(stdout.trim(), "not_found");
+    assert!(
+        stdout.trim().is_empty(),
+        "diagnostics go to stderr, not stdout"
+    );
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+    assert!(
+        stderr.contains("litmask wrapper") && stderr.contains(binary_path.to_str().unwrap()),
+        "stderr should name the missing wrapper and the binary path, got: {stderr}"
+    );
 }
 
 #[test]
