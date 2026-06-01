@@ -18,10 +18,22 @@ pub(crate) enum InputError {
 }
 
 impl InputError {
-    pub(crate) fn message(&self) -> &'static str {
+    /// Human-readable diagnostic naming the offending path and a
+    /// next step. The CLI is never shipped, so messages may be as
+    /// descriptive as needed (the no-identifying-strings rule is a
+    /// release-binary concern, not a CLI one).
+    pub(crate) fn describe(&self, binary: &Path, config: &Path) -> String {
         match self {
-            Self::ConfigUnreadable => "config file is missing or unreadable",
-            Self::BinaryUnreadable => "target binary is missing or unreadable",
+            Self::ConfigUnreadable => format!(
+                "could not read the config file '{}'\n  \
+                 check the path exists and is readable",
+                config.display()
+            ),
+            Self::BinaryUnreadable => format!(
+                "could not read the binary '{}'\n  \
+                 check the path exists and is readable",
+                binary.display()
+            ),
         }
     }
 }

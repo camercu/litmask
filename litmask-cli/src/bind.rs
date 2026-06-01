@@ -34,8 +34,8 @@ use zeroize::Zeroizing;
 
 /// Outcome of [`plan_bind`]. The `Success` variant carries the new
 /// bytes the shell will write; every other variant is a typed
-/// classification of "what went wrong" that the shell renders to
-/// stdout + exit code.
+/// classification of "what went wrong" that the shell renders to a
+/// stderr diagnostic + exit code.
 #[derive(Debug)]
 pub(crate) enum BindOutcome {
     /// Bind plan succeeded. `Commit` carries the payload for
@@ -81,27 +81,49 @@ impl BindOutcome {
         }
     }
 
-    /// Machine-parseable failure tag, printed to stderr by the
-    /// shell. `None` means no tag (Success carries no tag;
-    /// Salt/Config errors are operator-input problems handled with
-    /// a usage exit code and no tag).
-    // `match_same_arms` would collapse `Success` and the
-    // SaltInvalid/ConfigMalformed pair because both return None.
-    // Keep them as separate arms — the variants are conceptually
-    // distinct (Success carries the commit payload; the others
-    // are operator-input errors handled at the shell layer) and a
-    // future change to either branch should not have to
-    // disentangle the other.
-    #[allow(clippy::match_same_arms)]
-    pub(crate) fn failure_tag(&self) -> Option<&'static str> {
+    /// Human-readable description of the outcome, with the binary
+    /// and config paths interpolated. `Success` is a confirmation
+    /// (printed to stdout); every other variant explains what went
+    /// wrong and the likely fix (printed to stderr). The CLI is
+    /// never shipped, so messages are as descriptive as useful.
+    pub(crate) fn describe(&self, binary: &Path, config: &Path) -> String {
+        let bin = binary.display();
+        let cfg = config.display();
         match self {
-            Self::Success(_) => None,
-            Self::NotFound => Some("not_found"),
-            Self::Ambiguous => Some("ambiguous"),
-            Self::DecryptionFailed => Some("decryption_failed"),
-            Self::UnsupportedCipher => Some("unsupported_cipher"),
-            Self::UnsupportedFormat => Some("unsupported_format"),
-            Self::SaltInvalid | Self::ConfigMalformed => None,
+            Self::Success(_) => {
+                format!("rebound '{bin}' to the new hardware-derived key and updated '{cfg}'")
+            }
+            Self::NotFound => format!(
+                "could not find a litmask wrapper in '{bin}'\n  \
+                 the locator from '{cfg}' is not present — is '{bin}' a \
+                 litmask-built release binary?"
+            ),
+            Self::Ambiguous => format!(
+                "found multiple differing litmask wrappers in '{bin}'\n  \
+                 the locator from '{cfg}' matches more than one distinct \
+                 wrapper, so bind cannot choose which to rebind"
+            ),
+            Self::DecryptionFailed => format!(
+                "the unlock_key in '{cfg}' does not decrypt the wrapper in '{bin}'\n  \
+                 the config and binary are from different builds — use the \
+                 litmask.config emitted alongside this binary"
+            ),
+            Self::UnsupportedCipher => format!(
+                "the wrapper in '{bin}' uses a cipher this litmask build does not support\n  \
+                 rebuild the CLI with the matching cipher feature enabled"
+            ),
+            Self::UnsupportedFormat => format!(
+                "the wrapper in '{bin}' has an unrecognized format version\n  \
+                 it was produced by a different litmask version — match the CLI \
+                 to the build that produced the binary"
+            ),
+            Self::SaltInvalid => "the --salt value is not valid base64url\n  \
+                 pass the salt as unpadded base64url (A-Z, a-z, 0-9, - and _)"
+                .to_string(),
+            Self::ConfigMalformed => format!(
+                "could not parse '{cfg}' as a litmask.config\n  \
+                 expected base64url 'unlock_key' and 'locator' fields"
+            ),
         }
     }
 }
@@ -442,15 +464,16 @@ fn resign_macos(binary_path: &Path) {
 #[cfg(not(target_os = "macos"))]
 fn resign_macos(_binary_path: &Path) {}
 
+/// Readable diagnostic for a failed machine-id lookup. Single
+/// source of truth so `bind` and `show-hw-id` (main.rs) describe
+/// the failure identically — the two surfaces cannot drift.
+pub(crate) const HW_ID_UNAVAILABLE_MSG: &str =
+    "could not read this machine's hardware ID (machine-uid failed)";
+
 /// Shell-layer failure shapes. These cover the I/O that happens
 /// outside the pure planner (file reads, machine-uid lookup, the
 /// atomic commit). Each maps to a specific exit code at the CLI
 /// top level.
-/// §2.9.1.3 machine-parseable tag for a failed machine-id lookup.
-/// Single source of truth so `bind` and `show-hw-id` (main.rs)
-/// emit the identical string — the two surfaces cannot drift.
-pub(crate) const HARDWARE_ID_UNAVAILABLE: &str = "hardware_id_unavailable";
-
 #[derive(Debug)]
 pub(crate) enum ShellError {
     Input(crate::inputs::InputError),
@@ -459,17 +482,25 @@ pub(crate) enum ShellError {
 }
 
 impl ShellError {
-    pub(crate) fn message(&self) -> String {
+    /// Human-readable diagnostic for stderr, with paths filled in.
+    pub(crate) fn describe(&self, binary: &Path, config: &Path) -> String {
         match self {
-            Self::Input(e) => e.message().to_string(),
-            Self::HardwareIdUnavailable => HARDWARE_ID_UNAVAILABLE.to_string(),
-            Self::CommitFailed(e) => format!("commit failed: {e}"),
+            Self::Input(e) => e.describe(binary, config),
+            Self::HardwareIdUnavailable => format!(
+                "{HW_ID_UNAVAILABLE_MSG}\n  \
+                 common in containers, minimal Linux images, and OpenBSD — \
+                 pass --hw-id <ID> to bind for a specific machine"
+            ),
+            Self::CommitFailed(e) => format!(
+                "failed while writing the rebound binary and config: {e}\n  \
+                 the original files may be unchanged; re-run bind to retry"
+            ),
         }
     }
 
     /// sysexits(3) code for each failure. All `bind` errors print
-    /// their [`message`](Self::message) to stderr; the code is the
-    /// machine-readable signal.
+    /// their [`describe`](Self::describe) text to stderr; the code
+    /// is the machine-readable signal.
     pub(crate) fn exit_code(&self) -> u8 {
         use crate::exit;
         match self {
@@ -509,6 +540,8 @@ pub(crate) fn run(
 
     let outcome = plan_bind(&config_text, &binary_bytes, salt_b64, &machine_id);
 
+    // Only the success path has a side effect here; rendering the
+    // outcome to the user (stdout/stderr) is the caller's job.
     if let BindOutcome::Success(payload) = &outcome {
         #[cfg(windows)]
         let commit_fs: &dyn CommitFs = &WindowsCommitFs;
@@ -516,8 +549,6 @@ pub(crate) fn run(
         let commit_fs: &dyn CommitFs = &StdCommitFs;
         commit(binary_path, config_path, payload, commit_fs).map_err(ShellError::CommitFailed)?;
         resign_macos(binary_path);
-    } else if let Some(tag) = outcome.failure_tag() {
-        eprintln!("{tag}");
     }
     Ok(outcome)
 }
@@ -838,23 +869,35 @@ mod tests {
     }
 
     #[test]
-    fn outcome_failure_tags_match_spec_2_9_1_3() {
-        assert_eq!(BindOutcome::NotFound.failure_tag(), Some("not_found"));
-        assert_eq!(BindOutcome::Ambiguous.failure_tag(), Some("ambiguous"));
-        assert_eq!(
-            BindOutcome::DecryptionFailed.failure_tag(),
-            Some("decryption_failed"),
-        );
-        assert_eq!(
-            BindOutcome::UnsupportedCipher.failure_tag(),
-            Some("unsupported_cipher"),
-        );
-        assert_eq!(
-            BindOutcome::UnsupportedFormat.failure_tag(),
-            Some("unsupported_format"),
-        );
-        assert_eq!(BindOutcome::SaltInvalid.failure_tag(), None);
-        assert_eq!(BindOutcome::ConfigMalformed.failure_tag(), None);
+    fn outcome_describe_names_paths_and_failure() {
+        let bin = Path::new("/opt/app/my_app");
+        let cfg = Path::new("/opt/app/litmask.config");
+
+        // Success confirms what changed, naming both paths.
+        let success = BindOutcome::Success(Commit {
+            new_binary_bytes: vec![],
+            new_config_text: String::new(),
+        })
+        .describe(bin, cfg);
+        assert!(success.contains("/opt/app/my_app"));
+        assert!(success.contains("/opt/app/litmask.config"));
+
+        // Each failure explains the problem in prose; no machine tags.
+        let not_found = BindOutcome::NotFound.describe(bin, cfg);
+        assert!(not_found.contains("wrapper"));
+        assert!(not_found.contains("/opt/app/my_app"));
+
+        let ambiguous = BindOutcome::Ambiguous.describe(bin, cfg);
+        assert!(ambiguous.contains("multiple"));
+
+        let decryption = BindOutcome::DecryptionFailed.describe(bin, cfg);
+        assert!(decryption.contains("unlock_key"));
+
+        let salt = BindOutcome::SaltInvalid.describe(bin, cfg);
+        assert!(salt.contains("--salt"));
+
+        let malformed = BindOutcome::ConfigMalformed.describe(bin, cfg);
+        assert!(malformed.contains("/opt/app/litmask.config"));
     }
 
     // ── commit: end-to-end on real filesystem (StdCommitFs) ────

@@ -30,10 +30,12 @@ struct Cli {
 enum Command {
     /// Scan a binary for the locator recorded in `litmask.config`.
     ///
-    /// Exit codes:
-    /// - 0 on a single match (prints `verified`)
-    /// - 65 on multiple matches (prints `ambiguous:<count>`)
-    /// - 66 on no match (prints `not_found`)
+    /// A readable confirmation prints to stdout on a verified match;
+    /// every other outcome prints a diagnostic to stderr. The exit
+    /// code is the machine-readable signal:
+    /// - 0 on a single match (verified)
+    /// - 65 on multiple differing matches (ambiguous)
+    /// - 66 on no match (not found)
     /// - 64 on argument-parse / config-malformed failures
     Inspect {
         /// Path to the binary to scan.
@@ -51,11 +53,13 @@ enum Command {
     /// `EnvVarProvider` decrypt when given the config's updated
     /// `unlock_key` via the environment variable.
     ///
-    /// Exit codes:
+    /// A readable confirmation prints to stdout on success; every
+    /// failure prints a diagnostic to stderr. The exit code is the
+    /// machine-readable signal:
     /// - 0 on success
     /// - 65 on locator-ambiguous, AEAD decryption failure, or
     ///   unsupported format/cipher
-    /// - 66 on no locator match (prints `not_found`)
+    /// - 66 on no locator match
     /// - 69 on hardware-id lookup failure
     Bind {
         /// Path to the binary to rebind.
@@ -83,9 +87,8 @@ enum Command {
     /// vendor `bind` against it off-box (see `docs/DEPLOYMENT.md`).
     ///
     /// Exit codes:
-    /// - 0 on success (prints the machine ID)
-    /// - 69 on hardware-id lookup failure (prints
-    ///   `hardware_id_unavailable`)
+    /// - 0 on success (prints the machine ID to stdout)
+    /// - 69 on hardware-id lookup failure (diagnostic to stderr)
     ShowHwId,
 }
 
@@ -123,9 +126,20 @@ fn main() -> ExitCode {
 
 fn dispatch_inspect(binary: &Path, config: &Path) -> ExitCode {
     match inspect::run(binary, config) {
-        Ok(outcome) => ExitCode::from(outcome.exit_code()),
+        // `Verified` is a confirmation (stdout); every other outcome
+        // describes a problem and goes to stderr, leaving stdout
+        // clean for callers gating on a successful verification.
+        Ok(outcome) => {
+            let msg = outcome.describe(binary, config);
+            if outcome.is_success() {
+                println!("{msg}");
+            } else {
+                eprintln!("litmask: {msg}");
+            }
+            ExitCode::from(outcome.exit_code())
+        }
         Err(e) => {
-            eprintln!("litmask: {}", e.message());
+            eprintln!("litmask: {}", e.describe(binary, config));
             ExitCode::from(exit::USAGE)
         }
     }
@@ -138,12 +152,22 @@ fn dispatch_bind(
     hw_id: Option<&str>,
 ) -> ExitCode {
     match bind::run(binary, config, salt, hw_id) {
-        Ok(outcome) => ExitCode::from(outcome.exit_code()),
-        // Every bind failure — including hardware-id unavailable —
-        // prints its tag to stderr and signals via the exit code,
-        // leaving stdout clean for callers piping bind's output.
+        // `Success` confirms the rebind on stdout; every failure
+        // outcome describes the problem on stderr, leaving stdout
+        // clean for callers gating on a successful bind.
+        Ok(outcome) => {
+            let msg = outcome.describe(binary, config);
+            if matches!(outcome, bind::BindOutcome::Success(_)) {
+                println!("{msg}");
+            } else {
+                eprintln!("litmask: {msg}");
+            }
+            ExitCode::from(outcome.exit_code())
+        }
+        // Shell-level failures — including hardware-id unavailable —
+        // describe the problem on stderr and signal via the exit code.
         Err(e) => {
-            eprintln!("litmask: {}", e.message());
+            eprintln!("litmask: {}", e.describe(binary, config));
             ExitCode::from(e.exit_code())
         }
     }
@@ -174,7 +198,7 @@ fn report_hw_id<E>(lookup: Result<String, E>) -> HwIdReport {
         },
         Err(_) => HwIdReport {
             stdout: None,
-            stderr: Some(bind::HARDWARE_ID_UNAVAILABLE.to_string()),
+            stderr: Some(bind::HW_ID_UNAVAILABLE_MSG.to_string()),
             code: exit::UNAVAILABLE,
         },
     }
@@ -305,7 +329,7 @@ mod tests {
         // never mistakes the error text for a machine ID.
         let r = report_hw_id(Err(std::io::Error::other("boom")));
         assert_eq!(r.stdout, None);
-        assert_eq!(r.stderr.as_deref(), Some("hardware_id_unavailable"));
+        assert_eq!(r.stderr.as_deref(), Some(bind::HW_ID_UNAVAILABLE_MSG));
         assert_eq!(r.code, exit::UNAVAILABLE);
     }
 

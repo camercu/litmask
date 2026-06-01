@@ -3,18 +3,18 @@
 //! Functional core / imperative shell split: [`plan`] is a pure
 //! function over (config text, binary bytes) that returns an
 //! [`Outcome`]; [`run`] is the thin shell that reads the files and
-//! emits the documented stdout tag / exit code.
+//! returns the [`Outcome`] for the caller to render + map to an
+//! exit code.
 //!
 //! Outcome table:
 //!
-//! | Outcome | Exit | Stdout |
+//! | Outcome | Exit | Stream |
 //! |---|---|---|
-//! | `Verified` | 0 | `verified` |
-//! | `Ambiguous(n)` | 65 (`EX_DATAERR`) | `ambiguous:<n>` |
-//! | `NotFound` | 66 (`EX_NOINPUT`) | `not_found` |
-//! | `ConfigMalformed` | 64 (`EX_USAGE`) | (stderr message at shell) |
+//! | `Verified` | 0 | stdout confirmation |
+//! | `Ambiguous(n)` | 65 (`EX_DATAERR`) | stderr diagnostic |
+//! | `NotFound` | 66 (`EX_NOINPUT`) | stderr diagnostic |
+//! | `ConfigMalformed` | 64 (`EX_USAGE`) | stderr diagnostic |
 
-use std::borrow::Cow;
 use std::path::Path;
 
 use litmask_internal::{LocateOutcome, count_occurrences, locate_wrapper};
@@ -44,14 +44,38 @@ impl Outcome {
         }
     }
 
-    /// Stdout tag for the outcome, or `None` when the shell should
-    /// stay silent on stdout (and emit a stderr message instead).
-    pub(crate) fn stdout_tag(&self) -> Option<Cow<'static, str>> {
+    /// `true` for the one outcome that is a confirmation rather than
+    /// a problem. The shell routes this to stdout and every other
+    /// outcome's [`describe`](Self::describe) text to stderr.
+    pub(crate) fn is_success(&self) -> bool {
+        matches!(self, Self::Verified)
+    }
+
+    /// Human-readable description with the binary and config paths
+    /// interpolated. `Verified` confirms the match; the others
+    /// explain what was wrong and the likely cause. The CLI is never
+    /// shipped, so messages are as descriptive as useful.
+    pub(crate) fn describe(&self, binary: &Path, config: &Path) -> String {
+        let bin = binary.display();
+        let cfg = config.display();
         match self {
-            Self::Verified => Some(Cow::Borrowed("verified")),
-            Self::Ambiguous(n) => Some(Cow::Owned(format!("ambiguous:{n}"))),
-            Self::NotFound => Some(Cow::Borrowed("not_found")),
-            Self::ConfigMalformed => None,
+            Self::Verified => {
+                format!("verified: '{bin}' contains the locator recorded in '{cfg}'")
+            }
+            Self::NotFound => format!(
+                "no litmask wrapper found in '{bin}'\n  \
+                 the locator from '{cfg}' is not present — is '{bin}' a \
+                 litmask-built release binary, and does '{cfg}' belong to it?"
+            ),
+            Self::Ambiguous(n) => format!(
+                "found {n} differing litmask wrappers in '{bin}'\n  \
+                 the locator from '{cfg}' matches more than one distinct \
+                 wrapper, so the binary cannot be verified unambiguously"
+            ),
+            Self::ConfigMalformed => format!(
+                "could not parse '{cfg}' as a litmask.config\n  \
+                 expected a base64url 'locator' field"
+            ),
         }
     }
 }
@@ -69,21 +93,17 @@ pub(crate) fn plan(config_text: &str, binary_bytes: &[u8]) -> Outcome {
     }
 }
 
-/// Imperative shell. Reads the two inputs from disk, calls the
-/// pure planner, and emits stdout + exit code per the outcome.
-/// `Err` covers shell-only failures (file I/O); everything that
-/// the planner can decide flows through `Ok(Outcome)` so the
-/// caller can map it uniformly.
+/// Imperative shell. Reads the two inputs from disk and calls the
+/// pure planner. Rendering the outcome (stdout/stderr) and mapping
+/// it to an exit code is the caller's job. `Err` covers shell-only
+/// failures (file I/O); everything the planner can decide flows
+/// through `Ok(Outcome)` so the caller can map it uniformly.
 pub(crate) fn run(
     binary_path: &Path,
     config_path: &Path,
 ) -> Result<Outcome, crate::inputs::InputError> {
     let (config_text, binary_bytes) = crate::inputs::read(binary_path, config_path)?;
-    let outcome = plan(&config_text, &binary_bytes);
-    if let Some(tag) = outcome.stdout_tag() {
-        println!("{tag}");
-    }
-    Ok(outcome)
+    Ok(plan(&config_text, &binary_bytes))
 }
 
 #[cfg(test)]
@@ -170,20 +190,39 @@ mod tests {
         assert_eq!(plan(cfg, &[0u8; 1024]), Outcome::ConfigMalformed);
     }
 
-    // ── Outcome.exit_code / stdout_tag pairings ────────────────
+    // ── Outcome.exit_code / is_success pairings ────────────────
 
     #[rstest::rstest]
-    #[case::verified(Outcome::Verified, 0, Some("verified"))]
-    #[case::not_found(Outcome::NotFound, 66, Some("not_found"))]
-    #[case::ambiguous(Outcome::Ambiguous(7), 65, Some("ambiguous:7"))]
-    #[case::config_malformed(Outcome::ConfigMalformed, 64, None)]
-    fn outcome_exit_code_and_stdout_tag(
+    #[case::verified(Outcome::Verified, 0, true)]
+    #[case::not_found(Outcome::NotFound, 66, false)]
+    #[case::ambiguous(Outcome::Ambiguous(7), 65, false)]
+    #[case::config_malformed(Outcome::ConfigMalformed, 64, false)]
+    fn outcome_exit_code_and_success(
         #[case] outcome: Outcome,
         #[case] exit_code: u8,
-        #[case] tag: Option<&str>,
+        #[case] is_success: bool,
     ) {
         assert_eq!(outcome.exit_code(), exit_code);
-        assert_eq!(outcome.stdout_tag().as_deref(), tag);
+        assert_eq!(outcome.is_success(), is_success);
+    }
+
+    #[test]
+    fn outcome_describe_names_paths_and_outcome() {
+        let bin = Path::new("/opt/app/my_app");
+        let cfg = Path::new("/opt/app/litmask.config");
+
+        let verified = Outcome::Verified.describe(bin, cfg);
+        assert!(verified.contains("verified"));
+        assert!(verified.contains("/opt/app/my_app"));
+
+        let not_found = Outcome::NotFound.describe(bin, cfg);
+        assert!(not_found.contains("/opt/app/my_app"));
+
+        let ambiguous = Outcome::Ambiguous(3).describe(bin, cfg);
+        assert!(ambiguous.contains('3'));
+
+        let malformed = Outcome::ConfigMalformed.describe(bin, cfg);
+        assert!(malformed.contains("/opt/app/litmask.config"));
     }
 
     // ── count_occurrences edge cases ─────────────────────────
