@@ -23,7 +23,7 @@
 //! |---|---|
 //! | Zero-config build (defaults to `EnvVarProvider`) | `strings`, casual binary inspection (Level 1); also Level 2 because `unlock_key` is not embedded |
 //! | `FileProvider` | Above, key sourced from a file path |
-//! | `HardwareIdProvider` | Above + binary moved to a different machine |
+//! | `MachineIdProvider` | Above + binary moved to a different machine |
 //! | Custom `KeyProvider` (network call, vault) | Above + offline attackers |
 //!
 //! The "zero-config" descriptor refers to absence of project
@@ -51,7 +51,7 @@
 //! | Key model | Compile-time random per build | Single env var | Layered: `mask_key` + `unlock_key`, multiple providers |
 //! | Format string masking | Separate `fmtools` crate | None | Built-in [`mask_format!`] with single-evaluation semantics |
 //! | Module-level masking | None | None | [`macro@mask_all`] with deep substitution |
-//! | Hardware binding | None | None | Yes (post-build rebind via `litmask` CLI) |
+//! | Machine-ID binding | None | None | Yes (post-build rebind via `litmask` CLI) |
 //! | Multiple literal types (str/bytes/cstr) | str only | str only | All three |
 //! | `no_std` support | Limited | No | Yes (with `alloc`) |
 //! | Threat model documented | Minimal | Minimal | Explicit security ladder, honest scope |
@@ -123,8 +123,8 @@ pub use provider::{KeyProvider, StaticProvider};
 #[cfg(feature = "std")]
 pub use provider::{EnvVarProvider, FileProvider, KeyEncoding};
 
-#[cfg(feature = "hw-id")]
-pub use provider::HardwareIdProvider;
+#[cfg(feature = "machine-id")]
+pub use provider::MachineIdProvider;
 
 pub use litmask_macros::{
     mask, mask_all, mask_concat, mask_env, mask_file, mask_format, mask_include_bytes,

@@ -77,12 +77,12 @@ Configurations and what each defeats:
 |---|---|
 | Zero-config build (defaults to `EnvVarProvider`) | `strings`, casual binary inspection (Level 1); also Level 2 because `unlock_key` is not embedded |
 | `FileProvider` + filesystem permissions | Above with OS-enforced access control |
-| `HardwareIdProvider` | Above + binary moved to a different machine |
+| `MachineIdProvider` | Above + binary moved to a different machine |
 | Custom `KeyProvider` (network call, vault) | Above + offline attackers |
 
 The "zero-config" descriptor refers to absence of project configuration, not to
 absence of runtime key provisioning. For providers that source `unlock_key` from
-external runtime state (`EnvVarProvider`, `FileProvider`, `HardwareIdProvider`,
+external runtime state (`EnvVarProvider`, `FileProvider`, `MachineIdProvider`,
 custom providers), the deployer MUST provision that state at runtime. A binary
 configured with such a provider but without the corresponding state will fail at
 init. `StaticProvider` is an exception — it carries the key in the constructor
@@ -108,7 +108,7 @@ This table SHALL appear in the README and in the crate-level rustdoc:
 | Key model | Compile-time random per build | Single env var | Layered: `mask_key` + `unlock_key`, multiple providers |
 | Format string masking | Separate `fmtools` crate | None | Built-in `mask_format!` with single-evaluation semantics |
 | Module-level masking | None | None | `#[mask_all]` with deep substitution |
-| Hardware binding | None | None | Yes (post-build rebind via `litmask-cli`) |
+| Machine-ID binding | None | None | Yes (post-build rebind via `litmask-cli`) |
 | Multiple literal types (str/bytes/cstr) | str only | str only | All three |
 | `no_std` support | Limited | No | Yes (with `alloc`) |
 | Threat model documented | Minimal | Minimal | Explicit security ladder, honest scope |
@@ -126,7 +126,7 @@ else is operational maturity (key management, deployment story, tooling).
 |---|---|---|
 | `litmask` | library | Runtime, proc-macro re-exports, key provider trait and built-ins |
 | `litmask-build` | library (build-dep) | `build.rs` helper for compile-time key generation, writes `litmask.config` |
-| `litmask-cli` | binary | `bind` and `inspect` commands for hardware-bound deployment |
+| `litmask-cli` | binary | `bind` and `inspect` commands for machine-ID-bound deployment |
 
 The user-facing API ships as a single `litmask` crate. Internally, Rust
 forbids exporting non-macro items from a `proc-macro = true` crate, so the
@@ -480,7 +480,7 @@ precludes English-language strings on the trait. Deployment guidance lives in
 |---|---|---|
 | `EnvVarProvider` | `std` (default) | Reads from a configurable env var (default `LITMASK_UNLOCK_KEY`) |
 | `FileProvider` | `std` (default) | Reads from a filesystem path |
-| `HardwareIdProvider` | `hw-id` (opt-in) | Derives from machine ID via `machine-uid` |
+| `MachineIdProvider` | `machine-id` (opt-in) | Derives from machine ID via `machine-uid` |
 | `StaticProvider` | always available | Holds an `UnlockKey` directly; primarily for tests |
 
 Default provider when `init!()` is called without arguments:
@@ -504,16 +504,16 @@ without padding** (RFC 4648 §5). 32 bytes encodes to 43 characters.
 `UnlockKey` and `MaskKey` (internal type) both implement `Drop` with `zeroize`
 to clear their contents from memory when dropped.
 
-#### §1.6.5 Cross-compilation note for HardwareIdProvider
+#### §1.6.5 Cross-compilation note for MachineIdProvider
 
-`HardwareIdProvider` runs on the **target** machine, not the build host.
+`MachineIdProvider` runs on the **target** machine, not the build host.
 `machine-uid` supports all standard `std` targets (Linux, macOS, Windows). On
 constrained or unusual targets where `machine-uid` cannot read a stable
 machine identifier (some container runtimes, certain embedded Linux variants
-without `/etc/machine-id`, OpenBSD by default), `HardwareIdProvider::unlock_key()`
+without `/etc/machine-id`, OpenBSD by default), `MachineIdProvider::unlock_key()`
 returns `Err(KeyError::Provider(...))`. Cross-compilation users targeting
 such environments MUST verify behavior on the target before relying on
-`HardwareIdProvider`. The platform CI matrix (§1.10.5) explicitly exercises
+`MachineIdProvider`. The platform CI matrix (§1.10.5) explicitly exercises
 this failure path on OpenBSD.
 
 ### §1.7 Binary Format and Binding
@@ -613,8 +613,8 @@ the build profile, falling back to `target/<profile>/` relative to
 
 #### §1.7.6 Binding workflow
 
-The `litmask bind` command rebinds a binary to a hardware-derived
-`unlock_key`. v1 supports hardware-ID binding only. Other providers
+The `litmask bind` command rebinds a binary to a machine-ID-derived
+`unlock_key`. v1 supports machine-ID binding only. Other providers
 (`EnvVarProvider`, `FileProvider`) do not require post-build rebinding —
 their `unlock_key` is provisioned at deployment time using the value from
 `litmask.config`.
@@ -628,7 +628,7 @@ The bind operation:
    the same locator are rejected as ambiguous.
 3. Reads `length` bytes at the located offset → encrypted `mask_key` wrapper.
 4. Decrypts wrapper with current `unlock_key` → recovered `mask_key`.
-5. Derives new `unlock_key` from target machine's hardware ID (with optional
+5. Derives new `unlock_key` from the target host's machine ID (with optional
    user-supplied salt).
 6. Re-encrypts `mask_key` with new `unlock_key`, reusing the existing nonce
    (safe: the key changed, so the (key, nonce) pair is fresh) → new wrapper.
@@ -642,7 +642,7 @@ The bind operation:
 
 First-bind and subsequent rebinds use the same code path; the only difference
 is that the "current `unlock_key`" on first bind is the build-time random
-key, while on rebind it is the previous hardware-derived key.
+key, while on rebind it is the previous machine-ID-derived key.
 
 #### §1.7.7 Atomic commit protocol for bind
 
@@ -800,7 +800,7 @@ pub struct UnlockKey([u8; 32]);
 
 pub struct EnvVarProvider { ... }
 pub struct FileProvider { ... }
-#[cfg(feature = "hw-id")] pub struct HardwareIdProvider { ... }
+#[cfg(feature = "machine-id")] pub struct MachineIdProvider { ... }
 pub struct StaticProvider { ... }
 
 pub enum KeyEncoding { Base64Url, Raw }
@@ -1150,7 +1150,7 @@ time budget per PR.
 
 The CI matrix exercises security and operational properties across a
 representative set of operating systems. Each platform job runs the
-integration tests from §1.10.3 plus a hardware-binding smoke test specific to
+integration tests from §1.10.3 plus a machine-ID-binding smoke test specific to
 that platform's machine ID mechanism.
 
 | Platform | Mechanism | Coverage |
@@ -1160,7 +1160,7 @@ that platform's machine ID mechanism.
 | macos-latest | GitHub Actions native | Darwin, IOPlatformSerialNumber |
 | windows-latest | GitHub Actions native | Windows registry MachineGuid, NTFS atomic rename |
 | FreeBSD 14.2 | `cross-platform-actions/action` (QEMU VM) | BSD-family, `kern.hostuuid` |
-| OpenBSD 7.8 | `cross-platform-actions/action` (QEMU VM) | OpenBSD specifically (no `/etc/machine-id` by default; tests `HardwareIdProvider` failure path) |
+| OpenBSD 7.8 | `cross-platform-actions/action` (QEMU VM) | OpenBSD specifically (no `/etc/machine-id` by default; tests `MachineIdProvider` failure path) |
 
 The smoke test sequence and per-platform requirements (including the
 intentional failure-path validation on stock OpenBSD) are specified in §2.13.
@@ -1223,7 +1223,7 @@ Stable surface (semver-protected):
   breaking)
 - `KeyProvider` trait
 - `UnlockKey` type
-- `EnvVarProvider`, `FileProvider`, `HardwareIdProvider`, `StaticProvider`
+- `EnvVarProvider`, `FileProvider`, `MachineIdProvider`, `StaticProvider`
 - `init!()`, `init_with!()` macros
 - `InitError::sysexit_code()` method and the sysexits mapping in §1.9.7
 - Error type variants (new variants non-breaking via `#[non_exhaustive]`)
@@ -1270,7 +1270,7 @@ specific versions.
 | Feature | Default | Purpose |
 |---|---|---|
 | `std` | yes | Standard library support; disabling = `no_std + alloc` |
-| `hw-id` | no | `HardwareIdProvider` (pulls in `machine-uid`) |
+| `machine-id` | no | `MachineIdProvider` (pulls in `machine-uid`) |
 | `aes-gcm` | no | Use AES-256-GCM instead of ChaCha20-Poly1305 |
 
 `std` and `no_std` are not mutually exclusive features (Cargo can't enforce
@@ -1285,7 +1285,7 @@ Runtime crate (`litmask`):
 - `base64ct` (constant-time base64)
 - `proc-macro2`, `quote`, `syn` (proc-macro authoring)
 - `blake3` (nonce derivation)
-- `machine-uid` (behind `hw-id` feature)
+- `machine-uid` (behind `machine-id` feature)
 - `zeroize` (`UnlockKey`/`MaskKey` zero-on-drop)
 - `once_cell` (only on `no_std` builds, for `OnceBox`)
 
@@ -1337,7 +1337,7 @@ carefully:
    to "same toolchain, same source, same seed" — not full bit-identical
    reproducibility across machines.
 
-4. **`HardwareIdProvider` portability.** `machine-uid` behavior in
+4. **`MachineIdProvider` portability.** `machine-uid` behavior in
    containers, VMs, and re-imaged systems varies. OpenBSD by default has no
    `/etc/machine-id`. The platform CI matrix (§1.10.5) exercises both the
    success and failure paths.
@@ -1921,16 +1921,16 @@ provider with the specified encoding (`KeyEncoding::Base64Url` or
 §2.5.3.4 — `FileProvider` SHALL zero its in-memory copy of file contents
 immediately after extracting the key.
 
-#### §2.5.4 HardwareIdProvider (gated by `hw-id` feature)
+#### §2.5.4 MachineIdProvider (gated by `machine-id` feature)
 
-§2.5.4.1 — `HardwareIdProvider::new()` SHALL construct a provider with no
+§2.5.4.1 — `MachineIdProvider::new()` SHALL construct a provider with no
 salt.
 
-§2.5.4.2 — `HardwareIdProvider::with_salt(salt: &'static [u8])` SHALL
-construct a provider that mixes the salt with the hardware ID via
+§2.5.4.2 — `MachineIdProvider::with_salt(salt: &'static [u8])` SHALL
+construct a provider that mixes the salt with the machine ID via
 BLAKE3-keyed-hash.
 
-§2.5.4.3 — `HardwareIdProvider::unlock_key()` SHALL:
+§2.5.4.3 — `MachineIdProvider::unlock_key()` SHALL:
 - Read the machine ID via `machine-uid::get()`
 - Derive a 32-byte key via `BLAKE3::derive_key(context, len(machine_id) ||
   machine_id || salt)`, where `len` is an 8-byte little-endian length prefix
@@ -2057,10 +2057,10 @@ files.
 #### §2.9.1 litmask bind
 
 §2.9.1.1 — `litmask bind <binary> --config <litmask.config> [--salt <BASE64URL>]
-[--hw-id <ID>]` SHALL rebind the binary per the workflow in §1.7.6, using the
+[--machine-id <ID>]` SHALL rebind the binary per the workflow in §1.7.6, using the
 atomic commit protocol in §1.7.7.
 
-§2.9.1.2 — v1 SHALL support hardware-ID binding only. The `bind` command
+§2.9.1.2 — v1 SHALL support machine-ID binding only. The `bind` command
 does NOT accept a `--provider` flag in v1; future versions may extend it.
 
 §2.9.1.3 — The CLI is a build/deployment tool and is never shipped in a
@@ -2074,14 +2074,14 @@ exit code — not the message text — is the machine-readable contract:
 - EX_NOINPUT (66) if no locator match occurs
 - EX_DATAERR (65) on AEAD authentication failure during wrapper decryption
 - EX_DATAERR (65) if the wrapper's format-version byte is not `FORMAT_V1`
-- EX_UNAVAILABLE (69) if the hardware ID cannot be read
+- EX_UNAVAILABLE (69) if the machine ID cannot be read
 - EX_OK (0) on success
 
-§2.9.1.7 — `bind --hw-id <ID>` SHALL derive the new key from `<ID>` verbatim
+§2.9.1.7 — `bind --machine-id <ID>` SHALL derive the new key from `<ID>` verbatim
 and SHALL NOT call the local machine-ID lookup, so a vendor can bind off-box
-against an ID a target reported via `show-hw-id` (§2.9.3). With the flag set
-the `EX_UNAVAILABLE` (69) hardware-ID path cannot occur. `--hw-id` composes
-with `--salt`; without `--hw-id`, behavior is the local-lookup default.
+against an ID a target reported via `show-machine-id` (§2.9.3). With the flag set
+the `EX_UNAVAILABLE` (69) machine-ID path cannot occur. `--machine-id` composes
+with `--salt`; without `--machine-id`, behavior is the local-lookup default.
 
 §2.9.1.4 — `bind` SHALL fail without modifying the binary or the config if
 any step before the in-place write fails.
@@ -2118,19 +2118,19 @@ diagnostic to stderr. The exit code is the machine-readable contract:
 
 §2.9.2.3 — `inspect` SHALL NOT modify the binary or the config.
 
-#### §2.9.3 litmask show-hw-id
+#### §2.9.3 litmask show-machine-id
 
-§2.9.3.1 — `litmask show-hw-id` SHALL print this host's machine ID — the
-exact bytes `HardwareIdProvider` feeds into its key derivation (§1.7.5) — to
+§2.9.3.1 — `litmask show-machine-id` SHALL print this host's machine ID — the
+exact bytes `MachineIdProvider` feeds into its key derivation (§1.7.5) — to
 stdout and exit EX_OK (0). The ID is a non-secret host identifier; it is the
 enrollment primitive for off-box binding (§2.9.1.7), letting a target report
 its ID for a vendor-side `bind`.
 
-§2.9.3.2 — If the machine ID cannot be read, `show-hw-id` SHALL print a
+§2.9.3.2 — If the machine ID cannot be read, `show-machine-id` SHALL print a
 human-readable diagnostic to stderr (leaving stdout empty) and exit
 EX_UNAVAILABLE (69).
 
-§2.9.3.3 — `show-hw-id` SHALL take no arguments and SHALL NOT modify any
+§2.9.3.3 — `show-machine-id` SHALL take no arguments and SHALL NOT modify any
 file.
 
 ### §2.10 Iteration 10 — no_std support
@@ -2286,7 +2286,7 @@ the spec:
 - Programmatic config parsing (`serde` feature)
 - Control-flow obfuscation
 - Code-signing-aware binding
-- Custom-provider binding via `litmask-cli` (v1 supports hardware-ID only)
+- Custom-provider binding via `litmask-cli` (v1 supports machine-ID only)
 - NetBSD, DragonFly BSD, Illumos platform CI
 
 Per-string key derivation is rejected, not deferred — see §1.5.5.
@@ -2306,7 +2306,7 @@ Per-string key derivation is rejected, not deferred — see §1.5.5.
   Stored in `litmask.config`.
 - **binding**: The process of replacing the embedded encrypted `mask_key`
   wrapper with a re-encryption under a new `unlock_key` derived from
-  hardware ID. Performed by `litmask bind`.
+  machine ID. Performed by `litmask bind`.
 - **wrapper**: The 62-byte structure containing the encrypted `mask_key`
   along with format version, cipher id, nonce, and authentication tag.
 - **AEAD**: Authenticated Encryption with Associated Data. The cipher class

@@ -30,7 +30,7 @@ litmask::init_with!(provider).expect("init");
 Set filesystem permissions so only the application user can read the
 key file (`chmod 400`).
 
-### `HardwareIdProvider`
+### `MachineIdProvider`
 
 Bind the binary to the deployment host's machine ID:
 
@@ -43,8 +43,8 @@ The binary decrypts only on the machine it was bound to. No environment
 variable or key file required at runtime.
 
 `bind` also works with `EnvVarProvider` binaries — the updated config
-contains the hardware-derived key, which can be injected as the
-environment variable. See the [README](../README.md#hardware-binding-litmask-cli-bind)
+contains the machine-ID-derived key, which can be injected as the
+environment variable. See the [README](../README.md#machine-id-binding-litmask-bind)
 for details.
 
 ### Custom provider
@@ -104,7 +104,7 @@ recommendations, not requirements — `litmask` works with any profile.
 
 ## Rebind workflow
 
-For deployments using `HardwareIdProvider`, bind the binary on the
+For deployments using `MachineIdProvider`, bind the binary on the
 target host after copying:
 
 ```sh
@@ -123,7 +123,7 @@ litmask bind /opt/my_app/my_app \
     --salt "$(echo -n 'product-v1' | base64url)"
 ```
 
-The binary must use `HardwareIdProvider::with_salt(b"product-v1")` at
+The binary must use `MachineIdProvider::with_salt(b"product-v1")` at
 compile time for the salt to match at runtime.
 
 ### Off-box (vendor-side) binding
@@ -140,11 +140,11 @@ litmask tooling, the host is air-gapped, or you bind in a build pipeline
    helper, or run the CLI's enrollment primitive there:
 
    ```sh
-   litmask show-hw-id
+   litmask show-machine-id
    # FB1128DE-C00C-5643-BCF4-5487AFA3245A
    ```
 
-   `show-hw-id` prints the exact bytes `HardwareIdProvider` feeds into
+   `show-machine-id` prints the exact bytes `MachineIdProvider` feeds into
    its key derivation — nothing secret, just the host identifier — so
    the customer can return it over any channel.
 
@@ -154,12 +154,12 @@ litmask tooling, the host is air-gapped, or you bind in a build pipeline
    ```sh
    litmask bind my_app \
        --config litmask.config \
-       --hw-id FB1128DE-C00C-5643-BCF4-5487AFA3245A
+       --machine-id FB1128DE-C00C-5643-BCF4-5487AFA3245A
    ```
 
    The bound binary decrypts only on the host whose ID was supplied.
-   With `--hw-id` set, `bind` skips the local machine-ID lookup
-   entirely, so it never fails for a missing hardware ID. The flag
+   With `--machine-id` set, `bind` skips the local machine-ID lookup
+   entirely, so it never fails for a missing machine ID. The flag
    composes with `--salt`.
 
 ## Sysexits.h exit code reference
@@ -170,7 +170,7 @@ init failure:
 | Code | Name | Variant | Meaning |
 |---|---|---|---|
 | 65 | `EX_DATAERR` | `KeyProvider(InvalidFormat)`, `Decryption` | Malformed key data or AEAD authentication failure |
-| 69 | `EX_UNAVAILABLE` | `KeyProvider(Provider(_))` | Provider-specific failure (network, service, hardware ID unavailable) |
+| 69 | `EX_UNAVAILABLE` | `KeyProvider(Provider(_))` | Provider-specific failure (network, service, machine ID unavailable) |
 | 70 | `EX_SOFTWARE` | `UnsupportedFormat`, `UnsupportedCipher` | Format version or cipher feature mismatch |
 | 77 | `EX_NOPERM` | `KeyProvider(Permission)` | OS-level permission denied reading key |
 | 78 | `EX_CONFIG` | `KeyProvider(NotFound)` | Missing key (env var unset, file absent) |

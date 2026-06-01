@@ -1,4 +1,4 @@
-//! Integration tests for `HardwareIdProvider` (§2.5.4).
+//! Integration tests for `MachineIdProvider` (§2.5.4).
 //!
 //! The provider derives a 32-byte unlock key from the host machine ID
 //! via BLAKE3-keyed-hash. The hash is deterministic per host, so two
@@ -14,9 +14,9 @@
 //! tests, where the error surface is reachable without depending on
 //! a host with a broken machine-uid path.
 
-#![cfg(feature = "hw-id")]
+#![cfg(feature = "machine-id")]
 
-use litmask::{HardwareIdProvider, KeyError, KeyProvider};
+use litmask::{KeyError, KeyProvider, MachineIdProvider};
 
 /// Environment-probing test, not a correctness gate: both Ok and
 /// Err(Provider) are valid outcomes depending on host capabilities.
@@ -27,7 +27,7 @@ fn unlock_key_on_supported_host_or_returns_provider_error() {
     // OpenBSD / container runtimes without /etc/machine-id where it
     // fails. Both outcomes are documented in §1.6.5 — assert one of
     // the two and surface unexpected error shapes loudly.
-    match HardwareIdProvider::new().unlock_key() {
+    match MachineIdProvider::new().unlock_key() {
         Ok(_) => {}
         Err(KeyError::Provider(inner)) => {
             // The Display message must be non-empty so operators
@@ -36,7 +36,7 @@ fn unlock_key_on_supported_host_or_returns_provider_error() {
             let msg = format!("{inner}");
             assert!(!msg.is_empty(), "Provider error Display is empty");
         }
-        Err(other) => panic!("unexpected KeyError variant on hw-id failure: {other:?}"),
+        Err(other) => panic!("unexpected KeyError variant on machine-id failure: {other:?}"),
     }
 }
 

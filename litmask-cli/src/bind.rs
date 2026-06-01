@@ -1,10 +1,10 @@
 //! `litmask bind` subcommand.
 //!
 //! `bind` decrypts using the current config's `unlock_key` (from
-//! any provider) and re-encrypts under a hardware-derived key. The
+//! any provider) and re-encrypts under a machine-ID-derived key. The
 //! updated config records this new key, so `EnvVarProvider` callers
 //! can relay it through the environment variable without switching
-//! to `HardwareIdProvider`.
+//! to `MachineIdProvider`.
 //!
 //! Functional core / imperative shell split:
 //!
@@ -26,8 +26,8 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use litmask_internal::{
-    FormatVersion, HW_ID_DERIVATION_CONTEXT, KEY_LEN, NONCE_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN,
-    WrapperParseError, base64url,
+    FormatVersion, KEY_LEN, MACHINE_ID_DERIVATION_CONTEXT, NONCE_LEN, WRAPPER_BODY_LEN,
+    WRAPPER_LEN, WrapperParseError, base64url,
 };
 use litmask_internal::{LocateOutcome, locate_wrapper};
 use zeroize::Zeroizing;
@@ -91,7 +91,7 @@ impl BindOutcome {
         let cfg = config.display();
         match self {
             Self::Success(_) => {
-                format!("rebound '{bin}' to the new hardware-derived key and updated '{cfg}'")
+                format!("rebound '{bin}' to the new machine-ID-derived key and updated '{cfg}'")
             }
             Self::NotFound => format!(
                 "could not find a litmask wrapper in '{bin}'\n  \
@@ -184,8 +184,8 @@ pub(crate) fn plan_bind(
     };
     let mask_key = Zeroizing::new(mask_key);
 
-    let new_unlock_key = Zeroizing::new(litmask_internal::derive_hw_key(
-        HW_ID_DERIVATION_CONTEXT,
+    let new_unlock_key = Zeroizing::new(litmask_internal::derive_machine_id_key(
+        MACHINE_ID_DERIVATION_CONTEXT,
         machine_id.as_bytes(),
         &salt,
     ));
@@ -465,10 +465,10 @@ fn resign_macos(binary_path: &Path) {
 fn resign_macos(_binary_path: &Path) {}
 
 /// Readable diagnostic for a failed machine-id lookup. Single
-/// source of truth so `bind` and `show-hw-id` (main.rs) describe
+/// source of truth so `bind` and `show-machine-id` (main.rs) describe
 /// the failure identically — the two surfaces cannot drift.
-pub(crate) const HW_ID_UNAVAILABLE_MSG: &str =
-    "could not read this machine's hardware ID (machine-uid failed)";
+pub(crate) const MACHINE_ID_UNAVAILABLE_MSG: &str =
+    "could not read the machine ID (machine-uid failed)";
 
 /// Shell-layer failure shapes. These cover the I/O that happens
 /// outside the pure planner (file reads, machine-uid lookup, the
@@ -477,7 +477,7 @@ pub(crate) const HW_ID_UNAVAILABLE_MSG: &str =
 #[derive(Debug)]
 pub(crate) enum ShellError {
     Input(crate::inputs::InputError),
-    HardwareIdUnavailable,
+    MachineIdUnavailable,
     CommitFailed(io::Error),
 }
 
@@ -486,10 +486,10 @@ impl ShellError {
     pub(crate) fn describe(&self, binary: &Path, config: &Path) -> String {
         match self {
             Self::Input(e) => e.describe(binary, config),
-            Self::HardwareIdUnavailable => format!(
-                "{HW_ID_UNAVAILABLE_MSG}\n  \
+            Self::MachineIdUnavailable => format!(
+                "{MACHINE_ID_UNAVAILABLE_MSG}\n  \
                  common in containers, minimal Linux images, and OpenBSD — \
-                 pass --hw-id <ID> to bind for a specific machine"
+                 pass --machine-id <ID> to bind for a specific machine"
             ),
             Self::CommitFailed(e) => format!(
                 "failed while writing the rebound binary and config: {e}\n  \
@@ -505,24 +505,24 @@ impl ShellError {
         use crate::exit;
         match self {
             Self::Input(_) => exit::USAGE,
-            Self::HardwareIdUnavailable => exit::UNAVAILABLE,
+            Self::MachineIdUnavailable => exit::UNAVAILABLE,
             Self::CommitFailed(_) => exit::SOFTWARE,
         }
     }
 }
 
 /// Choose the machine ID `bind` derives the new key from. A
-/// `--hw-id` value is used verbatim and skips the local lookup, so
+/// `--machine-id` value is used verbatim and skips the local lookup, so
 /// a vendor can bind off-box against an ID a target reported via
-/// `show-hw-id`. Without the flag, fall back to this host's
-/// `machine-uid`, mapping its failure to `HardwareIdUnavailable`.
+/// `show-machine-id`. Without the flag, fall back to this host's
+/// `machine-uid`, mapping its failure to `MachineIdUnavailable`.
 fn resolve_machine_id<F, E>(flag: Option<&str>, lookup: F) -> Result<String, ShellError>
 where
     F: FnOnce() -> Result<String, E>,
 {
     match flag {
         Some(id) => Ok(id.to_string()),
-        None => lookup().map_err(|_| ShellError::HardwareIdUnavailable),
+        None => lookup().map_err(|_| ShellError::MachineIdUnavailable),
     }
 }
 
@@ -532,11 +532,11 @@ pub(crate) fn run(
     binary_path: &Path,
     config_path: &Path,
     salt_b64: Option<&str>,
-    hw_id: Option<&str>,
+    machine_id: Option<&str>,
 ) -> Result<BindOutcome, ShellError> {
     let (config_text, binary_bytes) =
         crate::inputs::read(binary_path, config_path).map_err(ShellError::Input)?;
-    let machine_id = resolve_machine_id(hw_id, machine_uid::get)?;
+    let machine_id = resolve_machine_id(machine_id, machine_uid::get)?;
 
     let outcome = plan_bind(&config_text, &binary_bytes, salt_b64, &machine_id);
 
@@ -829,7 +829,7 @@ mod tests {
     #[test]
     fn resolve_machine_id_prefers_flag_and_skips_lookup() {
         let id = resolve_machine_id(Some("PROVIDED-ID"), || -> Result<String, io::Error> {
-            panic!("lookup must not run when --hw-id is supplied")
+            panic!("lookup must not run when --machine-id is supplied")
         })
         .unwrap();
         assert_eq!(id, "PROVIDED-ID");
@@ -847,7 +847,7 @@ mod tests {
             Err(io::Error::other("boom"))
         })
         .unwrap_err();
-        assert!(matches!(err, ShellError::HardwareIdUnavailable));
+        assert!(matches!(err, ShellError::MachineIdUnavailable));
     }
 
     #[test]
@@ -859,7 +859,7 @@ mod tests {
             exit::USAGE
         );
         assert_eq!(
-            ShellError::HardwareIdUnavailable.exit_code(),
+            ShellError::MachineIdUnavailable.exit_code(),
             exit::UNAVAILABLE
         );
         assert_eq!(

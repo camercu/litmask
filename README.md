@@ -36,7 +36,7 @@ strings target/release/my_app | grep "sensitive data"   # no output
 | Key model           | Compile-time random | Single env var | **Layered providers**               |
 | Format strings      | No                  | No             | **`mask_format!`**                  |
 | Module-level        | No                  | No             | **`#[mask_all]`**                   |
-| Hardware binding    | No                  | No             | **`litmask bind`**                  |
+| Machine-ID binding    | No                  | No             | **`litmask bind`**                  |
 | Literal types       | `str`               | `str`          | **str / bytes / cstr**              |
 | `no_std`            | Limited             | No             | **Yes** (requires `alloc`)          |
 | Reproducible builds | No                  | No             | **Yes**                             |
@@ -82,7 +82,7 @@ litmask splits encryption across build time and run time:
 
 The `unlock_key` is the only secret that lives outside the binary, so key
 management reduces to _how you deliver the unlock_key_ — environment
-variable, file, hardware ID, or a provider you write.
+variable, file, machine ID, or a provider you write.
 
 ## Macros
 
@@ -118,14 +118,14 @@ use `weak_mask!`, but its key is recoverable statically from the binary.
 | -------------------- | ---------------------- | ------- |
 | `EnvVarProvider`     | Environment variable   | default |
 | `FileProvider`       | Filesystem path        | default |
-| `HardwareIdProvider` | Machine ID + BLAKE3    | `hw-id` |
+| `MachineIdProvider` | Machine ID + BLAKE3    | `machine-id` |
 | `StaticProvider`     | Fixed key (tests only) | --      |
 | `impl KeyProvider`   | Anything you write     | --      |
 
 ```rust
-use litmask::{HardwareIdProvider, weak_mask};
+use litmask::{MachineIdProvider, weak_mask};
 
-let provider = HardwareIdProvider::with_salt(weak_mask!(b"myapp-v1"));
+let provider = MachineIdProvider::with_salt(weak_mask!(b"myapp-v1"));
 litmask::init_with!(provider)?;
 ```
 
@@ -135,7 +135,7 @@ litmask::init_with!(provider)?;
 | ---------------------------- | ----------------------------------- |
 | Default (`EnvVarProvider`)   | `strings`, casual inspection        |
 | `FileProvider`               | Above, key sourced from a file path |
-| `HardwareIdProvider`         | Above + binary redistribution       |
+| `MachineIdProvider`         | Above + binary redistribution       |
 | Custom provider (vault, HSM) | Above + offline attackers           |
 
 **Does NOT protect against:** runtime memory inspection, debugger
@@ -143,16 +143,16 @@ attachment, compromised runtime environments, side-channel attacks,
 or a motivated reverse engineer with runtime access. See
 [THREAT_MODEL.md](docs/THREAT_MODEL.md) for the full scope.
 
-## Hardware binding (`litmask bind`)
+## Machine-ID binding (`litmask bind`)
 
 `bind` re-encrypts a binary's embedded wrapper under a key derived from
-the host's machine ID. The typical workflow uses `HardwareIdProvider` at
+the host's machine ID. The typical workflow uses `MachineIdProvider` at
 runtime so the binary decrypts only on the machine it was bound to:
 
 ```sh
-cargo build --features hw-id --release
+cargo build --features machine-id --release
 litmask bind target/release/my_app --config target/release/litmask.config
-./target/release/my_app   # decrypts via HardwareIdProvider — no env var needed
+./target/release/my_app   # decrypts via MachineIdProvider — no env var needed
 ```
 
 ## Features
@@ -163,7 +163,7 @@ litmask bind target/release/my_app --config target/release/litmask.config
 | `chacha20-poly1305` | yes     | Default cipher                                      |
 | `aes-gcm`           | no      | AES-256-GCM (takes precedence when enabled)         |
 | `alloc`             | --      | `no_std` + allocator (required for `no_std` builds) |
-| `hw-id`             | no      | `HardwareIdProvider`                                |
+| `machine-id`             | no      | `MachineIdProvider`                                |
 
 ## Documentation
 

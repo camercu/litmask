@@ -51,7 +51,7 @@ LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' litmask.config) \
 | | `litcrypt` v1 | `litmask` |
 |---|---|---|
 | Cipher | XOR | ChaCha20-Poly1305 (AEAD) |
-| Key location | Embedded in binary | External (env var, file, hardware ID) |
+| Key location | Embedded in binary | External (env var, file, machine ID) |
 | Tamper detection | No | Yes |
 | `no_std` | No | Yes |
 

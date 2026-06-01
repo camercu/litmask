@@ -75,7 +75,7 @@ call site, from the seed and the site's identity).
 **Key provider** ([`KeyProvider`]):
 Trait that supplies the **unlock key** at runtime. Built-in
 implementations: [`EnvVarProvider`] (env var), `FileProvider` (path),
-`HardwareIdProvider` (machine ID), `StaticProvider` (in-memory).
+`MachineIdProvider` (machine ID), `StaticProvider` (in-memory).
 _Avoid_: "key source", "key backend".
 
 **Mask** (verb): To encrypt a literal at compile time via `mask!()` or
@@ -112,7 +112,7 @@ Secret; do not commit. Consumed by the runtime (via env var) and by
 `litmask`.
 
 **Bind** (verb): Rebind a binary to a new **unlock key**, typically
-derived from the target machine's hardware ID. Performed by
+derived from the target host's machine ID. Performed by
 `litmask bind`. Patches all identical wrapper copies in the binary.
 On macOS, re-signs with an ad-hoc code signature (the patch
 invalidates the existing signature, and ARM64 macOS kills unsigned

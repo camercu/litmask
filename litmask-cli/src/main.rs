@@ -45,10 +45,10 @@ enum Command {
         config: PathBuf,
     },
     /// Rebind a binary's embedded `mask_key` wrapper to a new
-    /// hardware-derived `unlock_key`, atomically updating both the
+    /// machine-ID-derived `unlock_key`, atomically updating both the
     /// binary and `litmask.config`.
     ///
-    /// Works with any provider: binaries using `HardwareIdProvider`
+    /// Works with any provider: binaries using `MachineIdProvider`
     /// decrypt automatically after bind; binaries using
     /// `EnvVarProvider` decrypt when given the config's updated
     /// `unlock_key` via the environment variable.
@@ -60,7 +60,7 @@ enum Command {
     /// - 65 on locator-ambiguous, AEAD decryption failure, or
     ///   unsupported format/cipher
     /// - 66 on no locator match
-    /// - 69 on hardware-id lookup failure
+    /// - 69 on machine-id lookup failure
     Bind {
         /// Path to the binary to rebind.
         binary: PathBuf,
@@ -68,28 +68,28 @@ enum Command {
         #[arg(long)]
         config: PathBuf,
         /// Optional base64url-encoded salt. Mixes into the
-        /// hardware-id BLAKE3 derivation so two products on the
+        /// machine-id BLAKE3 derivation so two products on the
         /// same host with different salts get distinct keys.
         #[arg(long)]
         salt: Option<String>,
         /// Bind against this machine ID instead of the local host's.
-        /// Pass the value a target reported via `litmask show-hw-id`
+        /// Pass the value a target reported via `litmask show-machine-id`
         /// to bind off-box (e.g. in a build pipeline). When set, the
-        /// local hardware-id lookup is skipped entirely.
+        /// local machine-id lookup is skipped entirely.
         #[arg(long)]
-        hw_id: Option<String>,
+        machine_id: Option<String>,
     },
     /// Print this host's machine ID — the exact bytes
-    /// `HardwareIdProvider` feeds into its key derivation.
+    /// `MachineIdProvider` feeds into its key derivation.
     ///
     /// The enrollment primitive for vendor-side binds: a target
-    /// host runs `show-hw-id` and reports the value, letting the
+    /// host runs `show-machine-id` and reports the value, letting the
     /// vendor `bind` against it off-box (see `docs/DEPLOYMENT.md`).
     ///
     /// Exit codes:
     /// - 0 on success (prints the machine ID to stdout)
-    /// - 69 on hardware-id lookup failure (diagnostic to stderr)
-    ShowHwId,
+    /// - 69 on machine-id lookup failure (diagnostic to stderr)
+    ShowMachineId,
 }
 
 fn main() -> ExitCode {
@@ -118,9 +118,9 @@ fn main() -> ExitCode {
             binary,
             config,
             salt,
-            hw_id,
-        } => dispatch_bind(&binary, &config, salt.as_deref(), hw_id.as_deref()),
-        Command::ShowHwId => dispatch_show_hw_id(),
+            machine_id,
+        } => dispatch_bind(&binary, &config, salt.as_deref(), machine_id.as_deref()),
+        Command::ShowMachineId => dispatch_show_machine_id(),
     }
 }
 
@@ -149,9 +149,9 @@ fn dispatch_bind(
     binary: &Path,
     config: &Path,
     salt: Option<&str>,
-    hw_id: Option<&str>,
+    machine_id: Option<&str>,
 ) -> ExitCode {
-    match bind::run(binary, config, salt, hw_id) {
+    match bind::run(binary, config, salt, machine_id) {
         // `Success` confirms the rebind on stdout; every failure
         // outcome describes the problem on stderr, leaving stdout
         // clean for callers gating on a successful bind.
@@ -164,7 +164,7 @@ fn dispatch_bind(
             }
             ExitCode::from(outcome.exit_code())
         }
-        // Shell-level failures — including hardware-id unavailable —
+        // Shell-level failures — including machine-id unavailable —
         // describe the problem on stderr and signal via the exit code.
         Err(e) => {
             eprintln!("litmask: {}", e.describe(binary, config));
@@ -173,11 +173,11 @@ fn dispatch_bind(
     }
 }
 
-/// Where a `show-hw-id` result should be written and with which
+/// Where a `show-machine-id` result should be written and with which
 /// exit code. Pure so both branches are unit-testable without a
 /// host machine-id lookup: the imperative shell only routes the
 /// fields to stdout/stderr.
-struct HwIdReport {
+struct MachineIdReport {
     stdout: Option<String>,
     stderr: Option<String>,
     code: u8,
@@ -185,27 +185,27 @@ struct HwIdReport {
 
 /// Map a machine-id lookup to its presentation. The ID is a
 /// non-secret host identifier — the pre-KDF input both
-/// `HardwareIdProvider::unlock_key` and `bind` feed into
-/// `derive_hw_key` — so it goes to stdout for capture. A lookup
+/// `MachineIdProvider::unlock_key` and `bind` feed into
+/// `derive_machine_id_key` — so it goes to stdout for capture. A lookup
 /// failure is an error and goes to stderr (exit 69), keeping
 /// stdout clean for callers piping the ID.
-fn report_hw_id<E>(lookup: Result<String, E>) -> HwIdReport {
+fn report_machine_id<E>(lookup: Result<String, E>) -> MachineIdReport {
     match lookup {
-        Ok(id) => HwIdReport {
+        Ok(id) => MachineIdReport {
             stdout: Some(id),
             stderr: None,
             code: exit::OK,
         },
-        Err(_) => HwIdReport {
+        Err(_) => MachineIdReport {
             stdout: None,
-            stderr: Some(bind::HW_ID_UNAVAILABLE_MSG.to_string()),
+            stderr: Some(bind::MACHINE_ID_UNAVAILABLE_MSG.to_string()),
             code: exit::UNAVAILABLE,
         },
     }
 }
 
-fn dispatch_show_hw_id() -> ExitCode {
-    let report = report_hw_id(machine_uid::get());
+fn dispatch_show_machine_id() -> ExitCode {
+    let report = report_machine_id(machine_uid::get());
     if let Some(id) = report.stdout {
         println!("{id}");
     }
@@ -254,34 +254,51 @@ mod tests {
     }
 
     #[test]
-    fn parses_bind_with_hw_id() {
-        let cli = parse_argv(&["bind", "/bin", "--config", "/cfg", "--hw-id", "ABC-123"]).unwrap();
+    fn parses_bind_with_machine_id() {
+        let cli = parse_argv(&[
+            "bind",
+            "/bin",
+            "--config",
+            "/cfg",
+            "--machine-id",
+            "ABC-123",
+        ])
+        .unwrap();
         match cli.command {
-            Command::Bind { hw_id, .. } => assert_eq!(hw_id.as_deref(), Some("ABC-123")),
+            Command::Bind { machine_id, .. } => assert_eq!(machine_id.as_deref(), Some("ABC-123")),
             other => panic!("expected Bind, got {other:?}"),
         }
     }
 
     #[test]
-    fn parses_bind_hw_id_composes_with_salt() {
+    fn parses_bind_machine_id_composes_with_salt() {
         let cli = parse_argv(&[
-            "bind", "/bin", "--config", "/cfg", "--salt", "AAAA", "--hw-id", "ABC-123",
+            "bind",
+            "/bin",
+            "--config",
+            "/cfg",
+            "--salt",
+            "AAAA",
+            "--machine-id",
+            "ABC-123",
         ])
         .unwrap();
         match cli.command {
-            Command::Bind { salt, hw_id, .. } => {
+            Command::Bind {
+                salt, machine_id, ..
+            } => {
                 assert_eq!(salt.as_deref(), Some("AAAA"));
-                assert_eq!(hw_id.as_deref(), Some("ABC-123"));
+                assert_eq!(machine_id.as_deref(), Some("ABC-123"));
             }
             other => panic!("expected Bind, got {other:?}"),
         }
     }
 
     #[test]
-    fn parses_bind_without_hw_id_defaults_none() {
+    fn parses_bind_without_machine_id_defaults_none() {
         let cli = parse_argv(&["bind", "/bin", "--config", "/cfg"]).unwrap();
         match cli.command {
-            Command::Bind { hw_id, .. } => assert_eq!(hw_id, None),
+            Command::Bind { machine_id, .. } => assert_eq!(machine_id, None),
             other => panic!("expected Bind, got {other:?}"),
         }
     }
@@ -315,35 +332,35 @@ mod tests {
     }
 
     #[test]
-    fn report_hw_id_success_goes_to_stdout_with_ok_code() {
-        let r = report_hw_id(Ok::<_, std::io::Error>("ABC-123".to_string()));
+    fn report_machine_id_success_goes_to_stdout_with_ok_code() {
+        let r = report_machine_id(Ok::<_, std::io::Error>("ABC-123".to_string()));
         assert_eq!(r.stdout.as_deref(), Some("ABC-123"));
         assert_eq!(r.stderr, None);
         assert_eq!(r.code, exit::OK);
     }
 
     #[test]
-    fn report_hw_id_failure_goes_to_stderr_with_unavailable_code() {
+    fn report_machine_id_failure_goes_to_stderr_with_unavailable_code() {
         // A lookup failure is an error: the diagnostic belongs on
         // stderr, leaving stdout empty so a caller capturing the ID
         // never mistakes the error text for a machine ID.
-        let r = report_hw_id(Err(std::io::Error::other("boom")));
+        let r = report_machine_id(Err(std::io::Error::other("boom")));
         assert_eq!(r.stdout, None);
-        assert_eq!(r.stderr.as_deref(), Some(bind::HW_ID_UNAVAILABLE_MSG));
+        assert_eq!(r.stderr.as_deref(), Some(bind::MACHINE_ID_UNAVAILABLE_MSG));
         assert_eq!(r.code, exit::UNAVAILABLE);
     }
 
     #[test]
-    fn parses_show_hw_id() {
-        let cli = parse_argv(&["show-hw-id"]).unwrap();
-        assert!(matches!(cli.command, Command::ShowHwId));
+    fn parses_show_machine_id() {
+        let cli = parse_argv(&["show-machine-id"]).unwrap();
+        assert!(matches!(cli.command, Command::ShowMachineId));
     }
 
     #[test]
-    fn rejects_show_hw_id_trailing_positional() {
-        // `show-hw-id` takes no arguments; a trailing token is a
+    fn rejects_show_machine_id_trailing_positional() {
+        // `show-machine-id` takes no arguments; a trailing token is a
         // typo, not silent input.
-        assert!(parse_argv(&["show-hw-id", "extra"]).is_err());
+        assert!(parse_argv(&["show-machine-id", "extra"]).is_err());
     }
 
     #[test]

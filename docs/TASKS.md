@@ -678,12 +678,12 @@ runs.
 
 ---
 
-## Task 16: `HardwareIdProvider` (`hw-id` feature) (AFK)
+## Task 16: `MachineIdProvider` (`machine-id` feature) (AFK)
 
 **Implements:** §2.5.4.1–§2.5.4.3, §1.6.5
 **Blocked by:** Task 5
 
-Feature-gated provider behind `hw-id`. `HardwareIdProvider::new()`
+Feature-gated provider behind `machine-id`. `MachineIdProvider::new()`
 constructs with no salt; `with_salt(&'static [u8])` mixes salt via
 BLAKE3-keyed-hash. `unlock_key()` reads machine ID via `machine-uid`,
 applies BLAKE3-keyed-hash with salt (or zero salt) to derive 32 bytes,
@@ -692,22 +692,22 @@ and returns `Ok(UnlockKey)`. On `machine-uid` failure, returns
 `Box<dyn core::error::Error + Send + Sync>` (Send + Sync required so
 errors propagate across thread boundaries; under no_std the bound uses
 `core::error::Error`, requires `alloc` for `Box`). Adds
-`litmask/examples/hw_id_provider.rs` masking the Twain fixture and
+`litmask/examples/machine_id_provider.rs` masking the Twain fixture and
 sourcing `unlock_key` from the host machine ID (spec §2.12.1.5).
 
 ### Acceptance Criteria
 
 - [x] On a host with a stable machine ID, two consecutive
-      `HardwareIdProvider::new().unlock_key()` calls return identical bytes
+      `MachineIdProvider::new().unlock_key()` calls return identical bytes
 - [x] Different `with_salt` values produce different keys for the same host
-- [x] `cargo build --no-default-features` (no `hw-id`) does NOT include
-      `HardwareIdProvider` symbol
+- [x] `cargo build --no-default-features` (no `machine-id`) does NOT include
+      `MachineIdProvider` symbol
 - [x] On a host where `machine-uid::get()` fails, returns
       `Err(KeyError::Provider(_))` with a non-empty `Display` message
 - [x] `KeyError::Provider`'s inner type is `Box<dyn core::error::Error +
       Send + Sync + 'static>` (verified by sending across a
       `std::thread::spawn` in the test)
-- [x] `litmask/examples/hw_id_provider.rs` builds with `--features hw-id`
+- [x] `litmask/examples/machine_id_provider.rs` builds with `--features machine-id`
       and runs end-to-end on a host with a stable machine ID
       (end-to-end run requires Task 25's `litmask bind`; build path
       is wired and locked here)
@@ -724,7 +724,7 @@ returns the held key. Intended for tests; `unlock_key()` returns
 `Ok(self.key.clone())` unconditionally. The clone duplicates the secret
 in process memory by design; rustdoc on `StaticProvider` carries an
 explicit warning: `// FOR TESTS ONLY — clones the unlock key on every
-call. Production code should use EnvVar/File/HardwareId providers.`
+call. Production code should use EnvVar/File/MachineId providers.`
 Adds `litmask/examples/static_provider.rs` masking the Twain fixture
 with a hard-coded unlock key (spec §2.12.1.5; the example itself
 doubles as a "do not do this in production" cautionary fixture).
@@ -898,7 +898,7 @@ gains `check-no-std` recipe (`cargo check --target thumbv7m-none-eabi
 --no-default-features` for the `litmask` crate). `just ci` invokes it.
 Confirms `OnceLock`-equivalent on `no_std` uses `once_cell::race::OnceBox`,
 `EnvVarProvider`/`FileProvider` are gated behind `std`, `StaticProvider`
-and `HardwareIdProvider` (with `hw-id`) remain available, `core::error::Error`
+and `MachineIdProvider` (with `machine-id`) remain available, `core::error::Error`
 impls are unconditional, and `std::error::Error` impls are gated behind
 `std`.
 
@@ -908,12 +908,12 @@ impls are unconditional, and `std::error::Error` impls are gated behind
       succeeds via `just check-no-std`
 - [x] `cargo build -p litmask --no-default-features --features alloc`
       succeeds (host)
-- [x] `cargo build -p litmask --no-default-features --features alloc,hw-id`
+- [x] `cargo build -p litmask --no-default-features --features alloc,machine-id`
       succeeds (host)
 - [x] `EnvVarProvider` and `FileProvider` symbols absent from the
       `litmask` crate API under `--no-default-features` (verified via
       the `#[cfg(feature = "std")]` gates on each re-export in `litmask/src/lib.rs`)
-- [x] `StaticProvider` and (with `hw-id`) `HardwareIdProvider` remain
+- [x] `StaticProvider` and (with `machine-id`) `MachineIdProvider` remain
       callable under `--no-default-features --features alloc`
 - [x] `core::error::Error` impl present on `InitError` and `KeyError`
       under `--no-default-features --features alloc`
@@ -953,7 +953,7 @@ parsing behavior cannot drift from a transitive update.
 **Blocked by:** Task 24, Task 16
 
 `litmask bind <binary> --config <litmask.config> [--salt <BASE64URL>]`
-rebinds a binary to a hardware-derived `unlock_key`: locates the wrapper
+rebinds a binary to a machine-ID-derived `unlock_key`: locates the wrapper
 via the locator, decrypts with current `unlock_key`, derives new
 `unlock_key` from the host's machine ID (BLAKE3-keyed-hash with optional
 salt), re-encrypts `mask_key`, and atomically commits both binary patch
@@ -966,14 +966,14 @@ codes per §2.9.1.3.
 - [x] GIVEN a freshly built binary + config and a host with a stable
       machine ID, WHEN `bind` runs, THEN exit 0 and the bound binary
       executes correctly with the new key (no env var needed if provider
-      is `HardwareIdProvider`) — verified at the wrapper layer:
+      is `MachineIdProvider`) — verified at the wrapper layer:
       after rebind, the new config's `unlock_key` decrypts the patched
       wrapper to the original `mask_key` (`happy_path_rebinds_wrapper_and_updates_config`).
       End-to-end "bound binary executes" verification requires a real
-      example binary with `HardwareIdProvider::new()` wired into `init_with!`
-      (the `hw_id_provider` example), which depends on running on a host
+      example binary with `MachineIdProvider::new()` wired into `init_with!`
+      (the `machine_id_provider` example), which depends on running on a host
       with a stable machine ID; this part is covered by the existing
-      `hw_id_provider` integration test.
+      `machine_id_provider` integration test.
 - [x] Multiple differing locator matches → exit 65, stderr diagnostic
 - [x] No locator match → exit 66, stderr diagnostic
 - [x] Wrong current `unlock_key` (forced by hand-edited config) → exit 65,
@@ -1037,10 +1037,10 @@ exist).
 
 This task also adds **feature-matrix and cross-compile coverage** to
 `just ci` so combinatorial drift across `{default, --features aes-gcm}
-× {default, --features hw-id} × {std, no-default-features + alloc}`
+× {default, --features machine-id} × {std, no-default-features + alloc}`
 cannot rot silently. New justfile recipes mirror relentless's pattern:
 `test-no-default` (`--no-default-features --features alloc`),
-`test-all-features`, `test-aes-gcm`, `test-hw-id` (only on hosts with a
+`test-all-features`, `test-aes-gcm`, `test-machine-id` (only on hosts with a
 stable machine ID — gracefully skip on others), and `check-cross`
 which runs `cargo check --target <T>` for two cross targets:
 `x86_64-pc-windows-gnu` (host-Linux build proves Windows codegen path
@@ -1231,7 +1231,7 @@ blocker / fix-before-1.0 / track-for-v2 / accepted-risk.
 Audit surface:
 
 - **Strings hygiene.** Build every example + integration binary across
-  the full feature matrix (cipher × hw-id × std). Run `strings` on each
+  the full feature matrix (cipher × machine-id × std). Run `strings` on each
   and grep for: `litmask`, `mask_key`, `unlock_key`, `decrypt`, `cipher`,
   `chacha`, `aes`, `tamper`, `nonce`, common variant names from
   `InitError` / `KeyError`. Flag any litmask-identifying or operation-describing
@@ -1288,34 +1288,34 @@ Audit surface:
 
 ---
 
-## Task 34: `litmask bind --hw-id` — off-box (vendor-side) binding (AFK)
+## Task 34: `litmask bind --machine-id` — off-box (vendor-side) binding (AFK)
 
 **Implements:** `DEPLOYMENT.md` "Off-box (vendor-side) binding", spec §2.9.1.7
 **Blocked by:** Task 25
 **Status:** DONE
 
 `bind` derives the new `unlock_key` from the host it runs on, which
-forces the CLI onto the deployment host. `--hw-id <ID>` lets the vendor
+forces the CLI onto the deployment host. `--machine-id <ID>` lets the vendor
 bind off-box against a machine ID a target reported (via
-`litmask show-hw-id`). When supplied, the flag replaces the local
+`litmask show-machine-id`). When supplied, the flag replaces the local
 `machine_uid::get()` lookup; the value is the raw pre-KDF identifier, fed
-verbatim to `derive_hw_key`. The pure planner `plan_bind` already took
+verbatim to `derive_machine_id_key`. The pure planner `plan_bind` already took
 `machine_id` — only the shell `run()` (via `resolve_machine_id`) and the
 clap surface needed wiring.
 
-`--hw-id` and the implicit local lookup are mutually exclusive in
+`--machine-id` and the implicit local lookup are mutually exclusive in
 effect: when the flag is present, `bind` never queries `machine-uid`, so
-the hardware-id-unavailable path cannot occur. The enrollment primitive
-(`show-hw-id`) already exists.
+the machine-id-unavailable path cannot occur. The enrollment primitive
+(`show-machine-id`) already exists.
 
 ### Acceptance Criteria
 
-- [x] `bind --hw-id <ID>` derives the new key from `<ID>` and never
-      calls `machine_uid::get()` (no hardware-id-unavailable path)
-- [x] Binding with `--hw-id <X>` produces a config whose
+- [x] `bind --machine-id <ID>` derives the new key from `<ID>` and never
+      calls `machine_uid::get()` (no machine-id-unavailable path)
+- [x] Binding with `--machine-id <X>` produces a config whose
       `unlock_key` matches a binary bound on a host whose real machine ID
-      is `<X>` (cross-checked against the `HardwareIdProvider` derivation)
-- [x] `--hw-id` composes with `--salt`
-- [x] Without `--hw-id`, behavior is unchanged (local lookup, exit
+      is `<X>` (cross-checked against the `MachineIdProvider` derivation)
+- [x] `--machine-id` composes with `--salt`
+- [x] Without `--machine-id`, behavior is unchanged (local lookup, exit
       69 on `machine-uid` failure)
 - [x] Argument-parse errors → exit 64

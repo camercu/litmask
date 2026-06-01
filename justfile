@@ -67,8 +67,8 @@ test-doc:
 test-no-default:
     cargo nextest run -p litmask -p litmask-internal --no-default-features --features alloc --lib
 
-test-hw-id:
-    cargo nextest run -p litmask --features hw-id
+test-machine-id:
+    cargo nextest run -p litmask --features machine-id
 
 # Scoped to litmask + litmask-internal: `--workspace` would unify
 # features with litmask-cli (which activates both ciphers), defeating
@@ -107,17 +107,17 @@ test-examples:
     found=0
     for src in litmask/examples/*.rs; do
         name=$(basename "$src" .rs)
-        # `hw_id_provider` requires both the `hw-id` feature AND a
+        # `machine_id_provider` requires both the `machine-id` feature AND a
         # prior `litmask-cli bind` step (otherwise init fails with
         # `decryption_failed`, since the build's wrapper is encrypted
-        # under the env-var key, not the hardware-derived one). The
+        # under the env-var key, not the machine-ID-derived one). The
         # recipe can't perform the bind step (it would mutate the
         # binary mid-run), so the example's runtime path is exercised
         # by the dedicated integration test in
-        # `litmask/tests/hw_id_provider.rs` and the masking property
+        # `litmask/tests/machine_id_provider.rs` and the masking property
         # of the built binary is exercised by
-        # `litmask/tests/example_scrub.rs::hw_id_provider_example_*`.
-        if [ "$name" = "hw_id_provider" ]; then
+        # `litmask/tests/example_scrub.rs::machine_id_provider_example_*`.
+        if [ "$name" = "machine_id_provider" ]; then
             continue
         fi
         echo "litmask: test-examples — running $name"
@@ -188,8 +188,8 @@ semver-check:
 
 # ── Documentation ───────────────────────────────────────────
 
-# `--all-features` so every feature-gated symbol (`HardwareIdProvider`
-# under `hw-id`, the `aes-gcm` cipher path, etc.) is documented and
+# `--all-features` so every feature-gated symbol (`MachineIdProvider`
+# under `machine-id`, the `aes-gcm` cipher path, etc.) is documented and
 # every intra-doc link resolves. Mirrors the
 # `[package.metadata.docs.rs] all-features = true` declared in each
 # member crate's Cargo.toml, so local `just doc` output matches what

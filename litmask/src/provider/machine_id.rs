@@ -1,5 +1,5 @@
-//! [`HardwareIdProvider`] — derives `unlock_key` from the host's
-//! machine ID via BLAKE3-keyed-hash. Feature-gated behind `hw-id`.
+//! [`MachineIdProvider`] — derives `unlock_key` from the host's
+//! machine ID via BLAKE3-keyed-hash. Feature-gated behind `machine-id`.
 
 use zeroize::Zeroizing;
 
@@ -17,7 +17,7 @@ use crate::provider::KeyProvider;
 ///
 /// ```no_run
 /// # fn main() -> Result<(), litmask::InitError> {
-/// let provider = litmask::HardwareIdProvider::with_salt(b"myapp-v1");
+/// let provider = litmask::MachineIdProvider::with_salt(b"myapp-v1");
 /// litmask::init_with!(provider)?;
 /// # Ok(())
 /// # }
@@ -39,11 +39,11 @@ use crate::provider::KeyProvider;
 /// environments MUST verify behavior on the target before relying
 /// on this provider.
 #[derive(Debug)]
-pub struct HardwareIdProvider {
+pub struct MachineIdProvider {
     salt: Option<&'static [u8]>,
 }
 
-impl HardwareIdProvider {
+impl MachineIdProvider {
     /// Construct a provider with no salt. The derived key depends
     /// only on the host machine ID.
     #[must_use]
@@ -61,13 +61,13 @@ impl HardwareIdProvider {
     }
 }
 
-impl Default for HardwareIdProvider {
+impl Default for MachineIdProvider {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl KeyProvider for HardwareIdProvider {
+impl KeyProvider for MachineIdProvider {
     fn unlock_key(&self) -> Result<UnlockKey, KeyError> {
         // `machine_uid::get()`'s error type is a `Box<dyn Error>`
         // without the `Send + Sync` bound that [`KeyError::Provider`]
@@ -87,13 +87,13 @@ impl KeyProvider for HardwareIdProvider {
         let machine_id = Zeroizing::new(machine_id);
         // `weak_mask!()` keeps the BLAKE3 context literal out of
         // `strings(1)` output for user binaries. The literal MUST
-        // match `litmask_internal::HW_ID_DERIVATION_CONTEXT`
+        // match `litmask_internal::MACHINE_ID_DERIVATION_CONTEXT`
         // byte-for-byte (which `bind` imports directly) or bind ↔
         // runtime derivations produce different keys; the drift is
         // pinned by the `weak_mask_literal_matches_const` unit
         // test below.
-        Ok(UnlockKey::from_raw(crate::internal::derive_hw_key(
-            crate::weak_mask!("hw-v1"),
+        Ok(UnlockKey::from_raw(crate::internal::derive_machine_id_key(
+            crate::weak_mask!("machine-v1"),
             machine_id.as_bytes(),
             self.salt.unwrap_or(&[]),
         )))
@@ -126,27 +126,27 @@ impl core::error::Error for MachineUidError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::internal::HW_ID_DERIVATION_CONTEXT;
+    use crate::internal::MACHINE_ID_DERIVATION_CONTEXT;
 
     #[test]
     fn debug_shows_salt() {
-        let p = HardwareIdProvider::with_salt(b"myapp-v1");
+        let p = MachineIdProvider::with_salt(b"myapp-v1");
         let dbg = alloc::format!("{p:?}");
         assert!(dbg.contains("salt"), "Debug must mention salt field");
     }
 
     #[test]
     fn debug_no_salt_shows_none() {
-        let p = HardwareIdProvider::new();
+        let p = MachineIdProvider::new();
         let dbg = alloc::format!("{p:?}");
         assert!(dbg.contains("None"), "Debug must show None when no salt");
     }
 
     #[test]
-    fn hardware_id_provider_default_matches_new() {
+    fn machine_id_provider_default_matches_new() {
         // Pin the `Default` impl: it should match `new()` exactly.
-        let a = HardwareIdProvider::default();
-        let b = HardwareIdProvider::new();
+        let a = MachineIdProvider::default();
+        let b = MachineIdProvider::new();
         assert_eq!(a.salt, b.salt);
     }
 
@@ -164,16 +164,19 @@ mod tests {
     }
 
     /// Pin the literal-vs-const drift: the runtime call site
-    /// (`KeyProvider::unlock_key` above) inlines `weak_mask!("hw-v1")`
+    /// (`KeyProvider::unlock_key` above) inlines `weak_mask!("machine-v1")`
     /// so the BLAKE3 context bytes are obfuscated in user binaries,
     /// while `litmask-cli`'s `bind` imports
-    /// `HW_ID_DERIVATION_CONTEXT` directly. The two MUST decode to
+    /// `MACHINE_ID_DERIVATION_CONTEXT` directly. The two MUST decode to
     /// the same string or every freshly-bound binary will fail to
     /// unlock: bind would derive its mask key under one context and
     /// runtime would expect a different one. This test verifies the
     /// `weak_mask!()` literal still matches the canonical const.
     #[test]
     fn weak_mask_literal_matches_const() {
-        assert_eq!(crate::weak_mask!("hw-v1"), HW_ID_DERIVATION_CONTEXT);
+        assert_eq!(
+            crate::weak_mask!("machine-v1"),
+            MACHINE_ID_DERIVATION_CONTEXT
+        );
     }
 }

@@ -125,10 +125,10 @@ pub fn build_example(name: &str, profile: Profile) {
 }
 
 /// `build_example` with an explicit feature list, passed verbatim
-/// to `cargo build --features <...>`. Used by the `hw_id_provider`
-/// scrub, which must enable `hw-id` even when the surrounding test
+/// to `cargo build --features <...>`. Used by the `machine_id_provider`
+/// scrub, which must enable `machine-id` even when the surrounding test
 /// runner was launched with default features only (the example's
-/// `required-features = ["hw-id"]` would otherwise silently skip
+/// `required-features = ["machine-id"]` would otherwise silently skip
 /// the build).
 ///
 /// Concurrency: cargo's own fingerprint cache serializes builds
@@ -210,7 +210,7 @@ pub fn assert_no_dirty_words(binary: &Path) {
 /// scrub haystack before the [`FORBIDDEN_SUBSTRINGS`] match, so a
 /// transitive-dep crate name that inevitably embeds itself in its
 /// own symbol table (e.g. `blake3_*` function names from the
-/// `blake3` crate when `hw-id` is enabled) doesn't false-fire on
+/// `blake3` crate when `machine-id` is enabled) doesn't false-fire on
 /// the forbidden list.
 ///
 /// Two classes of substrings are ALSO stripped, unconditionally:

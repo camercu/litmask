@@ -5,7 +5,7 @@
 //! one-shot demos. Production code that pins a hard-coded
 //! `unlock_key` literally bakes the secret into the binary —
 //! defeating the entire layered-key design. Use [`EnvVarProvider`],
-//! [`FileProvider`], or [`HardwareIdProvider`] instead.
+//! [`FileProvider`], or [`MachineIdProvider`] instead.
 //!
 //! The example reads the build's `unlock_key` from the `LITMASK_UNLOCK_KEY`
 //! environment variable (the same variable [`EnvVarProvider`] consumes)
@@ -32,7 +32,7 @@
 //!
 //! [`EnvVarProvider`]: litmask::EnvVarProvider
 //! [`FileProvider`]: litmask::FileProvider
-//! [`HardwareIdProvider`]: litmask::HardwareIdProvider
+//! [`MachineIdProvider`]: litmask::MachineIdProvider
 
 use litmask::{StaticProvider, UnlockKey, init_with, mask};
 

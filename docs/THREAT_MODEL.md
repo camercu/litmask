@@ -25,7 +25,7 @@ manually decrypts embedded ciphertext.
 **Stopped by:** per-string unique nonces, AEAD ciphers, and the absence
 of plaintext key material in the binary. `mask_key` is encrypted under
 `unlock_key`, which is never embedded in the binary under the default
-(`EnvVarProvider`) and layered (`FileProvider`, `HardwareIdProvider`)
+(`EnvVarProvider`) and layered (`FileProvider`, `MachineIdProvider`)
 configurations.
 
 ### Level 3 — Automated unpacker
@@ -56,7 +56,7 @@ decryption runs, any observer with runtime access sees plaintext.
 |---|---|
 | Zero-config build (`EnvVarProvider`) | `strings`, casual binary inspection (Level 1); also Level 2 because `unlock_key` is not embedded |
 | `FileProvider` + filesystem permissions | Above with OS-enforced access control |
-| `HardwareIdProvider` | Above + binary moved to a different machine |
+| `MachineIdProvider` | Above + binary moved to a different machine |
 | Custom `KeyProvider` (vault, HSM) | Above + offline attackers |
 
 "Zero-config" means no project configuration beyond `build.rs` — the

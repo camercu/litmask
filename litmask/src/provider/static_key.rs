@@ -11,7 +11,7 @@ use crate::provider::KeyProvider;
 /// A provider that holds a fixed [`UnlockKey`] and returns a fresh
 /// copy on every call. **FOR TESTS ONLY** — clones the unlock key on
 /// every call. Production code should use [`crate::EnvVarProvider`],
-/// [`crate::FileProvider`], or [`crate::HardwareIdProvider`].
+/// [`crate::FileProvider`], or [`crate::MachineIdProvider`].
 ///
 /// # Examples
 ///
@@ -29,7 +29,7 @@ use crate::provider::KeyProvider;
 /// secret bytes into a fresh 32-byte buffer. That cost is acceptable
 /// in tests and in the `static_provider` cautionary example, but it
 /// duplicates secret material into process memory and defeats the
-/// hardware-binding aim of the layered key strategy — never wire it
+/// machine-ID-binding aim of the layered key strategy — never wire it
 /// into a release build.
 ///
 /// The `S` type parameter is a test seam: production code always

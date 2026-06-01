@@ -59,17 +59,17 @@ aes-gcm = [
 # is meant to serve. Users targeting embedded AES can still opt in
 # via `--features alloc,aes-gcm` (aes-gcm precedence rule applies).
 alloc = ["chacha20-poly1305"]
-# Pulls in `machine-uid` for `HardwareIdProvider` (§2.5.4, §1.6.5).
+# Pulls in `machine-uid` for `MachineIdProvider` (§2.5.4, §1.6.5).
 # Opt-in only: the dependency adds platform-specific code paths and a
 # transitive `winreg`/`uuid` graph on Windows, which downstream users
-# without a hardware-bound deployment have no reason to compile.
+# without a machine-ID-bound deployment have no reason to compile.
 # `std` is load-bearing because `machine-uid` requires it for its
 # file-system identity probes (`/etc/machine-id`, Windows registry,
-# etc.). Making the dependency explicit keeps `hw-id` from being a
+# etc.). Making the dependency explicit keeps `machine-id` from being a
 # feature combination that compiles half the time. `weak_mask!()`
 # itself works under `no_std + alloc` via the `WeakCell` shim
 # (see `litmask::runtime::WeakCell`).
-hw-id = ["std", "dep:machine-uid"]
+machine-id = ["std", "dep:machine-uid"]
 
 [dependencies]
 litmask-internal.workspace = true
@@ -84,14 +84,14 @@ zeroize = { version = "1", features = ["derive"] }
 [build-dependencies]
 litmask-build.workspace = true
 
-# `hw_id_provider` exercises HardwareIdProvider, which only exists
-# under the `hw-id` feature. Pinning it via `required-features` means
+# `machine_id_provider` exercises MachineIdProvider, which only exists
+# under the `machine-id` feature. Pinning it via `required-features` means
 # `cargo build --examples` (no features) skips it cleanly instead of
-# failing with E0432 / E0599, and `cargo run --example hw_id_provider
-# --features hw-id` resolves correctly.
+# failing with E0432 / E0599, and `cargo run --example machine_id_provider
+# --features machine-id` resolves correctly.
 [[example]]
-name = "hw_id_provider"
-required-features = ["hw-id"]
+name = "machine_id_provider"
+required-features = ["machine-id"]
 
 [dev-dependencies]
 litmask-internal.workspace = true
@@ -103,8 +103,8 @@ trybuild = "1"
 [lints]
 workspace = true
 
-# docs.rs renders every feature-gated symbol (HardwareIdProvider under
-# `hw-id`, the aes-gcm cipher path under `aes-gcm`, etc.) so users see
+# docs.rs renders every feature-gated symbol (MachineIdProvider under
+# `machine-id`, the aes-gcm cipher path under `aes-gcm`, etc.) so users see
 # the full API surface instead of just the default-features subset.
 # `just doc` mirrors this with `--all-features` to keep local doc
 # output aligned with the published page.

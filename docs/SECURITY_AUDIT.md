@@ -17,7 +17,7 @@ crate names — this is expected and not a security concern (debug builds
 are not deployment artifacts).
 
 Three examples are intentionally excluded from the identifier scrub
-(`static_provider`, `file_provider`, `hw_id_provider`) because they
+(`static_provider`, `file_provider`, `machine_id_provider`) because they
 reference canonical env-var names containing forbidden substrings for
 pedagogical clarity. These are documented in `example_scrub.rs`.
 
@@ -53,7 +53,7 @@ many Rust programs and does not identify litmask.
 - Neither implements `Debug` with key contents — `UnlockKey`'s `Debug`
   prints `UnlockKey([REDACTED])`.
 - `EnvVarProvider` wraps the env-var `String` in `Zeroizing<String>`.
-- `HardwareIdProvider` wraps the machine-id `String` in
+- `MachineIdProvider` wraps the machine-id `String` in
   `Zeroizing<String>`.
 - `FileProvider` reads into a `Zeroizing<Vec<u8>>` buffer.
 - `bind.rs` uses `Zeroizing` for the decrypted `mask_key` intermediate.
@@ -100,7 +100,7 @@ Tone conforms to deliberate understatement policy.
 | `blake3` | Key derivation, nonce | Official impl, constant-time eq |
 | `zeroize` | Key wiping | RustCrypto standard |
 | `base64ct` | Base64url encoding | Constant-time, RustCrypto |
-| `machine-uid` | Hardware ID (CLI) | Small crate, reads `/etc/machine-id` or equivalent |
+| `machine-uid` | Machine ID (CLI) | Small crate, reads `/etc/machine-id` or equivalent |
 | `clap` | CLI argument parsing | Standard, CLI-only |
 | `toml` | Config parsing | Standard, CLI-only |
 

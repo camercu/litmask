@@ -8,7 +8,7 @@
 //!
 //! - [`env`] / [`EnvVarProvider`] — `LITMASK_UNLOCK_KEY` environment var
 //! - [`file`] / [`FileProvider`] — filesystem path, base64url or raw
-//! - [`hw_id`] / [`HardwareIdProvider`] — machine-id + BLAKE3 (opt-in)
+//! - [`machine_id`] / [`MachineIdProvider`] — machine-id + BLAKE3 (opt-in)
 //! - [`static_key`] / [`StaticProvider`] — fixed key, tests-only
 
 use crate::error::KeyError;
@@ -18,16 +18,16 @@ use crate::key::UnlockKey;
 pub(crate) mod env;
 #[cfg(feature = "std")]
 pub(crate) mod file;
-#[cfg(feature = "hw-id")]
-pub(crate) mod hw_id;
+#[cfg(feature = "machine-id")]
+pub(crate) mod machine_id;
 pub(crate) mod static_key;
 
 #[cfg(feature = "std")]
 pub use env::EnvVarProvider;
 #[cfg(feature = "std")]
 pub use file::{FileProvider, KeyEncoding};
-#[cfg(feature = "hw-id")]
-pub use hw_id::HardwareIdProvider;
+#[cfg(feature = "machine-id")]
+pub use machine_id::MachineIdProvider;
 pub use static_key::StaticProvider;
 
 /// A source of `unlock_key` for the layered key strategy.

@@ -34,7 +34,9 @@ pub use self::aead::CURRENT_CIPHER;
 pub use self::aead::{AeadError, aead_decrypt, aead_encrypt};
 
 mod kdf;
-pub use kdf::{HW_ID_DERIVATION_CONTEXT, WEAK_XOR_KEY_LEN, derive_hw_key, derive_weak_xor_key};
+pub use kdf::{
+    MACHINE_ID_DERIVATION_CONTEXT, WEAK_XOR_KEY_LEN, derive_machine_id_key, derive_weak_xor_key,
+};
 
 mod nonce;
 pub use nonce::{nonce_for_call_site, nonce_for_wrapper};

@@ -36,7 +36,7 @@ Tool versions pinned in `.tool-versions` — single source of truth.
 - `litmask` runtime: `init!()` decrypts `mask_key` from the embedded
   wrapper using `unlock_key` from a `KeyProvider`. `mask!()` decrypts
   individual blobs using `mask_key`.
-- `litmask bind` re-encrypts the wrapper under a hardware-derived
+- `litmask bind` re-encrypts the wrapper under a machine-ID-derived
   key. `inspect` verifies the wrapper is findable.
 
 ## Conventions

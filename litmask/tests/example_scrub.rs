@@ -39,13 +39,13 @@ use common::Profile;
 ///   plaintext-key flow end-to-end.
 /// - `file_provider`: demonstrates `FileProvider`; reads
 ///   `LITMASK_UNLOCK_KEY_FILE` to find the key file.
-/// - `hw_id_provider`: gated behind `--features hw-id` (see
-///   [`hw_id_provider_example_masked_fixtures_absent_from_binary`]).
-///   The BLAKE3 context literal `"hw-v1"` is hidden by
-///   `weak_mask!()` in `HardwareIdProvider`, so it doesn't leak —
+/// - `machine_id_provider`: gated behind `--features machine-id` (see
+///   [`machine_id_provider_example_masked_fixtures_absent_from_binary`]).
+///   The BLAKE3 context literal `"machine-v1"` is hidden by
+///   `weak_mask!()` in `MachineIdProvider`, so it doesn't leak —
 ///   but the `blake3` crate embeds its own name in internal symbol
 ///   strings (e.g. `blake3_*` function names) that we can't filter
-///   away. The `hw_id` scrub allow-lists `blake3` specifically.
+///   away. The `machine_id` scrub allow-lists `blake3` specifically.
 const EXAMPLES: &[&str] = &[
     "hello_world",
     "weak_mask_demo",
@@ -57,7 +57,7 @@ const EXAMPLES: &[&str] = &[
     "mask_print_e2e",
 ];
 
-const EXCEPTIONS: &[&str] = &["static_provider", "file_provider", "hw_id_provider"];
+const EXCEPTIONS: &[&str] = &["static_provider", "file_provider", "machine_id_provider"];
 
 #[test]
 fn no_forbidden_substrings_in_any_example_binary() {
@@ -315,7 +315,7 @@ fn twain_fixture_absent_from_canonical_examples() {
     }
 }
 
-/// `hw_id_provider` is gated behind `--features hw-id` (per its
+/// `machine_id_provider` is gated behind `--features machine-id` (per its
 /// `required-features` in `Cargo.toml`), so the workspace's default
 /// `cargo build --workspace --examples` skips it cleanly and the
 /// `test-examples` shell recipe cannot run it (init would fail with
@@ -323,8 +323,8 @@ fn twain_fixture_absent_from_canonical_examples() {
 /// The masking property is testable without ever executing the
 /// example: build with the feature and scrub the binary.
 ///
-/// The test shells out to `cargo build --features hw-id` directly
-/// rather than gating on `#[cfg(feature = "hw-id")]` — the test
+/// The test shells out to `cargo build --features machine-id` directly
+/// rather than gating on `#[cfg(feature = "machine-id")]` — the test
 /// binary itself doesn't need the feature enabled to invoke cargo
 /// with it. That keeps the scrub running under the standard
 /// `cargo test --workspace` invocation that CI uses.
@@ -335,25 +335,25 @@ fn twain_fixture_absent_from_canonical_examples() {
 /// the `blake3` crate embeds its own name in internal symbol
 /// strings (`blake3_*` function names) regardless of how the
 /// downstream code uses it. The BLAKE3 context literal itself
-/// (`"hw-v1"`) is hidden by `weak_mask!()` in
-/// `HardwareIdProvider::unlock_key`, so it does NOT need an
+/// (`"machine-v1"`) is hidden by `weak_mask!()` in
+/// `MachineIdProvider::unlock_key`, so it does NOT need an
 /// allow-list entry — that's a load-bearing property of the
 /// `weak_mask!()` call.
 #[test]
-fn hw_id_provider_example_masked_fixtures_absent_from_binary() {
-    common::build_example_with_features("hw_id_provider", Profile::Release, &["hw-id"]);
-    let path = common::example_path("hw_id_provider", Profile::Release);
+fn machine_id_provider_example_masked_fixtures_absent_from_binary() {
+    common::build_example_with_features("machine_id_provider", Profile::Release, &["machine-id"]);
+    let path = common::example_path("machine_id_provider", Profile::Release);
     assert!(
         path.exists(),
-        "hw_id_provider binary missing after build (did `cargo build --features hw-id --example hw_id_provider` succeed?): {}",
+        "machine_id_provider binary missing after build (did `cargo build --features machine-id --example machine_id_provider` succeed?): {}",
         path.display(),
     );
     common::assert_substring_absent(&path, "The reports of my death");
-    // `hw-v1` MUST be absent: the runtime `weak_mask!()` is the
+    // `machine-v1` MUST be absent: the runtime `weak_mask!()` is the
     // only thing standing between the BLAKE3 context literal and
     // a `strings(1)`-visible appearance. If a future refactor
     // drops the `weak_mask!()` wrapper, this assertion fires.
-    common::assert_substring_absent(&path, "hw-v1");
+    common::assert_substring_absent(&path, "machine-v1");
     common::assert_no_dirty_words_except(&path, &["blake3"]);
 }
 
