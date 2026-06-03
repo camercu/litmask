@@ -84,7 +84,7 @@ existed to re-key or inspect a finished artifact is removed.
   `machine_salt = KDF(wrapper_nonce, "litmask-machine-id-salt-v1")`,
   recomputed on demand, never embedded; `machine material =
   KDF(machine_id, salt = machine_salt, info = "litmask-machine-id-v1")`.
-  No `--salt`, no `init!(machine_id: "salt")`. Domain separation only;
+  No `--salt`, no salt arg on `MachineIdProvider`. Domain separation only;
   a salt is non-secret and cannot defend (F §5.1).
 - **`weak_mask!`** (keeps derivation-context literals out of
   `strings(1)`; independent of the locator — survives).
@@ -121,7 +121,7 @@ existed to re-key or inspect a finished artifact is removed.
 
 ## 1. Tier-0 default (inherited)
 
-Bare `init!()` — **or no `init!`/`init_with!` call at all** — falls
+Bare `init!()` — **or no `init!` call at all** — falls
 back to `unlock_key = KDF(wrapper_nonce, "litmask-tier0-v1")`. Works
 with no key, no env var, no failure mode; bit-reproducible; degrades to
 an AEAD `obfstr`. Key recoverable from the artifact — the honest floor
@@ -147,52 +147,76 @@ never plaintext.
 
 ## 2. Build-time tiers
 
-All tiers are selected by the provider(s) passed to `init_with!` and
-sealed **at build** from inputs supplied at build:
+Tiers are selected at runtime by the `KeyProvider` **value** passed to
+the single `init!` macro; the wrapper is sealed **at build** from inputs
+supplied at build. There is **one** init macro: bare `init!()` is Tier-0;
+`init!(<provider-expr>)` selects a provider; `init!(MultiProvider::new(
+[..]))` composes. This is the value form already in the code (`init!()`
+defaults to `EnvVarProvider`; old `init_with!($provider:expr)` accepted any
+provider value) collapsed into one entry point — bare = default, arg = any
+`impl KeyProvider`. **No keyword DSL.** Every selectable factor is an
+ordinary `KeyProvider` value, so custom providers are first-class (not a
+`custom:` special case) and the set is type-checked and IDE-discoverable.
 
-- **Tier-0 (default):** nonce-derived, no input.
-- **Env/file factor:** key material from `LITMASK_UNLOCK_KEY` / a file
-  (build-time). Runtime presents the same material via the matching
-  provider.
-- **Machine-id factor:** the **raw machine-id** is supplied at build
-  (§4); litmask derives the factor material internally. Runtime
-  `MachineIdProvider` re-derives from the local machine-id.
-- **Custom factor:** an `impl` whose material the runtime fetches via its
-  own credential path. Build-sealable only if the operator supplies the
-  *exact* material the provider returns at runtime.
-- **Multi:** two or more factors composed (§2.2). The headline tier
-  (§2.3).
+> **Build/runtime are blind to each other (load-bearing).** The macro
+> arg is a *runtime* value the build cannot observe (symmetric blindness,
+> §7-deltas). The DSL keywords never drove the build either: `emit()`
+> seals `mask_key` under `unlock_key` computed from **build-supplied
+> material**, and the runtime provider independently re-sources the same
+> `unlock_key`. So the keying is declared in **two places that must
+> agree** — build inputs and the runtime provider value. Dropping the DSL
+> loses no build wiring; it never had any.
+
+- **Tier-0 (default):** nonce-derived, no input. Bare `init!()`.
+- **Env/file provider:** `EnvVarProvider` / `FileProvider`. Key material
+  from `LITMASK_UNLOCK_KEY` / a file at runtime; the same material is fed
+  to `emit()` at build.
+- **`MachineIdProvider`:** the **raw machine-id** is supplied at build
+  (§4); litmask derives the factor material internally. Runtime re-derives
+  from the local machine-id.
+- **Custom provider:** any `impl KeyProvider` whose material the runtime
+  fetches via its own credential path. Build-sealable only if the operator
+  supplies the *exact* material the provider returns at runtime.
+- **`MultiProvider`:** two or more providers composed (§2.2). The headline
+  tier (§2.3).
 
 There is no deploy-time tier change. To change a binary's tier or key,
 **rebuild**.
 
-- **2.1 (no silent downgrade, normative).** When a tier above Tier-0 is
-  selected but its build-time key input is missing — e.g.
-  `init_with!(env: "LITMASK_UNLOCK_KEY")` with the var unset at build —
-  `emit()` **fails the build**. It MUST NOT fall back to sealing under
-  Tier-0. Fail toward the secure tier the source asked for; never
+- **2.1 (no silent downgrade, normative).** When a provider above Tier-0
+  is selected but its build-time key input is missing — e.g.
+  `init!(EnvVarProvider::default())` with `LITMASK_UNLOCK_KEY` unset at
+  build — `emit()` **fails the build**. It MUST NOT fall back to sealing
+  under Tier-0. Fail toward the secure tier the source asked for; never
   silently ship the floor. (Build-side guard; the source-side "forgot to
   upgrade bare `init!()`" case is caught by §1.1.)
-- **2.2 (composition — always-normalize KDF, inherited F).** A factor
-  yields key **material** (`Zeroizing` bytes, *any* length), not a
-  finished key. There is **no verbatim path**: every config derives
-  `unlock_key = KDF(info = "litmask-unlock-v1", ikm = Σ len_prefixed(
-  material_i))`. A single factor is just composition of one; `multi` is
-  ≥2. One rule — a provider behaves identically standalone and inside a
-  `multi`. `init_with!` grammar (flat, inherited F): `env: "X"`,
-  `file: "/p"`, `machine_id`, `custom: <expr>`, and the
-  **`multi: [..]`** combinator (≥2 elements, **order-significant,
-  all-or-nothing** — every factor must resolve or init fails). Build-
-  sealable iff **every** factor is build-sealable (custom is the only
-  factor that may not be — §2 custom bullet).
+- **2.2 (composition — always-normalize KDF; provider yields material).**
+  A `KeyProvider` yields key **material** (`Zeroizing` bytes, *any*
+  length), **not** a finished key. There is **no verbatim path**: the
+  framework applies **one** KDF at the init boundary
+  (`__init_with_wrapper`): `unlock_key = KDF(info = "litmask-unlock-v1",
+  ikm = material)`. `MultiProvider::new([&a, &b, ..])` is itself a
+  `KeyProvider` whose material is the **flat concatenation** `Σ
+  len_prefixed(child_material_i)` — it **concatenates only, never KDFs**.
+  This is what makes a provider behave **identically standalone and inside
+  a multi**: single → `KDF(material)`, multi → `KDF(Σ len_prefixed(..))`,
+  one KDF either way. (A `MultiProvider` that KDF'd internally would
+  produce a finished key, reviving the verbatim/derived split and breaking
+  nesting — forbidden.) Constructor takes a **flat slice/array** (`new([&a,
+  &b, &c])`), not binary `new(a, b)`, so the len-prefix boundaries stay
+  flat and unambiguous under nesting. **Order = argument order**
+  (order-significant). **All-or-nothing:** `MultiProvider` returns `Err` if
+  any child errs. Build-sealable iff **every** child is build-sealable
+  (custom is the only one that may not be — §2 custom bullet).
 - **2.3 (multi is the only thing that stops a local attacker).** The
-  point of `multi: [machine_id, env: "K"]` is two-factor: the external
-  factor (env/file/custom) is bytes the binary does **not** carry, so a
-  co-resident *different-UID* / off-host process can read the victim
-  binary but not its runtime env (process isolation). A single
-  machine-id factor binds to the host but is reconstructible *on* that
-  host (id readable, salt from the artifact); the external factor is what
-  a same-host attacker lacks. **Caveat (F-R1):** a **same-UID or root**
+  point of `MultiProvider::new([&MachineIdProvider, &EnvVarProvider::
+  default()])` is two-factor: the external factor (env/file/custom) is
+  bytes the binary does **not** carry, so a co-resident *different-UID* /
+  off-host process can read the victim binary but not its runtime env
+  (process isolation). A single machine-id provider binds to the host but
+  is reconstructible *on* that host (id readable, salt from the artifact);
+  the external factor is what a same-host attacker lacks. **Caveat
+  (F-R1):** a **same-UID or root**
   attacker reads `/proc/<pid>/environ` and ptraces the decrypted
   `mask_key` from memory — that defeats *every* factor. multi defends
   the different-UID / off-host case, not local root.
@@ -349,6 +373,8 @@ There is no deploy-time tier change. To change a binary's tier or key,
 | Machine-id | reseal `--to-machine-id` or build | **build-time raw id only** |
 | Retained CLI | `{verify, reseal, keygen, show-machine-id}` | **`{keygen, show-machine-id}`** (generate/read-only) |
 | Tier-0 default, nonce-salt, `weak_mask`, scrub | present | **kept** |
+| Init macro | `init!` + `init_with!` (split) | **single `init!`** (bare = Tier-0, arg = any `impl KeyProvider`) |
+| Factor selection | keyword DSL (`env:/file:/machine_id/multi:[..]`) | **provider values** (`EnvVarProvider`, `MultiProvider::new([..])`); no DSL |
 
 ## 10. Honest residuals
 
