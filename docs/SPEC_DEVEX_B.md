@@ -1,13 +1,22 @@
-# litmask Developer-Experience — Specification (Variant B: Clean Slate)
+# litmask Developer-Experience — Specification (Variant B: Clean Slate — FOUNDATION, not a live contender)
 
-> **Status:** design variant, refine phase. Third option beside
+> **Status:** **demoted to the foundation reference** on 2026-06-02. B is no
+> longer a live contender: its one distinguishing choice — the baked per-crate
+> debug constant `K_dev` (§3) — is the vestige `_D` removed, and every later
+> variant (`_D`/`_E`/`_F`/`_G`) carries B's *other* contributions forward. B's
+> full normative text is **kept intact (not truncated)** precisely because those
+> survivors cite it verbatim — the derived locator (§2), the opaque wrapper
+> (§2.5), reseal-default deployment (§4), the four-outcome `verify` (§5), the
+> seed/nonce-reuse safety (§7), and the no-argv secret channels (§8) are the
+> canonical source of record. Read B for the foundation; read `_F`/`_G` for the
+> live decision. The `K_dev` design below (§3) is **superseded** — see `_D`.
+>
+> Historical framing (when B was a live variant): third option beside
 > `docs/SPEC_DEVEX.md` (build-generated key) and `docs/SPEC_DEVEX_A.md`
-> (operator-owned key). B starts from A's inversion and goes further:
-> it **deletes the metadata file** (the root of most friction) by deriving
-> the locator from the owned key, and **rethinks the deployment shape**
-> (one build + per-customer reseal, not N per-customer builds). Drafted for
-> a deliberate side-by-side decision. If adopted, B replaces both. The
-> project is **pre-release**, so B lands as a direct edit with no migration
+> (operator-owned key); B started from A's inversion and went further — deleting
+> the metadata file by deriving the locator from the owned key, and rethinking
+> the deployment shape (one build + per-customer reseal). The project is
+> **pre-release**, so any adopted variant lands as a direct edit with no migration
 > burden.
 
 ## Summary
