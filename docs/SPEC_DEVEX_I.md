@@ -36,7 +36,12 @@ I challenges that assumption and finds it does not pay:
   "avoid a rebuild" saving is undercut by signing (macOS forces
   re-sign + notarize per artifact regardless), by warm build caches,
   and by provenance (a freshly built artifact is more auditable than
-  an in-place-patched one).
+  an in-place-patched one). The rebuild is **cheap, not merely
+  acceptable**: with a pinned seed the blob pool is byte-identical
+  across customers and reused from cache, so a per-customer rebuild
+  re-seals the wrapper and re-links rather than re-encrypting every
+  literal (§0.4). Reseal's only real saving — skipping blob
+  re-encryption — is already captured by the cached-blob rebuild.
 - **Post-build re-binding mostly cannot help.** The only thing on-host
   re-bind uniquely buys is *deliberate, pre-emptive* migration to a
   new, known machine-id. It **cannot** recover a binary after its
@@ -73,19 +78,25 @@ existed to re-key or inspect a finished artifact is removed.
   runtime, nothing minted or stored, bit-reproducible. The honest
   floor: AEAD upgrade of `obfstr` — key recoverable from the artifact,
   not "key out of binary."
-- **Provider trait + composable, opt-in stronger keys (F/G §2).** A
-  factor is an `impl` yielding key **material** (`Zeroizing` bytes, any
-  length); `unlock_key = KDF(Σ len-prefixed materials)` — single or
-  `multi` (§2.2/§2.3). The trait is the right primitive (the closure-key
-  alternative was evaluated and rejected — a bare closure adds only
-  inline sugar over a custom impl). Tiers are **build-time** choices,
-  not deploy-time.
+- **Provider trait + opt-in stronger keys (F/G §2), composition narrowed.**
+  The external factor is an `impl` yielding key **material** (`Zeroizing`
+  bytes, any length); the framework applies one KDF at the init boundary
+  (`unlock_key = KDF(material)`). The trait is the right primitive (the
+  closure-key alternative was evaluated and rejected — a bare closure adds
+  only inline sugar over a custom impl). Tiers are **build-time** choices,
+  not deploy-time. **I narrows F/G's general `multi`:** the only composable
+  combination is `machine_id + <external>` (`unlock_key = KDF(len_prefixed
+  (machine_material) ‖ len_prefixed(external_material))`), fixed-arity and
+  fixed-order — no variadic `MultiProvider` (§2.2 explains why the
+  order-significant variadic shape had no footgun-free build/runtime
+  agreement).
 - **Nonce-derived `machine_salt`, no user salt (F §5, G).**
   `machine_salt = KDF(wrapper_nonce, "litmask-machine-id-salt-v1")`,
   recomputed on demand, never embedded; `machine material =
   KDF(machine_id, salt = machine_salt, info = "litmask-machine-id-v1")`.
-  No `--salt`, no salt arg on `MachineIdProvider`. Domain separation only;
-  a salt is non-secret and cannot defend (F §5.1).
+  No `--salt`, no salt arg. Domain separation only; a salt is non-secret
+  and cannot defend (F §5.1). (Machine binding is the `machine_id` keyword,
+  not a public `MachineIdProvider` value — §2.)
 - **`weak_mask!`** (keeps derivation-context literals out of
   `strings(1)`; independent of the locator — survives).
 - **Dirty-word scrub** build-time regression (opacity: built binaries
@@ -118,6 +129,31 @@ existed to re-key or inspect a finished artifact is removed.
   tool that rewrites a built binary. The macOS re-sign hole, atomic
   in-place commit, and platform-specific patching code are gone with
   the tools that needed them.
+- **0.4 (per-customer rebuild is cheap — the thesis that makes reseal
+  deletable, normative).** The "one build per customer/machine"
+  objection is bounded by **pinning the seed** (§4.4). A pinned seed
+  holds `mask_key` — and therefore every per-call-site blob —
+  **byte-identical across customers**; only the wrapper's `unlock_key`
+  differs. So a per-customer rebuild **re-seals the wrapper and
+  re-links**, reusing the blob pool from the build cache; it does
+  **not** re-encrypt the literals. The expensive step (re-encrypting
+  all blobs under a new `mask_key`) fires **only** when the seed or the
+  source changes — **not** per customer. This is the load-bearing
+  reason reseal is deleted, not merely the macOS-notarize argument:
+  reseal's sole real saving was *avoiding blob re-encryption*, and a
+  pinned-seed rebuild already avoids it — at link time, with no
+  post-build binary mutation, no locator, no macOS ad-hoc-sign hole.
+  The irreducible per-customer cost (re-link + re-sign + notarize) is
+  identical whether the wrapper is re-keyed by reseal or by rebuild, so
+  reseal buys nothing over a cached-blob rebuild (§9).
+  - **0.4.1 (caching contract, normative).** litmask-build MUST place
+    the per-site blobs and the wrapper in **separately cacheable**
+    outputs so that, with the seed pinned, only the wrapper-sealing
+    step and the final link re-run per customer. A per-customer change
+    of `unlock_key` MUST NOT invalidate the blob cache. (Blob
+    encryption depends on `mask_key`/seed only; the wrapper depends on
+    `unlock_key`. Keeping these as distinct build inputs is what makes
+    0.4 hold rather than being aspirational.)
 
 ## 1. Tier-0 default (inherited)
 
@@ -138,7 +174,11 @@ never plaintext.
     init form at expansion. Under `cfg(not(debug_assertions))` the bare
     `init!()` expansion emits a compile warning ("Tier-0 obfuscation
     floor in a release build"). The macro cannot observe an *absent*
-    init call, so this covers bare `init!()` but not no-init.
+    init call, so this covers bare `init!()` but not no-init. (Distinct
+    from the §2.4 cross-check, which *errors* when the `init!` form and the
+    build tier tag disagree — that catches an *intended* higher tier whose
+    build input is missing; this warning catches a *deliberately* bare
+    `init!()` whose tag legitimately is `tier0`.)
   - **Runtime (any floor build, incl. no-init).** See §5.3: an internal
     init-time check compares the resolved `unlock_key` to
     `KDF(wrapper_nonce, "litmask-tier0-v1")` and emits a one-shot release
@@ -147,79 +187,160 @@ never plaintext.
 
 ## 2. Build-time tiers
 
-Tiers are selected at runtime by the `KeyProvider` **value** passed to
-the single `init!` macro; the wrapper is sealed **at build** from inputs
-supplied at build. There is **one** init macro: bare `init!()` is Tier-0;
-`init!(<provider-expr>)` selects a provider; `init!(MultiProvider::new(
-[..]))` composes. This is the value form already in the code (`init!()`
-defaults to `EnvVarProvider`; old `init_with!($provider:expr)` accepted any
-provider value) collapsed into one entry point — bare = default, arg = any
-`impl KeyProvider`. **No keyword DSL.** Every selectable factor is an
-ordinary `KeyProvider` value, so custom providers are first-class (not a
-`custom:` special case) and the set is type-checked and IDE-discoverable.
+Tiers are selected at runtime by the `init!` **form**; the wrapper is
+sealed **at build** from inputs supplied at build. The external factor is
+an opaque `KeyProvider` **value**, but **machine binding is a one-keyword
+carve-out** (`machine_id`) so the decision to bind to a host is **explicit
+in source** and cross-checkable against the build (§2.4). There are **four
+forms** of the single `init!` macro:
 
-> **Build/runtime are blind to each other (load-bearing).** The macro
-> arg is a *runtime* value the build cannot observe (symmetric blindness,
-> §7-deltas). The DSL keywords never drove the build either: `emit()`
-> seals `mask_key` under `unlock_key` computed from **build-supplied
-> material**, and the runtime provider independently re-sources the same
-> `unlock_key`. So the keying is declared in **two places that must
-> agree** — build inputs and the runtime provider value. Dropping the DSL
-> loses no build wiring; it never had any.
+- `init!()` — **Tier-0** (nonce-derived floor).
+- `init!(<provider-expr>)` — **external-only**; any `impl KeyProvider`.
+- `init!(machine_id)` — **machine-only** (single-factor host binding).
+- `init!(machine_id + <provider-expr>)` — **machine + external** (the
+  headline two-factor tier, §2.3).
 
-- **Tier-0 (default):** nonce-derived, no input. Bare `init!()`.
-- **Env/file provider:** `EnvVarProvider` / `FileProvider`. Key material
-  from `LITMASK_UNLOCK_KEY` / a file at runtime; the same material is fed
-  to `emit()` at build.
-- **`MachineIdProvider`:** the **raw machine-id** is supplied at build
-  (§4); litmask derives the factor material internally. Runtime re-derives
-  from the local machine-id.
-- **Custom provider:** any `impl KeyProvider` whose material the runtime
-  fetches via its own credential path. Build-sealable only if the operator
-  supplies the *exact* material the provider returns at runtime.
-- **`MultiProvider`:** two or more providers composed (§2.2). The headline
-  tier (§2.3).
+The external slot stays a **value**: custom providers are first-class (not
+a `custom:` special case), type-checked, and IDE-discoverable. `machine_id`
+is the **only** keyword — it is litmask-owned, target-host-resolved, and the
+one factor carrying a build/runtime topology hazard, so it earns a
+source-visible, macro-checkable form. **There is no general `MultiProvider`
+and no variadic ordering surface** — the only composable combination is
+machine + one external, fixed-arity and fixed-order (§2.2). Parse: a leading
+`machine_id` token (reserved in first position) optionally followed by `+
+<expr>`; anything else parses as a bare external `<expr>`. Providers do not
+`impl Add`, so `machine_id + X` is never a real binary-add expression.
+
+> **Build/runtime agreement is reconciled at compile time (load-bearing).**
+> `emit()` seals `mask_key` under an `unlock_key` computed from
+> **build-supplied material**, and the runtime independently re-sources the
+> same `unlock_key`. The keying is therefore declared in **two places that
+> must agree** — build inputs and the `init!` form. Rather than leave that
+> agreement to silent runtime AEAD failure, `emit()` publishes a **tracked
+> tier tag** (`LITMASK_SEAL_TIER`, §2.4) that the macro reads at expansion
+> and **cross-checks against the `init!` form**: a mismatch is a
+> `compile_error!`, not a deploy-time surprise. The build still cannot
+> evaluate the external provider *value* (symmetric blindness on the
+> material bytes — that is `material = identity`, Alice's secret-management
+> responsibility), but the *topology* (which factors, machine-bound or not)
+> is now agreed at compile time.
+
+- **Tier-0 (default):** nonce-derived, no input. `init!()`.
+- **Env/file provider:** `EnvVarProvider` / `FileProvider` as the external
+  value. Key material from `LITMASK_UNLOCK_KEY` / a file at runtime; the
+  same material is fed to `emit()` at build via `LITMASK_UNLOCK_KEY`.
+- **`machine_id` keyword:** the **raw machine-id** is supplied at build
+  via `LITMASK_MACHINE_ID` (§4); litmask derives the factor material
+  internally (nonce-derived salt, §4.1). Runtime re-derives from the local
+  machine-id. Machine binding is **never a passed value** — it is the
+  `machine_id` keyword only, so `MachineIdProvider` is **not** a public type.
+- **Custom provider:** any `impl KeyProvider` in the external slot whose
+  material the runtime fetches via its own credential path. Build-sealable
+  only if the operator supplies the *exact* material the provider returns at
+  runtime (fed to `emit()` via `LITMASK_UNLOCK_KEY`).
+- **machine + external:** the two-factor headline tier (§2.3), written
+  `init!(machine_id + <provider>)`. The only composable combination.
 
 There is no deploy-time tier change. To change a binary's tier or key,
 **rebuild**.
 
-- **2.1 (no silent downgrade, normative).** When a provider above Tier-0
-  is selected but its build-time key input is missing — e.g.
-  `init!(EnvVarProvider::default())` with `LITMASK_UNLOCK_KEY` unset at
-  build — `emit()` **fails the build**. It MUST NOT fall back to sealing
-  under Tier-0. Fail toward the secure tier the source asked for; never
-  silently ship the floor. (Build-side guard; the source-side "forgot to
-  upgrade bare `init!()`" case is caught by §1.1.)
-- **2.2 (composition — always-normalize KDF; provider yields material).**
-  A `KeyProvider` yields key **material** (`Zeroizing` bytes, *any*
-  length), **not** a finished key. There is **no verbatim path**: the
-  framework applies **one** KDF at the init boundary
+- **2.1 (no silent downgrade, normative — now a compile-time guarantee).**
+  The `init!` form and the build-emitted tier tag (§2.4) MUST agree. A
+  higher-tier form whose build input is missing — e.g.
+  `init!(machine_id + EnvVarProvider::default())` built with
+  `LITMASK_MACHINE_ID` **or** `LITMASK_UNLOCK_KEY` unset — yields a tag that
+  does not match the form, which is a **`compile_error!`** (§2.4). `emit()`
+  MUST NOT fall back to sealing under a lower tier and let it ship. Fail
+  toward the tier the source asked for; never silently ship the floor or a
+  weaker binding. This subsumes the former build-side guard: the source-side
+  "forgot to upgrade bare `init!()`" case is *also* caught — bare `init!()`
+  against a non-`tier0` tag fails to compile (and §1.1 still warns on a
+  deliberate release Tier-0).
+- **2.2 (composition — always-normalize KDF; fixed machine + external).**
+  The framework applies **one** KDF at the init boundary
   (`__init_with_wrapper`): `unlock_key = KDF(info = "litmask-unlock-v1",
-  ikm = material)`. `MultiProvider::new([&a, &b, ..])` is itself a
-  `KeyProvider` whose material is the **flat concatenation** `Σ
-  len_prefixed(child_material_i)` — it **concatenates only, never KDFs**.
-  This is what makes a provider behave **identically standalone and inside
-  a multi**: single → `KDF(material)`, multi → `KDF(Σ len_prefixed(..))`,
-  one KDF either way. (A `MultiProvider` that KDF'd internally would
-  produce a finished key, reviving the verbatim/derived split and breaking
-  nesting — forbidden.) Constructor takes a **flat slice/array** (`new([&a,
-  &b, &c])`), not binary `new(a, b)`, so the len-prefix boundaries stay
-  flat and unambiguous under nesting. **Order = argument order**
-  (order-significant). **All-or-nothing:** `MultiProvider` returns `Err` if
-  any child errs. Build-sealable iff **every** child is build-sealable
-  (custom is the only one that may not be — §2 custom bullet).
-- **2.3 (multi is the only thing that stops a local attacker).** The
-  point of `MultiProvider::new([&MachineIdProvider, &EnvVarProvider::
-  default()])` is two-factor: the external factor (env/file/custom) is
-  bytes the binary does **not** carry, so a co-resident *different-UID* /
-  off-host process can read the victim binary but not its runtime env
-  (process isolation). A single machine-id provider binds to the host but
-  is reconstructible *on* that host (id readable, salt from the artifact);
-  the external factor is what a same-host attacker lacks. **Caveat
-  (F-R1):** a **same-UID or root**
+  ikm = material)`. For a single external factor, `material` is the
+  provider's bytes (`Zeroizing`, *any* length). For
+  `init!(machine_id + <provider>)`, the macro injects a fixed two-factor
+  composition whose material is the **flat concatenation**
+  `len_prefixed(machine_material) ‖ len_prefixed(external_material)` —
+  concatenate only, **never** an inner KDF (an inner KDF would produce a
+  finished key, reviving the verbatim/derived split — forbidden). One KDF
+  either way: single → `KDF(material)`, two-factor → `KDF(Σ len_prefixed
+  (..))`. **Order is fixed by construction** (machine material first,
+  external second) — there is no variadic constructor and no argument-order
+  surface to get wrong, which is precisely why the general `MultiProvider`
+  was dropped (its order-significant variadic shape had no
+  footgun-free build/runtime agreement; canonical-sort fails on unsortable
+  custom providers, and a composition fingerprint only detects). The 8-byte
+  LE length-prefix convention is the existing crate-wide one
+  (`litmask-internal::kdf`). **All-or-nothing:** if either factor errs,
+  init errs. Build-sealable iff **both** factors are build-sealable (the
+  custom external is the only one that may not be — §2 custom bullet).
+- **2.3 (the two-factor tier is the only thing that stops a local
+  attacker).** The point of `init!(machine_id + EnvVarProvider::default())`
+  is two-factor: the external factor (env/file/custom) is bytes the binary
+  does **not** carry, so a co-resident *different-UID* / off-host process
+  can read the victim binary but not its runtime env (process isolation). A
+  bare `init!(machine_id)` binds to the host but is reconstructible *on* that
+  host (id readable, salt from the artifact); the external factor is what a
+  same-host attacker lacks. **Caveat (F-R1):** a **same-UID or root**
   attacker reads `/proc/<pid>/environ` and ptraces the decrypted
-  `mask_key` from memory — that defeats *every* factor. multi defends
-  the different-UID / off-host case, not local root.
+  `mask_key` from memory — that defeats *every* factor. The two-factor tier
+  defends the different-UID / off-host case, not local root.
+
+- **2.4 (build-authoritative tier tag + compile-time cross-check,
+  normative).** `emit()` is **dumb and presence-driven**: it selects the
+  sealed tier purely from which build inputs are present, and publishes the
+  result as a **tracked tier tag** the macro validates against the `init!`
+  form.
+
+  - **Tag derivation (presence-driven):**
+
+    | `LITMASK_MACHINE_ID` | `LITMASK_UNLOCK_KEY` | tag |
+    |---|---|---|
+    | set | set | `machine_external` |
+    | set | — | `machine` |
+    | — | set | `external` |
+    | — | — | `tier0` |
+
+  - **Channel (normative): the tag is a *tracked* build output, not an
+    `$OUT_DIR` file.** `emit()` emits
+    `cargo:rustc-env=LITMASK_SEAL_TIER=<tag>` plus
+    `cargo:rerun-if-env-changed=LITMASK_MACHINE_ID` and
+    `=LITMASK_UNLOCK_KEY`. A `rustc-env` value is part of the crate's
+    compile fingerprint, so flipping a factor reliably **recompiles** the
+    consumer crate and re-runs the macro check. An `$OUT_DIR` marker file
+    would **not**: proc-macro reads of `$OUT_DIR` contents are untracked by
+    the compiler (`tracked_path` is nightly-only), so a stale check could
+    survive a factor flip. The forced recompile also unsticks the (likewise
+    untracked) `litmask_wrapper.bin`.
+  - **Cross-check (normative): the `init!` form MUST match the tag, or the
+    build fails.** 1:1 mapping:
+
+    | `init!` form | required `LITMASK_SEAL_TIER` |
+    |---|---|
+    | `init!()` | `tier0` |
+    | `init!(<expr>)` | `external` |
+    | `init!(machine_id)` | `machine` |
+    | `init!(machine_id + <expr>)` | `machine_external` |
+
+    Any disagreement is a `compile_error!` naming the missing input. This
+    closes **both** drop-a-variable directions: a dropped
+    `LITMASK_MACHINE_ID` (tag → `external`) and a dropped
+    `LITMASK_UNLOCK_KEY` (tag → `machine`) each contradict an
+    `init!(machine_id + …)` source and fail to compile, rather than silently
+    downgrading the binding. The tag carries **no secret** and is **never
+    embedded** in the shipped binary — it lives only on the build→macro
+    channel, so it adds no opacity leak (contrast the rejected
+    wrapper-embedded composition fingerprint, which both leaked and only
+    *detected*).
+  - **AC4 narrowing (owed):** litmask-build's AC4 test currently bans **all**
+    `cargo:rustc-env=LITMASK*` (its real intent: no *secret* via rustc-env,
+    which logs at `--verbose` and injects downstream). Narrow it to "**no
+    secret** via rustc-env; `LITMASK_SEAL_TIER` is the sole whitelisted
+    non-secret tag." Do not evade the test by renaming the variable — fix the
+    rule to state its intent.
 
 ## 3. Build-time secret inputs
 
@@ -240,16 +361,33 @@ There is no deploy-time tier change. To change a binary's tier or key,
   A secret store (JIT fetch, no persistent key pile, audit) handles
   at-rest custody; the irreducible remainder is this same §3.2 in-process
   exposure, once per build.
+- **3.3 (named build channels, normative).** The two factor inputs have
+  fixed env names so `emit()` can derive the tier tag (§2.4) by presence:
+  - `LITMASK_MACHINE_ID` — the **raw** target machine-id (§4.1), not a
+    precomputed key.
+  - `LITMASK_UNLOCK_KEY` — the external factor's **material** (the same
+    bytes the runtime provider re-sources; `material = identity`).
+  File / stdin equivalents MAY back either channel, but presence on the
+  channel is what drives the tag. Neither value is ever echoed (§6.2); the
+  derived `LITMASK_SEAL_TIER` tag is non-secret and is the only litmask
+  value permitted on the `rustc-env` channel (§2.4 AC4 narrowing).
 
 ## 4. Machine-id tier — raw id at build, no self-service rebind
 
 - **4.1 (raw-id interface, normative).** The provisioning channel
   carries the **raw machine-id** (Bob runs `show-machine-id`,
-  reports it to the builder **before** the build). The builder passes
-  the id to `emit()`, which generates the nonce, computes
-  `machine_salt = KDF(nonce)`, derives `unlock_key`, and seals. The
-  builder **never** receives or re-runs a precomputed key — litmask
-  owns the KDF as the single source of truth.
+  reports it to the builder **before** the build). The builder supplies
+  the id to `emit()` via `LITMASK_MACHINE_ID` (§3.3), which generates the
+  nonce, computes `machine_salt = KDF(nonce)`, and derives the **machine
+  factor material**. For `init!(machine_id)` that material alone is KDF'd
+  into `unlock_key`; for `init!(machine_id + <provider>)` it is composed
+  with the external material first (§2.2). The builder **never** receives
+  or re-runs a precomputed key — litmask owns the KDF as the single source
+  of truth. Because the raw id is captured **before** the build, the
+  machine factor — though a *target-host* property of Bob's machine — needs
+  **no post-build re-key**: `emit()` reproduces it from the supplied id and
+  the build-owned nonce, exactly as a single-factor seal does
+  (per-customer = per-build, §0.2).
 - **4.1.1 (self-checking id token, normative).** `show-machine-id`
   prints a **self-validating token** on **stdout** — the raw id plus
   embedded check symbols (Crockford base32 + check digit, or a short
@@ -282,6 +420,34 @@ There is no deploy-time tier change. To change a binary's tier or key,
     `litmask keygen | <store> put cryptio/bob/seed` up front, per
     customer, so a pinned seed gives bit-reproducible patch-rebuilds
     (I-R4) without the removed ledger.
+
+- **4.5 (scope — machine-id is a stable-host factor, normative).**
+  Build-time machine binding targets **stable** hosts: the id is
+  captured once (§4.1) and the binary is rebuilt on the rare drift
+  (§4.3). For **churning fleets** — autoscaled VMs, ephemeral cloud
+  instances, frequent hardware swaps — where the id changes often,
+  machine-id is the **wrong factor**: every drift forces a full
+  per-customer rebuild + re-sign + notarize cycle (I-R1). Such
+  deployments SHOULD bind on an **external factor delivered by the
+  orchestrator** instead (`EnvVarProvider` / `FileProvider` / custom),
+  which the fleet's existing provisioning (env injection, mounted
+  secret, vault fetch) rotates with **no litmask rebuild**. Machine-id
+  is for "ship a desktop app to Bob's one durable machine," not for a
+  fleet that re-provisions hosts. The docs MUST state this scope so a
+  consumer does not reach for machine-id on a churning fleet and land
+  on the rebuild treadmill.
+  - **4.5.1 (on-host install-time bind — escape hatch, non-normative).**
+    Where the target id is knowable only on the host *and*
+    rebuild-per-host is unacceptable, an **installer-time** bind is an
+    out-of-band option: ship a Tier-0 or env-tier binary and have a
+    first-run/installer step on the *trusted* target derive and store
+    the host factor, binding subsequent copies. This is **not** a
+    litmask mechanism — it is the deleted post-build self-seal, circular
+    as a *general* keying path (header), and it protects only against
+    theft *after* install (the shipped pre-install artifact is only
+    Tier-0/env-grade in transit). It is named only as a deployment
+    pattern the operator may build themselves for the narrow
+    machine-binding case; litmask ships no tool for it.
 
 ## 5. Wrapper format
 
@@ -356,10 +522,19 @@ There is no deploy-time tier change. To change a binary's tier or key,
 - `THREAT_MODEL.md`: add §3.2 build-env key exposure, §7.1 debug
   self-decrypt boundary, §7.2 opacity-without-locator.
 - `CONTEXT.md`: retire **locator** and **litmask.config** as terms (or
-  mark historical); `bind`/`reseal`/`inspect` terms removed.
+  mark historical); `bind`/`reseal`/`inspect` terms removed. Retire
+  **`MultiProvider`** and the public **`MachineIdProvider`** type; add
+  **`machine_id` keyword**, **`LITMASK_SEAL_TIER` tier tag**, and the
+  **`LITMASK_MACHINE_ID` / `LITMASK_UNLOCK_KEY`** build channels.
 - `SPECIFICATION.md`: large surgery — delete §2.9 CLI re-key/inspect
   flows and the derived-locator sections; collapse the wrapper format
   to §5.1.
+- `litmask-build` AC4 test: narrow from "no `LITMASK*` rustc-env" to "no
+  *secret* via rustc-env; `LITMASK_SEAL_TIER` whitelisted" (§2.4).
+- `litmask`: remove `MachineIdProvider` from the public API (machine binding
+  is the `machine_id` keyword); `emit()` emits the `LITMASK_SEAL_TIER` tag +
+  `rerun-if-env-changed` for both factor channels; `init!` reads the tag and
+  cross-checks the form (§2.4).
 
 ## 9. What I removes vs G
 
@@ -373,8 +548,10 @@ There is no deploy-time tier change. To change a binary's tier or key,
 | Machine-id | reseal `--to-machine-id` or build | **build-time raw id only** |
 | Retained CLI | `{verify, reseal, keygen, show-machine-id}` | **`{keygen, show-machine-id}`** (generate/read-only) |
 | Tier-0 default, nonce-salt, `weak_mask`, scrub | present | **kept** |
-| Init macro | `init!` + `init_with!` (split) | **single `init!`** (bare = Tier-0, arg = any `impl KeyProvider`) |
-| Factor selection | keyword DSL (`env:/file:/machine_id/multi:[..]`) | **provider values** (`EnvVarProvider`, `MultiProvider::new([..])`); no DSL |
+| Init macro | `init!` + `init_with!` (split) | **single `init!`**, four forms: `()` / `(<expr>)` / `(machine_id)` / `(machine_id + <expr>)` |
+| Factor selection | keyword DSL (`env:/file:/machine_id/multi:[..]`) | **external = `impl KeyProvider` value; `machine_id` = one-keyword carve-out.** No general `MultiProvider`, no variadic order surface |
+| Multi-factor | general `MultiProvider::new([..])` (variadic, order-significant) | **fixed `machine_id + <external>`** (arity-2, order fixed by construction §2.2) |
+| Build/runtime tier agreement | implicit (silent runtime AEAD failure on mismatch) | **tracked `LITMASK_SEAL_TIER` rustc-env tag, cross-checked at compile time** (§2.4) |
 
 ## 10. Honest residuals
 
@@ -383,8 +560,13 @@ There is no deploy-time tier change. To change a binary's tier or key,
   cost: *every* drift = a full per-customer rebuild + re-sign + notarize
   cycle, re-opening the provisioning channel — reseal's channel cost is
   relabeled, not removed. For fleets with churning ids (VMs, cloud,
-  hardware swaps) this recurs; "machine changes are infrequent" (§4.3)
+  hardware swaps) this recurs; the infrequent-change premise (§4.3)
   is an assumption about the target deployment, not a guarantee.
+  **Scoped by §4.5:** machine-id is documented as a **stable-host**
+  factor; churning fleets are directed to an external
+  orchestrator-delivered factor instead, sidestepping the treadmill.
+  The residual stands only for genuinely stable hosts that nonetheless
+  occasionally drift, where rebuild is the accepted recovery.
 - **I-R2 (no off-box assurance).** No way to confirm a bound binary will
   unlock on a target except by running it there. The former §6
   build-time round-trip is **gone** (it proved crypto-correctness, not
@@ -395,13 +577,19 @@ There is no deploy-time tier change. To change a binary's tier or key,
   the key; untrusted build deps out of scope. No boundary expansion vs
   G: the build host already holds the seed + `mask_key`, and a secret
   store handles at-rest custody (§3.2).
-- **I-R4 (per-customer build cost).** N machines = N builds. Softened
-  by build caching; the heavy step is re-encrypting blobs after a
-  changed seed. Accepted as the price of clean provenance.
-  Bit-reproducible patch-rebuild requires the customer's seed pinned
-  **up front** (mint with `keygen`, store per §4.4); "deterministic from
-  build inputs" holds only with the seed treated as a pinned input —
-  there is no post-hoc seed-recovery channel (§6.2).
+- **I-R4 (per-customer build cost — bounded, not N full builds).** With
+  the seed pinned (§4.4) the blob pool is byte-identical across
+  customers and reused from cache, so a per-customer rebuild re-seals
+  the wrapper and re-links — it does **not** re-encrypt the literals
+  (§0.4, caching contract §0.4.1). The heavy step (re-encrypting blobs
+  under a new `mask_key`) fires only on a seed or source change, not per
+  customer. The irreducible per-customer cost (re-link + re-sign +
+  notarize) is exactly what reseal also could not avoid, so this is not
+  a regression vs G. Bit-reproducible patch-rebuild requires the
+  customer's seed pinned **up front** (mint with `keygen`, store per
+  §4.4); deterministic-from-build-inputs holds only with the seed
+  treated as a pinned input — there is no post-hoc seed-recovery channel
+  (§6.2).
 - **I-R5 (`keygen` — resolved: kept).** Direct-key and seed tiers need a
   generator; `keygen` ships as a pure stdout generator (§4.4), no binary
   I/O, not part of the removed re-key surface. It also resolves seed
