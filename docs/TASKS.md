@@ -128,45 +128,56 @@ becomes Embedded nonce-derived (drop `EnvVarProvider::default`).
 **Repurpose `StaticProvider` as the Embedded-tier runtime provider.**
 Today it holds a verbatim `UnlockKey` in process memory ("FOR TESTS
 ONLY", `static_key.rs:1`) — the opposite of the Embedded tier, which
-stores no key and recomputes it from the public wrapper nonce. The
-`KeyProvider::unlock_key(&self)` trait takes no nonce (`mod.rs:54`), and
-the runtime calls `provider.unlock_key()` with no wrapper in scope
-(`runtime.rs:89`), so the nonce must be captured at construction. Add a
-`StaticProvider::embedded(&wrapper)` constructor that stores only the
-12-byte cleartext nonce (non-secret — no zeroize needed) and derives
-`unlock_key()` on demand via `litmask_internal::derive_embedded_unlock_key`.
-The `init!()` expansion and the lazy path both build it from the
-`include_bytes!`-embedded wrapper and feed `__init_with_wrapper` /
-`mask_key_or_lazy_init`, replacing `EnvVarProvider::default`.
+stores no key and recomputes it from the public wrapper nonce. Drop the
+verbatim-key storage entirely. The `KeyProvider::unlock_key(&self)` trait
+takes no nonce (`mod.rs:54`), and the runtime calls `provider.unlock_key()`
+with no wrapper in scope (`runtime.rs:89`), so the nonce is captured at
+construction: `StaticProvider::new(&wrapper)` stores only the 12-byte
+cleartext nonce (non-secret — no zeroize needed, drop the `Zeroize`/Drop
+plumbing and the `Counted` test seam) and derives `unlock_key()` on
+demand via `litmask_internal::derive_embedded_unlock_key`. The `init!()`
+expansion and the lazy path both build it from the `include_bytes!`-
+embedded wrapper and feed `__init_with_wrapper` / `mask_key_or_lazy_init`,
+replacing `EnvVarProvider::default`.
 
-Keep the existing `StaticProvider::new(UnlockKey)` verbatim-key
-constructor as the test/`init_with!` injection seam (used by
-`tests/static_provider.rs`, `examples/static_provider.rs`, the
-`from_base64url` seam at `lib.rs:368`); it is the explicit-key path, the
-new `embedded` constructor is the keyless-floor path. (If we'd rather
-fully retire the verbatim `new`, that's a follow-up — say so.)
+**Move verbatim-key injection to a `TestProvider`.** The explicit-key
+path is only ever a test seam, so it leaves the production surface: add
+a `TestProvider` (holds a fixed `UnlockKey`, returns it verbatim) gated
+behind `#[cfg(test)]` for in-crate unit tests (e.g. the `from_base64url`
+seam at `lib.rs:368`). `cfg(test)` does NOT cross crate boundaries, so
+the external users of the old `StaticProvider::new(UnlockKey)` —
+`tests/static_provider.rs` and `examples/static_provider.rs` — cannot
+see it; they each define a trivial inline `KeyProvider` impl instead
+(the trait is public). The cautionary `static_provider` example's
+"don't ship a static key" lesson is moot once `StaticProvider` is the
+keyless floor; retire or repurpose it rather than port it.
 
 ### Acceptance Criteria
 
-- [ ] `StaticProvider::embedded(&wrapper)` stores only the wrapper nonce
-      and returns `derive_embedded_unlock_key(nonce)` from `unlock_key()`;
-      no verbatim key bytes are held (TDD: assert equality vs.
-      `derive_embedded_unlock_key`, and that the derived key round-trips
-      a build-emitted wrapper through `decrypt_wrapper`)
+- [ ] `StaticProvider::new(&wrapper)` stores only the wrapper nonce and
+      returns `derive_embedded_unlock_key(nonce)` from `unlock_key()`; no
+      verbatim key bytes are held, no zeroize/Drop remains (TDD: assert
+      equality vs. `derive_embedded_unlock_key`, and that the derived key
+      round-trips a build-emitted wrapper through `decrypt_wrapper`)
+- [ ] `TestProvider` exists only under `#[cfg(test)]`, holds a verbatim
+      `UnlockKey`, and is absent from the public API (no `pub use`); a
+      release build exposes no fixed-key provider
 - [ ] `init!()` expands via proc macro and decrypts the wrapper under
-      Embedded using `StaticProvider::embedded`
+      Embedded using `StaticProvider::new(&wrapper)`
 - [ ] `init!()` against a non-`embedded` tag → `compile_error!` naming
       the mismatch; absent tag → `compile_error!`
 - [ ] Code with no `init!()` at all decrypts `mask!` literals via the
-      lazy Embedded path through `StaticProvider::embedded` (no
+      lazy Embedded path through `StaticProvider::new(&wrapper)` (no
       `EnvVarProvider::default` reference remains)
-- [ ] `StaticProvider::new(UnlockKey)` injection seam still compiles and
-      its `init_with!` tests/example stay green
+- [ ] `tests/static_provider.rs` and `examples/static_provider.rs` no
+      longer reference `StaticProvider::new(UnlockKey)`; their `init_with!`
+      coverage uses an inline `KeyProvider` impl (or the example is
+      retired)
 - [ ] e2e test: a binary using `mask!` both with and without `init!()`
       produces correct plaintext under an Embedded build
 - [ ] SPECIFICATION §1.4.1/§1.8.2 document the `init!()` form, the lazy
-      Embedded fallback, and `StaticProvider::embedded`; CONTEXT.md notes
-      the dual constructor
+      Embedded fallback, and the nonce-derived `StaticProvider`; CONTEXT.md
+      updates the `StaticProvider` entry (now keyless, nonce-derived)
 
 ---
 
