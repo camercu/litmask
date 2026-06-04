@@ -87,7 +87,7 @@ compiled `CURRENT_CIPHER`, not a wire byte.
 
 ---
 
-## Task 2: Tier-0 seal + tag plumbing (AFK)
+## Task 2: Embedded seal + tag plumbing (AFK) ✅ DONE
 
 **Implements:** §1, §2.4 (tag emission), §6.2; doc: SPECIFICATION §1
 keying, CONTEXT.md
@@ -95,26 +95,25 @@ keying, CONTEXT.md
 
 Split key generation in `emit()`: the seed now derives only
 `mask_key` + nonces; `unlock_key` becomes `KDF(wrapper_nonce,
-"litmask-tier0-v1")` — recomputable at build and runtime from the
-nonce alone. Emit the build-authoritative `LITMASK_SEAL_TIER=tier0`
+"litmask-embedded-v1")` — recomputable at build and runtime from the
+nonce alone. Emit the build-authoritative `LITMASK_SEAL_TIER=embedded`
 tag and the rerun-if-env-changed plumbing. Remove the §6.2 seed echo.
 
 ### Acceptance Criteria
 
-- [ ] `emit()` derives `unlock_key` as `KDF(wrapper_nonce,
-      "litmask-tier0-v1")`, independent of the seed's key stream
-- [ ] `emit()` emits `cargo:rustc-env=LITMASK_SEAL_TIER=tier0` and the
+- [x] `emit()` derives `unlock_key` as `KDF(wrapper_nonce,
+      "litmask-embedded-v1")`, independent of the seed's key stream
+- [x] `emit()` emits `cargo:rustc-env=LITMASK_SEAL_TIER=embedded` and the
       relevant `cargo:rerun-if-env-changed` directives
-- [ ] Seed echo at litmask-build/src/lib.rs:283 removed; no seed value
-      reaches build output
-- [ ] A Tier-0 build round-trips `mask!` literals (unlock_key derived
+- [x] Seed echo removed; no seed value reaches build output
+- [x] An Embedded build round-trips `mask!` literals (unlock_key derived
       identically at build and runtime)
-- [ ] SPECIFICATION §1 documents Tier-0 derivation; CONTEXT.md gains
+- [x] SPECIFICATION §1 documents Embedded derivation; CONTEXT.md gains
       `LITMASK_SEAL_TIER`
 
 ---
 
-## Task 3: `init!()` proc macro + lazy Tier-0 (AFK)
+## Task 3: `init!()` proc macro + lazy Embedded (AFK)
 
 **Implements:** §2 (no-arg form), §2.1 (no silent downgrade), §2.4
 (cross-check); doc: SPECIFICATION §1.4.1/§1.8.2
@@ -123,21 +122,21 @@ tag and the rerun-if-env-changed plumbing. Remove the §6.2 seed echo.
 Convert `init!` from `macro_rules!` to a proc macro so it can parse
 grammar and conditionally `compile_error!`. This task lands only the
 no-arg `init!()` form. It reads `LITMASK_SEAL_TIER` and cross-checks
-form↔tag: `init!()` requires tag `tier0`. The no-`init!` lazy path
-becomes Tier-0 nonce-derived (drop `EnvVarProvider::default`).
+form↔tag: `init!()` requires tag `embedded`. The no-`init!` lazy path
+becomes Embedded nonce-derived (drop `EnvVarProvider::default`).
 
 ### Acceptance Criteria
 
 - [ ] `init!()` expands via proc macro and decrypts the wrapper under
-      Tier-0
-- [ ] `init!()` against a non-`tier0` tag → `compile_error!` naming
+      Embedded
+- [ ] `init!()` against a non-`embedded` tag → `compile_error!` naming
       the mismatch; absent tag → `compile_error!`
 - [ ] Code with no `init!()` at all decrypts `mask!` literals via the
-      lazy Tier-0 path (no `EnvVarProvider::default` reference remains)
+      lazy Embedded path (no `EnvVarProvider::default` reference remains)
 - [ ] e2e test: a binary using `mask!` both with and without `init!()`
-      produces correct plaintext under a Tier-0 build
+      produces correct plaintext under an Embedded build
 - [ ] SPECIFICATION §1.4.1/§1.8.2 document the `init!()` form and the
-      lazy Tier-0 fallback
+      lazy Embedded fallback
 
 ---
 
@@ -262,7 +261,7 @@ capture stays clean and copy/paste corruption is detectable.
 
 ---
 
-## Task 8: Profile-split diagnostics + Tier-0 floor warning + AC4 (AFK)
+## Task 8: Profile-split diagnostics + Embedded floor warning + AC4 (AFK)
 
 **Implements:** §5.4 (profile-split diagnostics), §1.1 (floor
 warning), §2.4 (AC4 narrowing); doc: SPECIFICATION §5.4, §1.1
@@ -270,20 +269,23 @@ warning), §2.4 (AC4 narrowing); doc: SPECIFICATION §5.4, §1.1
 
 Split runtime diagnostics by profile: debug builds emit loud,
 actionable panic messages; release builds emit bare `panic!()` to
-preserve opacity. Add the §1.1 build-time Tier-0 floor warning
-(`cargo:warning=` when a release build is sealed at `tier0`). Narrow
-the AC4 test from "ban all `LITMASK*` rustc-env" to a whitelist that
-permits `LITMASK_SEAL_TIER`.
+preserve opacity. Add the §1.1 build-time Embedded floor warning
+(`cargo:warning=` when a release build is sealed at `embedded`).
+
+> **Discovery (Task 2):** the AC4 narrowing originally scoped here had to
+> move into Task 2. Emitting `LITMASK_SEAL_TIER` immediately trips the
+> old "ban all `LITMASK*` rustc-env" test, so that test was narrowed to a
+> whitelist as part of landing the tag. AC4 below is already satisfied.
 
 ### Acceptance Criteria
 
 - [ ] Runtime failure panics carry actionable text under
       `cfg(debug_assertions)` and are bare `panic!()` in release
       (verified by build-profile-split test)
-- [ ] A release build sealed at `tier0` emits a `cargo:warning=` floor
+- [ ] A release build sealed at `embedded` emits a `cargo:warning=` floor
       notice; non-release or higher tiers do not
-- [ ] AC4 test permits `cargo:rustc-env=LITMASK_SEAL_TIER` and still
-      bans every other `LITMASK*` rustc-env
+- [x] AC4 test permits `cargo:rustc-env=LITMASK_SEAL_TIER` and still
+      bans every other `LITMASK*` rustc-env (done in Task 2)
 - [ ] `just ci` green
 - [ ] SPECIFICATION §5.4 and §1.1 document the diagnostics split and
       the floor warning

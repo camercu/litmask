@@ -150,8 +150,13 @@ constants and utilities used by both the runtime and CLI crates.
 3. `build.rs` runs:
    - Sources `RNG_SEED` from `LITMASK_RNG_SEED` env var, then (debug builds
      only) from `target/litmask-seed`, then generates a fresh seed.
-   - Generates `mask_key` (32 bytes) and `unlock_key` (32 bytes)
-     deterministically from the seed.
+   - Generates `mask_key` (32 bytes) and the **nonces** deterministically
+     from the seed.
+   - Derives `unlock_key` (32 bytes) for the default **Embedded** seal tier
+     as `BLAKE3::derive_key("litmask-embedded-v1", wrapper_nonce)` — from the
+     cleartext wrapper nonce alone, independent of the seed's key stream, so
+     build and runtime recompute it identically with nothing stored between
+     them. Higher seal tiers replace this with a provider-supplied key.
    - Encrypts `mask_key` with `unlock_key` using the configured cipher,
      producing the encrypted `mask_key` wrapper described in §1.7.3.
    - Computes the locator (first 12 bytes of the wrapper).
@@ -165,14 +170,19 @@ constants and utilities used by both the runtime and CLI crates.
    - Emits Cargo directives:
      - `cargo:rerun-if-env-changed=LITMASK_RNG_SEED`
      - `cargo:rerun-if-changed=build.rs`
+     - `cargo:rustc-env=LITMASK_SEAL_TIER=<tier>` — the build-authoritative,
+       non-secret seal-tier tag (`embedded` for the default tier), read by
+       `init!` to cross-check form↔tier. This is the sole `LITMASK*` value
+       whitelisted onto `rustc-env`; no secret is ever emitted this way.
+     - `cargo:rerun-if-env-changed` for the tier's key-source env vars
+       (`LITMASK_UNLOCK_KEY`, `LITMASK_MACHINE_ID`).
    - Writes `litmask.config` (schema in §1.7.4) to the build profile
      directory.
    - In debug profile, writes `target/litmask-seed` for incremental build
      stability.
-   - In release profile, when the seed was freshly generated (not supplied
-     via `LITMASK_RNG_SEED`), emits `cargo:warning=` directives printing the
-     seed value to the terminal so the developer can capture it for
-     reproducible debugging.
+   - Never prints the seed, `unlock_key`, `mask_key`, or any secret to the
+     build log (§6.2): no key material reaches the terminal, CI logs, or
+     build-cache snapshots.
 4. Proc-macro expansions read `mask_key` and `RNG_SEED` from `OUT_DIR` files
    and emit encrypted ciphertext for each `mask!` invocation, using the
    nonce derivation in §1.5.2 and the per-string blob format in §1.7.2.

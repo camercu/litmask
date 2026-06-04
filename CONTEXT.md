@@ -18,15 +18,19 @@ _Avoid_: "master key", "litmask key", "internal key".
 
 **Unlock key** ([`UnlockKey`]):
 The 32-byte AEAD key that encrypts the **mask key** for embedding in
-the binary. Sourced at runtime from a [**key provider**](#keys).
-Never embedded in the binary in the default deployment.
+the binary. In the **Embedded** seal tier (default) it is derived from
+the cleartext wrapper **nonce** — `BLAKE3::derive_key("litmask-embedded-v1",
+nonce)` — and recomputed identically at build and at runtime, so nothing
+is stored between them. Higher seal tiers instead source it at runtime
+from a [**key provider**](#keys), keeping it out of the binary.
 _Avoid_: "user key", "external key", "configuration key".
 
 **Seed**:
-A 32-byte build-time random value. The **mask key**, **unlock key**,
-and every **nonce** derive from it. Persisted at `target/<profile>/litmask-seed.bin`
-so two cargo invocations in the same target directory produce
-matching artifacts.
+A 32-byte build-time random value. The **mask key** and every **nonce**
+derive from it; the **unlock key** does not (it is nonce-derived in the
+Embedded tier, or provider-supplied above it). Persisted at
+`target/<profile>/litmask-seed.bin` so two cargo invocations in the same
+target directory produce matching artifacts.
 _Avoid_: "rng seed" in code (it's just "seed"); reserve "RNG seed" for the
 `LITMASK_RNG_SEED` env var name.
 
@@ -93,18 +97,34 @@ _Avoid_: "soft mask", "light mask".
 ### Build pipeline
 
 **Build helper** (`litmask_build::emit()`): Invoked from the
-downstream user's `build.rs`. Generates the **seed**, derives both
-keys, encrypts the **mask key** into the **wrapper**, writes
+downstream user's `build.rs`. Generates the **seed**, derives the
+**mask key** and **nonces** from it and the **unlock key** from the
+wrapper **nonce**, encrypts the **mask key** into the **wrapper**, writes
 artifacts to `OUT_DIR` and `litmask.config`.
 
 **`litmask.config`**: Deployer-facing TOML written at build time.
 Contains the **unlock key**. Secret; do not commit. Consumed by the
 runtime (via env var).
 
+**Seal tier**: How the **unlock key** is sourced for a build, in
+ascending strength: **Embedded** (default — nonce-derived, keyless
+obfuscation floor), **external** (provider-supplied), **machine**
+(machine-ID-bound), **machine_external** (both). `emit()` publishes the
+chosen tier as the **`LITMASK_SEAL_TIER`** tag.
+_Avoid_: "level", "mode", "key tier".
+
+**`LITMASK_SEAL_TIER`**: Build-authoritative, non-secret tag published
+by `emit()` via `cargo:rustc-env`. Names the build's **seal tier** (e.g.
+`embedded`). Read by `init!` at macro-expansion time to cross-check that
+the chosen `init!` form matches the tier the build was sealed under. The
+sole `LITMASK*` value whitelisted onto `rustc-env`; never embedded in the
+shipped binary.
+
 ## Relationships
 
-- One **seed** per build → derives one **mask key**, one **unlock
-  key**, all **nonces**.
+- One **seed** per build → derives one **mask key** and all **nonces**.
+  The **unlock key** is nonce-derived (Embedded tier) or provider-supplied,
+  not seed-derived.
 - One **mask key** per build → encrypts every per-call-site **blob**
   AND is itself encrypted into the **wrapper** under the **unlock
   key**.
@@ -118,11 +138,11 @@ runtime (via env var).
 > **Dev:** "If two builds use the same **seed**, do they produce the
 > same **wrapper**?"
 >
-> **Maintainer:** "Yes — the **seed** determines the **mask key**, the
-> **unlock key**, and the wrapper **nonce**. AEAD with the same key,
-> nonce, and plaintext is deterministic, so the **wrapper** bytes are
-> byte-identical. Same for per-call-site **blobs**, given the same
-> source layout."
+> **Maintainer:** "Yes — the **seed** determines the **mask key** and the
+> wrapper **nonce**, and in the Embedded tier the **unlock key** is itself
+> derived from that nonce. AEAD with the same key, nonce, and plaintext is
+> deterministic, so the **wrapper** bytes are byte-identical. Same for
+> per-call-site **blobs**, given the same source layout."
 >
 > **Dev:** "How does the runtime find the **wrapper** in the binary?"
 >

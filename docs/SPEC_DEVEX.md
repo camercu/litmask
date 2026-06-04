@@ -47,7 +47,7 @@ on three findings:
 - **Off-box decrypt-verification is impossible or tautological.** A
   machine-bound binary won't decrypt on the verifier's box (wrong
   machine-id); supplying `--machine-id` only re-derives the key the
-  builder already sealed under. A Tier-0 binary cannot even be
+  builder already sealed under. An Embedded binary cannot even be
   *located* off-box (its locator would be `KDF(KDF(nonce))` —
   circular). On-host, "verification" is just *running the binary*:
   `init!` self-checks. With the builder owning key provisioning,
@@ -72,8 +72,8 @@ existed to re-key or inspect a finished artifact is removed.
 
 The masking-core and keying primitives the build-sealed model keeps:
 
-- **Tier-0 nonce-derived default.** Bare `init!()` →
-  `unlock_key = KDF(wrapper_nonce, "litmask-tier0-v1")`, recomputed at
+- **Embedded nonce-derived default.** Bare `init!()` →
+  `unlock_key = KDF(wrapper_nonce, "litmask-embedded-v1")`, recomputed at
   runtime, nothing minted or stored, bit-reproducible. The honest
   floor: an AEAD upgrade of `obfstr` — the key is recoverable from the
   artifact, this is not "key out of binary."
@@ -110,7 +110,7 @@ The masking-core and keying primitives the build-sealed model keeps:
 | Eliminated | Why it had no surviving consumer |
 |---|---|
 | `bind` / `reseal` CLI | Re-keying moves to rebuild. Unique capability (pre-emptive on-host migration) is narrow and rebuild-equivalent; drift recovery fails regardless. Removes in-place patching, atomic tempfile/fsync/rename, Windows `MoveFileExW` unsafe, **macOS ad-hoc re-sign hole**, reseal wire-preservation. |
-| `inspect` / `verify` CLI (incl. `--check-decrypt`) | Off-box check on a bound binary is impossible (machine-id mismatch) or tautological (re-derives the builder's own key). Tier-0 is uncheckable off-box (circular locator). On-host check = run the binary. Builder owns provisioning, so nothing independent to verify. |
+| `inspect` / `verify` CLI (incl. `--check-decrypt`) | Off-box check on a bound binary is impossible (machine-id mismatch) or tautological (re-derives the builder's own key). Embedded is uncheckable off-box (circular locator). On-host check = run the binary. Builder owns provisioning, so nothing independent to verify. |
 | **Derived locator** + recorded-locator config | Its only purpose was letting an external CLI find the wrapper without a signature. With no such CLI, nothing consumes it. Runtime finds the wrapper by compile-time address. |
 | Wrapper locator prefix | No scan → no findability marker needed. |
 | Reseal-default deployment shape, no-argv reseal channels | Subsumed by build-time seal. (Build-time secret-input handling is retained — see §3.) |
@@ -125,7 +125,7 @@ The masking-core and keying primitives the build-sealed model keeps:
 - **0.2 (per-customer = per-build, normative).** Distinguishing
   customers/machines is done by **building per customer/machine**, not
   by patching one artifact. This is the documented default for any
-  tier above Tier-0. Clean provenance per artifact is a feature, not a
+  tier above Embedded. Clean provenance per artifact is a feature, not a
   cost.
 - **0.3 (no in-place mutation of shipped binaries).** litmask ships no
   tool that rewrites a built binary. The macOS re-sign hole, atomic
@@ -164,24 +164,24 @@ The masking-core and keying primitives the build-sealed model keeps:
     property). The separation bounds per-customer and per-patch cost; it
     does not collapse customers onto one cache.
 
-## 1. Tier-0 default (inherited)
+## 1. Embedded default (inherited)
 
 Bare `init!()` — **or no `init!` call at all** — falls
-back to `unlock_key = KDF(wrapper_nonce, "litmask-tier0-v1")`. Works
+back to `unlock_key = KDF(wrapper_nonce, "litmask-embedded-v1")`. Works
 with no key, no env var, no failure mode; bit-reproducible; degrades to
 an AEAD `obfstr`. Key recoverable from the artifact — the honest floor.
 Accidental ship of a zero-wired build degrades to this floor, never
 plaintext.
 
-- **1.1 (silent-floor hazard + guard, normative).** Tier-0's
+- **1.1 (silent-floor hazard + guard, normative).** Embedded's
   no-failure-mode is double-edged: a higher tier fails loud when its key
-  is absent, but a build left at Tier-0 by mistake — forgot to upgrade
+  is absent, but a build left at Embedded by mistake — forgot to upgrade
   bare `init!()`, or omitted `init!` entirely — opens forever and looks
   healthy. The works-by-default win *is* the silent-misconfig footgun.
   **One guard, at the build, where the floor is decided independently of
   the `init!` form:** `emit()` derives the tier tag from build-input
-  presence (§2.4), so when the tag is `tier0` under the release profile
-  it emits a `cargo:warning=` ("Tier-0 obfuscation floor in a release
+  presence (§2.4), so when the tag is `embedded` under the release profile
+  it emits a `cargo:warning=` ("Embedded obfuscation floor in a release
   build"). Because the warning is **presence-driven, not form-driven**,
   one emission covers **both** floor paths the old macro-side split could
   not unify — a *deliberately* bare `init!()` **and** an *omitted*
@@ -193,7 +193,7 @@ plaintext.
   distinct from the §2.4 cross-check, which *errors* when the `init!`
   form and the tag disagree (an *intended* higher tier whose build input
   is missing); §1.1 only *warns*, and only when the tag legitimately is
-  `tier0`. (Build-warning re-display caveat: I-R7.)
+  `embedded`. (Build-warning re-display caveat: I-R7.)
 
 ## 2. Build-time tiers
 
@@ -204,7 +204,7 @@ carve-out** (`machine_id`) so the decision to bind to a host is **explicit
 in source** and cross-checkable against the build (§2.4). There are **four
 forms** of the single `init!` macro:
 
-- `init!()` — **Tier-0** (nonce-derived floor).
+- `init!()` — **Embedded** (nonce-derived floor).
 - `init!(<provider-expr>)` — **external-only**; any `impl KeyProvider`.
 - `init!(machine_id)` — **machine-only** (single-factor host binding).
 - `init!(machine_id + <provider-expr>)` — **machine + external** (the
@@ -240,7 +240,7 @@ name a binding `machine_id` understands the shadowing.
 > responsibility), but the *topology* (which factors, machine-bound or not)
 > is now agreed at compile time.
 
-- **Tier-0 (default):** nonce-derived, no input. `init!()`.
+- **Embedded (default):** nonce-derived, no input. `init!()`.
 - **Env/file provider:** `EnvVarProvider` / `FileProvider` as the external
   value. Key material from `LITMASK_UNLOCK_KEY` / a file at runtime; the
   same material is fed to `emit()` at build via `LITMASK_UNLOCK_KEY`.
@@ -269,8 +269,8 @@ There is no deploy-time tier change. To change a binary's tier or key,
   toward the tier the source asked for; never silently ship the floor or a
   weaker binding. This subsumes the former build-side guard: the source-side
   "forgot to upgrade bare `init!()`" case is *also* caught — bare `init!()`
-  against a non-`tier0` tag fails to compile (and §1.1 still warns on a
-  deliberate release Tier-0).
+  against a non-`embedded` tag fails to compile (and §1.1 still warns on a
+  deliberate release Embedded).
 - **2.2 (composition — always-normalize KDF; fixed machine + external).**
   The framework applies **one** KDF at the init boundary
   (`__init_with_wrapper`): `unlock_key = KDF(info = "litmask-unlock-v1",
@@ -317,7 +317,7 @@ There is no deploy-time tier change. To change a binary's tier or key,
     | set | set | `machine_external` |
     | set | — | `machine` |
     | — | set | `external` |
-    | — | — | `tier0` |
+    | — | — | `embedded` |
 
   - **Channel (normative): the tag is a *tracked* build output, not an
     `$OUT_DIR` file.** `emit()` emits
@@ -351,14 +351,14 @@ There is no deploy-time tier change. To change a binary's tier or key,
     another breaks the channel — the macro reads an absent/stale tag. On
     an **absent** `LITMASK_SEAL_TIER` the macro MUST `compile_error!`
     ("litmask: build channel missing — is `litmask_build::emit()` called
-    from this crate's build.rs?") and MUST NOT assume `tier0` (assuming
+    from this crate's build.rs?") and MUST NOT assume `embedded` (assuming
     the floor would silently downgrade an intended higher tier). (I-R6.)
   - **Cross-check (normative): the `init!` form MUST match the tag, or the
     build fails.** 1:1 mapping:
 
     | `init!` form | required `LITMASK_SEAL_TIER` |
     |---|---|
-    | `init!()` | `tier0` |
+    | `init!()` | `embedded` |
     | `init!(<expr>)` | `external` |
     | `init!(machine_id)` | `machine` |
     | `init!(machine_id + <expr>)` | `machine_external` |
@@ -477,13 +477,13 @@ There is no deploy-time tier change. To change a binary's tier or key,
   - **4.5.1 (on-host install-time bind — escape hatch, non-normative).**
     Where the target id is knowable only on the host *and*
     rebuild-per-host is unacceptable, an **installer-time** bind is an
-    out-of-band option: ship a Tier-0 or env-tier binary and have a
+    out-of-band option: ship an Embedded or env-tier binary and have a
     first-run/installer step on the *trusted* target derive and store
     the host factor, binding subsequent copies. This is **not** a
     litmask mechanism — it is the deleted post-build self-seal, circular
     as a *general* keying path (header), and it protects only against
     theft *after* install (the shipped pre-install artifact is only
-    Tier-0/env-grade in transit). It is named only as a deployment
+    Embedded/env-grade in transit). It is named only as a deployment
     pattern the operator may build themselves for the narrow
     machine-binding case; litmask ships no tool for it.
 
@@ -500,7 +500,7 @@ There is no deploy-time tier change. To change a binary's tier or key,
   a disassembler following the init path still reaches the `.rodata`
   address; the gain is over a blind byte scan.)
 - **5.3 (no runtime tier introspection — floor warning lives at the
-  build).** The Tier-0 floor warning is emitted by `emit()` at build time
+  build).** The Embedded floor warning is emitted by `emit()` at build time
   (§1.1), **not** by the runtime. A runtime floor check would have to bake
   an identifying warning string into the shipped `.rodata`, leaking
   litmask presence to `strings(1)` and clashing with the
@@ -562,7 +562,7 @@ There is no deploy-time tier change. To change a binary's tier or key,
   removal. Reproducible rebuild instead relies on the operator pinning
   the seed up front via `keygen`, §4.4 / I-R4; there is no post-hoc
   seed-recovery channel.) Once the echo is removed, the **only**
-  sanctioned release `cargo:warning=` from `emit()` is the §1.1 Tier-0
+  sanctioned release `cargo:warning=` from `emit()` is the §1.1 Embedded
   floor notice, which carries no secret value.
 
 ## 7. Threat-model deltas
@@ -570,7 +570,7 @@ There is no deploy-time tier change. To change a binary's tier or key,
 - **7.1 (debug self-decrypts + diagnoses).** Debug
   builds seal like release (no pass-through plaintext) but **fail loud**:
   init failures carry actionable, identifying messages (§5.4). A debug
-  binary is self-decrypting at Tier-0 *and* prints litmask-identifying
+  binary is self-decrypting at Embedded *and* prints litmask-identifying
   diagnostics, so it **must never be distributed** — the accepted trust
   boundary belongs in `THREAT_MODEL.md`.
 - **7.2 (opacity unchanged or improved).** Removing the locator removes
@@ -607,8 +607,8 @@ There is no deploy-time tier change. To change a binary's tier or key,
   is the `machine_id` keyword); `emit()` emits the `LITMASK_SEAL_TIER` tag +
   `rerun-if-env-changed` for both factor channels; `init!` reads the tag and
   cross-checks the form, `compile_error!` on absent tag (§2.4).
-- `litmask-build`: `emit()` emits the §1.1 Tier-0 floor `cargo:warning=`
-  (release + tag `tier0`), reusing `Profile::Release` detection
+- `litmask-build`: `emit()` emits the §1.1 Embedded floor `cargo:warning=`
+  (release + tag `embedded`), reusing `Profile::Release` detection
   (litmask-build/src/lib.rs:273); remove the §6.2 seed echo (line 283).
 - `litmask`: replace the bare lazy-path `panic!()`s
   (litmask/src/runtime.rs:292,300,317,328) with a `cfg(debug_assertions)`-gated
@@ -630,12 +630,12 @@ codebase.
 | Wrapper format | `nonce ‖ AEAD ‖ tag`, **no locator prefix**, address-found (§5.1) |
 | Machine-id | **build-time raw id only** (§4.1); no `--to-machine-id` reseal |
 | CLI surface | **`{keygen, show-machine-id}`** — generate/read-only, no binary mutation (§4.4) |
-| Tier-0 default, nonce-salt, `weak_mask!`, dirty-word scrub | **kept** |
+| Embedded default, nonce-salt, `weak_mask!`, dirty-word scrub | **kept** |
 | Init macro | **single `init!`** (the `init_with!` split folded in), four forms: `()` / `(<expr>)` / `(machine_id)` / `(machine_id + <expr>)` |
 | Factor selection | external = `impl KeyProvider` **value**; `machine_id` = one-keyword carve-out. No keyword DSL, no general `MultiProvider`, no variadic order surface (§2) |
 | Multi-factor | **fixed `machine_id + <external>`** — arity-2, order fixed by construction (§2.2) |
 | Build/runtime tier agreement | **tracked `LITMASK_SEAL_TIER` tag, cross-checked at compile time** (§2.4); replaces silent runtime AEAD failure on mismatch |
-| Tier-0-in-release guard | **build-time `emit()` floor warning** (§1.1); no runtime warning string |
+| Embedded-in-release guard | **build-time `emit()` floor warning** (§1.1); no runtime warning string |
 | Runtime failure diagnostics | **profile-split** — loud/actionable in debug, bare/opaque in release (§5.4) |
 
 ## 10. Honest residuals
@@ -697,7 +697,7 @@ codebase.
 - **I-R7 (build-warning re-display).** The §1.1 floor warning rides
   cargo's build-script `cargo:warning=` channel, which cargo only
   re-displays when `build.rs` re-runs. A source-only incremental rebuild
-  of an already-built tier0 crate may not re-echo it;
+  of an already-built embedded crate may not re-echo it;
   `rerun-if-env-changed` on the factor vars covers tier flips and a
   fresh/release build always shows it. Same limitation as the seed
   warning today; accepted.
@@ -721,7 +721,7 @@ notes where this spec addresses it.
 2. **F2 — `awk` ritual.** Extracting the key for every run/deploy required
    `awk -F'"' '/^unlock_key/...' litmask.config`. **Addressed:** the
    build-sealed model has no runtime `unlock_key` to extract and no config
-   file to parse — tier-0 self-unlocks (§1), higher tiers take material as
+   file to parse — embedded self-unlocks (§1), higher tiers take material as
    build env (§3). The `litmask.config` channel is removed entirely (§9).
 3. **F3 — Silent key rotation.** Any `build.rs` rerun (touch, CI, fresh
    checkout) rotated the release `unlock_key`; a previously-captured key
@@ -746,7 +746,7 @@ notes where this spec addresses it.
    I-R5).
 6. **F6 — No key-wire helper.** Nothing wired the matching key to a binary;
    the operator hand-assembled `LITMASK_UNLOCK_KEY=… ./app`. **Addressed:**
-   the dev loop wires nothing (tier-0 self-unlock, §1); release material is
+   the dev loop wires nothing (embedded self-unlock, §1); release material is
    a build-time input (§3), not a runtime wiring step.
 7. **F7 — `inspect` is locator-only.** It confirmed the config's `locator`
    was present in the binary but never that the `unlock_key` actually
