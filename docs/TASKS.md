@@ -380,3 +380,41 @@ language survives anywhere and every cross-reference resolves.
 - [ ] SPECIFICATION section numbering is contiguous and the table of
       contents (if any) matches
 - [ ] `just ci` green; `just lint` (typos/links) clean
+
+---
+
+## Review follow-ups (2026-06-04) — keyless-Embedded + `init!` proc-macro
+
+Code-level hazards surfaced reviewing `715fa55..HEAD`. None are current
+bugs (every build seals Embedded today, and the workspace ships crates in
+lockstep); they become live as higher tiers and external consumers land.
+Doc drift from the same review (THREAT_MODEL/MIGRATION/SECURITY_AUDIT/
+SPECIFICATION default-provider) is already fixed.
+
+- [ ] **Lazy-init silently picks Embedded in every config**
+      (`litmask/src/runtime.rs`, `mask_key_or_lazy_init`). It now derives
+      the Embedded `unlock_key` in both std and no_std with no tier check.
+      Once a higher tier ships, a `mask!()` that races ahead of an
+      explicit `init_with!(<higher-tier provider>)` will lazy-derive the
+      *wrong* (Embedded) key and panic deep in init instead of surfacing
+      the init-ordering bug. Pre-change no_std panicked loudly. Gate
+      lazy-init on the sealed tier (or panic unless Embedded) when the
+      tier work lands. *Relates to the higher-tier tasks; pairs with Task
+      8's diagnostics split.*
+- [ ] **`init!` tier-mismatch `compile_error!` branch has no end-to-end
+      coverage** (`litmask-macros/src/init.rs`). litmask's own
+      `LITMASK_SEAL_TIER=embedded` rustc-env leaks into the trybuild
+      subprocess, so the mismatch/`None` paths can't be exercised via a
+      `compile_fail` fixture — only the pure `check_embedded_tier` unit
+      tests cover them. A reorder that put the env read before the
+      args-empty check would silently drop the branch's compile-level
+      coverage. Find a way to exercise the tier-mismatch path (e.g. a
+      fixture built in a subprocess with the env var scrubbed).
+- [ ] **Cross-crate version skew is now a hard compile error.** A newer
+      `litmask-macros` (this change) paired with an older `litmask-build`
+      that doesn't emit `cargo:rustc-env=LITMASK_SEAL_TIER` makes
+      `init!()` read `None` and emit `init! tier-mismatch: ... unset`,
+      breaking an otherwise-valid Embedded build. Low risk while the
+      workspace releases in lockstep; revisit if the crates ever version
+      independently (e.g. document a minimum `litmask-build` version, or
+      degrade the unset case to a warning + Embedded assumption).
