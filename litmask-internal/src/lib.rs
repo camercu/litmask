@@ -35,7 +35,8 @@ pub use self::aead::{AeadError, aead_decrypt, aead_encrypt};
 
 mod kdf;
 pub use kdf::{
-    MACHINE_ID_DERIVATION_CONTEXT, WEAK_XOR_KEY_LEN, derive_machine_id_key, derive_weak_xor_key,
+    EMBEDDED_UNLOCK_DERIVATION_CONTEXT, MACHINE_ID_DERIVATION_CONTEXT, WEAK_XOR_KEY_LEN,
+    derive_embedded_unlock_key, derive_machine_id_key, derive_weak_xor_key,
 };
 
 mod nonce;

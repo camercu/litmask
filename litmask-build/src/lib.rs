@@ -34,8 +34,14 @@ use zeroize::{Zeroize, Zeroizing};
 
 use litmask_internal::{
     CURRENT_CIPHER, FormatVersion, KEY_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN, WRAPPER_PLAINTEXT_LEN,
-    aead_encrypt, assemble_wrapper, base64url, nonce_for_wrapper,
+    aead_encrypt, assemble_wrapper, base64url, derive_embedded_unlock_key, nonce_for_wrapper,
 };
+
+/// Build-authoritative seal-tier tag (§2.4). Fixed at `embedded` — the
+/// keyless nonce-derived floor whose key travels inside the artifact —
+/// until the external / machine tiers make tag selection presence-driven
+/// on `LITMASK_UNLOCK_KEY` and `LITMASK_MACHINE_ID`.
+const SEAL_TIER_TAG: &str = "embedded";
 
 const CONFIG_HEADER: &str = "\
 # litmask.config — build artifact.
@@ -58,22 +64,19 @@ pub fn emit() {
     println!("cargo:rerun-if-env-changed=LITMASK_RNG_SEED");
     println!("cargo:rerun-if-changed=build.rs");
 
+    // Publish the build-authoritative seal-tier tag and re-run when
+    // either factor channel changes (§2.4).
+    for directive in seal_tier_directives() {
+        println!("{directive}");
+    }
+
     let out_dir: PathBuf = std::env::var_os("OUT_DIR")
         .expect("cargo did not set OUT_DIR")
         .into();
     let profile_dir = profile_dir_of(&out_dir);
     let profile = Profile::from_env();
 
-    let (mut seed, seed_source) = source_seed(&profile_dir, profile);
-
-    // A release build whose seed was freshly generated (no
-    // `LITMASK_RNG_SEED` supplied) has no persistence path, so the
-    // only way to reproduce the build later is to capture the
-    // generated seed. Print it via `cargo:warning=` so it lands in
-    // the developer's terminal output even when stderr is captured.
-    if let Some(warning) = fresh_release_warning(&seed, profile, &seed_source) {
-        println!("{warning}");
-    }
+    let (mut seed, _seed_source) = source_seed(&profile_dir, profile);
 
     let artifacts = BuildArtifacts::derive(&seed);
     seed.zeroize();
@@ -121,9 +124,7 @@ impl BuildArtifacts {
     fn derive(seed: &[u8; KEY_LEN]) -> Self {
         let mut rng = ChaCha20Rng::from_seed(*seed);
         let mut mask_key = [0u8; KEY_LEN];
-        let mut unlock_key = [0u8; KEY_LEN];
         rng.fill_bytes(&mut mask_key);
-        rng.fill_bytes(&mut unlock_key);
 
         // Single-cipher property: the runtime crate selects exactly
         // one cipher at compile time (§1.5.1); `litmask-build`
@@ -135,6 +136,13 @@ impl BuildArtifacts {
         // is the correct compile error to surface.
         let cipher = CURRENT_CIPHER;
         let wrapper_nonce = nonce_for_wrapper(seed);
+
+        // Embedded-tier keying: the unlock_key is derived from the
+        // public wrapper nonce, not from the seed's key stream, so the
+        // runtime recomputes the identical key from the embedded nonce
+        // with no stored material (§1). The seed now feeds only mask_key
+        // + the nonce.
+        let unlock_key = derive_embedded_unlock_key(&wrapper_nonce);
 
         // AEAD plaintext is `version_byte || mask_key` — the format
         // version is authenticated inside the wrapper rather than
@@ -267,27 +275,6 @@ fn decode_env_seed(raw: &OsString) -> [u8; KEY_LEN] {
     seed
 }
 
-/// Produce the `cargo:warning=...` line that release-profile builds
-/// emit when no `LITMASK_RNG_SEED` was supplied. Returns `None` for
-/// every other (profile, source) combination so debug builds and
-/// env-driven release builds stay silent. Extracted as a pure
-/// function so unit tests can pin the exact text — the warning
-/// channel is the only release-profile recovery path for
-/// reproducible rebuilds, so the string format is normative.
-fn fresh_release_warning(
-    seed: &[u8; KEY_LEN],
-    profile: Profile,
-    source: &SeedSource,
-) -> Option<String> {
-    if profile != Profile::Release || *source != SeedSource::Fresh {
-        return None;
-    }
-    let encoded = base64url::encode(seed);
-    Some(format!(
-        "cargo:warning=litmask: release build generated a fresh RNG seed. Capture this value for reproducible rebuilds: LITMASK_RNG_SEED={encoded}",
-    ))
-}
-
 fn write_secret(path: &Path, contents: &[u8]) {
     fs::write(path, contents).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
@@ -301,6 +288,23 @@ fn profile_dir_of(out_dir: &Path) -> PathBuf {
         .nth(3)
         .expect("OUT_DIR has expected target/<profile>/build/<pkg>-<hash>/out shape")
         .to_path_buf()
+}
+
+/// Cargo directives that publish the seal-tier tag and re-run the build
+/// when either factor channel changes (§2.4).
+///
+/// The tag rides `cargo:rustc-env` so it joins the consumer crate's
+/// compile fingerprint: flipping a factor recompiles the consumer and
+/// re-runs the `init!` form↔tag cross-check. `LITMASK_SEAL_TIER` is the
+/// ONLY `LITMASK_*` value litmask sends over rustc-env — it is
+/// non-secret; secrets never use this channel (they would log under
+/// `cargo --verbose` and inject into downstream rustc).
+fn seal_tier_directives() -> [String; 3] {
+    [
+        format!("cargo:rustc-env=LITMASK_SEAL_TIER={SEAL_TIER_TAG}"),
+        "cargo:rerun-if-env-changed=LITMASK_MACHINE_ID".to_string(),
+        "cargo:rerun-if-env-changed=LITMASK_UNLOCK_KEY".to_string(),
+    ]
 }
 
 fn write_config(path: &Path, unlock_key: &[u8; KEY_LEN]) {
@@ -530,24 +534,100 @@ mod tests {
         assert_eq!(recovered, artifacts.mask_key);
     }
 
-    /// AC4: the build script must never emit a `cargo:` directive
-    /// that sets a `LITMASK_*` env var on the downstream rustc
-    /// invocation. Such a directive (the rustc-env subform of
-    /// cargo's metadata channel) would leak the seed into every
-    /// consumer's build environment AND log it at cargo's
-    /// `--verbose` setting. Reassemble the needle from fragments at
-    /// runtime so this test's own source does not trip the
-    /// static-grep below.
+    /// AC4 (narrowed for §2.4): the build script may publish exactly
+    /// one `LITMASK_*` value over the cargo rustc-env channel — the
+    /// non-secret `LITMASK_SEAL_TIER` tier tag. Every *other* `LITMASK_*`
+    /// rustc-env directive is forbidden: that channel logs at cargo's
+    /// `--verbose` setting and injects into downstream rustc, so a
+    /// secret (seed, `unlock_key`, machine-id) must never travel it.
+    ///
+    /// The rule is intent ("no *secret* via rustc-env"), not a blanket
+    /// `LITMASK_*` ban — do not evade it by renaming the tag. Reassemble
+    /// the prefix from fragments so this test's own source does not trip
+    /// the scan.
     #[test]
-    fn no_cargo_directive_setting_litmask_env_emitted() {
+    fn only_seal_tier_tag_travels_litmask_rustc_env() {
         let src = include_str!("lib.rs");
-        let needle = ["cargo:rustc", "env=LITMASK"].join("-");
+        let prefix = ["cargo:rustc", "env=LITMASK"].join("-");
+        for (idx, _) in src.match_indices(&prefix) {
+            let rest = &src[idx + prefix.len()..];
+            assert!(
+                rest.starts_with("_SEAL_TIER="),
+                "only LITMASK_SEAL_TIER may travel the rustc-env channel; \
+                 found a different LITMASK_* rustc-env directive — secrets \
+                 must never use this channel",
+            );
+        }
+    }
+
+    /// AC: `emit()` publishes the build-authoritative tier tag and the
+    /// factor-channel rerun directives (§2.4). The tag is `embedded`
+    /// until later tiers make it presence-driven.
+    #[test]
+    fn emits_embedded_seal_tag_and_factor_rerun_directives() {
+        let directives = seal_tier_directives();
         assert!(
-            !src.contains(&needle),
-            "litmask-build must never set LITMASK_* via the cargo rustc-env \
-             metadata channel; that would inject secrets into downstream rustc \
-             invocations",
+            directives
+                .iter()
+                .any(|d| d == "cargo:rustc-env=LITMASK_SEAL_TIER=embedded"),
+            "missing tier tag; got {directives:?}",
         );
+        assert!(
+            directives
+                .iter()
+                .any(|d| d == "cargo:rerun-if-env-changed=LITMASK_MACHINE_ID"),
+            "missing machine-id rerun directive; got {directives:?}",
+        );
+        assert!(
+            directives
+                .iter()
+                .any(|d| d == "cargo:rerun-if-env-changed=LITMASK_UNLOCK_KEY"),
+            "missing unlock-key rerun directive; got {directives:?}",
+        );
+    }
+
+    /// AC1: the Embedded-tier `unlock_key` is derived from the wrapper
+    /// nonce, NOT drawn from the seed's `ChaCha20` key stream. Pre-change it was
+    /// the second key-stream block after `mask_key`; pin that it no
+    /// longer is, so a future refactor cannot silently revert to the
+    /// seed-derived key.
+    #[test]
+    fn unlock_key_is_independent_of_seed_key_stream() {
+        let seed = [0x55u8; KEY_LEN];
+        let mut rng = ChaCha20Rng::from_seed(seed);
+        let mut mask_key = [0u8; KEY_LEN];
+        let mut old_stream_unlock = [0u8; KEY_LEN];
+        rng.fill_bytes(&mut mask_key);
+        rng.fill_bytes(&mut old_stream_unlock);
+
+        let artifacts = BuildArtifacts::derive(&seed);
+        assert_eq!(
+            artifacts.mask_key, mask_key,
+            "mask_key is still the first draw"
+        );
+        assert_ne!(
+            artifacts.unlock_key, old_stream_unlock,
+            "unlock_key must be nonce-derived, not the seed's second key-stream block",
+        );
+    }
+
+    /// AC4: an Embedded-tier build round-trips with the `unlock_key`
+    /// recomputed from the wrapper nonce alone — the runtime re-derives
+    /// the same key with nothing stored. Recompute it independently from
+    /// the seed-derived nonce, confirm it equals the sealed key, and
+    /// open the wrapper with it.
+    #[test]
+    fn embedded_unlock_key_is_nonce_recomputable_and_round_trips() {
+        use litmask_internal::{decrypt_wrapper, derive_embedded_unlock_key};
+        let seed = [0x33u8; KEY_LEN];
+        let artifacts = BuildArtifacts::derive(&seed);
+        let recomputed = derive_embedded_unlock_key(&nonce_for_wrapper(&seed));
+        assert_eq!(
+            recomputed, artifacts.unlock_key,
+            "unlock_key must be recomputable from the wrapper nonce",
+        );
+        let recovered = decrypt_wrapper(&recomputed, &artifacts.wrapper).expect("round-trip");
+        assert_eq!(recovered, artifacts.mask_key);
     }
 
     /// AC5: `litmask.config` MUST begin with a `#`-prefixed comment
@@ -575,42 +655,6 @@ mod tests {
                 .any(|l| l.to_ascii_lowercase().contains("secret")),
             "comment block must mention 'secret' (case-insensitive); got:\n{body}",
         );
-    }
-
-    /// AC3: in release profile with a freshly-generated seed, the
-    /// build script MUST emit a `cargo:warning=` line carrying the
-    /// base64url-encoded seed so the developer can capture it for
-    /// reproducible rebuilds.
-    #[test]
-    fn fresh_release_emits_warning_with_seed_value() {
-        let seed = [0x77u8; KEY_LEN];
-        let warning = fresh_release_warning(&seed, Profile::Release, &SeedSource::Fresh)
-            .expect("release+fresh must emit a warning");
-        assert!(warning.starts_with("cargo:warning="));
-        let encoded = base64url::encode(&seed);
-        assert!(
-            warning.contains(&encoded),
-            "warning must include the encoded seed; got: {warning}",
-        );
-        assert!(
-            warning.contains("LITMASK_RNG_SEED"),
-            "warning must name the env var to set; got: {warning}",
-        );
-    }
-
-    /// Negative coverage for the warning: every (profile, source)
-    /// combination that ISN'T release+fresh must stay silent. A
-    /// debug-profile warning would surface the seed to terminal
-    /// every build (noisy); an env-driven release-profile warning
-    /// would also fire even though the seed is already known.
-    #[test]
-    fn warning_silent_for_non_release_or_non_fresh_combinations() {
-        let seed = [0x88u8; KEY_LEN];
-        assert!(fresh_release_warning(&seed, Profile::Debug, &SeedSource::Fresh).is_none());
-        assert!(fresh_release_warning(&seed, Profile::Debug, &SeedSource::Env).is_none());
-        assert!(fresh_release_warning(&seed, Profile::Debug, &SeedSource::Persist).is_none());
-        assert!(fresh_release_warning(&seed, Profile::Release, &SeedSource::Env).is_none());
-        assert!(fresh_release_warning(&seed, Profile::Release, &SeedSource::Persist).is_none());
     }
 
     /// AC1: identical source + toolchain + deps + `LITMASK_RNG_SEED`

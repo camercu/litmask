@@ -28,6 +28,32 @@ pub const MACHINE_ID_DERIVATION_CONTEXT: &str = "machine-v1";
 /// expansion (32) + BLAKE3 keyed hash (32) = 64 bytes.
 pub const WEAK_XOR_KEY_LEN: usize = KEY_LEN + KEY_LEN;
 
+/// BLAKE3 `derive_key` domain separator for the Embedded-tier
+/// `unlock_key`.
+///
+/// The Embedded tier is the keyless obfuscation floor: the `unlock_key`
+/// is recomputed — at build and at runtime — from the public wrapper
+/// nonce alone, so an Embedded-tier binary opens with no stored key
+/// material. This makes the floor honestly recoverable from the
+/// artifact (the nonce ships in cleartext); the Embedded tier buys
+/// `strings(1)` resistance, not secrecy.
+///
+/// The `-v1` suffix reserves a rotation path. Changing this constant is
+/// a BREAKING change: every Embedded-tier wrapper sealed under the old
+/// context fails to decrypt under the new one.
+pub const EMBEDDED_UNLOCK_DERIVATION_CONTEXT: &str = "litmask-embedded-v1";
+
+/// Derive the Embedded-tier `unlock_key` from the wrapper nonce.
+///
+/// `BLAKE3::derive_key("litmask-embedded-v1", wrapper_nonce)`. The nonce
+/// is fixed-width (`NONCE_LEN`), so no length prefix is needed to avoid
+/// concatenation ambiguity. Build and runtime call this with the same
+/// nonce to reach the identical key with nothing stored between them.
+#[must_use]
+pub fn derive_embedded_unlock_key(wrapper_nonce: &[u8; NONCE_LEN]) -> [u8; KEY_LEN] {
+    blake3::derive_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, wrapper_nonce)
+}
+
 /// Derive a 32-byte key from `(context, machine_id, salt)` via BLAKE3.
 ///
 /// Shared by [`MachineIdProvider`](https://docs.rs/litmask) (runtime)
@@ -124,5 +150,40 @@ mod tests {
         let a = derive_machine_id_key(MACHINE_ID_DERIVATION_CONTEXT, b"ab", b"cd");
         let b = derive_machine_id_key(MACHINE_ID_DERIVATION_CONTEXT, b"abc", b"d");
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn derive_embedded_unlock_key_is_deterministic() {
+        let nonce = [0x07u8; NONCE_LEN];
+        assert_eq!(
+            derive_embedded_unlock_key(&nonce),
+            derive_embedded_unlock_key(&nonce)
+        );
+    }
+
+    #[test]
+    fn derive_embedded_unlock_key_differs_across_nonces() {
+        let a = derive_embedded_unlock_key(&[0x01u8; NONCE_LEN]);
+        let b = derive_embedded_unlock_key(&[0x02u8; NONCE_LEN]);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn derive_embedded_unlock_key_returns_full_32_bytes() {
+        let key = derive_embedded_unlock_key(&[0x09u8; NONCE_LEN]);
+        assert_eq!(key.len(), KEY_LEN);
+        assert!(key.iter().any(|&b| b != 0));
+    }
+
+    /// The Embedded-tier context must domain-separate from the
+    /// machine-id context: the same input bytes under a different
+    /// `derive_key` context must not collide, so a key minted for one
+    /// tier can never be reused for another.
+    #[test]
+    fn derive_embedded_unlock_key_domain_separated_from_machine_context() {
+        let bytes = [0x11u8; NONCE_LEN];
+        let embedded = derive_embedded_unlock_key(&bytes);
+        let machine = derive_machine_id_key(MACHINE_ID_DERIVATION_CONTEXT, &bytes, b"");
+        assert_ne!(embedded, machine);
     }
 }
