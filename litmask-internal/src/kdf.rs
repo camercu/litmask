@@ -60,8 +60,9 @@ pub fn derive_machine_id_key(context: &str, machine_id: &[u8], salt: &[u8]) -> [
 /// bytes via position-dependent bit rotation; the second half
 /// stretches it through BLAKE3 keyed mode. No string literals are
 /// used — domain separation comes from BLAKE3's keyed-mode IV.
-/// Keying on the nonce (stable across `bind`) lets `weak_mask!`
-/// literals survive wrapper re-encryption.
+/// Keying on the cleartext wrapper nonce (rather than the sealed
+/// `mask_key`) lets `weak_mask!` expand before `init!()`, when no key
+/// material has been recovered yet.
 #[must_use]
 pub fn derive_weak_xor_key(wrapper: &[u8; WRAPPER_LEN]) -> [u8; WEAK_XOR_KEY_LEN] {
     let nonce: &[u8] = wrapper_nonce(wrapper);
