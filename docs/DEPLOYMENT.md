@@ -102,6 +102,56 @@ lto = true
 These settings reduce the binary's string surface area. They are
 recommendations, not requirements — `litmask` works with any profile.
 
+### Removing dependency fingerprints (nightly hardening)
+
+`strip = "symbols"` removes the symbol table but **not** `.rodata`
+string constants. The largest remaining tell is the panic-location
+path string Rust embeds for bounds-check and assert sites — for
+example, a binary using `MachineIdProvider` or `weak_mask!` carries:
+
+```
+.../registry/src/index.crates.io-.../blake3-1.8.5/src/lib.rs
+```
+
+This is not unique to BLAKE3: every panic-capable dependency embeds its
+own `crate-version/src/….rs` path, and `litmask`'s own
+`litmask/src/runtime.rs` leaks the same way. Swapping the hash crate
+only changes which name appears — it does not remove the class.
+
+Two nightly `rustc` flags remove these strings for every crate compiled
+in the build (zero source change):
+
+```sh
+RUSTFLAGS="-Zlocation-detail=none -Zfmt-debug=none" \
+    cargo +nightly build --release
+```
+
+| Flag | Effect |
+|---|---|
+| `-Zlocation-detail=none` | Blanks file/line/column in panic-location records → removes all `crate-version/src/….rs` path strings (`blake3`, `cipher`, `base64ct`, and `litmask`'s own). |
+| `-Zfmt-debug=none` | Strips `derive(Debug)` name strings → removes dependency error-type names such as `StreamCipherError` and `MachineUidError`. |
+
+Measured on the `machine_id_provider` example (release + strip): the
+`blake3` and `litmask` path-string counts both drop from nonzero to
+**0**.
+
+Two categories survive and are intentionally acceptable:
+
+- **Rust backtrace machinery** (`addr2line`, `gimli`, `object`,
+  `rustc-demangle` paths). These live in precompiled `std`, so in-build
+  RUSTFLAGS cannot reach them; `panic = "abort"` does not drop them
+  either. They appear in every Rust binary and reveal nothing about
+  `litmask` or its cryptography. Removing them requires
+  `-Z build-std`.
+- **`litmask`'s own `category:variant` Display tags** (e.g.
+  `unsupported_cipher`, `decryption_failed`). These are deliberately
+  generic ASCII tags (spec §1.9.3), not `litmask`-identifying.
+
+Both flags are **nightly-only and unstable**, so this recipe cannot be
+part of the stable canonical build. Use it only if hiding the
+dependency fingerprint is in your threat model; the stable
+`strip`-based profile above remains the supported default.
+
 ## Rebind workflow
 
 For deployments using `MachineIdProvider`, bind the binary on the
