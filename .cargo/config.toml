@@ -1,0 +1,9 @@
+# Fallback profraw output dir for coverage-instrumented processes that
+# cargo-llvm-cov does not wrap (build scripts, proc-macros run at
+# compile time). cargo-llvm-cov sets LLVM_PROFILE_FILE explicitly on
+# the test processes it spawns, which overrides this unforced default,
+# so its coverage data path is unaffected. This only catches the
+# strays that would otherwise litter the workspace root with their
+# default LLVM filename.
+[env]
+LLVM_PROFILE_FILE = { value = "target/profraw/%p-%m.profraw", relative = true }
