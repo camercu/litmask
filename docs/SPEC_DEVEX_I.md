@@ -36,12 +36,15 @@ I challenges that assumption and finds it does not pay:
   "avoid a rebuild" saving is undercut by signing (macOS forces
   re-sign + notarize per artifact regardless), by warm build caches,
   and by provenance (a freshly built artifact is more auditable than
-  an in-place-patched one). The rebuild is **cheap, not merely
-  acceptable**: with a pinned seed the blob pool is byte-identical
-  across customers and reused from cache, so a per-customer rebuild
-  re-seals the wrapper and re-links rather than re-encrypting every
-  literal (§0.4). Reseal's only real saving — skipping blob
-  re-encryption — is already captured by the cached-blob rebuild.
+  an in-place-patched one). The per-customer delta is **bounded, not
+  free**: the seed is pinned **per customer** (§4.4 stores
+  `cryptio/<customer>/seed`), so each customer's `mask_key` and blob
+  pool are **distinct** — the literal-isolation property — and a
+  per-customer build re-encrypts the literals under that seed, re-seals
+  the wrapper, re-links, and re-signs (§0.4). Reseal's only real saving
+  over this — skipping blob re-encryption — is cheap in absolute terms
+  and dwarfed by the irreducible re-link + re-sign + notarize that
+  reseal cannot avoid either.
 - **Post-build re-binding mostly cannot help.** The only thing on-host
   re-bind uniquely buys is *deliberate, pre-emptive* migration to a
   new, known machine-id. It **cannot** recover a binary after its
@@ -129,31 +132,38 @@ existed to re-key or inspect a finished artifact is removed.
   tool that rewrites a built binary. The macOS re-sign hole, atomic
   in-place commit, and platform-specific patching code are gone with
   the tools that needed them.
-- **0.4 (per-customer rebuild is cheap — the thesis that makes reseal
-  deletable, normative).** The "one build per customer/machine"
-  objection is bounded by **pinning the seed** (§4.4). A pinned seed
-  holds `mask_key` — and therefore every per-call-site blob —
-  **byte-identical across customers**; only the wrapper's `unlock_key`
-  differs. So a per-customer rebuild **re-seals the wrapper and
-  re-links**, reusing the blob pool from the build cache; it does
-  **not** re-encrypt the literals. The expensive step (re-encrypting
-  all blobs under a new `mask_key`) fires **only** when the seed or the
-  source changes — **not** per customer. This is the load-bearing
-  reason reseal is deleted, not merely the macOS-notarize argument:
-  reseal's sole real saving was *avoiding blob re-encryption*, and a
-  pinned-seed rebuild already avoids it — at link time, with no
-  post-build binary mutation, no locator, no macOS ad-hoc-sign hole.
-  The irreducible per-customer cost (re-link + re-sign + notarize) is
-  identical whether the wrapper is re-keyed by reseal or by rebuild, so
-  reseal buys nothing over a cached-blob rebuild (§9).
-  - **0.4.1 (caching contract, normative).** litmask-build MUST place
-    the per-site blobs and the wrapper in **separately cacheable**
-    outputs so that, with the seed pinned, only the wrapper-sealing
-    step and the final link re-run per customer. A per-customer change
-    of `unlock_key` MUST NOT invalidate the blob cache. (Blob
-    encryption depends on `mask_key`/seed only; the wrapper depends on
-    `unlock_key`. Keeping these as distinct build inputs is what makes
-    0.4 hold rather than being aspirational.)
+- **0.4 (per-customer rebuild is acceptable — the thesis that makes
+  reseal deletable, normative).** The seed is pinned **per customer**
+  (§4.4 stores `cryptio/<customer>/seed`), so each customer's `mask_key`
+  — and therefore every per-call-site blob — is **distinct**. This is
+  the per-customer **literal isolation** a shared seed would forfeit:
+  recovering one customer's `mask_key` (e.g. the legit owner dumping
+  their own process) does **not** open another customer's literals,
+  because the blobs differ. A per-customer build therefore
+  **re-encrypts the literals under that customer's seed, re-seals the
+  wrapper, re-links, and re-signs**. Reseal's *sole* real saving over
+  this is skipping the blob re-encryption — symmetric AEAD over the
+  literal set, cheap in absolute terms — and it is **dwarfed by the
+  irreducible per-customer cost (re-link + re-sign + notarize)** that
+  reseal cannot avoid either: macOS forces re-sign + notarize per
+  artifact regardless, and a freshly built artifact has cleaner
+  provenance than an in-place-patched one. Reseal is deleted because
+  its marginal saving does not justify the in-place binary mutation it
+  requires (the macOS ad-hoc-sign hole, atomic tempfile commit,
+  `MoveFileExW` unsafe, and the derived locator that let an external
+  tool find the wrapper) — **not** because a rebuild is cost-equivalent
+  via a shared blob cache (§9).
+  - **0.4.1 (blob/wrapper input separation, normative).** litmask-build
+    MUST keep blob encryption keyed on `mask_key`/seed and wrapper
+    sealing keyed on `unlock_key` as **distinct build inputs**. This
+    bounds the **same-customer patch-rebuild**: with that customer's
+    seed pinned, a source-only change re-encrypts only the touched
+    literals, and an `unlock_key` rotation alone re-seals the wrapper
+    **without** invalidating that customer's blob cache. It does **not**
+    make *cross-customer* builds share blobs — each customer's distinct
+    seed yields a distinct blob pool by design (§0.4, the isolation
+    property). The separation bounds per-customer and per-patch cost; it
+    does not collapse customers onto one cache.
 
 ## 1. Tier-0 default (inherited)
 
@@ -164,26 +174,27 @@ an AEAD `obfstr`. Key recoverable from the artifact — the honest floor
 (G §1.4). Accidental ship of a zero-wired build degrades to this floor,
 never plaintext.
 
-- **1.1 (silent-floor hazard + guards, normative).** Tier-0's
+- **1.1 (silent-floor hazard + guard, normative).** Tier-0's
   no-failure-mode is double-edged: a higher tier fails loud when its key
   is absent, but a build left at Tier-0 by mistake — forgot to upgrade
   bare `init!()`, or omitted `init!` entirely — opens forever and looks
   healthy. The works-by-default win *is* the silent-misconfig footgun.
-  Two guards, because the floor is reachable two ways:
-  - **Compile-time (bare `init!()` only).** The proc macro knows the
-    init form at expansion. Under `cfg(not(debug_assertions))` the bare
-    `init!()` expansion emits a compile warning ("Tier-0 obfuscation
-    floor in a release build"). The macro cannot observe an *absent*
-    init call, so this covers bare `init!()` but not no-init. (Distinct
-    from the §2.4 cross-check, which *errors* when the `init!` form and the
-    build tier tag disagree — that catches an *intended* higher tier whose
-    build input is missing; this warning catches a *deliberately* bare
-    `init!()` whose tag legitimately is `tier0`.)
-  - **Runtime (any floor build, incl. no-init).** See §5.3: an internal
-    init-time check compares the resolved `unlock_key` to
-    `KDF(wrapper_nonce, "litmask-tier0-v1")` and emits a one-shot release
-    warning. Backstops the no-init case the macro cannot see. No public
-    API (runs inside init, no arg-parsing dependency).
+  **One guard, at the build, where the floor is decided independently of
+  the `init!` form:** `emit()` derives the tier tag from build-input
+  presence (§2.4), so when the tag is `tier0` under the release profile
+  it emits a `cargo:warning=` ("Tier-0 obfuscation floor in a release
+  build"). Because the warning is **presence-driven, not form-driven**,
+  one emission covers **both** floor paths the old macro-side split could
+  not unify — a *deliberately* bare `init!()` **and** an *omitted*
+  `init!` (no-init / lazy-init) — with no per-call-site duplication and
+  **no string baked into the shipped binary** (build-log channel only,
+  like the §6.2 seed warning; preserves opacity, §7.2). The release gate
+  reuses emit()'s existing `Profile::Release` detection
+  (`fresh_release_warning`, litmask-build/src/lib.rs:273). This is
+  distinct from the §2.4 cross-check, which *errors* when the `init!`
+  form and the tag disagree (an *intended* higher tier whose build input
+  is missing); §1.1 only *warns*, and only when the tag legitimately is
+  `tier0`. (Build-warning re-display caveat: I-R7.)
 
 ## 2. Build-time tiers
 
@@ -210,6 +221,11 @@ machine + one external, fixed-arity and fixed-order (§2.2). Parse: a leading
 `machine_id` token (reserved in first position) optionally followed by `+
 <expr>`; anything else parses as a bare external `<expr>`. Providers do not
 `impl Add`, so `machine_id + X` is never a real binary-add expression.
+**Caveat (minor):** `machine_id` is reserved in leading position, so a
+value-form provider or local binding literally named `machine_id` is
+unreachable via `init!(machine_id …)` (the macro intercepts the token as
+the keyword). Low blast radius — documented so a consumer who happens to
+name a binding `machine_id` understands the shadowing.
 
 > **Build/runtime agreement is reconciled at compile time (load-bearing).**
 > `emit()` seals `mask_key` under an `unlock_key` computed from
@@ -313,8 +329,31 @@ There is no deploy-time tier change. To change a binary's tier or key,
     consumer crate and re-runs the macro check. An `$OUT_DIR` marker file
     would **not**: proc-macro reads of `$OUT_DIR` contents are untracked by
     the compiler (`tracked_path` is nightly-only), so a stale check could
-    survive a factor flip. The forced recompile also unsticks the (likewise
-    untracked) `litmask_wrapper.bin`.
+    survive a factor flip.
+  - **Wrapper freshness (normative clarification).** A factor **flip**
+    (tier change) recompiles via the tag fingerprint above. The common
+    per-customer case is **not** a flip — same tier, new `unlock_key`
+    *value* — so the tag is unchanged and cannot drive freshness. There,
+    freshness rides on (i) `rerun-if-env-changed=LITMASK_UNLOCK_KEY`
+    re-running `emit()` to rewrite `litmask_wrapper.bin`, and (ii) the
+    wrapper being delivered via `include_bytes!`
+    (litmask/src/lib.rs:219-225), a compiler builtin that
+    **content-tracks** the file and recompiles the consumer crate when
+    its bytes change. The wrapper MUST stay `include_bytes!`-delivered
+    for this reason: if it ever moved to a proc-macro `std::fs` read
+    (untracked, like the key/seed blobs), a same-tier `unlock_key` change
+    would go **stale** and ship the prior customer's wrapper. (The tag
+    "unsticks the wrapper" only for *flips*; the same-tier value case is
+    carried by `include_bytes!`, not the tag.)
+  - **Single-crate co-location (normative).** `cargo:rustc-env` and
+    `OUT_DIR` reach **only the crate owning the `build.rs` that calls
+    `emit()`**. The `init!`/`mask!` call sites MUST live in that same
+    crate; a workspace that puts `emit()` in one crate and `init!` in
+    another breaks the channel — the macro reads an absent/stale tag. On
+    an **absent** `LITMASK_SEAL_TIER` the macro MUST `compile_error!`
+    ("litmask: build channel missing — is `litmask_build::emit()` called
+    from this crate's build.rs?") and MUST NOT assume `tier0` (assuming
+    the floor would silently downgrade an intended higher tier). (I-R6.)
   - **Cross-check (normative): the `init!` form MUST match the tag, or the
     build fails.** 1:1 mapping:
 
@@ -461,21 +500,50 @@ There is no deploy-time tier change. To change a binary's tier or key,
   wrapper, no findability signature exists to leak. (Not invisibility —
   a disassembler following the init path still reaches the `.rodata`
   address; the gain is over a blind byte scan.)
-- **5.3 (internal floor detection, no public API).** During `init`, the
-  runtime holds the wrapper by address (hence the nonce) and the resolved
-  `unlock_key`. If `unlock_key == KDF(wrapper_nonce, "litmask-tier0-v1")`
-  it is at the Tier-0 floor; under `cfg(not(debug_assertions))` it emits
-  a one-shot warning. This backs §1.1's no-init guard — it runs *inside*
-  init, so there is no arg-parsing ordering problem. **No public
-  `sealed_tier()`/`--security-status` surface** (a consumer-callable
-  tier query would have to run before the app's own arg parsing —
-  awkward and unenforceable; cut).
+- **5.3 (no runtime tier introspection — floor warning lives at the
+  build).** The Tier-0 floor warning is emitted by `emit()` at build time
+  (§1.1), **not** by the runtime. A runtime floor check would have to bake
+  an identifying warning string into the shipped `.rodata`, leaking
+  litmask presence to `strings(1)` and clashing with the
+  panic-message-hygiene rule (litmask/src/runtime.rs:8-12); the build-log
+  channel avoids both and still covers the no-init case (presence-driven,
+  §1.1). There is likewise **no public `sealed_tier()`/`--security-status`
+  surface** (a consumer-callable tier query would have to run before the
+  app's own arg parsing — awkward and unenforceable; cut).
   - **Accepted residual (consumer bound-check, was I-3).** A consumer
     (Bob) has **no off-box or on-host query** to confirm "is this
     actually bound to me?" beyond running the app: it works ⇒ it opened.
     Floor-vs-bound off-box would need find + trial-decrypt = the removed
     locator, impossible by design. Accepted: the builder owns
     provisioning; consumer-side assurance is out of scope.
+
+- **5.4 (profile-split runtime diagnostics, normative).** The
+  panic-message hygiene that keeps identifying strings out of `.rodata`
+  (litmask/src/runtime.rs:8-12) protects **shipped** binaries, so it
+  applies to **release** alone. Failure messaging is gated on profile:
+  - **Debug (`cfg(debug_assertions)`)** — init and lazy-init failures
+    panic **loud and actionable**. The failing arm is known
+    (`__init_with_wrapper`, litmask/src/runtime.rs:90-110), so each cause
+    maps to a hint: a `KeyProvider` error → provider could not source
+    material (`LITMASK_UNLOCK_KEY` unset / malformed?); an AEAD
+    authentication failure → the runtime-sourced key did not open the
+    build-sealed wrapper (provider material, machine-id, or `init!` form
+    disagrees with the build tier); an unrecognized wrapper header →
+    build/runtime version mismatch. Debug builds are self-decrypting and
+    **never distributed** (§7.1), so identifying text is free here.
+  - **Release (`cfg(not(debug_assertions))`)** — the lazy-init and
+    decrypt paths keep the bare `panic!()` (no message), preserving
+    opacity. The explicit `init!()?` path returns the structured, terse
+    `InitError` (litmask/src/error.rs) in **both** profiles for callers
+    that handle it.
+
+  This turns F1 *opaque runtime death* (I-R2 — including the
+  external-material-mismatch, wrong-source-host, and no-init+machine
+  cases that **no** build-time check catches) into a **clear failure on
+  the developer's own machine during the debug loop**, before any
+  release artifact ships — without weakening release opacity. Implemented
+  as one `cfg`-gated internal panic helper replacing the bare lazy-path
+  panics (litmask/src/runtime.rs:292,300,317,328); `init!()?` unchanged.
 
 ## 6. Build-time guarantees (no runtime self-assertion)
 
@@ -494,14 +562,18 @@ There is no deploy-time tier change. To change a binary's tier or key,
   litmask-build/src/lib.rs:283 echoes `LITMASK_RNG_SEED=<seed>` — owed
   removal. Reproducible rebuild instead relies on the operator pinning
   the seed up front via `keygen`, §4.4 / I-R4; there is no post-hoc
-  seed-recovery channel.)
+  seed-recovery channel.) Once the echo is removed, the **only**
+  sanctioned release `cargo:warning=` from `emit()` is the §1.1 Tier-0
+  floor notice, which carries no secret value.
 
 ## 7. Threat-model deltas
 
-- **7.1 (debug self-decrypts, inherited from G §3.2).** Debug builds
-  seal like release (no pass-through plaintext). A debug binary is
-  self-decrypting at Tier-0 and **must never be distributed** — the
-  accepted trust boundary belongs in `THREAT_MODEL.md`.
+- **7.1 (debug self-decrypts + diagnoses, inherited from G §3.2).** Debug
+  builds seal like release (no pass-through plaintext) but **fail loud**:
+  init failures carry actionable, identifying messages (§5.4). A debug
+  binary is self-decrypting at Tier-0 *and* prints litmask-identifying
+  diagnostics, so it **must never be distributed** — the accepted trust
+  boundary belongs in `THREAT_MODEL.md`.
 - **7.2 (opacity unchanged or improved).** Removing the locator removes
   one derived value from the artifact; the wrapper is indistinguishable
   `.rodata`. The dirty-word scrub still gates against identifying
@@ -520,7 +592,8 @@ There is no deploy-time tier change. To change a binary's tier or key,
   document seed-pinning via `keygen` (§4.4) and the self-checking id
   token (§4.1.1).
 - `THREAT_MODEL.md`: add §3.2 build-env key exposure, §7.1 debug
-  self-decrypt boundary, §7.2 opacity-without-locator.
+  self-decrypt-**and-diagnose** boundary (§5.4), §7.2
+  opacity-without-locator.
 - `CONTEXT.md`: retire **locator** and **litmask.config** as terms (or
   mark historical); `bind`/`reseal`/`inspect` terms removed. Retire
   **`MultiProvider`** and the public **`MachineIdProvider`** type; add
@@ -534,7 +607,13 @@ There is no deploy-time tier change. To change a binary's tier or key,
 - `litmask`: remove `MachineIdProvider` from the public API (machine binding
   is the `machine_id` keyword); `emit()` emits the `LITMASK_SEAL_TIER` tag +
   `rerun-if-env-changed` for both factor channels; `init!` reads the tag and
-  cross-checks the form (§2.4).
+  cross-checks the form, `compile_error!` on absent tag (§2.4).
+- `litmask-build`: `emit()` emits the §1.1 Tier-0 floor `cargo:warning=`
+  (release + tag `tier0`), reusing `Profile::Release` detection
+  (litmask-build/src/lib.rs:273); remove the §6.2 seed echo (line 283).
+- `litmask`: replace the bare lazy-path `panic!()`s
+  (litmask/src/runtime.rs:292,300,317,328) with a `cfg(debug_assertions)`-gated
+  panic helper carrying actionable messages in debug, bare in release (§5.4).
 
 ## 9. What I removes vs G
 
@@ -570,27 +649,48 @@ There is no deploy-time tier change. To change a binary's tier or key,
 - **I-R2 (no off-box assurance).** No way to confirm a bound binary will
   unlock on a target except by running it there. The former §6
   build-time round-trip is **gone** (it proved crypto-correctness, not
-  target-openability — §6.1). Mitigated only by the determinism of tier
-  derivation. No consumer-callable tier query (§5.3); the internal
-  floor warning is the only runtime signal, and only for the floor case.
+  target-openability — §6.1). Mitigated by (i) the determinism of tier
+  derivation, (ii) the build-time floor warning (§1.1), and (iii)
+  **loud, actionable debug-build diagnostics (§5.4)** that surface the
+  external-material-mismatch, wrong-source-host, and no-init+machine
+  misconfigurations on the developer's own machine before a release
+  ships. There is **no** consumer-callable tier query (§5.3) and **no**
+  runtime warning string in release (opacity preserved); the residual is
+  the irreducible "a stable host must be exercised once."
 - **I-R3 (build-env key exposure).** §3.2 — build host trusted with
   the key; untrusted build deps out of scope. No boundary expansion vs
   G: the build host already holds the seed + `mask_key`, and a secret
   store handles at-rest custody (§3.2).
-- **I-R4 (per-customer build cost — bounded, not N full builds).** With
-  the seed pinned (§4.4) the blob pool is byte-identical across
-  customers and reused from cache, so a per-customer rebuild re-seals
-  the wrapper and re-links — it does **not** re-encrypt the literals
-  (§0.4, caching contract §0.4.1). The heavy step (re-encrypting blobs
-  under a new `mask_key`) fires only on a seed or source change, not per
-  customer. The irreducible per-customer cost (re-link + re-sign +
-  notarize) is exactly what reseal also could not avoid, so this is not
-  a regression vs G. Bit-reproducible patch-rebuild requires the
-  customer's seed pinned **up front** (mint with `keygen`, store per
-  §4.4); deterministic-from-build-inputs holds only with the seed
-  treated as a pinned input — there is no post-hoc seed-recovery channel
-  (§6.2).
+- **I-R4 (per-customer build cost — N real builds, marginal delta vs
+  reseal).** The seed is pinned **per customer** (§4.4), giving each
+  customer a distinct `mask_key` and a distinct blob pool — the literal
+  isolation property (§0.4). So a per-customer build **does** re-encrypt
+  the literals (symmetric AEAD, cheap in absolute terms), re-seals the
+  wrapper, re-links, and re-signs. Reseal's only saving over this is the
+  blob re-encryption, dwarfed by the irreducible re-link + re-sign +
+  notarize that reseal cannot avoid either, so deleting reseal is not a
+  cost regression vs G. The earlier "byte-identical blobs reused from
+  cache across customers" claim was **wrong** — it assumed one shared
+  seed, which would forfeit per-customer isolation — and is **withdrawn**;
+  the blob cache survives only across **same-customer** patch-rebuilds
+  (same pinned seed), not across customers (§0.4.1). Bit-reproducible
+  patch-rebuild requires that customer's seed pinned **up front** (mint
+  with `keygen`, store per §4.4); there is no post-hoc seed-recovery
+  channel (§6.2).
 - **I-R5 (`keygen` — resolved: kept).** Direct-key and seed tiers need a
   generator; `keygen` ships as a pure stdout generator (§4.4), no binary
   I/O, not part of the removed re-key surface. It also resolves seed
   custody (I-R4). CLI surface is `{keygen, show-machine-id}`.
+- **I-R6 (cross-crate build channel).** The tier tag and `OUT_DIR` reach
+  only the crate that owns `emit()`'s `build.rs`; `init!`/`mask!` MUST
+  co-locate there (§2.4 single-crate co-location). A workspace split is
+  rejected at compile time (absent-tag `compile_error!`), never silently
+  downgraded — a hard failure, but discoverable at build, not at Bob's
+  runtime.
+- **I-R7 (build-warning re-display).** The §1.1 floor warning rides
+  cargo's build-script `cargo:warning=` channel, which cargo only
+  re-displays when `build.rs` re-runs. A source-only incremental rebuild
+  of an already-built tier0 crate may not re-echo it;
+  `rerun-if-env-changed` on the factor vars covers tier flips and a
+  fresh/release build always shows it. Same limitation as the seed
+  warning today; accepted.
