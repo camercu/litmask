@@ -70,8 +70,9 @@ call site, from the seed and the site's identity).
 
 **Key provider** ([`KeyProvider`]):
 Trait that supplies the **unlock key** at runtime. Built-in
-implementations: [`EnvVarProvider`] (env var), `FileProvider` (path),
-`MachineIdProvider` (machine ID), `StaticProvider` (in-memory).
+implementations: [`EmbeddedProvider`] (keyless default — recomputes the
+**unlock key** from the wrapper's cleartext **nonce**), [`EnvVarProvider`]
+(env var), `FileProvider` (path), `MachineIdProvider` (machine ID).
 _Avoid_: "key source", "key backend".
 
 **Mask** (verb): To encrypt a literal at compile time via `mask!()` or
@@ -90,9 +91,11 @@ before `init!()` runs (env-var names, default file paths). The
 derivation uses only the nonce.
 _Avoid_: "soft mask", "light mask".
 
-**`init!` / `init_with!`**: Declarative macros that decrypt the
-**wrapper** with the **unlock key** and populate the process-global
-**mask key** cell.
+**`init!` / `init_with!`**: Macros that decrypt the **wrapper** with the
+**unlock key** and populate the process-global **mask key** cell. The
+no-arg `init!()` (a proc-macro) uses the keyless [`EmbeddedProvider`] and
+cross-checks the build's **seal tier** tag; `init_with!` (declarative)
+takes any [`KeyProvider`].
 
 ### Build pipeline
 

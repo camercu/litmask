@@ -113,7 +113,7 @@ tag and the rerun-if-env-changed plumbing. Remove the §6.2 seed echo.
 
 ---
 
-## Task 3: `init!()` proc macro + lazy Embedded (AFK)
+## Task 3: `init!()` proc macro + lazy Embedded (AFK) ✅ DONE
 
 **Implements:** §2 (no-arg form), §2.1 (no silent downgrade), §2.4
 (cross-check), §2.5.5 (StaticProvider); doc: SPECIFICATION §1.4.1/§1.8.2
@@ -159,32 +159,32 @@ keyless floor; retire or repurpose it rather than port it.
 
 ### Acceptance Criteria
 
-- [ ] `EmbeddedProvider::new(&wrapper)` stores only the wrapper nonce and
+- [x] `EmbeddedProvider::new(&wrapper)` stores only the wrapper nonce and
       returns `derive_embedded_unlock_key(nonce)` from `unlock_key()`; no
       verbatim key bytes are held, no zeroize/Drop remains (TDD: assert
       equality vs. `derive_embedded_unlock_key`, and that the derived key
       round-trips a build-emitted wrapper through `decrypt_wrapper`)
-- [ ] `StaticProvider` is gone from the public API; `static_key.rs` is
+- [x] `StaticProvider` is gone from the public API; `static_key.rs` is
       renamed to `embedded.rs` and the prelude re-export, `mod.rs` doc
       list, and CONTEXT.md all use `EmbeddedProvider` (breaking-change
       commit)
-- [ ] `TestProvider` exists only under `#[cfg(test)]`, holds a verbatim
+- [x] `TestProvider` exists only under `#[cfg(test)]`, holds a verbatim
       `UnlockKey`, and is absent from the public API (no `pub use`); a
       release build exposes no fixed-key provider
-- [ ] `init!()` expands via proc macro and decrypts the wrapper under
+- [x] `init!()` expands via proc macro and decrypts the wrapper under
       Embedded using `EmbeddedProvider::new(&wrapper)`
-- [ ] `init!()` against a non-`embedded` tag → `compile_error!` naming
+- [x] `init!()` against a non-`embedded` tag → `compile_error!` naming
       the mismatch; absent tag → `compile_error!`
-- [ ] Code with no `init!()` at all decrypts `mask!` literals via the
+- [x] Code with no `init!()` at all decrypts `mask!` literals via the
       lazy Embedded path through `EmbeddedProvider::new(&wrapper)` (no
       `EnvVarProvider::default` reference remains)
-- [ ] `tests/static_provider.rs` and `examples/static_provider.rs` no
+- [x] `tests/static_provider.rs` and `examples/static_provider.rs` no
       longer reference `StaticProvider::new(UnlockKey)`; their `init_with!`
       coverage uses an inline `KeyProvider` impl (or the example is
       retired)
-- [ ] e2e test: a binary using `mask!` both with and without `init!()`
+- [x] e2e test: a binary using `mask!` both with and without `init!()`
       produces correct plaintext under an Embedded build
-- [ ] SPECIFICATION §1.4.1/§1.8.2 document the `init!()` form, the lazy
+- [x] SPECIFICATION §1.4.1/§1.8.2 document the `init!()` form, the lazy
       Embedded fallback, and the nonce-derived `EmbeddedProvider`;
       CONTEXT.md replaces the `StaticProvider` entry with `EmbeddedProvider`
       (keyless, nonce-derived)

@@ -57,14 +57,16 @@ fn main() { litmask_build::emit(); }
 
 ```sh
 cargo build
-LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' target/debug/litmask.config) \
-    cargo run
+cargo run    # no key to deliver — the default Embedded tier is keyless
 ```
 
-`litmask_build::emit()` writes `litmask.config` to the build profile
-directory (`target/debug/` here). The `awk` one-liner reads its
-`unlock_key` and exports it as `LITMASK_UNLOCK_KEY`, which the default
-`EnvVarProvider` uses to unwrap the mask key at runtime.
+By default `init!()` uses the keyless `EmbeddedProvider`: it recomputes
+the `unlock_key` from the wrapper's cleartext nonce, so a zero-config
+build runs with nothing to provision. This buys `strings(1)` resistance,
+not secrecy — the key is recoverable from the artifact. To keep the
+`unlock_key` out of the binary, source it at runtime with a
+[`KeyProvider`](#key-providers) and `init_with!` (e.g. `EnvVarProvider`
+reading `LITMASK_UNLOCK_KEY`).
 
 ## How it works
 
@@ -76,13 +78,16 @@ litmask splits encryption across build time and run time:
 2. **Compile** — each `mask!` literal is AEAD-encrypted during macro
    expansion and the ciphertext is embedded in the binary as `&[u8]`. The
    plaintext never appears in the output binary.
-3. **Run** — `init!()` unwraps the `mask_key` using an `unlock_key`
-   supplied by a [`KeyProvider`](#key-providers); `mask!` then decrypts
+3. **Run** — `init!()` unwraps the `mask_key` using an `unlock_key`. The
+   default keyless `EmbeddedProvider` recomputes it from the wrapper
+   nonce; higher tiers source it at runtime via a
+   [`KeyProvider`](#key-providers) and `init_with!`. `mask!` then decrypts
    each blob on demand.
 
-The `unlock_key` is the only secret that lives outside the binary, so key
-management reduces to _how you deliver the unlock_key_ — environment
-variable, file, machine ID, or a provider you write.
+Above the Embedded floor, the `unlock_key` is the only secret that lives
+outside the binary, so key management reduces to _how you deliver the
+unlock_key_ — environment variable, file, machine ID, or a provider you
+write.
 
 ## Macros
 
@@ -116,10 +121,10 @@ use `weak_mask!`, but its key is recoverable statically from the binary.
 
 | Provider             | Source                 | Feature |
 | -------------------- | ---------------------- | ------- |
+| `EmbeddedProvider`   | Wrapper nonce (keyless default) | always |
 | `EnvVarProvider`     | Environment variable   | default |
 | `FileProvider`       | Filesystem path        | default |
 | `MachineIdProvider` | Machine ID + BLAKE3    | `machine-id` |
-| `StaticProvider`     | Fixed key (tests only) | --      |
 | `impl KeyProvider`   | Anything you write     | --      |
 
 ```rust
@@ -133,7 +138,8 @@ litmask::init_with!(provider)?;
 
 | Configuration                | Defeats                             |
 | ---------------------------- | ----------------------------------- |
-| Default (`EnvVarProvider`)   | `strings`, casual inspection        |
+| Default (keyless `EmbeddedProvider`) | `strings`, casual inspection (key recoverable from artifact) |
+| `EnvVarProvider`             | Above, key sourced from an env var, kept out of the binary |
 | `FileProvider`               | Above, key sourced from a file path |
 | `MachineIdProvider`         | Above + binary redistribution       |
 | Custom provider (vault, HSM) | Above + offline attackers           |

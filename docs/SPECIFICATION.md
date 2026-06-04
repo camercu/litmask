@@ -75,7 +75,7 @@ Configurations and what each defeats:
 
 | Configuration | Defeats |
 |---|---|
-| Zero-config build (defaults to `EnvVarProvider`) | `strings`, casual binary inspection (Level 1); also Level 2 because `unlock_key` is not embedded |
+| Zero-config build (defaults to keyless `EmbeddedProvider`) | `strings`, casual binary inspection (Level 1) only — the `unlock_key` is recomputed from the wrapper's cleartext nonce, so it is recoverable from the artifact |
 | `FileProvider` + filesystem permissions | Above with OS-enforced access control |
 | `MachineIdProvider` | Above + binary moved to a different machine |
 | Custom `KeyProvider` (network call, vault) | Above + offline attackers |
@@ -85,9 +85,10 @@ absence of runtime key provisioning. For providers that source `unlock_key` from
 external runtime state (`EnvVarProvider`, `FileProvider`, `MachineIdProvider`,
 custom providers), the deployer MUST provision that state at runtime. A binary
 configured with such a provider but without the corresponding state will fail at
-init. `StaticProvider` is an exception — it carries the key in the constructor
-and requires no external provisioning, but the security level for `StaticProvider`
-configured at compile time degrades to Level 1 since the key is in the binary.
+init. The default `EmbeddedProvider` is the exception — it stores no key and
+recomputes `unlock_key` from the public wrapper nonce, so it requires no external
+provisioning, but its security level is Level 1 only: the nonce ships in the
+binary, so the key is honestly recoverable from the artifact.
 
 #### §1.1.5 Deliberate understatement
 
@@ -221,24 +222,28 @@ The runtime maintains a single `OnceLock<MaskKey>` for the decrypted `mask_key`.
 Initialization happens via:
 
 ```rust
-litmask::init!()?;                              // Uses default EnvVarProvider
+litmask::init!()?;                              // Embedded tier: keyless, nonce-derived
 litmask::init_with!(provider)?;                 // Uses provided KeyProvider
 ```
 
-`init` and `init_with` are declarative macros, not regular functions. The
-macros expand at the call site so they can `include_bytes!(concat!(env!("OUT_DIR"),
-"/litmask_wrapper.bin"))` against the **caller's** crate `OUT_DIR` (where the
-user's `build.rs` ran `litmask_build::emit()`). A regular function in the
-`litmask` runtime crate cannot reach a downstream crate's `OUT_DIR`. The
-macros delegate to a private function
+Neither is a regular function: both expand at the call site so they can
+`include_bytes!(concat!(env!("OUT_DIR"), "/litmask_wrapper.bin"))` against
+the **caller's** crate `OUT_DIR` (where the user's `build.rs` ran
+`litmask_build::emit()`). A regular function in the `litmask` runtime crate
+cannot reach a downstream crate's `OUT_DIR`. `init_with!` is a declarative
+macro; `init!` is a proc-macro so it can read the build-authoritative
+`LITMASK_SEAL_TIER` tag and `compile_error!` when the form and the sealed
+tier disagree (the no-arg `init!()` form requires the `embedded` tier).
+Both delegate to a private function
 `litmask::__internal::__init_with_wrapper(provider, &wrapper_bytes)` that
-contains the actual decryption logic.
+contains the actual decryption logic; the no-arg `init!()` constructs an
+`EmbeddedProvider` from the wrapper bytes.
 
-Either form is optional — first `mask!()` call performs lazy init with the
-default provider (using `EnvVarProvider::default()` and the wrapper bytes
-that `mask!()` itself embeds via `include_bytes!`). Explicit init is
-recommended so initialization failures surface at startup with structured
-errors rather than panics deep in program execution.
+Either form is optional — first `mask!()` call performs lazy init with
+`EmbeddedProvider::new(&wrapper)`, deriving the Embedded `unlock_key` from
+the wrapper bytes that `mask!()` itself embeds via `include_bytes!`.
+Explicit init is recommended so initialization failures surface at startup
+with structured errors rather than panics deep in program execution.
 
 The `OnceLock` is initialized exactly once per process; key rotation at runtime
 is not supported in v1.
@@ -490,10 +495,11 @@ precludes English-language strings on the trait. Deployment guidance lives in
 | `EnvVarProvider` | `std` (default) | Reads from a configurable env var (default `LITMASK_UNLOCK_KEY`) |
 | `FileProvider` | `std` (default) | Reads from a filesystem path |
 | `MachineIdProvider` | `machine-id` (opt-in) | Derives from machine ID via `machine-uid` |
-| `StaticProvider` | always available | Holds an `UnlockKey` directly; primarily for tests |
+| `EmbeddedProvider` | always available | Keyless default; recomputes the Embedded-tier `unlock_key` from the wrapper's cleartext nonce |
 
 Default provider when `init!()` is called without arguments:
-`EnvVarProvider::new("LITMASK_UNLOCK_KEY")`.
+`EmbeddedProvider::new(&wrapper)` — keyless, recomputing the Embedded-tier
+`unlock_key` from the wrapper's public nonce (no stored key material).
 
 #### §1.6.3 Key encoding
 
@@ -727,15 +733,16 @@ audit purposes.
 #### §1.8.2 Init macros
 
 ```rust
-litmask::init!()?;                    // Uses default EnvVarProvider
+litmask::init!()?;                    // Embedded tier: keyless, nonce-derived
 litmask::init_with!(provider)?;       // Uses provided KeyProvider
 ```
 
-`init!` and `init_with!` are declarative macros (see §1.4.1 for rationale).
-They delegate to a private `litmask::__internal::__init_with_wrapper`
-function, passing wrapper bytes read via `include_bytes!` at the call site.
-The effective signature of the expansion result is
-`Result<(), InitError>`.
+`init!` is a proc-macro (form↔tier cross-check); `init_with!` is a
+declarative macro (see §1.4.1 for rationale). Both delegate to a private
+`litmask::__internal::__init_with_wrapper` function, passing wrapper bytes
+read via `include_bytes!` at the call site. The no-arg `init!()` constructs
+an `EmbeddedProvider` from those bytes. The effective signature of the
+expansion result is `Result<(), InitError>`.
 
 #### §1.8.3 Public types
 
@@ -743,10 +750,10 @@ The effective signature of the expansion result is
 pub trait KeyProvider { ... }
 pub struct UnlockKey([u8; 32]);
 
+pub struct EmbeddedProvider { ... }
 pub struct EnvVarProvider { ... }
 pub struct FileProvider { ... }
 #[cfg(feature = "machine-id")] pub struct MachineIdProvider { ... }
-pub struct StaticProvider { ... }
 
 pub enum KeyEncoding { Base64Url, Raw }
 
@@ -953,7 +960,7 @@ proc-macro SHALL include both:
 
 1. The invoking macro's name with `!` suffix (`mask!`, `mask_format!`,
    `mask_include_str!`, `mask_include_bytes!`, `mask_concat!`, `mask_env!`,
-   `mask_option_env!`, `mask_file!`, `unmasked!`, `weak_mask!`).
+   `mask_option_env!`, `mask_file!`, `unmasked!`, `weak_mask!`, `init!`).
 2. One of the closed failure tags below, identifying the rejection reason.
    The tag SHALL appear verbatim as a hyphen-separated lowercase substring
    so downstream tooling can pattern-match on `<macro>! <tag>`.
@@ -965,7 +972,8 @@ proc-macro SHALL include both:
 | `unset` | `mask_env!` was given a name that resolves to no environment variable. (`mask_option_env!`'s unset case is a runtime `None`, not a compile error.) |
 | `unicode-failure` | Environment-variable value is set but not valid UTF-8. |
 | `invalid-arg` | `mask_concat!` was passed an argument that is not a string literal or a compile-time-resolvable string macro. |
-| `args-not-allowed` | `mask_file!` was given any argument (the macro takes none). |
+| `args-not-allowed` | `mask_file!` was given any argument (the macro takes none), or `init!` was given an argument (the no-arg `init!()` form is the only one in this release). |
+| `tier-mismatch` | `init!()` was invoked against a build whose sealed `LITMASK_SEAL_TIER` is not `embedded`, or that set no tier at all (no `litmask_build::emit()` in `build.rs`). |
 | `duplicate-name` | `mask_format!` was given the same named argument twice. |
 | `positional-after-named` | `mask_format!` was given a positional argument after a named one. |
 | `positional-unused` | `mask_format!` was given a positional argument never referenced by any placeholder. |
@@ -1164,7 +1172,7 @@ Stable surface (semver-protected):
   breaking)
 - `KeyProvider` trait
 - `UnlockKey` type
-- `EnvVarProvider`, `FileProvider`, `MachineIdProvider`, `StaticProvider`
+- `EmbeddedProvider`, `EnvVarProvider`, `FileProvider`, `MachineIdProvider`
 - `init!()`, `init_with!()` macros
 - `InitError::sysexit_code()` method and the sysexits mapping in §1.9.7
 - Error type variants (new variants non-breaking via `#[non_exhaustive]`)
@@ -1397,7 +1405,8 @@ own substring for this position. See §1.9.6 for rationale.
 policy in §1.9.5.
 
 §2.1.1.12 — Calling `mask!` before `litmask::init!()` or `litmask::init_with!()`
-SHALL trigger lazy initialization using the default `EnvVarProvider`.
+SHALL trigger lazy initialization using the default keyless `EmbeddedProvider`
+(`unlock_key` recomputed from the wrapper's cleartext nonce).
 
 §2.1.1.13 — Lazy initialization failure SHALL panic per the policy in §1.9.5.
 
@@ -1881,28 +1890,38 @@ BLAKE3-keyed-hash.
 - Return `Err(KeyError::Provider(...))` if `machine-uid` fails
 - Return `Ok(UnlockKey(derived_bytes))` otherwise
 
-#### §2.5.5 StaticProvider
+#### §2.5.5 EmbeddedProvider
 
-§2.5.5.1 — `StaticProvider::new(key: UnlockKey)` SHALL construct a provider
-that always returns the given key.
+§2.5.5.1 — `EmbeddedProvider::new(wrapper: &[u8; WRAPPER_LEN])` SHALL construct
+the keyless default provider, capturing only the wrapper's cleartext nonce
+(no key material is stored).
 
-§2.5.5.2 — `StaticProvider::unlock_key()` SHALL return `Ok(self.key.clone())`
-unconditionally.
+§2.5.5.2 — `EmbeddedProvider::unlock_key()` SHALL recompute and return the
+Embedded-tier `unlock_key` as `derive_embedded_unlock_key(context, nonce)` —
+the same derivation `litmask-build` runs at seal time — so it always returns
+`Ok(_)`. The BLAKE3 derivation `context` is passed through `weak_mask!` at the
+call site to keep the literal out of `strings(1)` output; it MUST decode to
+`EMBEDDED_UNLOCK_DERIVATION_CONTEXT` byte-for-byte.
 
 ### §2.6 Iteration 6 — Runtime initialization
 
 #### §2.6.1 init functions
 
 §2.6.1.1 — `litmask::init!()` SHALL initialize the runtime using
-`EnvVarProvider::default()`, returning `Result<(), InitError>`.
+`EmbeddedProvider::new(&wrapper)` — the keyless Embedded-tier provider that
+recomputes `unlock_key` from the wrapper's cleartext nonce — returning
+`Result<(), InitError>`. As a proc-macro, `init!` SHALL read the build's
+`LITMASK_SEAL_TIER` tag and emit a §1.9.6 `init! tier-mismatch`
+`compile_error!` when the sealed tier is not `embedded` or is absent, and an
+`init! args-not-allowed` error if given any argument.
 
 §2.6.1.2 — `litmask::init_with!(provider)` SHALL initialize the runtime
 using the given provider, returning `Result<(), InitError>`.
 
-Both are declarative macros that expand at the call site to read wrapper
-bytes via `include_bytes!` from the caller's `OUT_DIR`, then forward to a
-private `__init_with_wrapper(provider, &wrapper_bytes)` function whose
-behavior matches the requirements below verbatim.
+Both expand at the call site to read wrapper bytes via `include_bytes!` from
+the caller's `OUT_DIR`, then forward to a private
+`__init_with_wrapper(provider, &wrapper_bytes)` function whose behavior
+matches the requirements below verbatim.
 
 §2.6.1.3 — Both init functions SHALL retrieve `unlock_key` via
 `provider.unlock_key()`, decrypt the embedded `mask_key` wrapper (format per
