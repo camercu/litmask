@@ -159,7 +159,6 @@ constants and utilities used by both the runtime and CLI crates.
      them. Higher seal tiers replace this with a provider-supplied key.
    - Encrypts `mask_key` with `unlock_key` using the configured cipher,
      producing the encrypted `mask_key` wrapper described in §1.7.3.
-   - Computes the locator (first 12 bytes of the wrapper).
    - Writes `mask_key` and `RNG_SEED` to files in `OUT_DIR`
      (`$OUT_DIR/litmask_key.bin` and `$OUT_DIR/litmask_seed.bin`). The
      proc-macro reads these via `include_bytes!`. The plaintext `mask_key`
