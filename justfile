@@ -186,6 +186,13 @@ check-cross:
 semver-check:
     cargo semver-checks check-release --workspace
 
+# Nightly dependency-fingerprint scrub. Verifies the docs/DEPLOYMENT.md
+# hardening recipe still strips dep / litmask source-path strings from
+# `.rodata`. Nightly-only (uses unstable `-Zlocation-detail` /
+# `-Zfmt-debug`), so it lives in its own CI lane, not the stable gate.
+scrub-hardened:
+    ./scripts/scrub-hardened.sh
+
 # ── Documentation ───────────────────────────────────────────
 
 # `--all-features` so every feature-gated symbol (`MachineIdProvider`

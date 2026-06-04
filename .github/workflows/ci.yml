@@ -170,6 +170,27 @@ jobs:
           name: fuzz-crashes
           path: litmask/fuzz/artifacts/
 
+  # Verifies the docs/DEPLOYMENT.md nightly hardening recipe still
+  # strips dependency / litmask source-path strings from `.rodata`.
+  # Advisory: the flags are nightly-only and not part of the stable
+  # canonical gate, so a nightly regression here informs without
+  # blocking releases.
+  nightly-scrub:
+    name: Nightly dependency-fingerprint scrub
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Scrub hardened build
+        run: ./scripts/scrub-hardened.sh
+
   # ── Platform smoke tests ──────────────────────────────────
 
   smoke-native:
