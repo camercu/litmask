@@ -315,8 +315,8 @@ language survives anywhere and every cross-reference resolves.
       explicitly documenting their removal
 - [ ] Every internal doc cross-reference (§ links, file links, CONTEXT
       glossary terms) resolves to a real target
-- [ ] README, CLAUDE.md architecture notes, and man pages describe the
-      build-sealed model and the final CLI surface
+- [ ] README, CLAUDE.md architecture notes, docs/DEPLOYMENT.md, and man
+      pages describe the build-sealed model and the final CLI surface
 - [ ] SPECIFICATION section numbering is contiguous and the table of
       contents (if any) matches
 - [ ] `just ci` green; `just lint` (typos/links) clean
