@@ -30,7 +30,10 @@ impl KeyProvider for ConfigProvider {
 #[test]
 fn embedded_init_against_build_succeeds() {
     init!().expect("Embedded init! round-trips the build wrapper");
-    let _ = mask!("embedded-provider-fixture");
+    assert_eq!(
+        mask!("embedded-provider-fixture"),
+        "embedded-provider-fixture"
+    );
 }
 
 #[test]

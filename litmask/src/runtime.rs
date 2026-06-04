@@ -115,8 +115,8 @@ pub fn __init_with_wrapper<P: KeyProvider>(
 ///
 /// `blob` is `nonce (12) || ciphertext (n) || tag (16)`. `wrapper` is
 /// the embedded encrypted-`mask_key` blob, passed by the macro so lazy
-/// init can fall back to [`crate::EnvVarProvider`] when no explicit
-/// `init!` was issued.
+/// init can derive the Embedded `unlock_key` via
+/// [`crate::EmbeddedProvider`] when no explicit `init!` was issued.
 ///
 /// # Panics
 ///

@@ -128,7 +128,7 @@ pub use provider::{EnvVarProvider, FileProvider, KeyEncoding};
 pub use provider::MachineIdProvider;
 
 pub use litmask_macros::{
-    mask, mask_all, mask_concat, mask_env, mask_file, mask_format, mask_include_bytes,
+    init, mask, mask_all, mask_concat, mask_env, mask_file, mask_format, mask_include_bytes,
     mask_include_str, mask_option_env, unmasked, weak_mask,
 };
 
@@ -224,29 +224,6 @@ macro_rules! __wrapper_bytes {
             "/litmask_wrapper.bin"
         ))
     };
-}
-
-/// Initialize the runtime under the Embedded seal tier: derive the
-/// `unlock_key` from the embedded wrapper's cleartext nonce and decrypt
-/// the `mask_key` with it (no external key material).
-///
-/// Declarative macro: expands at the call site so it can read the
-/// embedded encrypted-`mask_key` wrapper from the calling crate's
-/// `OUT_DIR`. Calling `litmask::init!()?` at program startup is
-/// recommended to surface initialization errors as `Result`. Without
-/// it, the first `mask!()` call performs the same lazy Embedded
-/// initialization and panics on failure.
-#[macro_export]
-macro_rules! init {
-    () => {{
-        // Bind the embedded wrapper once: `EmbeddedProvider` reads its
-        // nonce, then the runtime decrypts the same bytes.
-        let __litmask_wrapper = $crate::__wrapper_bytes!();
-        $crate::__internal::__init_with_wrapper(
-            $crate::EmbeddedProvider::new(__litmask_wrapper),
-            __litmask_wrapper,
-        )
-    }};
 }
 
 /// Initialize the runtime using a caller-supplied [`KeyProvider`].

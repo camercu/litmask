@@ -38,6 +38,7 @@ pub(crate) enum FailTag {
     PositionalOutOfRange,
     InvalidPlaceholder,
     TemplateSyntax,
+    TierMismatch,
 }
 
 impl FailTag {
@@ -56,6 +57,7 @@ impl FailTag {
             Self::PositionalOutOfRange => "positional-out-of-range",
             Self::InvalidPlaceholder => "invalid-placeholder",
             Self::TemplateSyntax => "template-syntax",
+            Self::TierMismatch => "tier-mismatch",
         }
     }
 }

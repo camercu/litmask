@@ -1,0 +1,7 @@
+error: init! args-not-allowed: init!() takes no arguments
+  --> tests/compile/init_with_argument.rs:13:13
+   |
+13 |     let _ = init!(some_provider);
+   |             ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the macro `init` (in Nightly builds, run with -Z macro-backtrace for more info)
