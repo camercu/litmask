@@ -1,24 +1,19 @@
-//! `litmask` CLI — companion tool for `bind` and `inspect`.
+//! `litmask` CLI — companion tool for build-sealed binaries.
 //!
-//! Each subcommand lives in a module split into a pure planner
-//! ([`inspect::plan`] / [`bind::plan_bind`]) and a thin imperative
-//! shell (`run`). `main` is responsible only for argument parsing
-//! (via `clap`) and mapping the shell's `Result<Outcome, ShellError>`
-//! to an `ExitCode`.
+//! `main` is responsible only for argument parsing (via `clap`) and
+//! mapping each subcommand's result to a sysexits-aligned `ExitCode`.
 
-use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-mod bind;
-mod config;
 mod exit;
-mod inputs;
-mod inspect;
 
-/// `litmask` companion tool for inspecting and rebinding
-/// litmask-built binaries.
+/// Readable diagnostic for a failed machine-id lookup. Kept as a named
+/// constant so the message text is pinned by a unit test.
+const MACHINE_ID_UNAVAILABLE_MSG: &str = "could not read the machine ID (machine-uid failed)";
+
+/// `litmask` companion tool.
 #[derive(Parser, Debug)]
 #[command(name = "litmask", version, about, long_about = None)]
 struct Cli {
@@ -28,63 +23,12 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Scan a binary for the locator recorded in `litmask.config`.
+    /// Print this host's machine ID — the exact bytes a machine-tier
+    /// build feeds into its key derivation.
     ///
-    /// A readable confirmation prints to stdout on a verified match;
-    /// every other outcome prints a diagnostic to stderr. The exit
-    /// code is the machine-readable signal:
-    /// - 0 on a single match (verified)
-    /// - 65 on multiple differing matches (ambiguous)
-    /// - 66 on no match (not found)
-    /// - 64 on argument-parse / config-malformed failures
-    Inspect {
-        /// Path to the binary to scan.
-        binary: PathBuf,
-        /// Path to `litmask.config`.
-        #[arg(long)]
-        config: PathBuf,
-    },
-    /// Rebind a binary's embedded `mask_key` wrapper to a new
-    /// machine-ID-derived `unlock_key`, atomically updating both the
-    /// binary and `litmask.config`.
-    ///
-    /// Works with any provider: binaries using `MachineIdProvider`
-    /// decrypt automatically after bind; binaries using
-    /// `EnvVarProvider` decrypt when given the config's updated
-    /// `unlock_key` via the environment variable.
-    ///
-    /// A readable confirmation prints to stdout on success; every
-    /// failure prints a diagnostic to stderr. The exit code is the
-    /// machine-readable signal:
-    /// - 0 on success
-    /// - 65 on locator-ambiguous, AEAD decryption failure, or
-    ///   unsupported format/cipher
-    /// - 66 on no locator match
-    /// - 69 on machine-id lookup failure
-    Bind {
-        /// Path to the binary to rebind.
-        binary: PathBuf,
-        /// Path to `litmask.config`.
-        #[arg(long)]
-        config: PathBuf,
-        /// Optional base64url-encoded salt. Mixes into the
-        /// machine-id BLAKE3 derivation so two products on the
-        /// same host with different salts get distinct keys.
-        #[arg(long)]
-        salt: Option<String>,
-        /// Bind against this machine ID instead of the local host's.
-        /// Pass the value a target reported via `litmask show-machine-id`
-        /// to bind off-box (e.g. in a build pipeline). When set, the
-        /// local machine-id lookup is skipped entirely.
-        #[arg(long)]
-        machine_id: Option<String>,
-    },
-    /// Print this host's machine ID — the exact bytes
-    /// `MachineIdProvider` feeds into its key derivation.
-    ///
-    /// The enrollment primitive for vendor-side binds: a target
+    /// The enrollment primitive for machine-tier deployments: a target
     /// host runs `show-machine-id` and reports the value, letting the
-    /// vendor `bind` against it off-box (see `docs/DEPLOYMENT.md`).
+    /// vendor seal a build against it off-box (see `docs/DEPLOYMENT.md`).
     ///
     /// Exit codes:
     /// - 0 on success (prints the machine ID to stdout)
@@ -113,63 +57,7 @@ fn main() -> ExitCode {
     };
 
     match cli.command {
-        Command::Inspect { binary, config } => dispatch_inspect(&binary, &config),
-        Command::Bind {
-            binary,
-            config,
-            salt,
-            machine_id,
-        } => dispatch_bind(&binary, &config, salt.as_deref(), machine_id.as_deref()),
         Command::ShowMachineId => dispatch_show_machine_id(),
-    }
-}
-
-fn dispatch_inspect(binary: &Path, config: &Path) -> ExitCode {
-    match inspect::run(binary, config) {
-        // `Verified` is a confirmation (stdout); every other outcome
-        // describes a problem and goes to stderr, leaving stdout
-        // clean for callers gating on a successful verification.
-        Ok(outcome) => {
-            let msg = outcome.describe(binary, config);
-            if outcome.is_success() {
-                println!("{msg}");
-            } else {
-                eprintln!("litmask: {msg}");
-            }
-            ExitCode::from(outcome.exit_code())
-        }
-        Err(e) => {
-            eprintln!("litmask: {}", e.describe(binary, config));
-            ExitCode::from(exit::USAGE)
-        }
-    }
-}
-
-fn dispatch_bind(
-    binary: &Path,
-    config: &Path,
-    salt: Option<&str>,
-    machine_id: Option<&str>,
-) -> ExitCode {
-    match bind::run(binary, config, salt, machine_id) {
-        // `Success` confirms the rebind on stdout; every failure
-        // outcome describes the problem on stderr, leaving stdout
-        // clean for callers gating on a successful bind.
-        Ok(outcome) => {
-            let msg = outcome.describe(binary, config);
-            if matches!(outcome, bind::BindOutcome::Success(_)) {
-                println!("{msg}");
-            } else {
-                eprintln!("litmask: {msg}");
-            }
-            ExitCode::from(outcome.exit_code())
-        }
-        // Shell-level failures — including machine-id unavailable —
-        // describe the problem on stderr and signal via the exit code.
-        Err(e) => {
-            eprintln!("litmask: {}", e.describe(binary, config));
-            ExitCode::from(e.exit_code())
-        }
     }
 }
 
@@ -184,10 +72,9 @@ struct MachineIdReport {
 }
 
 /// Map a machine-id lookup to its presentation. The ID is a
-/// non-secret host identifier — the pre-KDF input both
-/// `MachineIdProvider::unlock_key` and `bind` feed into
-/// `derive_machine_id_key` — so it goes to stdout for capture. A lookup
-/// failure is an error and goes to stderr (exit 69), keeping
+/// non-secret host identifier — the pre-KDF input a machine-tier seal
+/// feeds into its key derivation — so it goes to stdout for capture. A
+/// lookup failure is an error and goes to stderr (exit 69), keeping
 /// stdout clean for callers piping the ID.
 fn report_machine_id<E>(lookup: Result<String, E>) -> MachineIdReport {
     match lookup {
@@ -198,7 +85,7 @@ fn report_machine_id<E>(lookup: Result<String, E>) -> MachineIdReport {
         },
         Err(_) => MachineIdReport {
             stdout: None,
-            stderr: Some(bind::MACHINE_ID_UNAVAILABLE_MSG.to_string()),
+            stderr: Some(MACHINE_ID_UNAVAILABLE_MSG.to_string()),
             code: exit::UNAVAILABLE,
         },
     }
@@ -224,114 +111,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_inspect_with_binary_and_config() {
-        let cli = parse_argv(&["inspect", "/path/to/bin", "--config", "/path/to/cfg"]).unwrap();
-        match cli.command {
-            Command::Inspect { binary, config } => {
-                assert_eq!(binary, PathBuf::from("/path/to/bin"));
-                assert_eq!(config, PathBuf::from("/path/to/cfg"));
-            }
-            other => panic!("expected Inspect, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parses_bind_without_salt() {
-        let cli = parse_argv(&["bind", "/bin", "--config", "/cfg"]).unwrap();
-        match cli.command {
-            Command::Bind { salt, .. } => assert_eq!(salt, None),
-            other => panic!("expected Bind, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parses_bind_with_salt() {
-        let cli = parse_argv(&["bind", "/bin", "--config", "/cfg", "--salt", "AAAA"]).unwrap();
-        match cli.command {
-            Command::Bind { salt, .. } => assert_eq!(salt.as_deref(), Some("AAAA")),
-            other => panic!("expected Bind, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parses_bind_with_machine_id() {
-        let cli = parse_argv(&[
-            "bind",
-            "/bin",
-            "--config",
-            "/cfg",
-            "--machine-id",
-            "ABC-123",
-        ])
-        .unwrap();
-        match cli.command {
-            Command::Bind { machine_id, .. } => assert_eq!(machine_id.as_deref(), Some("ABC-123")),
-            other => panic!("expected Bind, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parses_bind_machine_id_composes_with_salt() {
-        let cli = parse_argv(&[
-            "bind",
-            "/bin",
-            "--config",
-            "/cfg",
-            "--salt",
-            "AAAA",
-            "--machine-id",
-            "ABC-123",
-        ])
-        .unwrap();
-        match cli.command {
-            Command::Bind {
-                salt, machine_id, ..
-            } => {
-                assert_eq!(salt.as_deref(), Some("AAAA"));
-                assert_eq!(machine_id.as_deref(), Some("ABC-123"));
-            }
-            other => panic!("expected Bind, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parses_bind_without_machine_id_defaults_none() {
-        let cli = parse_argv(&["bind", "/bin", "--config", "/cfg"]).unwrap();
-        match cli.command {
-            Command::Bind { machine_id, .. } => assert_eq!(machine_id, None),
-            other => panic!("expected Bind, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parses_gnu_typical_flag_before_positional() {
-        // Pin GNU-style flag tolerance: `--config <val>` may appear
-        // before or after the positional `binary`. Required because
-        // every other Rust CLI tool accepts both orderings, and
-        // operators copy-paste argv across them.
-        let cli = parse_argv(&["inspect", "--config", "/cfg", "/bin"]).unwrap();
-        match cli.command {
-            Command::Inspect { binary, config } => {
-                assert_eq!(binary, PathBuf::from("/bin"));
-                assert_eq!(config, PathBuf::from("/cfg"));
-            }
-            other => panic!("expected Inspect, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parses_equals_form_for_flag_value() {
-        // `--config=value` (single-token form) is the canonical
-        // GNU-style flag syntax; tooling that emits this form must
-        // round-trip without a separator-token workaround.
-        let cli = parse_argv(&["inspect", "/bin", "--config=/cfg"]).unwrap();
-        match cli.command {
-            Command::Inspect { config, .. } => assert_eq!(config, PathBuf::from("/cfg")),
-            other => panic!("expected Inspect, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn report_machine_id_success_goes_to_stdout_with_ok_code() {
         let r = report_machine_id(Ok::<_, std::io::Error>("ABC-123".to_string()));
         assert_eq!(r.stdout.as_deref(), Some("ABC-123"));
@@ -346,7 +125,7 @@ mod tests {
         // never mistakes the error text for a machine ID.
         let r = report_machine_id(Err(std::io::Error::other("boom")));
         assert_eq!(r.stdout, None);
-        assert_eq!(r.stderr.as_deref(), Some(bind::MACHINE_ID_UNAVAILABLE_MSG));
+        assert_eq!(r.stderr.as_deref(), Some(MACHINE_ID_UNAVAILABLE_MSG));
         assert_eq!(r.code, exit::UNAVAILABLE);
     }
 
@@ -370,32 +149,7 @@ mod tests {
 
     #[test]
     fn rejects_unknown_subcommand() {
-        assert!(parse_argv(&["nope", "/bin", "--config", "/cfg"]).is_err());
-    }
-
-    #[test]
-    fn rejects_missing_config_flag() {
-        // Positional `binary` alone is not enough — `--config` is
-        // a required argument; clap surfaces the missing-required
-        // diagnostic.
-        assert!(parse_argv(&["inspect", "/bin"]).is_err());
-    }
-
-    #[test]
-    fn rejects_bind_salt_without_value() {
-        assert!(parse_argv(&["bind", "/bin", "--config", "/cfg", "--salt"]).is_err());
-    }
-
-    #[test]
-    fn rejects_unknown_flag() {
-        assert!(parse_argv(&["bind", "/bin", "--config", "/cfg", "--foo", "bar"]).is_err());
-    }
-
-    #[test]
-    fn rejects_inspect_trailing_positional() {
-        // Reject trailing junk so a typo doesn't silently slip
-        // through. clap's positional check catches it.
-        assert!(parse_argv(&["inspect", "/bin", "--config", "/cfg", "extra"]).is_err());
+        assert!(parse_argv(&["nope"]).is_err());
     }
 
     #[test]

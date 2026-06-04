@@ -7,11 +7,12 @@
 
 use core::fmt;
 
+#[cfg(any(feature = "chacha20-poly1305", feature = "aes-gcm"))]
 use zeroize::Zeroizing;
 
-use crate::{AeadError, KEY_LEN, WRAPPER_LEN, WrapperParseError, aead_decrypt, parse_wrapper};
+use crate::AeadError;
 #[cfg(any(feature = "chacha20-poly1305", feature = "aes-gcm"))]
-use crate::{NONCE_LEN, TAG_LEN};
+use crate::{FormatVersion, KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, aead_decrypt, parse_wrapper};
 
 /// Errors surfaced by pure decryption helpers. Converted to panics by
 /// the runtime imperative shell; the typed form here lets unit tests
@@ -19,12 +20,9 @@ use crate::{NONCE_LEN, TAG_LEN};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DecryptError {
-    /// Wrapper header carries a format version this build does not
-    /// support, or the byte does not match any known version.
+    /// The authenticated format-version byte (recovered from the AEAD
+    /// plaintext) is not a version this build supports.
     UnsupportedFormat,
-    /// Wrapper header carries a cipher id this build does not support,
-    /// or the byte does not match any known cipher.
-    UnsupportedCipher,
     /// Per-string blob is shorter than `NONCE_LEN + TAG_LEN`.
     BlobTooShort,
     /// AEAD authentication failed (wrong unlock or mask key, or
@@ -38,7 +36,6 @@ impl fmt::Display for DecryptError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnsupportedFormat => f.write_str("unsupported format version"),
-            Self::UnsupportedCipher => f.write_str("unsupported cipher"),
             Self::BlobTooShort => f.write_str("encrypted data too short"),
             Self::AuthenticationFailed => f.write_str("authentication failed"),
             Self::InvalidPayloadLength => f.write_str("invalid decrypted payload length"),
@@ -54,50 +51,41 @@ impl From<AeadError> for DecryptError {
 
 /// Decrypt the embedded encrypted-`mask_key` wrapper.
 ///
-/// Parses the typed header, confirms the format and cipher are ones
-/// this build supports, and runs the AEAD decryption with the supplied
-/// `unlock_key` using the cipher recorded in the header. Returns the
-/// recovered `mask_key` bytes on success.
+/// Splits the cleartext nonce from the AEAD body, decrypts the body
+/// with the build's compiled cipher ([`crate::CURRENT_CIPHER`]),
+/// validates the authenticated format-version byte, and returns the
+/// recovered `mask_key` bytes.
+///
+/// The cipher is not recorded on the wire: every wrapper in a binary is
+/// sealed with the single cipher the build was compiled for, so a
+/// wrapper produced under a different cipher fails the AEAD tag check
+/// and surfaces as [`DecryptError::AuthenticationFailed`].
 ///
 /// # Errors
 ///
-/// Returns [`DecryptError::UnsupportedFormat`] or
-/// [`DecryptError::UnsupportedCipher`] when the wrapper header carries
-/// an unrecognized version or cipher byte, and
-/// [`DecryptError::AuthenticationFailed`] when the AEAD tag check fails.
+/// Returns [`DecryptError::AuthenticationFailed`] when the AEAD tag
+/// check fails (wrong `unlock_key`, tampered bytes, or cipher
+/// mismatch), and [`DecryptError::UnsupportedFormat`] when the
+/// authenticated version byte is unrecognized.
+#[cfg(any(feature = "chacha20-poly1305", feature = "aes-gcm"))]
 pub fn decrypt_wrapper(
     unlock_key: &[u8; KEY_LEN],
     wrapper: &[u8; WRAPPER_LEN],
 ) -> Result<[u8; KEY_LEN], DecryptError> {
-    let parsed = parse_wrapper(wrapper).map_err(|e| match e {
-        WrapperParseError::UnknownFormatVersion(_) => DecryptError::UnsupportedFormat,
-        WrapperParseError::UnknownCipherId(_) => DecryptError::UnsupportedCipher,
-    })?;
-    // In single-cipher (runtime) builds, the wrapper's cipher byte
-    // must equal the build's compiled cipher. Without this gate,
-    // a fabricated wrapper with cipher id 0x02 against a chacha-
-    // only runtime would silently fall through to AEAD decrypt and
-    // surface as `AuthenticationFailed` — losing the §2.7.1
-    // diagnostic that distinguishes "wrong cipher" from "wrong
-    // key". Dual-cipher builds (litmask-cli) accept either byte
-    // because `CURRENT_CIPHER` is absent in that cfg.
-    #[cfg(any(
-        all(feature = "chacha20-poly1305", not(feature = "aes-gcm")),
-        all(feature = "aes-gcm", not(feature = "chacha20-poly1305")),
-    ))]
-    {
-        if parsed.cipher != crate::CURRENT_CIPHER {
-            return Err(DecryptError::UnsupportedCipher);
-        }
-    }
+    let parsed = parse_wrapper(wrapper);
     let plaintext = Zeroizing::new(aead_decrypt(
-        parsed.cipher,
+        crate::CURRENT_CIPHER,
         unlock_key,
         parsed.nonce,
         parsed.body,
     )?);
-    plaintext
-        .as_slice()
+    // The AEAD plaintext is `version_byte || mask_key`. Validate the
+    // authenticated version before trusting the key bytes.
+    let (version_byte, key_bytes) = plaintext
+        .split_first()
+        .ok_or(DecryptError::InvalidPayloadLength)?;
+    FormatVersion::try_from(*version_byte).map_err(|_| DecryptError::UnsupportedFormat)?;
+    key_bytes
         .try_into()
         .map_err(|_| DecryptError::InvalidPayloadLength)
 }
@@ -134,46 +122,32 @@ pub fn decrypt_blob(
     aead_decrypt(crate::CURRENT_CIPHER, mask_key, nonce, body).map_err(DecryptError::from)
 }
 
-// Wrapper tests hardcode ChaCha20-Poly1305 because `decrypt_wrapper`
-// reads the cipher byte from the header and dispatches accordingly —
-// the wrapper carries its own cipher identity. Blob tests use
-// `CURRENT_CIPHER` because `decrypt_blob` dispatches through that
-// constant (blobs don't carry a cipher byte). The AES-GCM-specific
-// round-trip lives in `tests/cipher_selection.rs`.
 #[cfg(all(test, feature = "chacha20-poly1305"))]
 mod tests {
     use super::*;
     use crate::{
-        CURRENT_CIPHER, CipherId, FormatVersion, WRAPPER_BODY_LEN, aead_encrypt, assemble_wrapper,
-        nonce_for_wrapper,
+        CURRENT_CIPHER, CipherId, WRAPPER_BODY_LEN, WRAPPER_PLAINTEXT_LEN, aead_encrypt,
+        assemble_wrapper, nonce_for_wrapper,
     };
 
-    /// Encrypt a `mask_key` under `unlock_key` and assemble the
-    /// wrapper. Mirrors what the build-script helper does, but stays
-    /// purely in-memory so tests run sub-millisecond.
+    /// Encrypt `version_byte || mask_key` under `unlock_key` and
+    /// assemble the wrapper. Mirrors what the build-script helper does,
+    /// but stays purely in-memory so tests run sub-millisecond.
     fn build_wrapper(
         unlock_key: &[u8; KEY_LEN],
         mask_key: &[u8; KEY_LEN],
         seed: &[u8; KEY_LEN],
     ) -> [u8; WRAPPER_LEN] {
         let nonce = nonce_for_wrapper(seed);
-        let body = aead_encrypt(
-            CipherId::ChaCha20Poly1305,
-            unlock_key,
-            &nonce,
-            mask_key.as_slice(),
-        )
-        .expect("encrypt");
+        let mut plaintext = [0u8; WRAPPER_PLAINTEXT_LEN];
+        plaintext[0] = FormatVersion::CURRENT.to_byte();
+        plaintext[1..].copy_from_slice(mask_key);
+        let body = aead_encrypt(CURRENT_CIPHER, unlock_key, &nonce, &plaintext).expect("encrypt");
         let body: &[u8; WRAPPER_BODY_LEN] = body
             .as_slice()
             .try_into()
-            .expect("AEAD output of 32-byte plaintext is WRAPPER_BODY_LEN bytes");
-        assemble_wrapper(
-            FormatVersion::CURRENT,
-            CipherId::ChaCha20Poly1305,
-            &nonce,
-            body,
-        )
+            .expect("AEAD output of WRAPPER_PLAINTEXT_LEN plaintext is WRAPPER_BODY_LEN bytes");
+        assemble_wrapper(&nonce, body)
     }
 
     fn build_blob(
@@ -218,36 +192,32 @@ mod tests {
         let seed = [0x33u8; KEY_LEN];
         let mut wrapper = build_wrapper(&unlock_key, &mask_key, &seed);
 
-        // Flip a single ciphertext byte (offset 20 lands inside the
-        // 32-byte ciphertext region).
+        // Flip a byte inside the ciphertext region (past the 12-byte
+        // cleartext nonce prefix).
         wrapper[20] ^= 0x01;
         let err = decrypt_wrapper(&unlock_key, &wrapper).unwrap_err();
         assert_eq!(err, DecryptError::AuthenticationFailed);
     }
 
+    /// An unknown authenticated version byte must surface as
+    /// `UnsupportedFormat`, not `AuthenticationFailed`. Built by sealing
+    /// a plaintext whose leading byte is an unknown version so the AEAD
+    /// tag still verifies and the version check is what rejects it.
     #[test]
-    fn wrapper_decrypt_rejects_unsupported_format_byte() {
+    fn wrapper_decrypt_rejects_unsupported_version_byte() {
         let unlock_key = [0x11u8; KEY_LEN];
         let mask_key = [0x22u8; KEY_LEN];
         let seed = [0x33u8; KEY_LEN];
-        let mut wrapper = build_wrapper(&unlock_key, &mask_key, &seed);
-        wrapper[0] = 0xFE;
+        let nonce = nonce_for_wrapper(&seed);
+        let mut plaintext = [0u8; WRAPPER_PLAINTEXT_LEN];
+        plaintext[0] = 0xFE; // unknown version
+        plaintext[1..].copy_from_slice(&mask_key);
+        let body = aead_encrypt(CURRENT_CIPHER, &unlock_key, &nonce, &plaintext).expect("encrypt");
+        let body: &[u8; WRAPPER_BODY_LEN] = body.as_slice().try_into().expect("body len");
+        let wrapper = assemble_wrapper(&nonce, body);
         assert_eq!(
             decrypt_wrapper(&unlock_key, &wrapper),
-            Err(DecryptError::UnsupportedFormat)
-        );
-    }
-
-    #[test]
-    fn wrapper_decrypt_rejects_unsupported_cipher_byte() {
-        let unlock_key = [0x11u8; KEY_LEN];
-        let mask_key = [0x22u8; KEY_LEN];
-        let seed = [0x33u8; KEY_LEN];
-        let mut wrapper = build_wrapper(&unlock_key, &mask_key, &seed);
-        wrapper[1] = 0x99;
-        assert_eq!(
-            decrypt_wrapper(&unlock_key, &wrapper),
-            Err(DecryptError::UnsupportedCipher)
+            Err(DecryptError::UnsupportedFormat),
         );
     }
 

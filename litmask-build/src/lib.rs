@@ -19,8 +19,7 @@
 //! - `$OUT_DIR/litmask_wrapper.bin` — encrypted-`mask_key` wrapper
 //!   (consumed by the runtime via `include_bytes!` inside the
 //!   `init!` / `init_with!` / `mask!` macro expansions).
-//! - `target/<profile>/litmask.config` — TOML containing `unlock_key`,
-//!   `locator`, and `length`.
+//! - `target/<profile>/litmask.config` — TOML containing `unlock_key`.
 
 use std::ffi::OsString;
 use std::fs;
@@ -34,15 +33,15 @@ use rand_core::{Rng, SeedableRng};
 use zeroize::{Zeroize, Zeroizing};
 
 use litmask_internal::{
-    CURRENT_CIPHER, FormatVersion, KEY_LEN, NONCE_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN, aead_encrypt,
-    assemble_wrapper, base64url, nonce_for_wrapper,
+    CURRENT_CIPHER, FormatVersion, KEY_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN, WRAPPER_PLAINTEXT_LEN,
+    aead_encrypt, assemble_wrapper, base64url, nonce_for_wrapper,
 };
 
 const CONFIG_HEADER: &str = "\
 # litmask.config — build artifact.
 # SECRET: contains the runtime `unlock_key` for this build. Do not commit.
 # This file is written by litmask-build::emit() at compile time and consumed by
-# the litmask runtime (env var) and by `litmask-cli` (bind / inspect).
+# the litmask runtime (env var).
 ";
 
 /// Run the build-time mask-key + unlock-key generation pipeline.
@@ -109,9 +108,10 @@ struct BuildArtifacts {
     /// Written into `litmask.config` (deployer-facing TOML); the
     /// runtime reads it back via env var.
     unlock_key: [u8; KEY_LEN],
-    /// Assembled wrapper bytes — header + AEAD-encrypted `mask_key`
-    /// under `unlock_key`. Persisted to `OUT_DIR/litmask_wrapper.bin`
-    /// and embedded into user binaries via `include_bytes!`.
+    /// Assembled wrapper bytes — cleartext nonce followed by the AEAD
+    /// sealing of `version_byte || mask_key` under `unlock_key`.
+    /// Persisted to `OUT_DIR/litmask_wrapper.bin` and embedded into
+    /// user binaries via `include_bytes!`.
     wrapper: [u8; WRAPPER_LEN],
 }
 
@@ -135,14 +135,22 @@ impl BuildArtifacts {
         // is the correct compile error to surface.
         let cipher = CURRENT_CIPHER;
         let wrapper_nonce = nonce_for_wrapper(seed);
+
+        // AEAD plaintext is `version_byte || mask_key` — the format
+        // version is authenticated inside the wrapper rather than
+        // carried in cleartext, so no fixed-value structural byte
+        // appears at a known offset in the binary.
+        let mut plaintext = Zeroizing::new([0u8; WRAPPER_PLAINTEXT_LEN]);
+        plaintext[0] = FormatVersion::CURRENT.to_byte();
+        plaintext[1..].copy_from_slice(&mask_key);
+
         let mut ciphertext_with_tag =
-            aead_encrypt(cipher, &unlock_key, &wrapper_nonce, mask_key.as_slice())
+            aead_encrypt(cipher, &unlock_key, &wrapper_nonce, plaintext.as_slice())
                 .expect("wrapper encryption failed");
-        let body: &[u8; WRAPPER_BODY_LEN] = ciphertext_with_tag
-            .as_slice()
-            .try_into()
-            .expect("AEAD output of 32-byte plaintext is WRAPPER_BODY_LEN bytes");
-        let wrapper = assemble_wrapper(FormatVersion::CURRENT, cipher, &wrapper_nonce, body);
+        let body: &[u8; WRAPPER_BODY_LEN] = ciphertext_with_tag.as_slice().try_into().expect(
+            "AEAD output of WRAPPER_PLAINTEXT_LEN-byte plaintext is WRAPPER_BODY_LEN bytes",
+        );
+        let wrapper = assemble_wrapper(&wrapper_nonce, body);
         ciphertext_with_tag.zeroize();
 
         Self {
@@ -161,11 +169,7 @@ impl BuildArtifacts {
         write_secret(&out_dir.join("litmask_seed.bin"), &self.seed);
         write_secret(&out_dir.join("litmask_key.bin"), &self.mask_key);
         write_secret(&out_dir.join("litmask_wrapper.bin"), &self.wrapper);
-        write_config(
-            &profile_dir.join("litmask.config"),
-            &self.unlock_key,
-            &self.wrapper,
-        );
+        write_config(&profile_dir.join("litmask.config"), &self.unlock_key);
     }
 }
 
@@ -299,13 +303,10 @@ fn profile_dir_of(out_dir: &Path) -> PathBuf {
         .to_path_buf()
 }
 
-fn write_config(path: &Path, unlock_key: &[u8; KEY_LEN], wrapper: &[u8; WRAPPER_LEN]) {
-    let locator: [u8; NONCE_LEN] = wrapper[..NONCE_LEN]
-        .try_into()
-        .expect("wrapper prefix is NONCE_LEN bytes");
+fn write_config(path: &Path, unlock_key: &[u8; KEY_LEN]) {
     let body = format!(
-        "{CONFIG_HEADER}\n{}",
-        litmask_internal::render_config_fields(unlock_key, &locator),
+        "{CONFIG_HEADER}\nunlock_key = \"{}\"\n",
+        base64url::encode(unlock_key),
     );
     fs::write(path, body).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
@@ -558,7 +559,7 @@ mod tests {
     fn litmask_config_starts_with_hash_comment_block_warning_about_secret() {
         let dir = TempDir::new().expect("tempdir");
         let config_path = dir.path().join("litmask.config");
-        write_config(&config_path, &[0u8; KEY_LEN], &[0u8; WRAPPER_LEN]);
+        write_config(&config_path, &[0u8; KEY_LEN]);
         let body = fs::read_to_string(&config_path).expect("read");
         let first_line = body.lines().next().expect("non-empty config");
         assert!(

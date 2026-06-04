@@ -1,6 +1,6 @@
 [package]
 name = "litmask-cli"
-description = "Command-line companion to the litmask crate; provides bind and inspect subcommands."
+description = "Command-line companion to the litmask crate; reports the host machine ID for machine-tier sealing."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,13 +13,7 @@ publish.workspace = true
 readme = "../README.md"
 include = ["src/**/*", "LICENSE-MIT", "LICENSE-APACHE"]
 
-# `all-ciphers` compiles both AEAD backends inside litmask-internal
-# without activating the `chacha20-poly1305` or `aes-gcm` features.
-# This avoids workspace feature-unification flipping `CURRENT_CIPHER`
-# in the runtime/proc-macro crates while letting the CLI dispatch on
-# the wrapper's cipher-id byte through a single canonical code path.
 [dependencies]
-litmask-internal = { workspace = true, features = ["all-ciphers"] }
 # `derive` enables the `#[derive(Parser)]` macro that drives the
 # CLI's argument schema. `clap` is the de-facto Rust CLI parser
 # (used by cargo itself); pulling it in eliminates the hand-rolled
@@ -27,31 +21,10 @@ litmask-internal = { workspace = true, features = ["all-ciphers"] }
 # ordering) without reinventing them.
 clap = { version = "4", features = ["derive"] }
 machine-uid = "0.6"
-zeroize = { version = "1", features = ["alloc"] }
-# Pinned to an exact version (no caret) so config-parsing behavior
-# cannot drift from a transitive update. The toml crate has shifted
-# defaults at minor-version boundaries historically; the CLI's
-# `inspect` and `bind` flows depend on a stable parse for
-# `litmask.config`, so we lock to a known-good version. Bump
-# deliberately when validating the new behavior.
-toml = "=1.1.2"
-
-[dev-dependencies]
-rstest = "0.26"
-tempfile = "3"
 
 [[bin]]
 name = "litmask"
 path = "src/main.rs"
 
-# Cannot use `lints.workspace = true` — the workspace sets
-# `unsafe_code = "forbid"` which blocks `#[allow(unsafe_code)]` on the
-# Windows `MoveFileExW` FFI (atomic commit). Duplicate
-# workspace lints here with `unsafe_code` relaxed to `"deny"`.
-[lints.rust]
-unsafe_code = "deny"
-missing_docs = "warn"
-
-[lints.clippy]
-all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
+[lints]
+workspace = true

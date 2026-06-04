@@ -33,11 +33,14 @@ _Avoid_: "rng seed" in code (it's just "seed"); reserve "RNG seed" for the
 ### Cryptographic artifacts
 
 **Wrapper**:
-The 62-byte envelope around the encrypted **mask key**: 1-byte format
-version + 1-byte cipher id + 12-byte nonce + 32-byte ciphertext + 16-byte
-authentication tag. Embedded in the user binary's `.rodata`.
+The 61-byte envelope around the encrypted **mask key**: 12-byte cleartext
+nonce + 33-byte ciphertext of `format-version byte ‖ mask key` + 16-byte
+authentication tag. The format version is authenticated inside the AEAD
+plaintext, never cleartext; the cipher is fixed at compile time and never
+written to the wire. Embedded in the user binary's `.rodata` and read by
+reference via `include_bytes!`.
 _Avoid_: "envelope", "container", "encrypted mask_key" (the wrapper IS
-the encrypted mask key plus its header).
+the encrypted mask key plus its nonce and tag).
 
 **Blob** (per-string ciphertext blob):
 The encrypted form of a single masked literal: 12-byte nonce + ciphertext +
@@ -45,23 +48,12 @@ The encrypted form of a single masked literal: 12-byte nonce + ciphertext +
 _Avoid_: "ciphertext" alone (ambiguous with the wrapper's ciphertext field);
 "encrypted literal".
 
-**Locator**:
-The first 12 bytes of the **wrapper** (coincides with the version byte,
-cipher-id byte, and the first 10 bytes of the **nonce**). Used by
-`litmask bind` and `litmask inspect` to find the wrapper inside a
-binary by scanning. Stored in `litmask.config`. Compilers may
-duplicate `include_bytes!` data, producing multiple identical copies;
-the scanner treats byte-identical copies as a single logical match.
-_Avoid_: "wrapper prefix", "header".
-
 **Weak key**:
 A 64-byte XOR key derived deterministically from the wrapper **nonce**:
 32 bytes of position-dependent bit rotations of the nonce, concatenated
 with 32 bytes from `BLAKE3::keyed_hash(rotated, nonce)`. Used by
 `weak_mask!` to obfuscate literals. The derivation uses no string
-literals (avoiding binary fingerprints) and depends only on the nonce
-(stable across **bind**), so `weak_mask!` literals survive wrapper
-re-encryption.
+literals (avoiding binary fingerprints) and depends only on the nonce.
 _Avoid_: "XOR key", "obfuscation key".
 
 **Nonce**:
@@ -90,9 +82,8 @@ bit rotation + BLAKE3 keyed hash; see **weak key** below). Both
 the obfuscated bytes and the nonce they derive from live in the
 same binary, so a disassembler-equipped attacker recovers the
 plaintext trivially. Reserved for strings that must be readable
-before `init!()` runs (env-var names, default file paths). Because
-the derivation uses only the nonce (stable across **bind**),
-`weak_mask!` literals survive wrapper re-encryption.
+before `init!()` runs (env-var names, default file paths). The
+derivation uses only the nonce.
 _Avoid_: "soft mask", "light mask".
 
 **`init!` / `init_with!`**: Declarative macros that decrypt the
@@ -107,16 +98,8 @@ keys, encrypts the **mask key** into the **wrapper**, writes
 artifacts to `OUT_DIR` and `litmask.config`.
 
 **`litmask.config`**: Deployer-facing TOML written at build time.
-Contains the **unlock key**, the **locator**, and the wrapper length.
-Secret; do not commit. Consumed by the runtime (via env var) and by
-`litmask`.
-
-**Bind** (verb): Rebind a binary to a new **unlock key**, typically
-derived from the target host's machine ID. Performed by
-`litmask bind`. Patches all identical wrapper copies in the binary.
-On macOS, re-signs with an ad-hoc code signature (the patch
-invalidates the existing signature, and ARM64 macOS kills unsigned
-binaries); warns to stderr on failure.
+Contains the **unlock key**. Secret; do not commit. Consumed by the
+runtime (via env var).
 
 ## Relationships
 
@@ -126,13 +109,9 @@ binaries); warns to stderr on failure.
   AND is itself encrypted into the **wrapper** under the **unlock
   key**.
 - The **unlock key** lives outside the binary; the **wrapper** lives
-  inside it. **Bind** swaps the **wrapper** under a new **unlock
-  key** without touching the **mask key**.
+  inside it, sealed under the **unlock key** at build time.
 - A **key provider** supplies the **unlock key** at runtime; the
   user's `init!()` or first `mask!()` call invokes it.
-- The **locator** is a 12-byte prefix of the **wrapper**, recorded in
-  `litmask.config` so binding tools can find the wrapper without a
-  named symbol.
 
 ## Example dialogue
 
@@ -145,17 +124,12 @@ binaries); warns to stderr on failure.
 > byte-identical. Same for per-call-site **blobs**, given the same
 > source layout."
 >
-> **Dev:** "And if I run `litmask bind` against the binary?"
+> **Dev:** "How does the runtime find the **wrapper** in the binary?"
 >
-> **Maintainer:** "The **mask key** doesn't change — bind decrypts the
-> **wrapper** with the current **unlock key**, derives a new **unlock
-> key** from the target machine, re-encrypts the same **mask key** under
-> the new **unlock key**, and patches the **wrapper** in place. The
-> **nonce** is reused (safe because the key changed), so the
-> **locator** stays the same and `weak_mask!` literals still decode
-> correctly. If the compiler duplicated the wrapper, bind patches
-> every copy. On macOS, bind re-signs the binary with an ad-hoc
-> code signature."
+> **Maintainer:** "It doesn't search — the **wrapper** is embedded at a
+> fixed address via `include_bytes!`, so `init!()` reads it by
+> reference. The only cleartext field is the 12-byte **nonce** at the
+> front; there's no stored locator and no byte scan."
 >
 > **Dev:** "Why have both `mask!` and `weak_mask!`?"
 >

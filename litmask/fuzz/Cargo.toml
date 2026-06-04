@@ -20,12 +20,5 @@ test = false
 doc = false
 bench = false
 
-[[bin]]
-name = "locator_scan"
-path = "fuzz_targets/locator_scan.rs"
-test = false
-doc = false
-bench = false
-
 [workspace]
 members = ["."]

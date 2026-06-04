@@ -545,12 +545,7 @@ name = "litmask-cli"
 version = "0.10.0"
 dependencies = [
  "clap",
- "litmask-internal",
  "machine-uid",
- "rstest",
- "tempfile",
- "toml",
- "zeroize",
 ]
 
 [[package]]

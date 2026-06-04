@@ -1,8 +1,8 @@
 //! Base64url codec — RFC 4648 §5 url-safe alphabet, no padding.
 //!
 //! Single source of truth for base64 encoding across the workspace:
-//! `litmask`, `litmask-build`, and (future) `litmask-cli` all route
-//! key, locator, and seed encoding through these two functions.
+//! `litmask` and `litmask-build` route key and seed encoding through
+//! these two functions.
 //!
 //! Padding is rejected on decode to keep the wire format unambiguous;
 //! padded and unpadded forms differ visibly, and accepting both would

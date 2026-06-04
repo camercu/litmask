@@ -16,29 +16,30 @@ pub const TAG_LEN: usize = 16;
 
 // ── Wrapper layout ──────────────────────────────────────────────
 
-/// Byte offset of the format-version byte inside a wrapper.
-pub const VERSION_OFFSET: usize = 0;
+/// Byte offset where the AEAD nonce starts inside a wrapper. The nonce
+/// is the only cleartext field and sits at the very front.
+pub const NONCE_OFFSET: usize = 0;
 
-/// Byte offset of the cipher-id byte inside a wrapper.
-pub const CIPHER_OFFSET: usize = 1;
+/// Length of the AEAD plaintext sealed inside the wrapper:
+/// `version_byte (1) || mask_key (32)`. The format-version byte is
+/// authenticated rather than carried in cleartext — keeping it out of
+/// `.rodata` removes the one fixed-value structural tell a byte scan
+/// could match.
+pub const WRAPPER_PLAINTEXT_LEN: usize = 1 + KEY_LEN;
 
-/// Byte offset where the AEAD nonce starts inside a wrapper.
-pub const NONCE_OFFSET: usize = 2;
+/// Length of the AEAD body that follows the cleartext nonce:
+/// `ciphertext (33) || tag (16)`.
+pub const WRAPPER_BODY_LEN: usize = WRAPPER_PLAINTEXT_LEN + TAG_LEN;
 
-/// 1-byte version + 1-byte cipher id + 12-byte nonce.
-pub const HEADER_LEN: usize = 2 + NONCE_LEN;
-
-/// Length of the AEAD body that follows the wrapper header: 32 bytes
-/// of `mask_key` ciphertext + 16 bytes of authentication tag.
-pub const WRAPPER_BODY_LEN: usize = KEY_LEN + TAG_LEN;
-
-/// Total wrapper byte count: header + 32-byte encrypted `mask_key` + tag.
-pub const WRAPPER_LEN: usize = HEADER_LEN + KEY_LEN + TAG_LEN;
+/// Total wrapper byte count: `nonce (12) || ciphertext (33) || tag (16)`
+/// = 61 bytes.
+pub const WRAPPER_LEN: usize = NONCE_LEN + WRAPPER_BODY_LEN;
 
 // ── Types ───────────────────────────────────────────────────────
 
 /// Wire-format version of the encrypted-`mask_key` wrapper. Encoded as
-/// a single byte at offset 0 of every wrapper.
+/// the first byte of the AEAD plaintext (`version_byte || mask_key`),
+/// so it is authenticated and never appears in cleartext.
 ///
 /// `Display` is intentionally omitted — human-readable variant names
 /// would be recognizable string signatures in user binaries.
@@ -49,8 +50,8 @@ pub const WRAPPER_LEN: usize = HEADER_LEN + KEY_LEN + TAG_LEN;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum FormatVersion {
-    /// Initial format. 62-byte wrapper layout described at the crate
-    /// docs.
+    /// Initial build-sealed format. 61-byte wrapper layout
+    /// (`nonce || AEAD(version_byte || mask_key) || tag`).
     V1 = 0x01,
 }
 
@@ -89,15 +90,17 @@ impl TryFrom<u8> for FormatVersion {
     }
 }
 
-/// AEAD cipher identifier. Encoded as a single byte at offset 1 of
-/// every wrapper. Used by runtime tooling to confirm the wrapper was
-/// produced with the cipher the current binary was compiled to handle.
+/// AEAD cipher identifier. Selected at compile time via
+/// [`CURRENT_CIPHER`](crate::CURRENT_CIPHER) and never written to the
+/// wire — every wrapper and blob in a binary is encrypted with the one
+/// cipher the build was compiled for, so the runtime dispatches on the
+/// compiled constant rather than a stored byte.
 ///
 /// `Display` is intentionally omitted — human-readable cipher names
 /// would be recognizable string signatures in user binaries.
 ///
-/// Marked `#[non_exhaustive]` so adding AES-256-GCM (and any future
-/// cipher) is non-breaking for downstream exhaustive matches.
+/// Marked `#[non_exhaustive]` so adding a future cipher is non-breaking
+/// for downstream exhaustive matches.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -109,169 +112,91 @@ pub enum CipherId {
 }
 
 impl CipherId {
-    /// Encode as the on-the-wire byte.
+    /// Encode as a byte. Used for stable identification in tooling and
+    /// tests; not part of the wire format.
     #[must_use]
     pub fn to_byte(self) -> u8 {
         self as u8
     }
 }
 
-/// Error returned by `CipherId::try_from(u8)` when the byte does not
-/// match any known cipher. The unrecognized byte is preserved for
-/// diagnostics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UnknownCipherId(pub u8);
-
-impl fmt::Display for UnknownCipherId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "unknown cipher: {:#04x}", self.0)
-    }
-}
-
-impl TryFrom<u8> for CipherId {
-    type Error = UnknownCipherId;
-
-    fn try_from(byte: u8) -> Result<Self, Self::Error> {
-        match byte {
-            0x01 => Ok(Self::ChaCha20Poly1305),
-            0x02 => Ok(Self::Aes256Gcm),
-            other => Err(UnknownCipherId(other)),
-        }
-    }
-}
-
-/// A parsed wrapper, decomposed into its typed header fields plus
-/// borrowed nonce and `ciphertext || tag` body.
+/// A parsed wrapper, decomposed into its cleartext nonce and the
+/// `ciphertext || tag` AEAD body.
 ///
-/// The format-version byte is validated during parsing (an unknown
-/// version is rejected with [`WrapperParseError::UnknownFormatVersion`])
-/// but not retained: only one version exists and no consumer dispatches
-/// on it. Cipher, by contrast, drives runtime dispatch and is kept.
+/// Parsing is purely a length-checked split: the format version lives
+/// inside the AEAD plaintext and is validated only after a successful
+/// decrypt (see [`decrypt_wrapper`](crate::decrypt_wrapper)).
 #[derive(Debug)]
 pub struct ParsedWrapper<'a> {
-    /// Cipher identifier recorded in the wrapper header.
-    pub cipher: CipherId,
     /// 12-byte AEAD nonce used to encrypt the body.
     pub nonce: &'a [u8; NONCE_LEN],
-    /// `ciphertext || tag` — 32 bytes ciphertext followed by 16 bytes
-    /// of authentication tag for the current cipher.
+    /// `ciphertext || tag` — 33 bytes of `version_byte || mask_key`
+    /// ciphertext followed by 16 bytes of authentication tag.
     pub body: &'a [u8; WRAPPER_BODY_LEN],
-}
-
-/// Reasons `parse_wrapper` may reject a wrapper byte sequence.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum WrapperParseError {
-    /// Header byte 0 is not a recognized [`FormatVersion`] value.
-    UnknownFormatVersion(UnknownFormatVersion),
-    /// Header byte 1 is not a recognized [`CipherId`] value.
-    UnknownCipherId(UnknownCipherId),
-}
-
-impl fmt::Display for WrapperParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownFormatVersion(e) => e.fmt(f),
-            Self::UnknownCipherId(e) => e.fmt(f),
-        }
-    }
-}
-
-impl From<UnknownFormatVersion> for WrapperParseError {
-    fn from(e: UnknownFormatVersion) -> Self {
-        Self::UnknownFormatVersion(e)
-    }
-}
-
-impl From<UnknownCipherId> for WrapperParseError {
-    fn from(e: UnknownCipherId) -> Self {
-        Self::UnknownCipherId(e)
-    }
 }
 
 // ── Compile-time guards ─────────────────────────────────────────
 
 // These relationships are load-bearing — `assemble_wrapper` /
-// `parse_wrapper` index into a `[u8; WRAPPER_LEN]` assuming
-// HEADER_LEN bytes of header followed by WRAPPER_BODY_LEN bytes of
-// `ciphertext || tag`. A future tweak that breaks the math (adding a
-// header byte, changing TAG_LEN) silently misaligns every wrapper
-// read; these `const _` blocks fail the build instead.
-const _: () = assert!(HEADER_LEN == 2 + NONCE_LEN);
-const _: () = assert!(WRAPPER_BODY_LEN == KEY_LEN + TAG_LEN);
-const _: () = assert!(NONCE_LEN < HEADER_LEN);
-const _: () = assert!(WRAPPER_LEN > HEADER_LEN);
-// Offset constants are load-bearing for the wrapper layout (§1.7.3)
-// AND for every downstream byte-pattern match (litmask-cli dispatches
-// on `wrapper[CIPHER_OFFSET]`). Pin the three offsets so a future
-// header-byte addition reorders them only after the matching
-// wire-format version bump.
-const _: () = assert!(VERSION_OFFSET == 0);
-const _: () = assert!(CIPHER_OFFSET == 1);
-const _: () = assert!(NONCE_OFFSET == 2);
-const _: () = assert!(NONCE_OFFSET + NONCE_LEN == HEADER_LEN);
-const _: () = assert!(WRAPPER_LEN == HEADER_LEN + WRAPPER_BODY_LEN);
+// `parse_wrapper` index into a `[u8; WRAPPER_LEN]` assuming a
+// NONCE_LEN-byte cleartext nonce followed by WRAPPER_BODY_LEN bytes of
+// `ciphertext || tag`. A future tweak that breaks the math (changing
+// TAG_LEN, the plaintext length, or the nonce offset) silently
+// misaligns every wrapper read; these `const _` blocks fail the build
+// instead.
+const _: () = assert!(NONCE_OFFSET == 0);
+const _: () = assert!(WRAPPER_PLAINTEXT_LEN == 1 + KEY_LEN);
+const _: () = assert!(WRAPPER_BODY_LEN == WRAPPER_PLAINTEXT_LEN + TAG_LEN);
+const _: () = assert!(WRAPPER_LEN == NONCE_LEN + WRAPPER_BODY_LEN);
+const _: () = assert!(WRAPPER_LEN > NONCE_LEN);
 
 // ── Functions ───────────────────────────────────────────────────
 
-/// Extract the AEAD nonce from a raw wrapper byte array without
-/// parsing or validating the header fields.
+/// Extract the AEAD nonce from a raw wrapper byte array.
 ///
 /// # Panics
 ///
 /// Never panics — the compile-time asserts in this module guarantee
-/// `NONCE_OFFSET + NONCE_LEN == HEADER_LEN <= WRAPPER_LEN`.
+/// `NONCE_OFFSET + NONCE_LEN <= WRAPPER_LEN`.
 #[must_use]
 pub(crate) fn wrapper_nonce(wrapper: &[u8; WRAPPER_LEN]) -> &[u8; NONCE_LEN] {
-    wrapper[NONCE_OFFSET..HEADER_LEN]
+    wrapper[NONCE_OFFSET..NONCE_OFFSET + NONCE_LEN]
         .try_into()
         .expect("nonce slice is NONCE_LEN bytes by construction")
 }
 
-/// Build a wrapper byte array from typed header fields and the
-/// AEAD-encrypted body.
+/// Build a wrapper byte array from the cleartext nonce and the
+/// AEAD-encrypted body (`ciphertext || tag` of `version_byte ||
+/// mask_key`).
 #[must_use]
 pub fn assemble_wrapper(
-    version: FormatVersion,
-    cipher: CipherId,
     nonce: &[u8; NONCE_LEN],
-    ciphertext_and_tag: &[u8; WRAPPER_BODY_LEN],
+    body: &[u8; WRAPPER_BODY_LEN],
 ) -> [u8; WRAPPER_LEN] {
     let mut out = [0u8; WRAPPER_LEN];
-    out[VERSION_OFFSET] = version.to_byte();
-    out[CIPHER_OFFSET] = cipher.to_byte();
-    out[NONCE_OFFSET..HEADER_LEN].copy_from_slice(nonce);
-    out[HEADER_LEN..].copy_from_slice(ciphertext_and_tag);
+    out[NONCE_OFFSET..NONCE_OFFSET + NONCE_LEN].copy_from_slice(nonce);
+    out[NONCE_LEN..].copy_from_slice(body);
     out
 }
 
-/// Parse a wrapper byte array into typed header fields and body slice.
+/// Split a wrapper byte array into its cleartext nonce and AEAD body.
 ///
-/// # Errors
-///
-/// Returns [`WrapperParseError`] when the header version or cipher byte
-/// is not recognized. Subsequent AEAD decryption is the caller's
-/// responsibility.
+/// Infallible: there are no cleartext header fields to validate. The
+/// authenticated format-version byte is checked by `decrypt_wrapper`
+/// after the AEAD tag verifies.
 ///
 /// # Panics
 ///
 /// Never panics for valid `[u8; WRAPPER_LEN]` inputs. The internal
-/// slice-to-array conversions are sanity guards against future drift
-/// in the wrapper header layout.
-pub fn parse_wrapper(bytes: &[u8; WRAPPER_LEN]) -> Result<ParsedWrapper<'_>, WrapperParseError> {
-    // Validate the version byte (rejects unknown versions) but discard
-    // the value — see `ParsedWrapper` for why it is not retained.
-    FormatVersion::try_from(bytes[VERSION_OFFSET])?;
-    let cipher = CipherId::try_from(bytes[CIPHER_OFFSET])?;
+/// slice-to-array conversions are sanity guards against future drift in
+/// the wrapper layout.
+#[must_use]
+pub fn parse_wrapper(bytes: &[u8; WRAPPER_LEN]) -> ParsedWrapper<'_> {
     let nonce = wrapper_nonce(bytes);
-    let body: &[u8; WRAPPER_BODY_LEN] = (&bytes[HEADER_LEN..])
+    let body: &[u8; WRAPPER_BODY_LEN] = (&bytes[NONCE_LEN..])
         .try_into()
         .expect("body slice is WRAPPER_BODY_LEN bytes by construction");
-    Ok(ParsedWrapper {
-        cipher,
-        nonce,
-        body,
-    })
+    ParsedWrapper { nonce, body }
 }
 
 #[cfg(test)]
@@ -291,68 +216,22 @@ mod tests {
     }
 
     #[test]
-    fn cipher_id_round_trips_through_byte() {
-        assert_eq!(CipherId::ChaCha20Poly1305.to_byte(), 0x01);
-        assert_eq!(
-            CipherId::try_from(0x01u8).unwrap(),
-            CipherId::ChaCha20Poly1305,
-        );
-    }
-
-    #[test]
-    fn cipher_id_rejects_unknown_byte() {
-        let err = CipherId::try_from(0xFFu8).unwrap_err();
-        assert_eq!(err, UnknownCipherId(0xFF));
+    fn wrapper_len_is_sixty_one() {
+        assert_eq!(WRAPPER_LEN, 61);
+        assert_eq!(WRAPPER_BODY_LEN, 49);
+        assert_eq!(WRAPPER_PLAINTEXT_LEN, 33);
     }
 
     #[test]
     fn wrapper_round_trip_layout() {
         let nonce = [0x55u8; NONCE_LEN];
         let body = [0x11u8; WRAPPER_BODY_LEN];
-        let wrapper = assemble_wrapper(
-            FormatVersion::CURRENT,
-            CipherId::ChaCha20Poly1305,
-            &nonce,
-            &body,
-        );
-        let parsed = parse_wrapper(&wrapper).expect("round-trip parses");
-        assert_eq!(parsed.cipher, CipherId::ChaCha20Poly1305);
+        let wrapper = assemble_wrapper(&nonce, &body);
+        // Nonce sits in cleartext at the very front.
+        assert_eq!(&wrapper[..NONCE_LEN], &nonce);
+        let parsed = parse_wrapper(&wrapper);
         assert_eq!(parsed.nonce, &nonce);
         assert_eq!(parsed.body, &body);
-    }
-
-    #[test]
-    fn parse_wrapper_rejects_unknown_version_byte() {
-        let nonce = [0u8; NONCE_LEN];
-        let body = [0u8; WRAPPER_BODY_LEN];
-        let mut wrapper = assemble_wrapper(
-            FormatVersion::CURRENT,
-            CipherId::ChaCha20Poly1305,
-            &nonce,
-            &body,
-        );
-        wrapper[0] = 0x99;
-        assert_eq!(
-            parse_wrapper(&wrapper).unwrap_err(),
-            WrapperParseError::UnknownFormatVersion(UnknownFormatVersion(0x99)),
-        );
-    }
-
-    #[test]
-    fn parse_wrapper_rejects_unknown_cipher_byte() {
-        let nonce = [0u8; NONCE_LEN];
-        let body = [0u8; WRAPPER_BODY_LEN];
-        let mut wrapper = assemble_wrapper(
-            FormatVersion::CURRENT,
-            CipherId::ChaCha20Poly1305,
-            &nonce,
-            &body,
-        );
-        wrapper[1] = 0x99;
-        assert_eq!(
-            parse_wrapper(&wrapper).unwrap_err(),
-            WrapperParseError::UnknownCipherId(UnknownCipherId(0x99)),
-        );
     }
 
     proptest::proptest! {
@@ -361,14 +240,8 @@ mod tests {
             nonce in proptest::array::uniform12(proptest::num::u8::ANY),
             body in proptest::array::uniform::<_, WRAPPER_BODY_LEN>(proptest::num::u8::ANY),
         ) {
-            let wrapper = assemble_wrapper(
-                FormatVersion::CURRENT,
-                CipherId::ChaCha20Poly1305,
-                &nonce,
-                &body,
-            );
-            let parsed = parse_wrapper(&wrapper).expect("assembled wrappers always parse");
-            proptest::prop_assert_eq!(parsed.cipher, CipherId::ChaCha20Poly1305);
+            let wrapper = assemble_wrapper(&nonce, &body);
+            let parsed = parse_wrapper(&wrapper);
             proptest::prop_assert_eq!(parsed.nonce, &nonce);
             proptest::prop_assert_eq!(parsed.body, &body);
         }

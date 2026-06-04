@@ -29,16 +29,11 @@ pub enum InitError {
     /// decryption — indistinguishable from the cryptographic
     /// standpoint between a wrong `unlock_key` and a tampered wrapper.
     Decryption,
-    /// The wrapper's format-version byte does not match a version
-    /// this build supports. Detected before AEAD decryption so a
-    /// tampered version byte cannot be silently swallowed as
-    /// [`Self::Decryption`].
+    /// The wrapper's authenticated format-version byte does not match
+    /// a version this build supports. Surfaced after a successful AEAD
+    /// tag check so a tampered version byte cannot be silently
+    /// swallowed as [`Self::Decryption`].
     UnsupportedFormat,
-    /// The wrapper's cipher-id byte does not match the cipher this
-    /// build was compiled with. Detected before AEAD decryption so
-    /// a mismatched cipher byte produces a typed diagnostic instead
-    /// of a generic auth-failure.
-    UnsupportedCipher,
 }
 
 impl InitError {
@@ -52,7 +47,6 @@ impl InitError {
     /// | `KeyProvider(Provider(_))` | 69 | `EX_UNAVAILABLE` |
     /// | `Decryption` | 65 | `EX_DATAERR` |
     /// | `UnsupportedFormat` | 70 | `EX_SOFTWARE` |
-    /// | `UnsupportedCipher` | 70 | `EX_SOFTWARE` |
     ///
     /// # Examples
     ///
@@ -75,7 +69,7 @@ impl InitError {
             Self::KeyProvider(KeyError::InvalidFormat) => 65,
             Self::KeyProvider(KeyError::Provider(_)) => 69,
             Self::Decryption => 65,
-            Self::UnsupportedFormat | Self::UnsupportedCipher => 70,
+            Self::UnsupportedFormat => 70,
         }
     }
 }
@@ -86,7 +80,6 @@ impl fmt::Display for InitError {
             Self::KeyProvider(e) => write!(f, "key_provider:{e}"),
             Self::Decryption => f.write_str("decryption_failed"),
             Self::UnsupportedFormat => f.write_str("unsupported_format"),
-            Self::UnsupportedCipher => f.write_str("unsupported_cipher"),
         }
     }
 }
@@ -95,7 +88,7 @@ impl core::error::Error for InitError {
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
         match self {
             Self::KeyProvider(e) => Some(e),
-            Self::Decryption | Self::UnsupportedFormat | Self::UnsupportedCipher => None,
+            Self::Decryption | Self::UnsupportedFormat => None,
         }
     }
 }
@@ -188,7 +181,6 @@ mod tests {
     )]
     #[case::decryption(InitError::Decryption, "decryption_failed")]
     #[case::unsupported_format(InitError::UnsupportedFormat, "unsupported_format")]
-    #[case::unsupported_cipher(InitError::UnsupportedCipher, "unsupported_cipher")]
     fn init_error_display_tag(#[case] err: InitError, #[case] expected: &str) {
         assert_eq!(format!("{err}"), expected);
     }
@@ -218,7 +210,6 @@ mod tests {
             InitError::KeyProvider(KeyError::InvalidFormat),
             InitError::Decryption,
             InitError::UnsupportedFormat,
-            InitError::UnsupportedCipher,
         ];
         for err in &cases {
             let rendered = format!("{err}");
@@ -245,7 +236,6 @@ mod tests {
     #[case::key_invalid_format(InitError::KeyProvider(KeyError::InvalidFormat), 65)]
     #[case::decryption(InitError::Decryption, 65)]
     #[case::unsupported_format(InitError::UnsupportedFormat, 70)]
-    #[case::unsupported_cipher(InitError::UnsupportedCipher, 70)]
     fn init_error_sysexit_code(#[case] err: InitError, #[case] expected: i32) {
         assert_eq!(err.sysexit_code(), expected);
     }

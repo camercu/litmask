@@ -75,9 +75,8 @@ mod cell {
 /// Forwards provider errors via [`InitError::KeyProvider`]. AEAD
 /// authentication failure on the embedded wrapper (wrong `unlock_key`
 /// or tampered wrapper — cryptographically indistinguishable) returns
-/// [`InitError::Decryption`]. Unrecognized wrapper header bytes
-/// surface as [`InitError::UnsupportedFormat`] or
-/// [`InitError::UnsupportedCipher`].
+/// [`InitError::Decryption`]. An authenticated-but-unrecognized
+/// format-version byte surfaces as [`InitError::UnsupportedFormat`].
 #[doc(hidden)]
 #[allow(clippy::needless_pass_by_value, clippy::match_wild_err_arm)]
 pub fn __init_with_wrapper<P: KeyProvider>(
@@ -95,9 +94,6 @@ pub fn __init_with_wrapper<P: KeyProvider>(
         }
         Err(DecryptError::UnsupportedFormat) => {
             return Err(InitError::UnsupportedFormat);
-        }
-        Err(DecryptError::UnsupportedCipher) => {
-            return Err(InitError::UnsupportedCipher);
         }
         // `BlobTooShort` cannot reach this branch — `WRAPPER_LEN`
         // is fixed at the type level, so the wrapper is always

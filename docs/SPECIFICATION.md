@@ -518,18 +518,19 @@ this failure path on OpenBSD.
 
 ### §1.7 Binary Format and Binding
 
-#### §1.7.1 Locator-based design rationale
+#### §1.7.1 No-signature design rationale
 
 The binary contains no identifying patterns, named sections, or magic bytes
 attributable to `litmask`. Every encrypted blob is pure ciphertext that looks
 like ordinary random data in `.rodata`, indistinguishable from precomputed
 tables, embedded test vectors, or compressed assets.
 
-The encrypted `mask_key` wrapper's location is recorded by its first 12 bytes
-(the "locator") in `litmask.config`. Since these 12 bytes are themselves real
-ciphertext (uniformly random under the cipher), they constitute no fixed
-pattern across builds — every build has different locator bytes due to seed
-variation.
+The encrypted `mask_key` wrapper is embedded at a fixed address via
+`include_bytes!`, so the runtime reads it by reference rather than scanning for
+it. There is no stored locator and no byte-pattern search. The wrapper's only
+cleartext field is its 12-byte AEAD nonce at offset 0; because that nonce is
+uniformly random per build, the wrapper contributes no fixed cross-build
+pattern.
 
 Generalizing this property: litmask MUST NOT contribute fixed byte signatures
 to user binaries. Any ancillary literal that the library needs to embed (the
@@ -537,8 +538,7 @@ default env-var name, future default file paths for `FileProvider`, etc.) MUST
 be obfuscated via the public `weak_mask!()` macro (§1.8.1), which XORs the
 literal against a 64-byte key derived from the wrapper nonce (bit rotation +
 BLAKE3 keyed hash). The derivation uses no string literals and depends only on
-the nonce (stable across bind), so `weak_mask!` literals survive wrapper
-re-encryption. The resulting `.rodata` representation varies per build with the
+the nonce, so the resulting `.rodata` representation varies per build with the
 nonce's random bytes, leaving no grep-across-binaries fingerprint.
 
 #### §1.7.2 Per-string ciphertext blob format
@@ -550,30 +550,35 @@ Each per-string encrypted blob is a contiguous byte sequence:
 ```
 
 There is NO format version byte, NO cipher identifier byte, and NO other
-identifying header in per-string blobs. Format and cipher are global
-properties of the build, recorded in the wrapper around the encrypted
-`mask_key` (see §1.7.3), not duplicated per-string.
+identifying header in per-string blobs. Format is a global property of the
+build, authenticated inside the wrapper around the encrypted `mask_key` (see
+§1.7.3), not duplicated per-string. Cipher is selected at compile time
+(`CURRENT_CIPHER`) and never written to the wire at all.
 
 The nonce is derived per §1.5.2.
 
 #### §1.7.3 Encrypted mask_key wrapper format
 
-The encrypted `mask_key` wrapper is the only blob in the binary that carries
-metadata. Its format:
+The encrypted `mask_key` wrapper carries its format version inside the AEAD
+plaintext, so no fixed-value structural byte appears at a known offset. Its
+layout:
 
 ```
-<format version: 1 byte><cipher id: 1 byte><nonce: 12 bytes><encrypted mask_key: 32 bytes><authentication tag: 16 bytes>
+<nonce: 12 bytes><AEAD(format version: 1 byte ‖ mask_key: 32 bytes): 33 bytes ciphertext><authentication tag: 16 bytes>
 ```
 
-Total length: 62 bytes.
+Total length: 61 bytes (`nonce 12 ‖ ciphertext 33 ‖ tag 16`).
 
-- Format version: currently `0x01`. Used for future migration; runtime
-  rejects unknown versions per §1.9.2 (`InitError::UnsupportedFormat`).
-- Cipher id: `0x01` for ChaCha20-Poly1305, `0x02` for AES-256-GCM. The
-  `litmask` runtime crate rejects mismatch with its compiled cipher
-  feature per §1.9.2 (`InitError::UnsupportedCipher`). `litmask-cli`
-  dispatches at runtime on this byte to select between the two ciphers
-  it always links (see §1.5.1).
+- Nonce: the only cleartext field, at offset 0. Derived deterministically
+  (see below).
+- Format version: the first byte of the AEAD *plaintext* (`version_byte ‖
+  mask_key`). It is authenticated, never carried in cleartext, and validated
+  only after the AEAD tag verifies. The runtime rejects unknown versions per
+  §1.9.2 (`InitError::UnsupportedFormat`). Current version is `0x01`.
+- Cipher: NOT present on the wire. Every wrapper and blob in a binary is
+  encrypted with the single cipher the build was compiled for; the runtime
+  dispatches on the compile-time `CURRENT_CIPHER` constant (§1.5.1), so there
+  is no cipher-id byte and no runtime cipher-mismatch error.
 
 The wrapper's nonce is derived deterministically as:
 
@@ -584,21 +589,16 @@ wrapper_nonce = first_12_bytes(BLAKE3-keyed-hash(
 ))
 ```
 
-This is the only place format version or cipher id metadata appears in the
-binary. Per-string blobs defer to this wrapper for cipher and format
-determination.
-
 #### §1.7.4 litmask.config schema
 
 ```toml
 # Build artifact — secret, do not commit
 unlock_key = "<base64url>"        # 32 bytes, current unlock_key
-locator = "<base64url>"           # first 12 bytes of encrypted mask_key wrapper
-length = 62                       # bytes; full length of wrapper (constant in v1)
 ```
 
-The `length` field is included for forward compatibility with future format
-versions whose wrapper size may differ.
+Because the wrapper is embedded at a fixed address (§1.7.1), the config no
+longer records a locator or wrapper length; it carries only the `unlock_key`
+the runtime reads via env var.
 
 #### §1.7.5 Build artifact location
 
@@ -611,76 +611,12 @@ multi-package workspaces, each package that uses `litmask-build` gets its own
 the build profile, falling back to `target/<profile>/` relative to
 `CARGO_MANIFEST_DIR`.
 
-#### §1.7.6 Binding workflow
+#### §1.7.6 Keying workflow
 
-The `litmask bind` command rebinds a binary to a machine-ID-derived
-`unlock_key`. v1 supports machine-ID binding only. Other providers
-(`EnvVarProvider`, `FileProvider`) do not require post-build rebinding —
-their `unlock_key` is provisioned at deployment time using the value from
-`litmask.config`.
-
-The bind operation:
-1. Reads current `litmask.config` (containing current `unlock_key` and
-   `locator`).
-2. Scans target binary for the locator. Byte-identical duplicate wrappers
-   (from compiler-duplicated `include_bytes!` data) are treated as a single
-   logical match; all copies are patched in step 7. Differing wrappers at
-   the same locator are rejected as ambiguous.
-3. Reads `length` bytes at the located offset → encrypted `mask_key` wrapper.
-4. Decrypts wrapper with current `unlock_key` → recovered `mask_key`.
-5. Derives new `unlock_key` from the target host's machine ID (with optional
-   user-supplied salt).
-6. Re-encrypts `mask_key` with new `unlock_key`, reusing the existing nonce
-   (safe: the key changed, so the (key, nonce) pair is fresh) → new wrapper.
-   The locator is preserved because the nonce is unchanged.
-7. Atomically commits both binary patch (all wrapper copies) and config
-   update via the protocol in §1.7.7.
-8. On macOS, re-signs the binary with an ad-hoc code signature (`codesign
-   -s - -f`). The in-place binary patch invalidates any existing signature;
-   ARM64 macOS kills unsigned binaries with SIGKILL. Failure warns to
-   stderr but does not abort the bind.
-
-First-bind and subsequent rebinds use the same code path; the only difference
-is that the "current `unlock_key`" on first bind is the build-time random
-key, while on rebind it is the previous machine-ID-derived key.
-
-#### §1.7.7 Atomic commit protocol for bind
-
-To avoid leaving the binary and `litmask.config` in inconsistent states if a
-write fails partway through, the bind operation MUST:
-
-**On POSIX:**
-1. Compute new `unlock_key`, new wrapper bytes, and new `litmask.config`
-   contents in memory; do not write anything yet.
-2. Write new `litmask.config` contents to a tempfile in the same directory.
-3. `fsync` the config tempfile.
-4. Write new binary contents to a tempfile in the same directory as the
-   original binary.
-5. Copy the original binary's file permissions to the binary tempfile
-   (preserves the executable bit).
-6. `fsync` the binary tempfile.
-7. `rename` the binary tempfile to the binary path (atomic on POSIX).
-8. `rename` the config tempfile to `litmask.config` (atomic on POSIX).
-9. `fsync` parent directories of the binary and config so the renames are
-   durable across crashes.
-
-**On Windows:**
-Same steps 1-6, but:
-7-8. Use `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH`
-   flags for each rename. `MOVEFILE_WRITE_THROUGH` ensures the rename is
-   flushed to disk before returning, providing equivalent durability to
-   POSIX step 9. No separate directory-level fsync is needed.
-
-If any step fails, the binary and original `litmask.config` are left in the
-most consistent recoverable state:
-- Steps 1-6 fail: nothing modified; tempfiles are partial/orphaned at worst.
-- Step 7 fails: original binary and config intact. Both tempfiles are
-  best-effort cleaned up. Retry bind.
-- Step 8 fails: new binary with new wrapper, old config with old
-  `unlock_key`. Config tempfile is best-effort cleaned up. Recovery
-  requires rebind.
-- Step 9 fails: renames succeeded but may not survive a crash. On reboot,
-  either rename may revert; rebind will be needed.
+`unlock_key` is sealed at build time; there is no post-build rebind step.
+The `unlock_key` is provisioned at deployment time using the value from
+`litmask.config` (for env/file providers). Build-sealed keying tiers are
+specified in `docs/SPEC_DEVEX.md` (pending fold into this document).
 
 ### §1.8 API Surface
 
@@ -843,8 +779,7 @@ pub enum InitError {
     Decryption,                  // mask_key decryption failed (wrong unlock_key
                                  // or tampered mask_key wrapper — these are
                                  // cryptographically indistinguishable)
-    UnsupportedFormat,           // ciphertext format version mismatch
-    UnsupportedCipher,           // wrapper specifies a cipher not compiled in
+    UnsupportedFormat,           // authenticated format-version byte unknown
 }
 
 #[non_exhaustive]
@@ -895,7 +830,6 @@ InitError::KeyProvider(KeyError::NotFound)   → "key_provider:not_found"
 InitError::KeyProvider(KeyError::Permission) → "key_provider:permission"
 InitError::Decryption                        → "decryption_failed"
 InitError::UnsupportedFormat                 → "unsupported_format"
-InitError::UnsupportedCipher                 → "unsupported_cipher"
 ```
 
 These tags are short, ASCII-only, and provide no semantic guidance — they are
@@ -1073,7 +1007,6 @@ impl InitError {
             InitError::KeyProvider(KeyError::Provider(_))   => 69,  // EX_UNAVAILABLE
             InitError::Decryption                           => 65,  // EX_DATAERR
             InitError::UnsupportedFormat                    => 70,  // EX_SOFTWARE
-            InitError::UnsupportedCipher                    => 70,  // EX_SOFTWARE
         }
     }
 }
@@ -1093,7 +1026,6 @@ The mapping rationale:
 | `KeyProvider(Provider(_))` | EX_UNAVAILABLE (69) | Custom provider failure (network, service, etc.) |
 | `Decryption` | EX_DATAERR (65) | AEAD authentication failure (see §1.9.2) |
 | `UnsupportedFormat` | EX_SOFTWARE (70) | Format version mismatch — software issue |
-| `UnsupportedCipher` | EX_SOFTWARE (70) | Cipher feature mismatch — software issue |
 
 Recommended usage pattern:
 
