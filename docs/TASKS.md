@@ -254,6 +254,13 @@ derivation moves into init!-emitted internal code; the public
       recipe is removed (deferred here from Task 1)
 - [ ] SPECIFICATION §4 documents the machine tier; CONTEXT.md gains the
       `machine_id` keyword and retires MachineIdProvider
+- [ ] README machine-id surface migrated to `init!(machine_id)` (deferred
+      here from Tasks 1–3): retire the `## Machine-ID binding (litmask
+      bind)` section and the `MachineIdProvider::with_salt(...)` snippet
+      (both name removed APIs — `litmask bind` was deleted in Task 1,
+      `MachineIdProvider` is removed here), and update the "Why litmask"
+      comparison-table `Machine-ID binding` row from `litmask bind` to the
+      `init!(machine_id)` form
 
 ---
 
