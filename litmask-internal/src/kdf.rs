@@ -62,6 +62,36 @@ pub fn derive_embedded_unlock_key(context: &str, wrapper_nonce: &[u8; NONCE_LEN]
     blake3::derive_key(context, wrapper_nonce)
 }
 
+/// BLAKE3 `derive_key` domain separator for the External-tier
+/// `unlock_key`.
+///
+/// The External tier sources its key material from a runtime channel
+/// (env var, file, or operator-supplied expression). The framework
+/// never trusts that material as a key directly — it always runs it
+/// through `BLAKE3::derive_key` under this context, so any byte string
+/// (regardless of length or entropy shape) normalizes to a 32-byte
+/// `unlock_key`. Build and runtime MUST use this same context or
+/// sealed wrappers fail to open.
+///
+/// The `-v1` suffix reserves a rotation path. Changing this constant is
+/// a BREAKING change: every External-tier wrapper sealed under the old
+/// context fails to decrypt under the new one.
+pub const EXTERNAL_UNLOCK_DERIVATION_CONTEXT: &str = "litmask-unlock-v1";
+
+/// Derive the External-tier `unlock_key` from runtime key material.
+///
+/// `BLAKE3::derive_key(context, material)`. Unlike the Embedded path,
+/// `material` is arbitrary-length operator input, so the derivation
+/// normalizes it to a fixed 32-byte key — callers pass raw bytes with
+/// no pre-hashing. Build and runtime call this with the same material
+/// to reach the identical key. Domain-separated from
+/// [`derive_embedded_unlock_key`] and [`derive_machine_id_key`] by its
+/// distinct context.
+#[must_use]
+pub fn derive_external_unlock_key(context: &str, material: &[u8]) -> [u8; KEY_LEN] {
+    blake3::derive_key(context, material)
+}
+
 /// Derive a 32-byte key from `(context, machine_id, salt)` via BLAKE3.
 ///
 /// Shared by [`MachineIdProvider`](https://docs.rs/litmask) (runtime)
@@ -196,5 +226,44 @@ mod tests {
         let embedded = derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &bytes);
         let machine = derive_machine_id_key(MACHINE_ID_DERIVATION_CONTEXT, &bytes, b"");
         assert_ne!(embedded, machine);
+    }
+
+    #[test]
+    fn derive_external_unlock_key_is_deterministic() {
+        let material = b"operator-supplied-secret";
+        assert_eq!(
+            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, material),
+            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, material)
+        );
+    }
+
+    #[test]
+    fn derive_external_unlock_key_differs_across_material() {
+        let a = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"material-A");
+        let b = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"material-B");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn derive_external_unlock_key_accepts_arbitrary_length_material() {
+        let short = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"x");
+        let long = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, &[0x5au8; 1024]);
+        assert_eq!(short.len(), KEY_LEN);
+        assert_eq!(long.len(), KEY_LEN);
+        assert!(long.iter().any(|&b| b != 0));
+    }
+
+    /// The external-tier context must domain-separate from both the
+    /// embedded and machine-id contexts: identical input bytes hashed
+    /// under a different `derive_key` context must never collide, so a
+    /// key minted for one tier can never be reused for another.
+    #[test]
+    fn derive_external_unlock_key_domain_separated_from_other_contexts() {
+        let bytes = [0x11u8; NONCE_LEN];
+        let external = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, &bytes);
+        let embedded = derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &bytes);
+        let machine = derive_machine_id_key(MACHINE_ID_DERIVATION_CONTEXT, &bytes, b"");
+        assert_ne!(external, embedded);
+        assert_ne!(external, machine);
     }
 }
