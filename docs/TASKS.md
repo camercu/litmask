@@ -15,8 +15,9 @@ replaces it.
 
 ---
 
-## Task 1: Delete locator + CLI bind/inspect, then reformat wire (AFK)
+## Task 1: Delete locator + CLI bind/inspect, then reformat wire (AFK) ✅ DONE
 
+**Status:** complete — commit `b8bbeb9`
 **Implements:** §0 (one keying path), §5.1, §9 surface disposition; doc:
 SPECIFICATION §1.7.1/§1.7.3/§1.7.4/§1.7.6–7, §2.9, CONTEXT.md
 **Blocked by:** None — start here
@@ -39,27 +40,50 @@ compiled `CURRENT_CIPHER`, not a wire byte.
 
 ### Acceptance Criteria
 
-- [ ] `litmask-internal/src/scan.rs` and `config.rs` deleted; no
+- [x] `litmask-internal/src/scan.rs` and `config.rs` deleted; no
       `locate_wrapper` / `count_occurrences` / `render_config_fields`
       exports remain
-- [ ] `emit()` no longer writes `litmask.config`; no locator prefix is
-      emitted into the wrapper
-- [ ] `litmask bind` and `litmask inspect` removed; `litmask --help`
+- [x] `emit()` no longer writes a locator prefix into the wrapper;
+      `litmask.config` carries only `unlock_key`
+- [x] `litmask bind` and `litmask inspect` removed; `litmask --help`
       lists neither; `show-machine-id` still works
-- [ ] `assemble_wrapper` produces `nonce ‖ AEAD(version ‖ mask_key) ‖
+- [x] `assemble_wrapper` produces `nonce ‖ AEAD(version ‖ mask_key) ‖
       tag`; no plaintext cipher-id or version byte appears outside the
       AEAD; `NONCE_OFFSET == 0`; `WRAPPER_LEN == 61`
-- [ ] `decrypt_wrapper` rejects a wrapper whose authenticated version
+- [x] `decrypt_wrapper` rejects a wrapper whose authenticated version
       byte is unknown (decrypt-then-check), distinct from an
       AEAD-tag-failure error
-- [ ] `derive_weak_xor_key` reads the nonce at offset 0 and
+- [x] `derive_weak_xor_key` reads the nonce at offset 0 and
       round-trips a `weak_mask!` literal
-- [ ] Existing encrypt→embed→decrypt round-trip tests pass (behavior
+- [x] Existing encrypt→embed→decrypt round-trip tests pass (behavior
       preserved); `just ci` green
-- [ ] SPECIFICATION §1.7.3 describes the new layout; §1.7.1/§1.7.4/
+- [x] SPECIFICATION §1.7.3 describes the new layout; §1.7.1/§1.7.4/
       §1.7.6–7 locator/config/bind sections retired; §2.9 CLI trimmed;
       CONTEXT.md drops Locator / Bind / litmask.config and updates the
       wrapper entry
+
+### Discoveries / unplanned work
+
+- **`InitError::UnsupportedCipher` removed** (not in original plan). The
+  cipher is compile-time only; with no wire cipher byte, a runtime
+  cipher mismatch surfaces as `AuthenticationFailed`, so the variant was
+  dead. Rippled through `error.rs`, `runtime.rs`, SPECIFICATION §1.9.2,
+  and the renamed `init_unsupported_format.rs` test.
+- **Test helpers must use `CURRENT_CIPHER`, never hardcode a cipher.**
+  `decrypt.rs` wrapper-build helpers hardcoded ChaCha20 while
+  `decrypt_wrapper` dispatches on `CURRENT_CIPHER`; the `--all-features`
+  CI lane (where `CURRENT_CIPHER == Aes256Gcm`) failed the tag check.
+  Future tasks that build wrappers/blobs in tests must seal with
+  `CURRENT_CIPHER`.
+- **`init_unsupported_format` test holds only `Err`-returning cases.**
+  The process-global `mask_key` cell early-returns once set, so a
+  happy-path test in the same binary masked the rejection tests. Happy
+  path is covered by other test binaries. Keep this invariant when
+  adding tier round-trip tests.
+- **Pre-commit + partial commits are incompatible here.** `git commit --
+  <subset>` makes pre-commit stash the rest, yielding a non-compiling
+  tree. Interdependent changes that only build as a whole must land in
+  one atomic commit (full pathspec).
 
 ---
 
@@ -175,6 +199,9 @@ derivation moves into init!-emitted internal code; the public
 - [ ] Public `MachineIdProvider` removed from the `litmask` API;
       machine derivation lives in init!-emitted code
 - [ ] No stale `hardware` / `hw-id` identifiers remain (grep clean)
+- [ ] `machine_id_provider` example migrated to `init!(machine_id)`; the
+      stale `litmask-cli bind` comment in the `justfile` `test-examples`
+      recipe is removed (deferred here from Task 1)
 - [ ] SPECIFICATION §4 documents the machine tier; CONTEXT.md gains the
       `machine_id` keyword and retires MachineIdProvider
 
