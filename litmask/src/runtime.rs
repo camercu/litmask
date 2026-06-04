@@ -276,33 +276,23 @@ pub fn __weak_decode_cstr<const N: usize>(
 )]
 fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {
     cell::get_or_init(|| {
-        // Under no_std there is no default provider — lazy init only
-        // makes sense if init_with! ran first. Reaching this branch
-        // means a configuration error; panic with no message to
+        // No explicit `init!` ran: derive the Embedded-tier unlock_key
+        // from the wrapper's public nonce — the keyless floor works in
+        // both std and no_std. A failure here panics with no message to
         // avoid leaking litmask-identifying plaintext.
-        #[cfg(feature = "std")]
-        {
-            let provider = crate::EnvVarProvider::default();
-            let unlock_key = match provider.unlock_key() {
-                Ok(k) => k,
-                Err(_) => panic!(),
-            };
-            let bytes = decrypt_wrapper_or_panic(unlock_key.as_bytes(), wrapper);
-            MaskKey::new(bytes)
-        }
-        #[cfg(not(feature = "std"))]
-        {
-            let _ = wrapper;
-            panic!()
-        }
+        let provider = crate::EmbeddedProvider::new(wrapper);
+        let unlock_key = match provider.unlock_key() {
+            Ok(k) => k,
+            Err(_) => panic!(),
+        };
+        let bytes = decrypt_wrapper_or_panic(unlock_key.as_bytes(), wrapper);
+        MaskKey::new(bytes)
     })
 }
 
-// Only the lazy-init path under `cfg(feature = "std")` panics on
-// wrapper decrypt failure now; `__init_with_wrapper` returns
-// `InitError::Decryption` instead. Without the cfg gate this would
-// be dead code under `--no-default-features`.
-#[cfg(feature = "std")]
+// Both the lazy Embedded path here and (indirectly) every `mask!`
+// without an explicit `init!` rely on this; `__init_with_wrapper`
+// returns `InitError::Decryption` instead of panicking.
 #[allow(clippy::single_match_else, clippy::match_wild_err_arm)]
 fn decrypt_wrapper_or_panic(
     unlock_key: &[u8; crate::internal::KEY_LEN],

@@ -45,13 +45,21 @@ pub const EMBEDDED_UNLOCK_DERIVATION_CONTEXT: &str = "litmask-embedded-v1";
 
 /// Derive the Embedded-tier `unlock_key` from the wrapper nonce.
 ///
-/// `BLAKE3::derive_key("litmask-embedded-v1", wrapper_nonce)`. The nonce
-/// is fixed-width (`NONCE_LEN`), so no length prefix is needed to avoid
+/// `BLAKE3::derive_key(context, wrapper_nonce)`. The nonce is
+/// fixed-width (`NONCE_LEN`), so no length prefix is needed to avoid
 /// concatenation ambiguity. Build and runtime call this with the same
 /// nonce to reach the identical key with nothing stored between them.
+///
+/// `context` is taken as a parameter — rather than read from the const
+/// internally — so the runtime caller ([`EmbeddedProvider`]) can pass
+/// it through `weak_mask!()`, keeping the literal out of `strings(1)`
+/// output. The build/CLI side passes [`EMBEDDED_UNLOCK_DERIVATION_CONTEXT`]
+/// directly. The two MUST match byte-for-byte or build ↔ runtime
+/// derivations diverge; the drift is pinned by a unit test in
+/// `litmask::provider::embedded`. Mirrors [`derive_machine_id_key`].
 #[must_use]
-pub fn derive_embedded_unlock_key(wrapper_nonce: &[u8; NONCE_LEN]) -> [u8; KEY_LEN] {
-    blake3::derive_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, wrapper_nonce)
+pub fn derive_embedded_unlock_key(context: &str, wrapper_nonce: &[u8; NONCE_LEN]) -> [u8; KEY_LEN] {
+    blake3::derive_key(context, wrapper_nonce)
 }
 
 /// Derive a 32-byte key from `(context, machine_id, salt)` via BLAKE3.
@@ -156,21 +164,24 @@ mod tests {
     fn derive_embedded_unlock_key_is_deterministic() {
         let nonce = [0x07u8; NONCE_LEN];
         assert_eq!(
-            derive_embedded_unlock_key(&nonce),
-            derive_embedded_unlock_key(&nonce)
+            derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &nonce),
+            derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &nonce)
         );
     }
 
     #[test]
     fn derive_embedded_unlock_key_differs_across_nonces() {
-        let a = derive_embedded_unlock_key(&[0x01u8; NONCE_LEN]);
-        let b = derive_embedded_unlock_key(&[0x02u8; NONCE_LEN]);
+        let a =
+            derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &[0x01u8; NONCE_LEN]);
+        let b =
+            derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &[0x02u8; NONCE_LEN]);
         assert_ne!(a, b);
     }
 
     #[test]
     fn derive_embedded_unlock_key_returns_full_32_bytes() {
-        let key = derive_embedded_unlock_key(&[0x09u8; NONCE_LEN]);
+        let key =
+            derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &[0x09u8; NONCE_LEN]);
         assert_eq!(key.len(), KEY_LEN);
         assert!(key.iter().any(|&b| b != 0));
     }
@@ -182,7 +193,7 @@ mod tests {
     #[test]
     fn derive_embedded_unlock_key_domain_separated_from_machine_context() {
         let bytes = [0x11u8; NONCE_LEN];
-        let embedded = derive_embedded_unlock_key(&bytes);
+        let embedded = derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &bytes);
         let machine = derive_machine_id_key(MACHINE_ID_DERIVATION_CONTEXT, &bytes, b"");
         assert_ne!(embedded, machine);
     }

@@ -78,19 +78,12 @@ impl UnlockKey {
 
     /// Construct an `UnlockKey` from raw 32-byte material. Used by
     /// providers that source the key bytes directly (rather than via
-    /// base64url-encoded text), e.g. `FileProvider` under
-    /// `KeyEncoding::Raw` and `MachineIdProvider`. Stays
-    /// crate-private so the encoded/typed entry points
-    /// (`from_base64url`) remain the canonical user-facing API and a
+    /// base64url-encoded text), e.g. `EmbeddedProvider` (nonce-derived),
+    /// `FileProvider` under `KeyEncoding::Raw`, and `MachineIdProvider`.
+    /// Stays crate-private so the encoded/typed entry point
+    /// (`from_base64url`) remains the canonical user-facing API and a
     /// caller cannot accidentally bypass the length check by handing
     /// in arbitrary bytes — the type system pins the array length.
-    ///
-    /// `#[allow(dead_code)]` covers the `--no-default-features
-    /// --features alloc` build, where neither `FileProvider` nor
-    /// `MachineIdProvider` is compiled in and the function has no
-    /// caller. Restoring `std` or adding `machine-id` reactivates the
-    /// callers.
-    #[allow(dead_code)]
     pub(crate) fn from_raw(bytes: [u8; KEY_LEN]) -> Self {
         Self(bytes)
     }

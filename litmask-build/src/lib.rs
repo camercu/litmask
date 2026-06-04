@@ -33,8 +33,9 @@ use rand_core::{Rng, SeedableRng};
 use zeroize::{Zeroize, Zeroizing};
 
 use litmask_internal::{
-    CURRENT_CIPHER, FormatVersion, KEY_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN, WRAPPER_PLAINTEXT_LEN,
-    aead_encrypt, assemble_wrapper, base64url, derive_embedded_unlock_key, nonce_for_wrapper,
+    CURRENT_CIPHER, EMBEDDED_UNLOCK_DERIVATION_CONTEXT, FormatVersion, KEY_LEN, WRAPPER_BODY_LEN,
+    WRAPPER_LEN, WRAPPER_PLAINTEXT_LEN, aead_encrypt, assemble_wrapper, base64url,
+    derive_embedded_unlock_key, nonce_for_wrapper,
 };
 
 /// Build-authoritative seal-tier tag (§2.4). Fixed at `embedded` — the
@@ -142,7 +143,8 @@ impl BuildArtifacts {
         // runtime recomputes the identical key from the embedded nonce
         // with no stored material (§1). The seed now feeds only mask_key
         // + the nonce.
-        let unlock_key = derive_embedded_unlock_key(&wrapper_nonce);
+        let unlock_key =
+            derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &wrapper_nonce);
 
         // AEAD plaintext is `version_byte || mask_key` — the format
         // version is authenticated inside the wrapper rather than
@@ -618,10 +620,15 @@ mod tests {
     /// open the wrapper with it.
     #[test]
     fn embedded_unlock_key_is_nonce_recomputable_and_round_trips() {
-        use litmask_internal::{decrypt_wrapper, derive_embedded_unlock_key};
+        use litmask_internal::{
+            EMBEDDED_UNLOCK_DERIVATION_CONTEXT, decrypt_wrapper, derive_embedded_unlock_key,
+        };
         let seed = [0x33u8; KEY_LEN];
         let artifacts = BuildArtifacts::derive(&seed);
-        let recomputed = derive_embedded_unlock_key(&nonce_for_wrapper(&seed));
+        let recomputed = derive_embedded_unlock_key(
+            EMBEDDED_UNLOCK_DERIVATION_CONTEXT,
+            &nonce_for_wrapper(&seed),
+        );
         assert_eq!(
             recomputed, artifacts.unlock_key,
             "unlock_key must be recomputable from the wrapper nonce",

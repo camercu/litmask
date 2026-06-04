@@ -5,9 +5,10 @@
 //! compile time with an AEAD cipher (ChaCha20-Poly1305 or
 //! AES-256-GCM); the runtime decrypts on first use, after a
 //! process-global mask key is recovered from the embedded wrapper
-//! using an unlock key that a [`KeyProvider`] sources at runtime
-//! (the default [`EnvVarProvider`] reads `LITMASK_UNLOCK_KEY` from
-//! the environment).
+//! using an unlock key that a [`KeyProvider`] sources at runtime. The
+//! default [`EmbeddedProvider`] derives that key from the wrapper's
+//! public nonce — a keyless obfuscation floor; stronger providers
+//! source the key from external runtime state.
 //!
 //! ```no_run
 //! # fn main() -> Result<(), litmask::InitError> {
@@ -21,7 +22,7 @@
 //!
 //! | Configuration | Defeats |
 //! |---|---|
-//! | Zero-config build (defaults to `EnvVarProvider`) | `strings`, casual binary inspection (Level 1); also Level 2 because `unlock_key` is not embedded |
+//! | Zero-config build (defaults to `EmbeddedProvider`) | `strings`, casual binary inspection (Level 1) |
 //! | `FileProvider` | Above, key sourced from a file path |
 //! | `MachineIdProvider` | Above + binary moved to a different machine |
 //! | Custom `KeyProvider` (network call, vault) | Above + offline attackers |
@@ -118,7 +119,7 @@ pub(crate) use litmask_internal as internal;
 pub use error::{InitError, KeyError};
 pub use key::UnlockKey;
 pub use litmask_internal::KEY_LEN;
-pub use provider::{KeyProvider, StaticProvider};
+pub use provider::{EmbeddedProvider, KeyProvider};
 
 #[cfg(feature = "std")]
 pub use provider::{EnvVarProvider, FileProvider, KeyEncoding};
@@ -225,23 +226,27 @@ macro_rules! __wrapper_bytes {
     };
 }
 
-/// Initialize the runtime using [`EnvVarProvider::default`] (reads
-/// `LITMASK_UNLOCK_KEY` as base64url-encoded 32 bytes).
+/// Initialize the runtime under the Embedded seal tier: derive the
+/// `unlock_key` from the embedded wrapper's cleartext nonce and decrypt
+/// the `mask_key` with it (no external key material).
 ///
 /// Declarative macro: expands at the call site so it can read the
 /// embedded encrypted-`mask_key` wrapper from the calling crate's
 /// `OUT_DIR`. Calling `litmask::init!()?` at program startup is
 /// recommended to surface initialization errors as `Result`. Without
-/// it, the first `mask!()` call performs lazy initialization and
-/// panics on failure.
+/// it, the first `mask!()` call performs the same lazy Embedded
+/// initialization and panics on failure.
 #[macro_export]
 macro_rules! init {
-    () => {
+    () => {{
+        // Bind the embedded wrapper once: `EmbeddedProvider` reads its
+        // nonce, then the runtime decrypts the same bytes.
+        let __litmask_wrapper = $crate::__wrapper_bytes!();
         $crate::__internal::__init_with_wrapper(
-            $crate::EnvVarProvider::default(),
-            $crate::__wrapper_bytes!(),
+            $crate::EmbeddedProvider::new(__litmask_wrapper),
+            __litmask_wrapper,
         )
-    };
+    }};
 }
 
 /// Initialize the runtime using a caller-supplied [`KeyProvider`].
@@ -364,8 +369,9 @@ mod no_std_tests {
             let text = std::fs::read_to_string(&config_path).unwrap();
             let key_line = text.lines().find(|l| l.starts_with("unlock_key")).unwrap();
             let key_b64 = key_line.split('"').nth(1).unwrap();
-            let provider =
-                crate::StaticProvider::new(crate::UnlockKey::from_base64url(key_b64).unwrap());
+            let provider = crate::provider::TestProvider::new(
+                crate::UnlockKey::from_base64url(key_b64).unwrap(),
+            );
             crate::init_with!(provider).unwrap();
         });
     }

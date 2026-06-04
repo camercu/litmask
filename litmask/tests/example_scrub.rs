@@ -34,9 +34,6 @@ use common::Profile;
 /// there, while these examples are covered by fixture-absence
 /// checks only:
 ///
-/// - `static_provider`: cautionary FOR-TESTS-ONLY demo; reads
-///   `LITMASK_UNLOCK_KEY` directly so the user can see the
-///   plaintext-key flow end-to-end.
 /// - `file_provider`: demonstrates `FileProvider`; reads
 ///   `LITMASK_UNLOCK_KEY_FILE` to find the key file.
 /// - `machine_id_provider`: gated behind `--features machine-id` (see
@@ -57,7 +54,7 @@ const EXAMPLES: &[&str] = &[
     "mask_print_e2e",
 ];
 
-const EXCEPTIONS: &[&str] = &["static_provider", "file_provider", "machine_id_provider"];
+const EXCEPTIONS: &[&str] = &["file_provider", "machine_id_provider"];
 
 #[test]
 fn no_forbidden_substrings_in_any_example_binary() {
@@ -296,19 +293,18 @@ fn mask_format_placeholder_names_absent_from_binary() {
     common::assert_substring_absent(&path, "eyes_only_field_width");
 }
 
-/// `hello_world`, `static_provider`, and `file_provider` all mask
-/// the same Twain quote — that's the canonical "first example"
-/// payload the docs invite users to verify via `strings | grep`.
-/// Without this test, a `mask!` regression in any of the three
-/// would silently leak the quote and only the identifier scrub
-/// would fire — and only if the regression also leaked a library
-/// identifier. Probe on `"The reports of my death"` rather than
-/// `"greatly exaggerated"` because the latter is common enough
-/// English that dependency text could plausibly contain it; the
-/// former is unique to the Twain quote.
+/// `hello_world` and `file_provider` both mask the same Twain quote
+/// — that's the canonical "first example" payload the docs invite
+/// users to verify via `strings | grep`. Without this test, a
+/// `mask!` regression in either would silently leak the quote and
+/// only the identifier scrub would fire — and only if the regression
+/// also leaked a library identifier. Probe on `"The reports of my
+/// death"` rather than `"greatly exaggerated"` because the latter is
+/// common enough English that dependency text could plausibly
+/// contain it; the former is unique to the Twain quote.
 #[test]
 fn twain_fixture_absent_from_canonical_examples() {
-    for name in ["hello_world", "static_provider", "file_provider"] {
+    for name in ["hello_world", "file_provider"] {
         common::build_example(name, Profile::Release);
         let path = common::example_path(name, Profile::Release);
         common::assert_substring_absent(&path, "The reports of my death");

@@ -6,29 +6,34 @@
 //! per-provider tests, error wrappers, and pure helpers stay
 //! colocated with the provider they describe:
 //!
+//! - [`embedded`] / [`EmbeddedProvider`] — keyless, nonce-derived floor
 //! - [`env`] / [`EnvVarProvider`] — `LITMASK_UNLOCK_KEY` environment var
 //! - [`file`] / [`FileProvider`] — filesystem path, base64url or raw
 //! - [`machine_id`] / [`MachineIdProvider`] — machine-id + BLAKE3 (opt-in)
-//! - [`static_key`] / [`StaticProvider`] — fixed key, tests-only
 
 use crate::error::KeyError;
 use crate::key::UnlockKey;
 
+pub(crate) mod embedded;
 #[cfg(feature = "std")]
 pub(crate) mod env;
 #[cfg(feature = "std")]
 pub(crate) mod file;
 #[cfg(feature = "machine-id")]
 pub(crate) mod machine_id;
-pub(crate) mod static_key;
 
+pub use embedded::EmbeddedProvider;
+// Only the no_std test harness reaches for the re-export by path; under
+// std the in-crate users import `TestProvider` directly within their own
+// test modules, so an unconditional re-export would be dead there.
+#[cfg(all(test, not(feature = "std")))]
+pub(crate) use embedded::TestProvider;
 #[cfg(feature = "std")]
 pub use env::EnvVarProvider;
 #[cfg(feature = "std")]
 pub use file::{FileProvider, KeyEncoding};
 #[cfg(feature = "machine-id")]
 pub use machine_id::MachineIdProvider;
-pub use static_key::StaticProvider;
 
 /// A source of `unlock_key` for the layered key strategy.
 ///
@@ -109,9 +114,9 @@ pub(crate) mod test_util {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::internal::KEY_LEN;
+    use crate::internal::WRAPPER_LEN;
 
-    /// Pinned via `StaticProvider` because it's the one built-in
+    /// Pinned via `EmbeddedProvider` because it's the one built-in
     /// available in every build configuration (no-std, no-features),
     /// so this assertion holds even when the std-only providers are
     /// compiled out. A regression that broke object safety would
@@ -119,7 +124,7 @@ mod tests {
     #[test]
     fn key_provider_is_object_safe() {
         let _: alloc::boxed::Box<dyn KeyProvider> =
-            alloc::boxed::Box::new(StaticProvider::new(UnlockKey::from_raw([0u8; KEY_LEN])));
+            alloc::boxed::Box::new(EmbeddedProvider::new(&[0u8; WRAPPER_LEN]));
     }
 
     #[cfg(feature = "std")]
