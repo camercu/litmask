@@ -41,7 +41,10 @@ litmask generates a random key per build and writes it to
 # litcrypt (key baked into binary — no runtime step)
 ./my_app
 
-# litmask (key external — must be provisioned)
+# litmask, keyless Embedded default — no runtime step either
+./my_app
+
+# litmask, unlock_key sourced at runtime (opt-in, via init_with!)
 LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' litmask.config) \
     ./my_app
 ```
@@ -51,7 +54,7 @@ LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' litmask.config) \
 | | `litcrypt` v1 | `litmask` |
 |---|---|---|
 | Cipher | XOR | ChaCha20-Poly1305 (AEAD) |
-| Key location | Embedded in binary | External (env var, file, machine ID) |
+| Key location | Embedded in binary | Keyless Embedded default, or external (env var, file, machine ID) |
 | Tamper detection | No | Yes |
 | `no_std` | No | Yes |
 
@@ -152,8 +155,9 @@ let s: &'static str = litmask::weak_mask!("my secret");
 ### Runtime
 
 obfstr embeds a compile-time random XOR key — no runtime provisioning.
-litmask requires `LITMASK_UNLOCK_KEY` at runtime (see litcrypt
-migration above).
+litmask's keyless Embedded default also needs no runtime key; sourcing
+`unlock_key` at runtime (env var, file, machine ID) is opt-in via
+`init_with!` (see litcrypt migration above).
 
 ### Key differences
 
@@ -161,7 +165,7 @@ migration above).
 |---|---|---|
 | Cipher | XOR | ChaCha20-Poly1305 (AEAD) |
 | Return type | `&str` (temporary) | `String` (owned) |
-| Key location | Embedded in binary | External |
+| Key location | Embedded in binary | Keyless Embedded default, or external |
 | Tamper detection | No | Yes |
 | Format strings | No | `mask_format!` |
 | Byte / C strings | `&[u8]` | `Vec<u8>`, `CString` |

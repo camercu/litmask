@@ -16,10 +16,10 @@ Debug builds contain identifier strings from DWARF info and dependency
 crate names — this is expected and not a security concern (debug builds
 are not deployment artifacts).
 
-Three examples are intentionally excluded from the identifier scrub
-(`static_provider`, `file_provider`, `machine_id_provider`) because they
-reference canonical env-var names containing forbidden substrings for
-pedagogical clarity. These are documented in `example_scrub.rs`.
+Two examples are intentionally excluded from the identifier scrub
+(`file_provider`, `machine_id_provider`) because they reference canonical
+env-var names containing forbidden substrings for pedagogical clarity.
+These are documented in `example_scrub.rs`.
 
 **Category: accepted-risk**
 Debug-build string leakage is inherent to Rust's debug info. The

@@ -5,9 +5,13 @@ not, and what limitations apply when things go wrong.
 
 ## Attacker levels
 
-`litmask` uses a four-level model. The library targets **Level 2** as
-the baseline and provides meaningful **Level 3** resistance through
-layered key management.
+`litmask` uses a four-level model. The keyless **Embedded** default tier
+targets **Level 1** only — it recomputes `unlock_key` from the wrapper's
+cleartext nonce, so the key is recoverable from the artifact; this buys
+`strings(1)` resistance, not secrecy. Layered key management
+(`EnvVarProvider`, `FileProvider`, `MachineIdProvider`, or a custom
+provider) raises the baseline to **Level 2** and provides meaningful
+**Level 3** resistance.
 
 ### Level 1 — Casual inspection
 
@@ -22,11 +26,13 @@ survives in the binary.
 Uses a disassembler (Ghidra, IDA), identifies decryption routines,
 manually decrypts embedded ciphertext.
 
-**Stopped by:** per-string unique nonces, AEAD ciphers, and the absence
-of plaintext key material in the binary. `mask_key` is encrypted under
-`unlock_key`, which is never embedded in the binary under the default
-(`EnvVarProvider`) and layered (`FileProvider`, `MachineIdProvider`)
-configurations.
+**Stopped by (layered tiers only):** per-string unique nonces, AEAD
+ciphers, and the absence of plaintext key material in the binary.
+`mask_key` is encrypted under `unlock_key`, which under `EnvVarProvider`,
+`FileProvider`, or `MachineIdProvider` is sourced at runtime and never
+embedded. The keyless **Embedded** default does **not** reach Level 2: it
+recomputes `unlock_key` from the wrapper's cleartext nonce, so the key is
+recoverable from the binary.
 
 ### Level 3 — Automated unpacker
 
@@ -54,13 +60,16 @@ decryption runs, any observer with runtime access sees plaintext.
 
 | Configuration | Defeats |
 |---|---|
-| Zero-config build (`EnvVarProvider`) | `strings`, casual binary inspection (Level 1); also Level 2 because `unlock_key` is not embedded |
+| Zero-config build (keyless `EmbeddedProvider`) | `strings`, casual binary inspection (Level 1) — `unlock_key` is recoverable from the artifact |
+| `EnvVarProvider` | Above + Level 2: `unlock_key` sourced at runtime, not embedded |
 | `FileProvider` + filesystem permissions | Above with OS-enforced access control |
 | `MachineIdProvider` | Above + binary moved to a different machine |
 | Custom `KeyProvider` (vault, HSM) | Above + offline attackers |
 
-"Zero-config" means no project configuration beyond `build.rs` — the
-deployer still provisions `LITMASK_UNLOCK_KEY` at runtime.
+"Zero-config" means no project configuration beyond `build.rs` and no
+runtime key provisioning — the keyless Embedded default recomputes
+`unlock_key` from the embedded nonce. Sourcing the key at runtime (e.g.
+`LITMASK_UNLOCK_KEY` via `EnvVarProvider`) is opt-in through `init_with!`.
 
 ## Explicitly out of scope
 

@@ -1178,7 +1178,7 @@ Stable surface (semver-protected):
 - Error type variants (new variants non-breaking via `#[non_exhaustive]`)
 - `litmask.config` schema (additions allowed; removals breaking)
 - Default cipher (ChaCha20-Poly1305)
-- Default `KeyProvider` (`EnvVarProvider`)
+- Default `KeyProvider` (`EmbeddedProvider`)
 - `LITMASK_RNG_SEED`, `LITMASK_UNLOCK_KEY` env var names
 
 Unstable / internal:
