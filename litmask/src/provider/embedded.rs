@@ -2,7 +2,7 @@
 //! source, plus a `#[cfg(test)]`-only verbatim-key [`TestProvider`].
 
 use crate::error::KeyError;
-use crate::internal::{NONCE_LEN, NONCE_OFFSET, WRAPPER_LEN, derive_embedded_unlock_key};
+use crate::internal::{NONCE_LEN, WRAPPER_LEN, derive_embedded_unlock_key, parse_wrapper};
 use crate::key::UnlockKey;
 use crate::provider::KeyProvider;
 
@@ -38,9 +38,9 @@ impl EmbeddedProvider {
     /// [`unlock_key`]: KeyProvider::unlock_key
     #[must_use]
     pub fn new(wrapper: &[u8; WRAPPER_LEN]) -> Self {
-        let mut nonce = [0u8; NONCE_LEN];
-        nonce.copy_from_slice(&wrapper[NONCE_OFFSET..NONCE_OFFSET + NONCE_LEN]);
-        Self { nonce }
+        Self {
+            nonce: *parse_wrapper(wrapper).nonce,
+        }
     }
 }
 
