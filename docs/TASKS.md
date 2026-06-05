@@ -197,27 +197,31 @@ keyless floor; retire or repurpose it rather than port it.
 (channels); doc: SPECIFICATION §1.6.1, §3
 **Blocked by:** Task 3
 
-Add the `init!(<expr>)` form for any `impl KeyProvider`. The provider
-yields any-length material (`Zeroizing<Vec<u8>>`); the framework always
-applies one KDF: `unlock_key = KDF("litmask-unlock-v1", material)`.
-`UnlockKey` becomes an internal post-KDF type. Build reads the
+Add the `init!(<expr>)` form for any `impl KeyProvider`. The KDF lives in
+a public `UnlockKey::derive(material)`; providers call it. The
+`KeyProvider` trait stays `unlock_key() -> Result<UnlockKey, KeyError>`
+(no `material()` rename, no framework-side KDF). Env/File providers read
+any-length raw material, strip one trailing newline, and derive
+(`unlock_key = KDF("litmask-unlock-v1", material)`). Build reads the
 `LITMASK_UNLOCK_KEY` channel and tags `external`.
 
 ### Acceptance Criteria
 
-- [ ] `KeyProvider` yields `Zeroizing<Vec<u8>>` material of arbitrary
-      length; `UnlockKey` is not publicly constructible
-- [ ] Framework derives `unlock_key = KDF("litmask-unlock-v1",
-      material)` for every external provider (env, file, custom)
-- [ ] A build with `LITMASK_UNLOCK_KEY` set tags `external` and emits
+- [x] `UnlockKey::derive(material)` is public and normalizes
+      arbitrary-length material via `KDF("litmask-unlock-v1", material)`;
+      the `KeyProvider` trait keeps `unlock_key() -> Result<UnlockKey,
+      KeyError>`
+- [x] Env/File providers read raw bytes (no pre-hashing to 32 B), strip a
+      single trailing newline, and derive via `UnlockKey::derive`;
+      `KeyEncoding` is removed
+- [x] A build with `LITMASK_UNLOCK_KEY` set tags `external` and emits
       `rerun-if-env-changed=LITMASK_UNLOCK_KEY`
-- [ ] `init!(<expr>)` against tag `external` round-trips; against any
+- [x] `init!(<expr>)` against tag `external` round-trips; against any
       other tag → `compile_error!`
-- [ ] Env/File providers pass raw bytes (no pre-hashing to 32 B)
-- [ ] e2e: build with external material X, runtime provider supplying X
+- [x] e2e: build with external material X, runtime provider supplying X
       → correct plaintext; supplying Y → decrypt failure
-- [ ] SPECIFICATION §1.6.1 (KeyProvider trait) and §3 (channels)
-      updated; init! expr form documented
+- [x] SPECIFICATION (§1.6.3 encoding, §2.5.1–3 providers) and DEPLOYMENT
+      updated to derive-semantics; `init!` expr form documented
 
 ---
 

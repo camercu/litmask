@@ -503,12 +503,18 @@ Default provider when `init!()` is called without arguments:
 
 #### §1.6.3 Key encoding
 
-`unlock_key` and `mask_key` are 32 raw bytes internally. External
-representations (env vars, config files, file contents) use **base64url
-without padding** (RFC 4648 §5). 32 bytes encodes to 43 characters.
+`unlock_key` and `mask_key` are 32 raw bytes internally. Derived keys at
+rest in `litmask.config` (the Machine-tier `unlock_key`) use **base64url
+without padding** (RFC 4648 §5); 32 bytes encodes to 43 characters, which
+is what `UnlockKey::from_base64url` parses.
 
-`FileProvider` defaults to base64url encoding but supports raw bytes via
-`KeyEncoding::Raw`.
+External-tier unlock **material** is different: the `EnvVarProvider` /
+`FileProvider` value is **arbitrary-length raw bytes**, not an encoded
+key. A provider strips a single trailing newline (so editor- and
+shell-appended newlines do not fork the secret) and normalizes the bytes
+through `UnlockKey::derive` — `unlock_key = KDF("litmask-unlock-v1",
+material)`. There is no encoding step and no length constraint on the
+material.
 
 #### §1.6.4 UnlockKey lifecycle
 
@@ -754,8 +760,6 @@ pub struct EmbeddedProvider { ... }
 pub struct EnvVarProvider { ... }
 pub struct FileProvider { ... }
 #[cfg(feature = "machine-id")] pub struct MachineIdProvider { ... }
-
-pub enum KeyEncoding { Base64Url, Raw }
 
 #[non_exhaustive] pub enum InitError { ... }
 #[non_exhaustive] pub enum KeyError { ... }
@@ -1832,8 +1836,13 @@ file; no `litmask.toml` or equivalent is read in v1.
 §2.5.1.3 — `UnlockKey` SHALL be a newtype wrapping `[u8; 32]` with `Drop`
 zeroing its contents.
 
-§2.5.1.4 — `UnlockKey` SHALL provide constructors from `[u8; 32]` and from
-base64url-encoded `&str`, the latter returning `Result<UnlockKey, KeyError>`.
+§2.5.1.4 — `UnlockKey` SHALL provide a `derive(material: &[u8])`
+constructor that normalizes arbitrary-length material via
+`KDF("litmask-unlock-v1", material)`, plus constructors from `[u8; 32]`
+and from base64url-encoded `&str` (the latter returning
+`Result<UnlockKey, KeyError>`, used to read the Machine-tier key from
+`litmask.config`). External-tier providers SHALL build their key through
+`derive`, never by treating the material as an encoded key.
 
 §2.5.1.5 — `KeyProvider` SHALL NOT have a `deployment_hint()` method or any
 other method whose return value would embed English-language strings in
@@ -1848,25 +1857,23 @@ provider that reads from the named environment variable.
 
 §2.5.2.3 — `EnvVarProvider::unlock_key()` SHALL return:
 - `Err(KeyError::NotFound)` if the env var is unset
-- `Err(KeyError::InvalidFormat)` if the value is not valid base64url
-- `Err(KeyError::InvalidFormat)` if the decoded value is not 32 bytes
-- `Ok(UnlockKey)` otherwise
+- `Ok(UnlockKey)` otherwise, deriving the key from the variable's raw
+  bytes via `UnlockKey::derive` after stripping a single trailing
+  newline. Any byte sequence is accepted as material, so there is no
+  `InvalidFormat` outcome.
 
 #### §2.5.3 FileProvider
 
 §2.5.3.1 — `FileProvider::new(path: impl Into<PathBuf>)` SHALL construct a
-provider that reads from the specified path with default base64url encoding.
+provider that reads the file's bytes as raw unlock material.
 
-§2.5.3.2 — `FileProvider::with_encoding(path, encoding)` SHALL construct a
-provider with the specified encoding (`KeyEncoding::Base64Url` or
-`KeyEncoding::Raw`).
-
-§2.5.3.3 — `FileProvider::unlock_key()` SHALL return:
+§2.5.3.2 — `FileProvider::unlock_key()` SHALL return:
 - `Err(KeyError::NotFound)` if the file does not exist
 - `Err(KeyError::Permission)` if the file exists but cannot be read
-- `Err(KeyError::InvalidFormat)` if the contents do not parse as the
-  configured encoding or do not produce 32 bytes
-- `Ok(UnlockKey)` otherwise
+- `Ok(UnlockKey)` otherwise, deriving the key from the file's raw bytes
+  via `UnlockKey::derive` after stripping a single trailing newline.
+  File contents are material of any length, so there is no
+  `InvalidFormat` outcome and no length check.
 
 §2.5.3.4 — `FileProvider` SHALL zero its in-memory copy of file contents
 immediately after extracting the key.

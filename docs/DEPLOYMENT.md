@@ -2,33 +2,42 @@
 
 ## Key providers
 
-### `EnvVarProvider` (default)
+### `EnvVarProvider` (External tier)
 
-Set `LITMASK_UNLOCK_KEY` to the base64url-encoded key from
-`litmask.config`:
+The External tier seals the build under the unlock **material** you put
+in `LITMASK_UNLOCK_KEY` at build time, then re-supplies that same
+material at runtime. The provider derives the key from the raw bytes
+(`unlock_key = KDF("litmask-unlock-v1", material)`); it is not an encoded
+key, so the material can be any byte string of any length:
 
 ```sh
-LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' litmask.config) \
-    ./my_app
+# Build seals the External tier under this material.
+LITMASK_UNLOCK_KEY='correct horse battery staple' cargo build --release
+
+# Runtime re-supplies the identical material.
+LITMASK_UNLOCK_KEY='correct horse battery staple' ./my_app
 ```
 
 Inject via systemd `EnvironmentFile=`, Kubernetes secrets, or your
-orchestrator's env-var mechanism. The key must not be committed to
-version control.
+orchestrator's env-var mechanism. The material must not be committed to
+version control. A single trailing newline is stripped, so the env and
+file channels agree on the same secret regardless of how it was written.
 
-### `FileProvider`
+### `FileProvider` (External tier)
 
-Point to a file containing the key:
+Point to a file whose contents are the unlock material — the same value
+the build was sealed with:
 
 ```rust
-use litmask::{FileProvider, KeyEncoding};
+use litmask::{FileProvider, init_with};
 
-let provider = FileProvider::new("/run/secrets/litmask_key", KeyEncoding::Base64Url);
-litmask::init_with!(provider).expect("init");
+let provider = FileProvider::new("/run/secrets/litmask_key");
+init_with!(provider).expect("init");
 ```
 
-Set filesystem permissions so only the application user can read the
-key file (`chmod 400`).
+The file holds raw material (any length, no encoding); `FileProvider`
+derives the key the same way `EnvVarProvider` does. Set filesystem
+permissions so only the application user can read it (`chmod 400`).
 
 ### `MachineIdProvider`
 
