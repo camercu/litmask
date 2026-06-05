@@ -8,6 +8,8 @@ use litmask::{EnvVarProvider, init, mask};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     init!(EnvVarProvider::default())?;
+    // MUST match `CANARY` in tests/external_tier_e2e.rs — the test asserts
+    // this exact string appears in captured stdout.
     println!("{}", mask!("external-tier-roundtrip-canary-9f3a2c"));
     Ok(())
 }
