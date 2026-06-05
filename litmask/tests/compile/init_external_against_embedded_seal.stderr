@@ -1,5 +1,5 @@
-error: init! args-not-allowed: init!() takes no arguments
-  --> tests/compile/init_with_argument.rs:13:13
+error: init! tier-mismatch: init!(provider) unlocks the `external` seal tier, but this build sealed `embedded`
+  --> tests/compile/init_external_against_embedded_seal.rs:13:13
    |
 13 |     let _ = init!(some_provider);
    |             ^^^^^^^^^^^^^^^^^^^^

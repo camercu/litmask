@@ -75,12 +75,17 @@ pub fn mask(input: TokenStream) -> TokenStream {
 /// derive the `unlock_key` from the embedded wrapper's cleartext nonce
 /// and decrypt the `mask_key` with it (no external key material).
 ///
-/// `init!()` takes no arguments and expands at the call site so it can
-/// `include_bytes!` the embedded `mask_key` wrapper from the calling
-/// crate's `OUT_DIR`. It returns `Result<(), litmask::InitError>`;
-/// calling `litmask::init!()?` at startup surfaces initialization
-/// failures as a `Result` rather than a panic deep in the first
-/// `mask!()` call.
+/// Two forms select the keying tier:
+///
+/// - `init!()` — keyless **Embedded** default.
+/// - `init!(<provider-expr>)` — **External** tier, taking any
+///   [`litmask::KeyProvider`] value.
+///
+/// Both expand at the call site so they can `include_bytes!` the
+/// embedded `mask_key` wrapper from the calling crate's `OUT_DIR`, and
+/// both return `Result<(), litmask::InitError>`; calling
+/// `litmask::init!()?` at startup surfaces initialization failures as a
+/// `Result` rather than a panic deep in the first `mask!()` call.
 ///
 /// A proc-macro (not `macro_rules!`) so it can read the
 /// build-authoritative `LITMASK_SEAL_TIER` tag and cross-check the
@@ -89,9 +94,9 @@ pub fn mask(input: TokenStream) -> TokenStream {
 /// # Errors
 ///
 /// Emits a §1.9.6 `compile_error!` carrying `init! tier-mismatch` when
-/// the build sealed a non-Embedded tier or set no tier at all (no
-/// `litmask_build::emit()` in the caller's `build.rs`), and
-/// `init! args-not-allowed` if given any argument.
+/// the call form and the build's sealed tier disagree, or when no tier
+/// was set at all (no `litmask_build::emit()` in the caller's
+/// `build.rs`).
 #[proc_macro]
 pub fn init(input: TokenStream) -> TokenStream {
     init::expand(&input)
