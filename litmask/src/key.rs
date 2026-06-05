@@ -88,6 +88,24 @@ impl UnlockKey {
         Self(bytes)
     }
 
+    /// Normalize arbitrary-length external material into the 32-byte
+    /// `unlock_key` via `KDF("litmask-unlock-v1", material)` — the
+    /// single derivation §2.2 mandates for every external factor
+    /// (env, file, custom provider). The seal side (`litmask-build`)
+    /// chains the identical KDF, so build and runtime agree.
+    ///
+    /// `weak_mask!()` keeps the BLAKE3 context literal out of
+    /// `strings(1)` in user binaries; it MUST decode to
+    /// `litmask_internal::EXTERNAL_UNLOCK_DERIVATION_CONTEXT` (pinned by
+    /// the `derive_weak_mask_literal_matches_const` test).
+    #[must_use]
+    pub fn derive(material: &[u8]) -> Self {
+        Self(crate::internal::derive_external_unlock_key(
+            crate::weak_mask!("litmask-unlock-v1"),
+            material,
+        ))
+    }
+
     pub(crate) fn as_bytes(&self) -> &[u8; KEY_LEN] {
         &self.0
     }
@@ -137,6 +155,40 @@ mod tests {
     fn from_base64url_accepts_valid_32_byte_key() {
         let key = UnlockKey::from_base64url(VALID_BASE64URL_32B).expect("valid 32-byte key");
         assert_eq!(key.0, [0u8; KEY_LEN]);
+    }
+
+    #[test]
+    fn derive_matches_external_unlock_kdf() {
+        use crate::internal::{EXTERNAL_UNLOCK_DERIVATION_CONTEXT, derive_external_unlock_key};
+        let material = b"operator-supplied secret of arbitrary length";
+        let key = UnlockKey::derive(material);
+        assert_eq!(
+            key.as_bytes(),
+            &derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, material)
+        );
+    }
+
+    #[test]
+    fn derive_accepts_arbitrary_length_material() {
+        // Any-length material is the point of the external tier — no
+        // 32-byte/base64url constraint, the KDF normalizes it.
+        let short = UnlockKey::derive(b"x");
+        let long = UnlockKey::derive(&[0x5au8; 1024]);
+        assert_ne!(short, long);
+    }
+
+    /// Pin the literal-vs-const drift: `UnlockKey::derive` inlines
+    /// `weak_mask!("litmask-unlock-v1")` so the BLAKE3 context bytes are
+    /// obfuscated in user binaries, while `litmask-build` seals the
+    /// external wrapper using `EXTERNAL_UNLOCK_DERIVATION_CONTEXT`
+    /// directly. The two MUST decode to the same string or every
+    /// external build fails to unlock at runtime.
+    #[test]
+    fn derive_weak_mask_literal_matches_const() {
+        assert_eq!(
+            crate::weak_mask!("litmask-unlock-v1"),
+            crate::internal::EXTERNAL_UNLOCK_DERIVATION_CONTEXT
+        );
     }
 
     #[rstest::rstest]
