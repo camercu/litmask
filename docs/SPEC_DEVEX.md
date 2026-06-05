@@ -78,17 +78,17 @@ The masking-core and keying primitives the build-sealed model keeps:
   floor: an AEAD upgrade of `obfstr` — the key is recoverable from the
   artifact, this is not "key out of binary."
 - **Provider trait + opt-in stronger keys, composition narrowed.**
-  The external factor is an `impl KeyProvider` yielding key **material**
-  (`Zeroizing` bytes, any length); the framework applies one KDF at the
-  init boundary (`unlock_key = KDF(material)`). The trait is the right
-  primitive (the closure-key alternative was evaluated and rejected — a
-  bare closure adds only inline sugar over a custom impl). Tiers are
-  **build-time** choices, not deploy-time. The only composable
-  combination is `machine_id + <external>` (`unlock_key = KDF(len_prefixed
-  (machine_material) ‖ len_prefixed(external_material))`), fixed-arity and
-  fixed-order — no variadic `MultiProvider` (§2.2 explains why the
-  order-significant variadic shape had no footgun-free build/runtime
-  agreement).
+  The external factor is an `impl KeyProvider` yielding a **finished**
+  `UnlockKey` — the KDF lives in the key type (`UnlockKey::derive`
+  normalizes any-length material). The trait is the right primitive (the
+  closure-key alternative was evaluated and rejected — a bare closure
+  adds only inline sugar over a custom impl). Tiers are **build-time**
+  choices, not deploy-time. The only composable combination is
+  `machine_id + <external>`, composed from the two factors' finished keys
+  (`unlock_key = KDF("litmask-2fa-v1", len_prefixed(machine_key) ‖
+  len_prefixed(external_key))`, §2.2), fixed-arity and fixed-order — no
+  variadic `MultiProvider` (§2.2 explains why the order-significant
+  variadic shape had no footgun-free build/runtime agreement).
 - **Nonce-derived `machine_salt`, no user salt.**
   `machine_salt = KDF(wrapper_nonce, "litmask-machine-id-salt-v1")`,
   recomputed on demand, never embedded; `machine material =
@@ -245,14 +245,19 @@ name a binding `machine_id` understands the shadowing.
   value. Key material from `LITMASK_UNLOCK_KEY` / a file at runtime; the
   same material is fed to `emit()` at build via `LITMASK_UNLOCK_KEY`.
 - **`machine_id` keyword:** the **raw machine-id** is supplied at build
-  via `LITMASK_MACHINE_ID` (§4); litmask derives the factor material
-  internally (nonce-derived salt, §4.1). Runtime re-derives from the local
-  machine-id. Machine binding is **never a passed value** — it is the
-  `machine_id` keyword only, so `MachineIdProvider` is **not** a public type.
+  via `LITMASK_MACHINE_ID` (§4); litmask derives the factor's **finished
+  `UnlockKey`** internally (nonce-derived salt, §4.1). Runtime re-derives
+  from the local machine-id. Machine binding is **never a passed value** — it
+  is the `machine_id` keyword only. The deriving type `MachineIdProvider` is
+  `pub(crate)`, instantiated only by the `init!` seam (`litmask::__internal`)
+  with the build-wrapper nonce; it is never nameable in downstream code.
 - **Custom provider:** any `impl KeyProvider` in the external slot whose
-  material the runtime fetches via its own credential path. Build-sealable
-  only if the operator supplies the *exact* material the provider returns at
-  runtime (fed to `emit()` via `LITMASK_UNLOCK_KEY`).
+  material the runtime fetches via its own credential path. A custom provider
+  reaches build/runtime parity by calling the public `UnlockKey::derive(material)`
+  — the same KDF `emit()` seals with — so the value it returns at runtime is
+  byte-identical to what the build sealed. Build-sealable only if the operator
+  supplies the *exact* material the provider returns at runtime (fed to `emit()`
+  via `LITMASK_UNLOCK_KEY`).
 - **machine + external:** the two-factor headline tier (§2.3), written
   `init!(machine_id + <provider>)`. The only composable combination.
 
@@ -271,27 +276,44 @@ There is no deploy-time tier change. To change a binary's tier or key,
   "forgot to upgrade bare `init!()`" case is *also* caught — bare `init!()`
   against a non-`embedded` tag fails to compile (and §1.1 still warns on a
   deliberate release Embedded).
-- **2.2 (composition — always-normalize KDF; fixed machine + external).**
-  The framework applies **one** KDF at the init boundary
-  (`__init_with_wrapper`): `unlock_key = KDF(info = "litmask-unlock-v1",
-  ikm = material)`. For a single external factor, `material` is the
-  provider's bytes (`Zeroizing`, *any* length). For
-  `init!(machine_id + <provider>)`, the macro injects a fixed two-factor
-  composition whose material is the **flat concatenation**
-  `len_prefixed(machine_material) ‖ len_prefixed(external_material)` —
-  concatenate only, **never** an inner KDF (an inner KDF would produce a
-  finished key, reviving the verbatim/derived split — forbidden). One KDF
-  either way: single → `KDF(material)`, two-factor → `KDF(Σ len_prefixed
-  (..))`. **Order is fixed by construction** (machine material first,
-  external second) — there is no variadic constructor and no argument-order
-  surface to get wrong, which is precisely why the general `MultiProvider`
-  was dropped (its order-significant variadic shape had no
-  footgun-free build/runtime agreement; canonical-sort fails on unsortable
-  custom providers, and a composition fingerprint only detects). The 8-byte
-  LE length-prefix convention is the existing crate-wide one
-  (`litmask-internal::kdf`). **All-or-nothing:** if either factor errs,
-  init errs. Build-sealable iff **both** factors are build-sealable (the
-  custom external is the only one that may not be — §2 custom bullet).
+- **2.2 (composition — compose finished `UnlockKey`s; fixed machine + external).**
+  Every factor normalizes to a **finished 32-byte `UnlockKey`** via its own
+  KDF *before* composition. The external factor derives via the public
+  `UnlockKey::derive(material)` = `KDF("litmask-unlock-v1", material)` (any
+  length material, single trailing newline stripped). The machine factor
+  derives internally via `KDF("litmask-machine-id-v1", …)` with the
+  build-wrapper nonce as salt (§4.1). **A single factor IS that key** — no
+  extra step. For `init!(machine_id + <provider>)`, the two finished keys
+  are composed with **one** composition KDF under a distinct context:
+  `unlock_key = KDF("litmask-2fa-v1", len_prefixed(machine_key) ‖
+  len_prefixed(external_key))`. **Order is fixed by construction** (machine
+  key first, external second), 8-byte LE length-prefixes — the existing
+  crate-wide convention (`litmask-internal::kdf`). The distinct `"…-2fa-v1"`
+  context means a two-factor `unlock_key` can never collide with a
+  single-factor one even on identical input bytes.
+  - **Why compose finished keys, not concatenate raw materials.** A custom
+    provider exposes only `unlock_key() -> Result<UnlockKey, KeyError>` — it
+    has **no raw-material surface** to concatenate. Making the finished
+    `UnlockKey` the uniform composition currency lets *any* provider be the
+    external factor (the original always-normalize model could only compose
+    providers that leaked their pre-KDF bytes). The anti-footgun invariant —
+    "nothing enters composition except a fully-derived key" — is now enforced
+    at the **type level**: `compose` takes `UnlockKey`s, not byte slices, so
+    the verbatim/derived split cannot reappear. **Cost:** two-factor runs 3
+    KDFs (machine derive, external derive, compose) vs. the old 1. Accepted —
+    composition is once-per-process at init.
+  - The compose primitive lives in `litmask-internal::kdf` (build has no
+    `UnlockKey` type and must compute the identical key to seal under);
+    `UnlockKey::compose` wraps it, mirroring how `UnlockKey::derive` wraps
+    `derive_external_unlock_key`.
+  - **Why fixed order / no `MultiProvider`.** There is no variadic
+    constructor and no argument-order surface to get wrong, which is why the
+    general `MultiProvider` was dropped (its order-significant variadic shape
+    had no footgun-free build/runtime agreement; canonical-sort fails on
+    unsortable custom providers, and a composition fingerprint only detects).
+  - **All-or-nothing:** if either factor errs, init errs. Build-sealable iff
+    **both** factors are build-sealable (the custom external is the only one
+    that may not be — §2 custom bullet).
 - **2.3 (the two-factor tier is the only thing that stops a local
   attacker).** The point of `init!(machine_id + EnvVarProvider::default())`
   is two-factor: the external factor (env/file/custom) is bytes the binary
@@ -595,7 +617,8 @@ There is no deploy-time tier change. To change a binary's tier or key,
   opacity-without-locator.
 - `CONTEXT.md`: retire **locator** and **litmask.config** as terms (or
   mark historical); `bind`/`reseal`/`inspect` terms removed. Retire
-  **`MultiProvider`** and the public **`MachineIdProvider`** type; add
+  **`MultiProvider`**; demote **`MachineIdProvider`** to `pub(crate)`
+  (seam-only, reachable via the `init!` seam); add
   **`machine_id` keyword**, **`LITMASK_SEAL_TIER` tier tag**, and the
   **`LITMASK_MACHINE_ID` / `LITMASK_UNLOCK_KEY`** build channels.
 - `SPECIFICATION.md`: large surgery — delete §2.9 CLI re-key/inspect
@@ -603,8 +626,9 @@ There is no deploy-time tier change. To change a binary's tier or key,
   to §5.1.
 - `litmask-build` AC4 test: narrow from "no `LITMASK*` rustc-env" to "no
   *secret* via rustc-env; `LITMASK_SEAL_TIER` whitelisted" (§2.4).
-- `litmask`: remove `MachineIdProvider` from the public API (machine binding
-  is the `machine_id` keyword); `emit()` emits the `LITMASK_SEAL_TIER` tag +
+- `litmask`: demote `MachineIdProvider` to `pub(crate)`, reachable only via
+  the `init!` seam (`__internal`) — machine binding is the `machine_id`
+  keyword, never a named type downstream; `emit()` emits the `LITMASK_SEAL_TIER` tag +
   `rerun-if-env-changed` for both factor channels; `init!` reads the tag and
   cross-checks the form, `compile_error!` on absent tag (§2.4).
 - `litmask-build`: `emit()` emits the §1.1 Embedded floor `cargo:warning=`

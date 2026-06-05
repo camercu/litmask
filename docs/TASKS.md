@@ -235,9 +235,14 @@ Add the `init!(machine_id)` keyword form. Machine salt becomes
 nonce-derived: `machine_salt = KDF(wrapper_nonce,
 "litmask-machine-id-salt-v1")` — drop the user-supplied salt param from
 `derive_machine_id_key`; context string → `"litmask-machine-id-v1"`.
-Build reads `LITMASK_MACHINE_ID`, tags `machine`. Runtime machine
-derivation moves into init!-emitted internal code; the public
-`MachineIdProvider` type is removed.
+Build reads `LITMASK_MACHINE_ID`, tags `machine`. The machine factor
+yields a **finished `UnlockKey`** (the §2.2 composition currency), so the
+same type serves single-factor machine and the two-factor external
+compose in Task 6. `MachineIdProvider` is demoted to `pub(crate)`,
+instantiated only by an `init!` seam fn in `litmask::__internal` that
+injects the build-wrapper nonce; the macro never names the type in
+expanded code (expansion lands in the user crate, which cannot reach a
+`pub(crate)` type).
 
 ### Acceptance Criteria
 
@@ -250,19 +255,23 @@ derivation moves into init!-emitted internal code; the public
       sealing machine; a different machine id → decrypt failure
 - [ ] `init!(machine_id)` against any non-`machine` tag →
       `compile_error!`
-- [ ] Public `MachineIdProvider` removed from the `litmask` API;
-      machine derivation lives in init!-emitted code
+- [ ] `MachineIdProvider` demoted to `pub(crate)`, reachable only via the
+      `init!` seam (`__internal`); the macro instantiates it through a
+      `#[doc(hidden)] pub` seam fn and never names the type in expanded code
+- [ ] The machine factor yields a finished `UnlockKey` (single-factor IS
+      that key; reused as a compose input in Task 6)
 - [ ] No stale `hardware` / `hw-id` identifiers remain (grep clean)
 - [ ] `machine_id_provider` example migrated to `init!(machine_id)`; the
       stale `litmask-cli bind` comment in the `justfile` `test-examples`
       recipe is removed (deferred here from Task 1)
 - [ ] SPECIFICATION §4 documents the machine tier; CONTEXT.md gains the
-      `machine_id` keyword and retires MachineIdProvider
+      `machine_id` keyword and notes MachineIdProvider is now `pub(crate)`
+      (seam-only)
 - [ ] README machine-id surface migrated to `init!(machine_id)` (deferred
       here from Tasks 1–3): retire the `## Machine-ID binding (litmask
       bind)` section and the `MachineIdProvider::with_salt(...)` snippet
-      (both name removed APIs — `litmask bind` was deleted in Task 1,
-      `MachineIdProvider` is removed here), and update the "Why litmask"
+      (both name now-unreachable APIs — `litmask bind` was deleted in Task 1,
+      `MachineIdProvider` is demoted to `pub(crate)` here), and update the "Why litmask"
       comparison-table `Machine-ID binding` row from `litmask bind` to the
       `init!(machine_id)` form
 
@@ -273,18 +282,26 @@ derivation moves into init!-emitted internal code; the public
 **Implements:** §2.3 (two-factor), §4; doc: SPECIFICATION §2.3
 **Blocked by:** Task 5
 
-Add the `init!(machine_id + <expr>)` grammar. Two-factor unlock_key is
-`KDF(len_prefixed(machine_material) ‖ len_prefixed(external_material))`
-— concatenate-only (never inner KDF), machine-first fixed order, 8-byte
-LE length prefixes. Build tags `machine_external`. This completes the
-4-way form↔tag cross-check matrix.
+Add the `init!(machine_id + <expr>)` grammar. Two-factor composes the two
+**finished `UnlockKey`s** (machine + external) via `UnlockKey::compose`:
+`unlock_key = KDF("litmask-2fa-v1", len_prefixed(machine_key) ‖
+len_prefixed(external_key))` — machine-first fixed order, 8-byte LE
+length prefixes, distinct `"…-2fa-v1"` context (no collision with a
+single-factor key). The compose primitive lives in
+`litmask-internal::kdf` (build computes the identical key to seal under);
+`UnlockKey::compose` wraps it, mirroring `UnlockKey::derive`. Build tags
+`machine_external`. This completes the 4-way form↔tag cross-check matrix.
 
 ### Acceptance Criteria
 
 - [ ] `init!(machine_id + <expr>)` parses; malformed grammar →
       `compile_error!`
-- [ ] unlock_key = `KDF(len_prefixed(machine) ‖ len_prefixed(external))`,
-      machine-first, 8-byte LE prefixes, single outer KDF
+- [ ] unlock_key = `UnlockKey::compose(machine_key, external_key)` =
+      `KDF("litmask-2fa-v1", len_prefixed(machine_key) ‖
+      len_prefixed(external_key))`, machine-first, 8-byte LE prefixes;
+      compose primitive in `litmask-internal::kdf`, shared with build
+- [ ] Compose inputs are finished `UnlockKey`s (type-level anti-footgun:
+      `compose` takes `UnlockKey`, not bytes)
 - [ ] A build with both `LITMASK_MACHINE_ID` and `LITMASK_UNLOCK_KEY`
       set tags `machine_external`
 - [ ] Full 4-way matrix holds: each of the four `init!` forms compiles
@@ -364,8 +381,9 @@ Tasks 1–8 each updated the spec section-by-section in flight. This
 capstone makes `docs/SPECIFICATION.md` the single canonical spec: fold
 the remaining `docs/SPEC_DEVEX.md` content (rationale, residuals,
 friction appendix) into it, then retire `SPEC_DEVEX.md`. Finish with a
-full docs scrub so no stale locator/bind/config/MachineIdProvider
-language survives anywhere and every cross-reference resolves.
+full docs scrub so no stale locator/bind/config language survives
+anywhere (and no public `MachineIdProvider` reference — it is now
+`pub(crate)`) and every cross-reference resolves.
 
 ### Acceptance Criteria
 
@@ -374,9 +392,11 @@ language survives anywhere and every cross-reference resolves.
       `SPECIFICATION.md`; `SPEC_DEVEX.md` removed (or reduced to a
       pointer)
 - [ ] Repo-wide grep is clean of retired vocabulary — `locator`,
-      `bind`, `inspect`, `litmask.config`, `MachineIdProvider`,
-      `init_with!`, `MultiProvider`, `hardware`/`hw-id` — except where
-      explicitly documenting their removal
+      `bind`, `inspect`, `litmask.config`, `init_with!`, `MultiProvider`,
+      `hardware`/`hw-id` — except where explicitly documenting their removal.
+      `MachineIdProvider` survives only as `pub(crate)` (seam-only) in
+      `litmask` source; it must NOT appear in any public-API doc, README,
+      or example
 - [ ] Every internal doc cross-reference (§ links, file links, CONTEXT
       glossary terms) resolves to a real target
 - [ ] README, CLAUDE.md architecture notes, docs/DEPLOYMENT.md, and man
