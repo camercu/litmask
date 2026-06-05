@@ -92,6 +92,29 @@ pub fn derive_external_unlock_key(context: &str, material: &[u8]) -> [u8; KEY_LE
     blake3::derive_key(context, material)
 }
 
+/// Strip a single trailing line ending (`\r\n` or `\n`) from external
+/// key material.
+///
+/// Text channels disagree on trailing newlines: editors append one
+/// when saving a key file, while an environment variable carrying the
+/// same secret has none. Without normalization the two channels derive
+/// different `unlock_key`s and decryption silently fails. Both the
+/// runtime providers (`EnvVarProvider`, `FileProvider`) and the build
+/// seal (`litmask-build::emit`) call this so all three reach
+/// byte-identical material. Only one newline is removed (a second is
+/// part of the secret) and only a newline — trailing spaces/tabs are
+/// preserved, since a raw secret may legitimately end in one.
+#[must_use]
+pub fn strip_trailing_newline(material: &[u8]) -> &[u8] {
+    if let Some(stripped) = material.strip_suffix(b"\r\n") {
+        stripped
+    } else if let Some(stripped) = material.strip_suffix(b"\n") {
+        stripped
+    } else {
+        material
+    }
+}
+
 /// Derive a 32-byte key from `(context, machine_id, salt)` via BLAKE3.
 ///
 /// Shared by [`MachineIdProvider`](https://docs.rs/litmask) (runtime)
@@ -251,6 +274,37 @@ mod tests {
         assert_eq!(short.len(), KEY_LEN);
         assert_eq!(long.len(), KEY_LEN);
         assert!(long.iter().any(|&b| b != 0));
+    }
+
+    #[test]
+    fn strip_trailing_newline_removes_single_lf() {
+        assert_eq!(strip_trailing_newline(b"secret\n"), b"secret");
+    }
+
+    #[test]
+    fn strip_trailing_newline_removes_single_crlf() {
+        assert_eq!(strip_trailing_newline(b"secret\r\n"), b"secret");
+    }
+
+    #[test]
+    fn strip_trailing_newline_leaves_at_most_one() {
+        // Only the editor-appended newline is removed; a second trailing
+        // newline is part of the secret and must survive.
+        assert_eq!(strip_trailing_newline(b"secret\n\n"), b"secret\n");
+    }
+
+    #[test]
+    fn strip_trailing_newline_preserves_no_newline_and_inner_newlines() {
+        assert_eq!(strip_trailing_newline(b"secret"), b"secret");
+        assert_eq!(strip_trailing_newline(b"a\nb"), b"a\nb");
+    }
+
+    #[test]
+    fn strip_trailing_newline_preserves_trailing_non_newline_whitespace() {
+        // Raw secrets may legitimately end in a space or tab — only a
+        // newline is treated as the editor footgun.
+        assert_eq!(strip_trailing_newline(b"secret "), b"secret ");
+        assert_eq!(strip_trailing_newline(b""), b"");
     }
 
     /// The external-tier context must domain-separate from both the
