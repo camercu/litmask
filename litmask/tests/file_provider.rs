@@ -1,28 +1,25 @@
 //! Integration tests for [`litmask::FileProvider`] (§2.5.3).
 //!
-//! Verifies the public [`KeyProvider`] contract end-to-end: a file
-//! holding the build's `unlock_key` initializes the runtime so
-//! `mask!()` decryption succeeds, and the documented error categories
-//! surface for missing / unreadable files. File contents are raw
-//! material of any length (no encoding, no length check), so there is
-//! no `InvalidFormat` surface here. Byte-level assertions on the
-//! recovered key — and the explicit zeroize-on-drop tracking via
-//! `Counted<T>` — live as unit tests inside `litmask::provider` where
-//! they can access crate-private internals.
+//! `FileProvider` is an External-tier provider: it reads a file's bytes
+//! as raw key material of any length (no encoding, no length check),
+//! strips a single trailing newline, and derives the `unlock_key` via
+//! the shared KDF — exactly [`UnlockKey::derive`]. These tests pin that
+//! derive contract and the documented error categories for missing /
+//! unreadable files. The full external-tier round-trip (a build sealed
+//! under material `X`, then a `FileProvider`/`EnvVarProvider` re-deriving
+//! the same key to decrypt `mask!`) lives in `external_tier_e2e.rs`,
+//! which can stand up an externally-sealed build; the litmask crate's
+//! own tests run against an embedded-sealed build that no external
+//! provider can unlock by construction.
 
 #![cfg(unix)]
-
-mod common;
 
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use litmask::{FileProvider, KeyError, KeyProvider, init_with, mask};
-
-/// Canonical 32-byte test key encoded as 43-char base64url (no padding).
-const ZERO_KEY_B64URL: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+use litmask::{FileProvider, KeyError, KeyProvider, UnlockKey};
 
 fn tmp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -46,30 +43,19 @@ fn write_file(path: &Path, bytes: &[u8]) {
 }
 
 #[test]
-fn file_provider_round_trips_against_build_config() {
-    // The canonical end-to-end: write the build's `unlock_key` into a
-    // file, hand the path to FileProvider, and verify that mask!()
-    // decryption succeeds. Locks the contract that FileProvider is a
-    // drop-in for EnvVarProvider when the deployment sources its
-    // unlock key from disk.
-    common::init_once();
-    let dir = tmp_dir("e2e");
-    let path = dir.join("unlock_key.b64");
-    let key = common::read_unlock_key(&common::self_config_path());
-    write_file(&path, key.as_bytes());
+fn derives_canonical_unlock_key_from_file_bytes() {
+    // The load-bearing contract: FileProvider delegates to the public
+    // KDF over the (newline-trimmed) file bytes, so a deployment that
+    // writes material to disk gets byte-identical keying to any other
+    // channel feeding the same material to UnlockKey::derive.
+    let dir = tmp_dir("canonical");
+    let path = dir.join("material.key");
+    write_file(&path, b"operator material");
 
-    // Init was already performed by common::init_once on first call;
-    // FileProvider here exercises the unlock_key() path without
-    // re-init.
-    let provider = FileProvider::new(&path);
-    let unlock = provider.unlock_key().expect("read + parse unlock key");
-    // Best we can do without exposing key bytes: a second init_with!
-    // is a no-op (OnceLock already populated), but the unlock_key
-    // round-tripped through base64url parse and produced a typed
-    // UnlockKey value. A subsequent mask!() proves the runtime is
-    // healthy with whatever provider populated it.
-    drop(unlock);
-    let _ = mask!("file-provider-fixture");
+    let from_file = FileProvider::new(&path)
+        .unlock_key()
+        .expect("derive from file");
+    assert_eq!(from_file, UnlockKey::derive(b"operator material"));
 }
 
 #[test]
@@ -83,8 +69,8 @@ fn missing_file_yields_not_found() {
 #[test]
 fn unreadable_file_yields_permission() {
     let dir = tmp_dir("perm");
-    let path = dir.join("unlock_key.b64");
-    write_file(&path, ZERO_KEY_B64URL.as_bytes());
+    let path = dir.join("material.key");
+    write_file(&path, b"any material");
     // Mode 000 is unreadable by the owner; root would bypass but the
     // test suite does not run as root.
     fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).expect("chmod 000");
@@ -142,24 +128,4 @@ fn new_accepts_any_into_pathbuf() {
     let _: FileProvider = FileProvider::new(String::from("/dev/null"));
     let _: FileProvider = FileProvider::new(std::path::Path::new("/dev/null"));
     let _: FileProvider = FileProvider::new(PathBuf::from("/dev/null"));
-}
-
-/// `init_with!(FileProvider::new(path))` succeeds against a file
-/// holding the build's `unlock_key`. The macro path is the most
-/// frequent [`FileProvider`] usage — locked here so an [`init_with!`] /
-/// [`FileProvider`] integration regression surfaces fast.
-#[test]
-fn init_with_file_provider_compiles_and_does_not_panic() {
-    // Build a key file holding the build's unlock_key.
-    let dir = tmp_dir("init-with");
-    let path = dir.join("unlock_key.b64");
-    let key = common::read_unlock_key(&common::self_config_path());
-    write_file(&path, key.as_bytes());
-
-    // First init_with! call succeeds; subsequent ones are no-ops.
-    // We can't assert "this was the first init" deterministically
-    // because integration tests share the test-binary process and
-    // common::init_once may have run already. The contract under
-    // test is: init_with!(FileProvider::new(path)) returns Ok(_).
-    let _ = init_with!(FileProvider::new(&path));
 }
