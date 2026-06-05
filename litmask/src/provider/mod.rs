@@ -8,7 +8,7 @@
 //!
 //! - [`embedded`] / [`EmbeddedProvider`] — keyless, nonce-derived floor
 //! - [`env`] / [`EnvVarProvider`] — `LITMASK_UNLOCK_KEY` environment var
-//! - [`file`] / [`FileProvider`] — filesystem path, base64url or raw
+//! - [`file`] / [`FileProvider`] — filesystem path, raw material
 //! - [`machine_id`] / [`MachineIdProvider`] — machine-id + BLAKE3 (opt-in)
 
 use crate::error::KeyError;
@@ -31,7 +31,7 @@ pub(crate) use embedded::TestProvider;
 #[cfg(feature = "std")]
 pub use env::EnvVarProvider;
 #[cfg(feature = "std")]
-pub use file::{FileProvider, KeyEncoding};
+pub use file::FileProvider;
 #[cfg(feature = "machine-id")]
 pub use machine_id::MachineIdProvider;
 

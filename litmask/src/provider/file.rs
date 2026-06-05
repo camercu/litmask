@@ -1,41 +1,12 @@
-//! [`FileProvider`] + [`KeyEncoding`]: reads `unlock_key` from a
-//! filesystem path.
+//! [`FileProvider`]: reads `unlock_key` material from a filesystem path.
 
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::KeyError;
-use crate::internal::KEY_LEN;
 use crate::key::UnlockKey;
 use crate::provider::KeyProvider;
 
-/// Wire-format expected by [`FileProvider`].
-///
-/// Adding a future encoding is a non-breaking change for downstream
-/// exhaustive matches via `#[non_exhaustive]`.
-///
-/// # Examples
-///
-/// ```
-/// use litmask::KeyEncoding;
-///
-/// let enc = KeyEncoding::Base64Url;
-/// assert_eq!(enc, KeyEncoding::Base64Url);
-/// ```
-#[non_exhaustive]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum KeyEncoding {
-    /// RFC 4648 §5 url-safe base64 without padding. ASCII whitespace
-    /// (including a trailing newline) is tolerated; bytes outside the
-    /// alphabet surface as [`KeyError::InvalidFormat`]. This is the
-    /// default — `FileProvider::new(path)` uses it.
-    Base64Url,
-    /// Exactly 32 raw bytes. Convenient when sourcing the key from a
-    /// secret-management system that already exposes it as a binary
-    /// blob (HSM-backed file, vault-rendered template, etc.).
-    Raw,
-}
-
-/// Reads `unlock_key` from a filesystem path.
+/// Reads `unlock_key` material from a filesystem path.
 ///
 /// # Examples
 ///
@@ -47,20 +18,24 @@ pub enum KeyEncoding {
 /// # }
 /// ```
 ///
-/// `FileProvider::new(path)` decodes the contents as base64url.
-/// [`FileProvider::with_encoding`] swaps the encoding. Errors map:
+/// The file contents are treated as raw external material of any
+/// length and normalized into the `unlock_key` via [`UnlockKey::derive`]
+/// — no encoding or length constraint. A single trailing newline is
+/// stripped so a key file saved by an editor and an env var carrying
+/// the same secret derive the identical key. Errors map:
 ///
 /// | Condition | Error |
 /// |---|---|
 /// | Path does not exist | [`KeyError::NotFound`] |
 /// | Path exists but is unreadable by this process | [`KeyError::Permission`] |
-/// | Contents do not parse, or wrong length | [`KeyError::InvalidFormat`] |
 ///
-/// The in-memory copy of the file bytes is wiped immediately after
-/// the 32-byte key is extracted via a `Zeroizing` wrapper
-/// around the read buffer. The wipe is verified in unit tests via a
-/// `Counted<T>` newtype that bumps an `AtomicUsize` from its
-/// `Zeroize` impl.
+/// File contents never fail to parse: any bytes are valid material, so
+/// there is no `InvalidFormat` surface here.
+///
+/// The in-memory copy of the file bytes is wiped immediately after the
+/// key is derived, via a `Zeroizing` wrapper around the read buffer.
+/// The wipe is verified in unit tests via a `Counted<T>` newtype that
+/// bumps an `AtomicUsize` from its `Zeroize` impl.
 ///
 /// # TOCTOU caveat
 ///
@@ -75,22 +50,12 @@ pub enum KeyEncoding {
 #[derive(Debug)]
 pub struct FileProvider {
     path: std::path::PathBuf,
-    encoding: KeyEncoding,
 }
 
 impl FileProvider {
-    /// Construct a `FileProvider` reading `path` as base64url.
+    /// Construct a `FileProvider` reading `path`.
     pub fn new(path: impl Into<std::path::PathBuf>) -> Self {
-        Self::with_encoding(path, KeyEncoding::Base64Url)
-    }
-
-    /// Construct a `FileProvider` reading `path` with the chosen
-    /// encoding.
-    pub fn with_encoding(path: impl Into<std::path::PathBuf>, encoding: KeyEncoding) -> Self {
-        Self {
-            path: path.into(),
-            encoding,
-        }
+        Self { path: path.into() }
     }
 }
 
@@ -102,7 +67,7 @@ impl KeyProvider for FileProvider {
         // borrow would break the contract loudly (the Counted<T>
         // unit test asserts the buffer's drop runs).
         let buffer = Zeroizing::new(read_file_bytes(&self.path)?);
-        extract_key_from_buffer(buffer, self.encoding)
+        Ok(derive_key_from_buffer(buffer))
     }
 }
 
@@ -122,93 +87,61 @@ fn read_file_bytes(path: &std::path::Path) -> Result<alloc::vec::Vec<u8>, KeyErr
     })
 }
 
-/// Decode a file-buffer payload into an [`UnlockKey`] under the
-/// configured [`KeyEncoding`]. Takes the buffer by value so its
-/// `Drop` (zeroizing wrapper) runs at function return — the
-/// generic bound on `Zeroize` is load-bearing: it pins the buffer
-/// to a wrapper that wipes on drop, so a caller cannot accidentally
-/// hand in a plain `Vec<u8>` that lingers in the allocator.
+/// Normalize a file-buffer payload into an [`UnlockKey`] via the
+/// external-material KDF. Takes the buffer by value so its `Drop`
+/// (zeroizing wrapper) runs at function return — the generic bound on
+/// `Zeroize` is load-bearing: it pins the buffer to a wrapper that
+/// wipes on drop, so a caller cannot accidentally hand in a plain
+/// `Vec<u8>` that lingers in the allocator.
 ///
-/// `Base64Url` mode trims leading and trailing ASCII whitespace
-/// (including a trailing newline) — editors save key files with
-/// trailing newlines by default and a hard-failure mode would
-/// produce a frustrating diagnostic at deployment time. `Raw`
-/// mode requires exactly [`KEY_LEN`] bytes; one byte off → [`KeyError::InvalidFormat`].
+/// A single trailing newline is stripped before derivation (editors
+/// append one when saving) so the file and env channels agree on one
+/// secret; see [`strip_trailing_newline`]. Any remaining bytes are
+/// valid material — derivation is infallible.
+///
+/// [`strip_trailing_newline`]: crate::internal::strip_trailing_newline
 #[allow(clippy::needless_pass_by_value)]
-fn extract_key_from_buffer<Z>(buffer: Z, encoding: KeyEncoding) -> Result<UnlockKey, KeyError>
+fn derive_key_from_buffer<Z>(buffer: Z) -> UnlockKey
 where
     Z: AsRef<[u8]> + Zeroize,
 {
-    let bytes = buffer.as_ref();
-    match encoding {
-        KeyEncoding::Base64Url => {
-            let text = core::str::from_utf8(bytes).map_err(|_| KeyError::InvalidFormat)?;
-            UnlockKey::from_base64url(text.trim_matches(char::is_whitespace))
-        }
-        KeyEncoding::Raw => {
-            let arr: [u8; KEY_LEN] = bytes.try_into().map_err(|_| KeyError::InvalidFormat)?;
-            Ok(UnlockKey::from_raw(arr))
-        }
-    }
+    UnlockKey::derive(crate::internal::strip_trailing_newline(buffer.as_ref()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::test_util::Counted;
     use super::*;
-    use crate::key::VALID_BASE64URL_32B;
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
-    fn extract_key_from_buffer_zeroizes_input_exactly_once() {
+    fn derive_key_from_buffer_derives_and_zeroizes_input_exactly_once() {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let buf = Counted::new(VALID_BASE64URL_32B.as_bytes().to_vec(), &COUNTER);
-        let key = extract_key_from_buffer(buf, KeyEncoding::Base64Url).expect("32-byte key");
+        let buf = Counted::new(b"operator material".to_vec(), &COUNTER);
+        let key = derive_key_from_buffer(buf);
         assert_eq!(COUNTER.load(Ordering::SeqCst), 1);
-        assert_eq!(key.as_bytes(), &[0u8; KEY_LEN]);
+        assert_eq!(key, UnlockKey::derive(b"operator material"));
     }
 
     #[test]
-    fn extract_key_from_buffer_base64url_trims_surrounding_whitespace() {
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let mut payload = alloc::string::String::from(VALID_BASE64URL_32B);
-        payload.push('\n');
-        let buf = Counted::new(payload.into_bytes(), &COUNTER);
-        let _ = extract_key_from_buffer(buf, KeyEncoding::Base64Url).expect("trailing-\\n is ok");
-        assert_eq!(COUNTER.load(Ordering::SeqCst), 1);
+    fn derive_key_from_buffer_strips_one_trailing_newline() {
+        static BARE: AtomicUsize = AtomicUsize::new(0);
+        static NEWLINED: AtomicUsize = AtomicUsize::new(0);
+        let bare = derive_key_from_buffer(Counted::new(b"secret".to_vec(), &BARE));
+        let newlined = derive_key_from_buffer(Counted::new(b"secret\n".to_vec(), &NEWLINED));
+        // A key file with the editor-appended newline derives the same
+        // key as the bare secret — the file and env channels agree.
+        assert_eq!(bare, newlined);
     }
 
     #[test]
-    fn extract_key_from_buffer_raw_accepts_exact_32_bytes() {
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let buf = Counted::new(alloc::vec![0xCDu8; KEY_LEN], &COUNTER);
-        let key = extract_key_from_buffer(buf, KeyEncoding::Raw).expect("raw key");
-        assert_eq!(COUNTER.load(Ordering::SeqCst), 1);
-        assert_eq!(
-            key.as_bytes(),
-            &[0xCDu8; KEY_LEN],
-            "raw bytes round-trip verbatim",
-        );
-    }
-
-    #[test]
-    fn extract_key_from_buffer_raw_rejects_wrong_length() {
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let buf = Counted::new(alloc::vec![0u8; KEY_LEN - 1], &COUNTER);
-        assert!(matches!(
-            extract_key_from_buffer(buf, KeyEncoding::Raw),
-            Err(KeyError::InvalidFormat),
-        ));
-    }
-
-    #[test]
-    fn extract_key_from_buffer_base64url_rejects_non_utf8() {
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let buf = Counted::new(alloc::vec![0xFFu8; 4], &COUNTER);
-        assert!(matches!(
-            extract_key_from_buffer(buf, KeyEncoding::Base64Url),
-            Err(KeyError::InvalidFormat),
-        ));
+    fn derive_key_from_buffer_accepts_arbitrary_length() {
+        static SHORT: AtomicUsize = AtomicUsize::new(0);
+        static LONG: AtomicUsize = AtomicUsize::new(0);
+        // No length constraint: the KDF normalizes any-length material.
+        let short = derive_key_from_buffer(Counted::new(alloc::vec![0x01u8; 1], &SHORT));
+        let long = derive_key_from_buffer(Counted::new(alloc::vec![0x01u8; 4096], &LONG));
+        assert_ne!(short, long);
     }
 
     #[test]
@@ -220,20 +153,9 @@ mod tests {
     }
 
     #[test]
-    fn debug_shows_path_and_encoding() {
+    fn debug_shows_path() {
         let p = FileProvider::new("/run/secrets/key");
         let dbg = alloc::format!("{p:?}");
         assert!(dbg.contains("/run/secrets/key"), "Debug must show the path");
-        assert!(dbg.contains("Base64Url"), "Debug must show the encoding");
-    }
-
-    #[test]
-    fn key_encoding_default_for_new_is_base64url() {
-        // `new(path)` is documented (§2.5.3.1) as the default-base64url
-        // constructor; locked here so a future refactor that flips the
-        // default surfaces as a test failure rather than silent
-        // breakage of every FileProvider deployment.
-        let provider = FileProvider::new("/dev/null");
-        assert_eq!(provider.encoding, KeyEncoding::Base64Url);
     }
 }

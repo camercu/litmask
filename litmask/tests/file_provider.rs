@@ -1,12 +1,14 @@
 //! Integration tests for [`litmask::FileProvider`] (§2.5.3).
 //!
-//! Verifies the public [`KeyProvider`] contract end-to-end: a base64url
-//! file holding the build's `unlock_key` initializes the runtime so
+//! Verifies the public [`KeyProvider`] contract end-to-end: a file
+//! holding the build's `unlock_key` initializes the runtime so
 //! `mask!()` decryption succeeds, and the documented error categories
-//! surface for missing / unreadable / malformed files. Byte-level
-//! assertions on the recovered key — and the explicit zeroize-on-drop
-//! tracking via `Counted<T>` — live as unit tests inside
-//! `litmask::provider` where they can access crate-private internals.
+//! surface for missing / unreadable files. File contents are raw
+//! material of any length (no encoding, no length check), so there is
+//! no `InvalidFormat` surface here. Byte-level assertions on the
+//! recovered key — and the explicit zeroize-on-drop tracking via
+//! `Counted<T>` — live as unit tests inside `litmask::provider` where
+//! they can access crate-private internals.
 
 #![cfg(unix)]
 
@@ -17,7 +19,7 @@ use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use litmask::{FileProvider, KeyEncoding, KeyError, KeyProvider, init_with, mask};
+use litmask::{FileProvider, KeyError, KeyProvider, init_with, mask};
 
 /// Canonical 32-byte test key encoded as 43-char base64url (no padding).
 const ZERO_KEY_B64URL: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
@@ -95,70 +97,40 @@ fn unreadable_file_yields_permission() {
 }
 
 #[test]
-fn wrong_length_yields_invalid_format() {
-    let dir = tmp_dir("short");
-    let path = dir.join("unlock_key.b64");
-    // 32 url-safe chars decodes to 24 bytes — short of the 32-byte key.
-    write_file(&path, b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-
-    let provider = FileProvider::new(&path);
-    assert!(matches!(
-        provider.unlock_key(),
-        Err(KeyError::InvalidFormat)
-    ));
-}
-
-#[test]
-fn bad_encoding_yields_invalid_format() {
-    let dir = tmp_dir("bad-encoding");
-    let path = dir.join("unlock_key.b64");
-    write_file(&path, b"not valid base64url!!!");
-
-    let provider = FileProvider::new(&path);
-    assert!(matches!(
-        provider.unlock_key(),
-        Err(KeyError::InvalidFormat)
-    ));
-}
-
-#[test]
-fn base64url_file_trailing_newline_is_tolerated() {
-    // Editors commonly append a trailing newline; users will save key
-    // files that way. The decoder must accept this rather than fail
-    // with InvalidFormat — the alternative is a frustrating diagnostic
-    // that depends on the user's editor settings.
+fn file_trailing_newline_derives_same_key() {
+    // A key file saved with an editor-appended trailing newline must
+    // derive the same unlock_key as the bare material, so the file and
+    // env channels agree on one secret regardless of editor settings.
     let dir = tmp_dir("newline");
-    let path = dir.join("unlock_key.b64");
-    let mut contents = ZERO_KEY_B64URL.to_string();
-    contents.push('\n');
-    write_file(&path, contents.as_bytes());
+    let bare = dir.join("bare.key");
+    let newlined = dir.join("newlined.key");
+    write_file(&bare, b"operator material");
+    write_file(&newlined, b"operator material\n");
 
-    let provider = FileProvider::new(&path);
-    assert!(provider.unlock_key().is_ok());
+    let from_bare = FileProvider::new(&bare)
+        .unlock_key()
+        .expect("derive from bare material");
+    let from_newlined = FileProvider::new(&newlined)
+        .unlock_key()
+        .expect("derive from newlined material");
+    assert!(from_bare == from_newlined);
 }
 
 #[test]
-fn raw_encoding_accepts_exact_32_byte_file() {
-    let dir = tmp_dir("raw-ok");
-    let path = dir.join("unlock_key.bin");
-    let raw_bytes: [u8; 32] = [0xABu8; 32];
-    write_file(&path, &raw_bytes);
+fn any_length_material_derives_a_key() {
+    // No encoding, no length constraint: file contents are raw material
+    // the KDF normalizes. Distinct material derives distinct keys.
+    let dir = tmp_dir("any-length");
+    let short = dir.join("short.key");
+    let long = dir.join("long.key");
+    write_file(&short, b"x");
+    write_file(&long, &[0x5au8; 4096]);
 
-    let provider = FileProvider::with_encoding(&path, KeyEncoding::Raw);
-    assert!(provider.unlock_key().is_ok());
-}
-
-#[test]
-fn raw_encoding_rejects_off_by_one_length() {
-    let dir = tmp_dir("raw-short");
-    let path = dir.join("unlock_key.bin");
-    write_file(&path, &[0u8; 31]);
-
-    let provider = FileProvider::with_encoding(&path, KeyEncoding::Raw);
-    assert!(matches!(
-        provider.unlock_key(),
-        Err(KeyError::InvalidFormat)
-    ));
+    let from_short = FileProvider::new(&short)
+        .unlock_key()
+        .expect("derive short");
+    let from_long = FileProvider::new(&long).unlock_key().expect("derive long");
+    assert!(from_short != from_long);
 }
 
 /// `FileProvider::new(path)` must be constructible from any `Into<PathBuf>`:
@@ -170,7 +142,6 @@ fn new_accepts_any_into_pathbuf() {
     let _: FileProvider = FileProvider::new(String::from("/dev/null"));
     let _: FileProvider = FileProvider::new(std::path::Path::new("/dev/null"));
     let _: FileProvider = FileProvider::new(PathBuf::from("/dev/null"));
-    let _: FileProvider = FileProvider::with_encoding("/dev/null", KeyEncoding::Raw);
 }
 
 /// `init_with!(FileProvider::new(path))` succeeds against a file

@@ -33,11 +33,11 @@
 use litmask::{FileProvider, init_with, mask};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // `FileProvider::new(path)` defaults to base64url. The example's
-    // recipe above writes the key file in that encoding directly out
-    // of `litmask.config`. For a binary blob (HSM-rendered key, vault
-    // template, etc.) use `FileProvider::with_encoding(path,
-    // KeyEncoding::Raw)`.
+    // `FileProvider::new(path)` reads the file bytes as raw key
+    // material of any length and derives the `unlock_key` via the
+    // shared KDF — the same normalization the env channel applies, so
+    // the recipe above can write the build's `unlock_key` straight out
+    // of `litmask.config` with no encoding step.
     // The justfile's `test-examples` recipe sources the key from
     // `target/<profile>/litmask.config` and exports
     // `LITMASK_UNLOCK_KEY` to the example's environment. To keep

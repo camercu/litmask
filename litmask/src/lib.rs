@@ -122,7 +122,7 @@ pub use litmask_internal::KEY_LEN;
 pub use provider::{EmbeddedProvider, KeyProvider};
 
 #[cfg(feature = "std")]
-pub use provider::{EnvVarProvider, FileProvider, KeyEncoding};
+pub use provider::{EnvVarProvider, FileProvider};
 
 #[cfg(feature = "machine-id")]
 pub use provider::MachineIdProvider;

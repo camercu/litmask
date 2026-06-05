@@ -78,9 +78,9 @@ impl UnlockKey {
 
     /// Construct an `UnlockKey` from raw 32-byte material. Used by
     /// providers that source the key bytes directly (rather than via
-    /// base64url-encoded text), e.g. `EmbeddedProvider` (nonce-derived),
-    /// `FileProvider` under `KeyEncoding::Raw`, and `MachineIdProvider`.
-    /// Stays crate-private so the encoded/typed entry point
+    /// base64url-encoded text), e.g. `EmbeddedProvider` (nonce-derived)
+    /// and `MachineIdProvider`. Stays crate-private so the encoded/typed
+    /// entry point
     /// (`from_base64url`) remains the canonical user-facing API and a
     /// caller cannot accidentally bypass the length check by handing
     /// in arbitrary bytes — the type system pins the array length.
