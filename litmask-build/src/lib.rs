@@ -19,7 +19,9 @@
 //! - `$OUT_DIR/litmask_wrapper.bin` — encrypted-`mask_key` wrapper
 //!   (consumed by the runtime via `include_bytes!` inside the
 //!   `init!` / `init_with!` / `mask!` macro expansions).
-//! - `target/<profile>/litmask.config` — TOML containing `unlock_key`.
+//! - `target/<profile>/litmask.config` — TOML containing `unlock_key`
+//!   (Embedded tier only; the External tier writes no config because
+//!   its key is the KDF of operator material the runtime re-sources).
 
 use std::ffi::OsString;
 use std::fs;
@@ -33,16 +35,57 @@ use rand_core::{Rng, SeedableRng};
 use zeroize::{Zeroize, Zeroizing};
 
 use litmask_internal::{
-    CURRENT_CIPHER, EMBEDDED_UNLOCK_DERIVATION_CONTEXT, FormatVersion, KEY_LEN, WRAPPER_BODY_LEN,
-    WRAPPER_LEN, WRAPPER_PLAINTEXT_LEN, aead_encrypt, assemble_wrapper, base64url,
-    derive_embedded_unlock_key, nonce_for_wrapper,
+    CURRENT_CIPHER, EMBEDDED_UNLOCK_DERIVATION_CONTEXT, EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
+    FormatVersion, KEY_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN, WRAPPER_PLAINTEXT_LEN, aead_encrypt,
+    assemble_wrapper, base64url, derive_embedded_unlock_key, derive_external_unlock_key,
+    nonce_for_wrapper, strip_trailing_newline,
 };
 
-/// Build-authoritative seal-tier tag (§2.4). Fixed at `embedded` — the
-/// keyless nonce-derived floor whose key travels inside the artifact —
-/// until the external / machine tiers make tag selection presence-driven
-/// on `LITMASK_UNLOCK_KEY` and `LITMASK_MACHINE_ID`.
-const SEAL_TIER_TAG: &str = "embedded";
+/// The keying tier `emit()` seals, selected purely from which build
+/// inputs are present (§2.4, presence-driven). Only Embedded and
+/// External exist until the machine tiers land; `LITMASK_MACHINE_ID`
+/// presence is not yet consulted here.
+enum SealTier {
+    /// Keyless floor: the `unlock_key` is derived from the public
+    /// wrapper nonce, so the runtime recomputes it with nothing stored.
+    Embedded,
+    /// `LITMASK_UNLOCK_KEY` was set at build: the `unlock_key` is
+    /// `KDF("litmask-unlock-v1", trimmed material)`. The runtime
+    /// re-sources the same material and applies the identical KDF, so
+    /// the trim MUST match the provider byte-for-byte (single trailing
+    /// newline). Held as the raw material (untrimmed) so the trim
+    /// happens at one site — `derive` — exactly as the provider trims
+    /// at its one derive site.
+    External(Zeroizing<String>),
+}
+
+impl SealTier {
+    /// Presence-driven selection from the external channel. Reads
+    /// `LITMASK_UNLOCK_KEY` through the same `std::env::var` (UTF-8)
+    /// path the runtime [`EnvVarProvider`] uses, so build and runtime
+    /// agree on the material bytes.
+    fn from_env() -> Self {
+        Self::from_material(std::env::var("LITMASK_UNLOCK_KEY").ok())
+    }
+
+    /// Pure core of [`SealTier::from_env`]: maps the optional external
+    /// material to a tier without touching process state, so the
+    /// presence rule is unit-testable under `forbid(unsafe_code)`.
+    fn from_material(material: Option<String>) -> Self {
+        match material {
+            Some(s) => Self::External(Zeroizing::new(s)),
+            None => Self::Embedded,
+        }
+    }
+
+    /// The build-authoritative tag published over `cargo:rustc-env`.
+    fn tag(&self) -> &'static str {
+        match self {
+            Self::Embedded => "embedded",
+            Self::External(_) => "external",
+        }
+    }
+}
 
 const CONFIG_HEADER: &str = "\
 # litmask.config — build artifact.
@@ -65,9 +108,13 @@ pub fn emit() {
     println!("cargo:rerun-if-env-changed=LITMASK_RNG_SEED");
     println!("cargo:rerun-if-changed=build.rs");
 
+    // Presence-driven tier selection (§2.4): which build inputs are set
+    // decides the sealed tier.
+    let tier = SealTier::from_env();
+
     // Publish the build-authoritative seal-tier tag and re-run when
     // either factor channel changes (§2.4).
-    for directive in seal_tier_directives() {
+    for directive in seal_tier_directives(&tier) {
         println!("{directive}");
     }
 
@@ -79,9 +126,9 @@ pub fn emit() {
 
     let (mut seed, _seed_source) = source_seed(&profile_dir, profile);
 
-    let artifacts = BuildArtifacts::derive(&seed);
+    let artifacts = BuildArtifacts::derive(&seed, &tier);
     seed.zeroize();
-    artifacts.write_to(&out_dir, &profile_dir);
+    artifacts.write_to(&out_dir, &profile_dir, &tier);
     // artifacts' Drop zeroizes mask_key, unlock_key, and the in-memory
     // copy of the seed.
 }
@@ -108,9 +155,11 @@ struct BuildArtifacts {
     /// blob. Persisted to `OUT_DIR/litmask_key.bin` for the proc-macro
     /// to read at expansion time.
     mask_key: [u8; KEY_LEN],
-    /// 32-byte ChaCha20-Poly1305 key that encrypts the wrapper.
-    /// Written into `litmask.config` (deployer-facing TOML); the
-    /// runtime reads it back via env var.
+    /// 32-byte ChaCha20-Poly1305 key that encrypts the wrapper. Its
+    /// origin is tier-dependent (nonce-derived for Embedded, the KDF of
+    /// operator material for External). Written into `litmask.config`
+    /// only for the Embedded tier; the External runtime re-derives it
+    /// from `LITMASK_UNLOCK_KEY` material and never reads the config.
     unlock_key: [u8; KEY_LEN],
     /// Assembled wrapper bytes — cleartext nonce followed by the AEAD
     /// sealing of `version_byte || mask_key` under `unlock_key`.
@@ -120,9 +169,10 @@ struct BuildArtifacts {
 }
 
 impl BuildArtifacts {
-    /// Derive the full artifact set from a build seed. Pure: same seed
-    /// in, byte-identical fields out.
-    fn derive(seed: &[u8; KEY_LEN]) -> Self {
+    /// Derive the full artifact set from a build seed and the selected
+    /// keying `tier`. Pure: same seed + tier in, byte-identical fields
+    /// out.
+    fn derive(seed: &[u8; KEY_LEN], tier: &SealTier) -> Self {
         let mut rng = ChaCha20Rng::from_seed(*seed);
         let mut mask_key = [0u8; KEY_LEN];
         rng.fill_bytes(&mut mask_key);
@@ -138,13 +188,26 @@ impl BuildArtifacts {
         let cipher = CURRENT_CIPHER;
         let wrapper_nonce = nonce_for_wrapper(seed);
 
-        // Embedded-tier keying: the unlock_key is derived from the
-        // public wrapper nonce, not from the seed's key stream, so the
-        // runtime recomputes the identical key from the embedded nonce
-        // with no stored material (§1). The seed now feeds only mask_key
-        // + the nonce.
-        let unlock_key =
-            derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &wrapper_nonce);
+        // The wrapper structure (nonce ‖ AEAD) is tier-independent; only
+        // the key sealing it differs.
+        //
+        // - Embedded: unlock_key derived from the public wrapper nonce,
+        //   so the runtime recomputes the identical key from the
+        //   embedded nonce with no stored material (§1). The seed feeds
+        //   only mask_key + the nonce.
+        // - External: unlock_key = KDF("litmask-unlock-v1", trimmed
+        //   operator material). The runtime provider re-sources the same
+        //   material and applies the identical KDF — the trim here MUST
+        //   match the provider byte-for-byte (single trailing newline).
+        let unlock_key = match tier {
+            SealTier::Embedded => {
+                derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &wrapper_nonce)
+            }
+            SealTier::External(material) => derive_external_unlock_key(
+                EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
+                strip_trailing_newline(material.as_bytes()),
+            ),
+        };
 
         // AEAD plaintext is `version_byte || mask_key` — the format
         // version is authenticated inside the wrapper rather than
@@ -173,13 +236,23 @@ impl BuildArtifacts {
 
     /// Persist artifacts to disk. `out_dir` receives the three binary
     /// blobs the proc-macro and runtime `include_bytes!` at expansion
-    /// time; `profile_dir` receives `litmask.config`, the deployer-facing
-    /// TOML the runtime reads via env var.
-    fn write_to(&self, out_dir: &Path, profile_dir: &Path) {
+    /// time; `profile_dir` receives `litmask.config` only for the
+    /// Embedded tier.
+    ///
+    /// The External tier writes no config: its `unlock_key` is the KDF
+    /// of operator-supplied material the runtime re-sources from
+    /// `LITMASK_UNLOCK_KEY`, so the derived key is neither needed nor
+    /// reusable as material (feeding it back as `LITMASK_UNLOCK_KEY`
+    /// would KDF it a second time and fail to open the wrapper).
+    /// Emitting it would be a footgun and would write a secret to an
+    /// artifact nothing consumes (§3.1).
+    fn write_to(&self, out_dir: &Path, profile_dir: &Path, tier: &SealTier) {
         write_secret(&out_dir.join("litmask_seed.bin"), &self.seed);
         write_secret(&out_dir.join("litmask_key.bin"), &self.mask_key);
         write_secret(&out_dir.join("litmask_wrapper.bin"), &self.wrapper);
-        write_config(&profile_dir.join("litmask.config"), &self.unlock_key);
+        if matches!(tier, SealTier::Embedded) {
+            write_config(&profile_dir.join("litmask.config"), &self.unlock_key);
+        }
     }
 }
 
@@ -301,9 +374,9 @@ fn profile_dir_of(out_dir: &Path) -> PathBuf {
 /// ONLY `LITMASK_*` value litmask sends over rustc-env — it is
 /// non-secret; secrets never use this channel (they would log under
 /// `cargo --verbose` and inject into downstream rustc).
-fn seal_tier_directives() -> [String; 3] {
+fn seal_tier_directives(tier: &SealTier) -> [String; 3] {
     [
-        format!("cargo:rustc-env=LITMASK_SEAL_TIER={SEAL_TIER_TAG}"),
+        format!("cargo:rustc-env=LITMASK_SEAL_TIER={}", tier.tag()),
         "cargo:rerun-if-env-changed=LITMASK_MACHINE_ID".to_string(),
         "cargo:rerun-if-env-changed=LITMASK_UNLOCK_KEY".to_string(),
     ]
@@ -502,8 +575,8 @@ mod tests {
     #[test]
     fn build_artifacts_derive_is_deterministic() {
         let seed = [0x55u8; KEY_LEN];
-        let first = BuildArtifacts::derive(&seed);
-        let second = BuildArtifacts::derive(&seed);
+        let first = BuildArtifacts::derive(&seed, &SealTier::Embedded);
+        let second = BuildArtifacts::derive(&seed, &SealTier::Embedded);
         assert_eq!(first.mask_key, second.mask_key);
         assert_eq!(first.unlock_key, second.unlock_key);
         assert_eq!(first.wrapper, second.wrapper);
@@ -514,8 +587,8 @@ mod tests {
     /// across `derive` calls.
     #[test]
     fn build_artifacts_derive_is_seed_sensitive() {
-        let a = BuildArtifacts::derive(&[0xAAu8; KEY_LEN]);
-        let b = BuildArtifacts::derive(&[0xBBu8; KEY_LEN]);
+        let a = BuildArtifacts::derive(&[0xAAu8; KEY_LEN], &SealTier::Embedded);
+        let b = BuildArtifacts::derive(&[0xBBu8; KEY_LEN], &SealTier::Embedded);
         assert_ne!(a.mask_key, b.mask_key);
         assert_ne!(a.unlock_key, b.unlock_key);
         assert_ne!(a.wrapper, b.wrapper);
@@ -530,7 +603,7 @@ mod tests {
     fn build_artifacts_wrapper_round_trips_under_unlock_key() {
         use litmask_internal::decrypt_wrapper;
         let seed = [0x33u8; KEY_LEN];
-        let artifacts = BuildArtifacts::derive(&seed);
+        let artifacts = BuildArtifacts::derive(&seed, &SealTier::Embedded);
         let recovered =
             decrypt_wrapper(&artifacts.unlock_key, &artifacts.wrapper).expect("round-trip");
         assert_eq!(recovered, artifacts.mask_key);
@@ -567,7 +640,7 @@ mod tests {
     /// until later tiers make it presence-driven.
     #[test]
     fn emits_embedded_seal_tag_and_factor_rerun_directives() {
-        let directives = seal_tier_directives();
+        let directives = seal_tier_directives(&SealTier::Embedded);
         assert!(
             directives
                 .iter()
@@ -602,7 +675,7 @@ mod tests {
         rng.fill_bytes(&mut mask_key);
         rng.fill_bytes(&mut old_stream_unlock);
 
-        let artifacts = BuildArtifacts::derive(&seed);
+        let artifacts = BuildArtifacts::derive(&seed, &SealTier::Embedded);
         assert_eq!(
             artifacts.mask_key, mask_key,
             "mask_key is still the first draw"
@@ -624,7 +697,7 @@ mod tests {
             EMBEDDED_UNLOCK_DERIVATION_CONTEXT, decrypt_wrapper, derive_embedded_unlock_key,
         };
         let seed = [0x33u8; KEY_LEN];
-        let artifacts = BuildArtifacts::derive(&seed);
+        let artifacts = BuildArtifacts::derive(&seed, &SealTier::Embedded);
         let recomputed = derive_embedded_unlock_key(
             EMBEDDED_UNLOCK_DERIVATION_CONTEXT,
             &nonce_for_wrapper(&seed),
@@ -682,8 +755,103 @@ mod tests {
             source_seed_with_env_and_profile(dir_b.path(), Some(encoded), Profile::Release);
         assert_eq!(seed_a, seed_b);
         assert_eq!(
-            BuildArtifacts::derive(&seed_a).wrapper,
-            BuildArtifacts::derive(&seed_b).wrapper,
+            BuildArtifacts::derive(&seed_a, &SealTier::Embedded).wrapper,
+            BuildArtifacts::derive(&seed_b, &SealTier::Embedded).wrapper,
         );
+    }
+
+    fn external(material: &str) -> SealTier {
+        SealTier::External(Zeroizing::new(material.to_string()))
+    }
+
+    /// Presence-driven tier selection (§2.4): an absent external
+    /// channel floors to Embedded, a present one selects External.
+    #[test]
+    fn from_material_presence_selects_tier() {
+        assert_eq!(SealTier::from_material(None).tag(), "embedded");
+        assert_eq!(
+            SealTier::from_material(Some("operator secret".to_string())).tag(),
+            "external",
+        );
+    }
+
+    /// An External build publishes the `external` seal tag over
+    /// rustc-env (the `init!(<provider>)` form cross-checks against it).
+    #[test]
+    fn external_tier_publishes_external_seal_tag() {
+        let directives = seal_tier_directives(&external("operator secret"));
+        assert!(
+            directives
+                .iter()
+                .any(|d| d == "cargo:rustc-env=LITMASK_SEAL_TIER=external"),
+            "missing external tier tag; got {directives:?}",
+        );
+    }
+
+    /// The External `unlock_key` is `KDF("litmask-unlock-v1", material)`
+    /// — byte-identical to what the runtime provider derives from the
+    /// same `LITMASK_UNLOCK_KEY` material — and the sealed wrapper opens
+    /// under it. Without this, a successful external `emit()` could ship
+    /// a wrapper no runtime provider can open.
+    #[test]
+    fn external_unlock_key_is_kdf_of_material_and_round_trips() {
+        use litmask_internal::decrypt_wrapper;
+        let seed = [0x71u8; KEY_LEN];
+        let artifacts = BuildArtifacts::derive(&seed, &external("operator secret"));
+        let expected =
+            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"operator secret");
+        assert_eq!(
+            artifacts.unlock_key, expected,
+            "external unlock_key must be the KDF of the raw material",
+        );
+        let recovered = decrypt_wrapper(&artifacts.unlock_key, &artifacts.wrapper).expect("round");
+        assert_eq!(recovered, artifacts.mask_key);
+    }
+
+    /// The build's trim MUST match the runtime provider's: a single
+    /// trailing newline on the external material is stripped before
+    /// derivation, so a key file (editor newline) and an env var
+    /// carrying the same secret seal the identical wrapper.
+    #[test]
+    fn external_trim_strips_one_trailing_newline_matching_runtime() {
+        let seed = [0x71u8; KEY_LEN];
+        let bare = BuildArtifacts::derive(&seed, &external("secret"));
+        let newlined = BuildArtifacts::derive(&seed, &external("secret\n"));
+        assert_eq!(
+            bare.unlock_key, newlined.unlock_key,
+            "trailing newline must not change the derived unlock_key",
+        );
+        assert_eq!(bare.wrapper, newlined.wrapper);
+    }
+
+    /// The External tier writes no `litmask.config`: its derived key is
+    /// neither consumed nor reusable as material, so emitting it would
+    /// be a footgun and a needless secret-to-artifact write (§3.1). The
+    /// Embedded tier still writes the config.
+    #[test]
+    fn write_to_omits_config_for_external_tier() {
+        let seed = [0x71u8; KEY_LEN];
+        let out = TempDir::new().expect("out dir");
+        let profile = TempDir::new().expect("profile dir");
+        let config = profile.path().join("litmask.config");
+
+        BuildArtifacts::derive(&seed, &external("operator secret")).write_to(
+            out.path(),
+            profile.path(),
+            &external("operator secret"),
+        );
+        assert!(
+            !config.exists(),
+            "external tier must not write litmask.config",
+        );
+        // The wrapper blob is still emitted for the runtime to embed.
+        assert!(out.path().join("litmask_wrapper.bin").exists());
+
+        BuildArtifacts::derive(&seed, &SealTier::Embedded).write_to(
+            out.path(),
+            profile.path(),
+            &SealTier::Embedded,
+        );
+        assert!(config.exists(), "embedded tier must write litmask.config",);
     }
 }
