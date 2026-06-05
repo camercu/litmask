@@ -3,10 +3,9 @@
 use crate::{KEY_LEN, NONCE_LEN, WRAPPER_LEN, wrapper_nonce};
 
 /// BLAKE3 `derive_key` domain separator for the machine-id key
-/// derivation. Shared verbatim by:
-///
-/// - `litmask::provider::MachineIdProvider` (runtime side)
-/// - `litmask-cli`'s `bind` subcommand (build-time side)
+/// derivation. Used by the runtime `MachineIdProvider`; the matching
+/// build-time machine seal (not yet wired) must import this same const
+/// so a sealed binary opens against the machine id recomputed at runtime.
 ///
 /// Stays deliberately short and library-identifier-free: this string
 /// is the ONE BLAKE3 separator that lands in user binaries (the
@@ -14,13 +13,13 @@ use crate::{KEY_LEN, NONCE_LEN, WRAPPER_LEN, wrapper_nonce};
 /// here is a `strings(1)`-visible byte. The only requirements are
 /// (a) global uniqueness in the BLAKE3 `derive_key` namespace
 /// (workspace-internal: it's the only `derive_key` call) and (b)
-/// byte-for-byte stability across the bind / runtime boundary
+/// byte-for-byte stability across the build / runtime boundary
 /// (centralizing here means Cargo's incremental rebuild catches any
 /// drift). The `-v1` suffix reserves a rotation path if a future
 /// security review invalidates the current derivation.
 ///
 /// Changing this constant is a BREAKING change: every previously
-/// bound binary fails to decrypt under the new context. Treat as a
+/// sealed binary fails to decrypt under the new context. Treat as a
 /// major-version event.
 pub const MACHINE_ID_DERIVATION_CONTEXT: &str = "machine-v1";
 
@@ -117,11 +116,11 @@ pub fn strip_trailing_newline(material: &[u8]) -> &[u8] {
 
 /// Derive a 32-byte key from `(context, machine_id, salt)` via BLAKE3.
 ///
-/// Shared by [`MachineIdProvider`](https://docs.rs/litmask) (runtime)
-/// and the `litmask bind` command (CLI). The runtime caller passes
-/// the context through `weak_mask!()` so the literal doesn't appear
-/// in user binaries; the CLI imports [`MACHINE_ID_DERIVATION_CONTEXT`]
-/// directly.
+/// Used by [`MachineIdProvider`](https://docs.rs/litmask) (runtime); the
+/// matching build-time machine seal (not yet wired) must derive the same
+/// key. The runtime caller passes the context through `weak_mask!()` so
+/// the literal doesn't appear in user binaries; the build side will
+/// import [`MACHINE_ID_DERIVATION_CONTEXT`] directly.
 ///
 /// Derivation: `BLAKE3::derive_key(context, len(machine_id) ||
 /// machine_id || salt)`, where `len` is an 8-byte little-endian length
