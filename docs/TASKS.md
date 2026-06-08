@@ -246,28 +246,30 @@ expanded code (expansion lands in the user crate, which cannot reach a
 
 ### Acceptance Criteria
 
-- [ ] `derive_machine_id_key` takes no salt param; salt is
+- [x] `derive_machine_id_key` takes no salt param; salt is
       `KDF(wrapper_nonce, "litmask-machine-id-salt-v1")`; context is
       `"litmask-machine-id-v1"`
-- [ ] A build with `LITMASK_MACHINE_ID` set tags `machine` and emits
+- [x] A build with `LITMASK_MACHINE_ID` set tags `machine` and emits
       `rerun-if-env-changed=LITMASK_MACHINE_ID`
-- [ ] `init!(machine_id)` against tag `machine` round-trips on the
+- [x] `init!(machine_id)` against tag `machine` round-trips on the
       sealing machine; a different machine id → decrypt failure
-- [ ] `init!(machine_id)` against any non-`machine` tag →
+- [x] `init!(machine_id)` against any non-`machine` tag →
       `compile_error!`
-- [ ] `MachineIdProvider` demoted to `pub(crate)`, reachable only via the
+- [x] `MachineIdProvider` demoted to `pub(crate)`, reachable only via the
       `init!` seam (`__internal`); the macro instantiates it through a
       `#[doc(hidden)] pub` seam fn and never names the type in expanded code
-- [ ] The machine factor yields a finished `UnlockKey` (single-factor IS
+- [x] The machine factor yields a finished `UnlockKey` (single-factor IS
       that key; reused as a compose input in Task 6)
-- [ ] No stale `hardware` / `hw-id` identifiers remain (grep clean)
-- [ ] `machine_id_provider` example migrated to `init!(machine_id)`; the
+- [x] No stale `hardware` / `hw-id` identifiers remain (grep clean)
+- [x] `machine_id_provider` example migrated to `init!(machine_id)`; the
       stale `litmask-cli bind` comment in the `justfile` `test-examples`
       recipe is removed (deferred here from Task 1)
 - [ ] SPECIFICATION §4 documents the machine tier; CONTEXT.md gains the
       `machine_id` keyword and notes MachineIdProvider is now `pub(crate)`
-      (seam-only)
-- [ ] README machine-id surface migrated to `init!(machine_id)` (deferred
+      (seam-only) — CONTEXT.md done; SPECIFICATION §1.6.2/§1.6.3/§1.6.5
+      still describe the old public `MachineIdProvider` + `litmask bind`
+      design and need migrating
+- [x] README machine-id surface migrated to `init!(machine_id)` (deferred
       here from Tasks 1–3): retire the `## Machine-ID binding (litmask
       bind)` section and the `MachineIdProvider::with_salt(...)` snippet
       (both name now-unreachable APIs — `litmask bind` was deleted in Task 1,
