@@ -36,7 +36,7 @@ strings target/release/my_app | grep "sensitive data"   # no output
 | Key model           | Compile-time random | Single env var | **Layered providers**               |
 | Format strings      | No                  | No             | **`mask_format!`**                  |
 | Module-level        | No                  | No             | **`#[mask_all]`**                   |
-| Machine-ID binding    | No                  | No             | **`litmask bind`**                  |
+| Machine-ID binding    | No                  | No             | **`init!(machine_id)`**             |
 | Literal types       | `str`               | `str`          | **str / bytes / cstr**              |
 | `no_std`            | Limited             | No             | **Yes** (requires `alloc`)          |
 | Reproducible builds | No                  | No             | **Yes**                             |
@@ -124,15 +124,18 @@ use `weak_mask!`, but its key is recoverable statically from the binary.
 | `EmbeddedProvider`   | Wrapper nonce (keyless default) | always |
 | `EnvVarProvider`     | Environment variable   | default |
 | `FileProvider`       | Filesystem path        | default |
-| `MachineIdProvider` | Machine ID + BLAKE3    | `machine-id` |
+| `init!(machine_id)`  | Host machine ID + BLAKE3 (build-sealed) | `machine-id` |
 | `impl KeyProvider`   | Anything you write     | --      |
 
-```rust
-use litmask::{MachineIdProvider, weak_mask};
+A runtime provider is sourced explicitly with `init_with!`:
 
-let provider = MachineIdProvider::with_salt(weak_mask!(b"myapp-v1"));
+```rust
+let provider = litmask::EnvVarProvider::new("LITMASK_UNLOCK_KEY");
 litmask::init_with!(provider)?;
 ```
+
+The machine tier is sealed at build time instead — see
+[Machine-ID binding](#machine-id-binding) below.
 
 ## Security model
 
@@ -141,7 +144,7 @@ litmask::init_with!(provider)?;
 | Default (keyless `EmbeddedProvider`) | `strings`, casual inspection (key recoverable from artifact) |
 | `EnvVarProvider`             | Above, key sourced from an env var, kept out of the binary |
 | `FileProvider`               | Above, key sourced from a file path |
-| `MachineIdProvider`         | Above + binary redistribution       |
+| `init!(machine_id)`         | Above + binary redistribution       |
 | Custom provider (vault, HSM) | Above + offline attackers           |
 
 **Does NOT protect against:** runtime memory inspection, debugger
@@ -149,17 +152,28 @@ attachment, compromised runtime environments, side-channel attacks,
 or a motivated reverse engineer with runtime access. See
 [THREAT_MODEL.md](docs/THREAT_MODEL.md) for the full scope.
 
-## Machine-ID binding (`litmask bind`)
+## Machine-ID binding
 
-`bind` re-encrypts a binary's embedded wrapper under a key derived from
-the host's machine ID. The typical workflow uses `MachineIdProvider` at
-runtime so the binary decrypts only on the machine it was bound to:
+The `machine-id` feature seals the build's `unlock_key` to a host's
+machine ID, so the binary decrypts only on the machine it was built for.
+The factor is supplied at **build** time via `LITMASK_MACHINE_ID` and
+re-sourced at **run** time by `init!(machine_id)`, which recomputes the
+host ID locally — no env var or key file to deliver at runtime:
 
 ```sh
-cargo build --features machine-id --release
-litmask bind target/release/my_app --config target/release/litmask.config
-./target/release/my_app   # decrypts via MachineIdProvider — no env var needed
+LITMASK_MACHINE_ID="$(cargo run -q -p litmask-cli -- show-machine-id)" \
+    cargo build --release --features machine-id
+
+./target/release/my_app   # decrypts only on this host
 ```
+
+```rust
+litmask::init!(machine_id)?;
+```
+
+Moving the binary to a different host makes `init!(machine_id)` fail: the
+runtime recomputes a different machine ID, derives a different
+`unlock_key`, and the wrapper's AEAD tag check rejects it.
 
 ## Features
 
@@ -169,7 +183,7 @@ litmask bind target/release/my_app --config target/release/litmask.config
 | `chacha20-poly1305` | yes     | Default cipher                                      |
 | `aes-gcm`           | no      | AES-256-GCM (takes precedence when enabled)         |
 | `alloc`             | --      | `no_std` + allocator (required for `no_std` builds) |
-| `machine-id`             | no      | `MachineIdProvider`                                |
+| `machine-id`             | no      | `init!(machine_id)` machine-ID binding             |
 
 ## Documentation
 

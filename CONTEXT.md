@@ -72,7 +72,9 @@ call site, from the seed and the site's identity).
 Trait that supplies the **unlock key** at runtime. Built-in
 implementations: [`EmbeddedProvider`] (keyless default — recomputes the
 **unlock key** from the wrapper's cleartext **nonce**), [`EnvVarProvider`]
-(env var), `FileProvider` (path), `MachineIdProvider` (machine ID).
+(env var), `FileProvider` (path). The machine-ID provider is `pub(crate)`,
+reachable only through the `init!(machine_id)` seam — never named in
+downstream code.
 _Avoid_: "key source", "key backend".
 
 **Mask** (verb): To encrypt a literal at compile time via `mask!()` or
@@ -94,8 +96,9 @@ _Avoid_: "soft mask", "light mask".
 **`init!` / `init_with!`**: Macros that decrypt the **wrapper** with the
 **unlock key** and populate the process-global **mask key** cell. The
 no-arg `init!()` (a proc-macro) uses the keyless [`EmbeddedProvider`] and
-cross-checks the build's **seal tier** tag; `init_with!` (declarative)
-takes any [`KeyProvider`].
+cross-checks the build's **seal tier** tag; the `init!(machine_id)` keyword
+form unlocks a **machine**-sealed build (and `compile_error!`s against any
+other tier). `init_with!` (declarative) takes any [`KeyProvider`].
 
 ### Build pipeline
 
