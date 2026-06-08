@@ -80,9 +80,12 @@ test-aes-gcm:
 # Run tests with --all-features so dual-cipher (chacha + aes-gcm)
 # code paths are exercised. Catches bugs like encrypt-with-one-cipher /
 # decrypt-with-another when CURRENT_CIPHER resolves differently than
-# the hardcoded cipher in a test helper.
+# the hardcoded cipher in a test helper. Examples are excluded
+# (`--lib --tests --bins`): the `machine_id_provider` example's
+# `init!(machine_id)` only compiles under a `machine` seal (see
+# `ci-coverage`).
 test-all-features:
-    cargo nextest run --workspace --all-features
+    cargo nextest run --workspace --all-features --lib --tests --bins
 
 # Latest-stable sanity check. Skips the trybuild compile_fixtures
 # harness because rustc's diagnostic text drifts between minor
@@ -98,44 +101,7 @@ test-stable:
 # discovered by globbing `litmask/examples/*.rs` so adding a new
 # example file is the only step needed to wire it in.
 test-examples:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # Build first so the canonical `litmask.config` exists before any
-    # example runs (the build script writes it).
-    cargo build --workspace --examples
-    unlock_key=$(awk -F'"' '/^unlock_key/ {print $2}' target/debug/litmask.config)
-    found=0
-    for src in litmask/examples/*.rs; do
-        name=$(basename "$src" .rs)
-        # `machine_id_provider` requires both the `machine-id` feature AND a
-        # prior `litmask-cli bind` step (otherwise init fails with
-        # `decryption_failed`, since the build's wrapper is encrypted
-        # under the env-var key, not the machine-ID-derived one). The
-        # recipe can't perform the bind step (it would mutate the
-        # binary mid-run), so the example's runtime path is exercised
-        # by the dedicated integration test in
-        # `litmask/tests/machine_id_provider.rs` and the masking property
-        # of the built binary is exercised by
-        # `litmask/tests/example_scrub.rs::machine_id_provider_example_*`.
-        if [ "$name" = "machine_id_provider" ]; then
-            continue
-        fi
-        echo "litmask: test-examples — running $name"
-        # Export both the canonical env-var name AND the custom name
-        # `weak_mask_demo` reads (`MYAPP_SECRET_KEY`). The extra
-        # binding is a no-op for every other example and avoids
-        # special-casing inside the loop. The example's own scrub
-        # asserts the custom name is absent from the binary, so the
-        # weak_mask! hiding stays verifiable end-to-end.
-        LITMASK_UNLOCK_KEY="$unlock_key" \
-        MYAPP_SECRET_KEY="$unlock_key" \
-            cargo run --quiet --example "$name"
-        found=$((found + 1))
-    done
-    if [ "$found" -eq 0 ]; then
-        echo "litmask: test-examples — no examples discovered under litmask/examples/" >&2
-        exit 1
-    fi
+    ./scripts/test-examples.sh
 
 # ── Coverage ────────────────────────────────────────────────
 
@@ -345,8 +311,14 @@ ci-timed:
 
 # Best-effort coverage summary. Prints to stdout but does not fail CI
 # pre-1.0 (no minimum threshold set).
+# Examples are excluded (`--lib --tests --bins`): the `machine_id_provider`
+# example uses `init!(machine_id)`, whose build-time form↔tier cross-check
+# rejects every seal but `machine`. A generic `--all-features` build seals
+# `embedded` (no `LITMASK_MACHINE_ID`), so compiling the example would
+# `compile_error!`. Its masking + round-trip behavior is covered by
+# `tests/example_scrub.rs` and `tests/machine_tier_e2e.rs` instead.
 ci-coverage:
-    cargo llvm-cov nextest --workspace --all-features
+    cargo llvm-cov nextest --workspace --all-features --lib --tests --bins
 
 # Stable-channel best-effort sanity check; runs in a continue-on-error
 # CI job so toolchain regressions surface without blocking PR merge.
