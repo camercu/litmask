@@ -9,7 +9,9 @@
 //! - [`embedded`] / [`EmbeddedProvider`] — keyless, nonce-derived floor
 //! - [`env`] / [`EnvVarProvider`] — `LITMASK_UNLOCK_KEY` environment var
 //! - [`file`] / [`FileProvider`] — filesystem path, raw material
-//! - [`machine_id`] / [`MachineIdProvider`] — machine-id + BLAKE3 (opt-in)
+//! - [`machine_id`] / `MachineIdProvider` — machine-id + nonce-derived
+//!   salt (opt-in, `pub(crate)`: reached only via the `init!(machine_id)`
+//!   seam, never named in macro expansion)
 
 use crate::error::KeyError;
 use crate::key::UnlockKey;
@@ -32,8 +34,12 @@ pub(crate) use embedded::TestProvider;
 pub use env::EnvVarProvider;
 #[cfg(feature = "std")]
 pub use file::FileProvider;
+// `MachineIdProvider` stays `pub(crate)`: a machine-sealed binary reaches
+// it only through the `init!(machine_id)` runtime seam, which injects the
+// build-wrapper nonce. It is never named in macro expansion (which lands
+// in the consumer crate, where a `pub(crate)` symbol is unreachable).
 #[cfg(feature = "machine-id")]
-pub use machine_id::MachineIdProvider;
+pub(crate) use machine_id::MachineIdProvider;
 
 /// A source of `unlock_key` for the layered key strategy.
 ///

@@ -146,17 +146,36 @@ pub fn build_example(name: &str, profile: Profile) {
 /// cargo build is a cache-hit no-op after the first build per
 /// (name, profile, features) triple.
 pub fn build_example_with_features(name: &str, profile: Profile, features: &[&str]) {
-    /// `(example_name, profile, sorted_feature_list)` identifying a
-    /// single example-build invocation. Aliased so the static below
-    /// stays under clippy's `type_complexity` threshold.
-    type BuildKey = (String, Profile, Vec<String>);
+    build_example_with_features_and_env(name, profile, features, &[]);
+}
+
+/// `build_example_with_features` plus build-time environment variables,
+/// passed verbatim to the `cargo build` invocation. Used by the
+/// `machine_id_provider` scrub: `init!(machine_id)` only compiles against
+/// a `machine`-tier seal, which the build script produces only when
+/// `LITMASK_MACHINE_ID` is set, so that env var must be present at build
+/// time even though the scrub never runs the resulting binary.
+pub fn build_example_with_features_and_env(
+    name: &str,
+    profile: Profile,
+    features: &[&str],
+    env: &[(&str, &str)],
+) {
+    /// `(example_name, profile, sorted_feature_list, env_pairs)`
+    /// identifying a single example-build invocation. Aliased so the
+    /// static below stays under clippy's `type_complexity` threshold.
+    type BuildKey = (String, Profile, Vec<String>, Vec<(String, String)>);
     static BUILT: OnceLock<Mutex<HashSet<BuildKey>>> = OnceLock::new();
     let built = BUILT.get_or_init(|| Mutex::new(HashSet::new()));
     let feature_key: Vec<String> = features.iter().map(|s| (*s).to_string()).collect();
+    let env_key: Vec<(String, String)> = env
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+        .collect();
     let mut guard = built
         .lock()
         .expect("build_example memoization mutex poisoned");
-    if !guard.insert((name.to_string(), profile, feature_key)) {
+    if !guard.insert((name.to_string(), profile, feature_key, env_key)) {
         return;
     }
 
@@ -168,6 +187,9 @@ pub fn build_example_with_features(name: &str, profile: Profile, features: &[&st
         cmd.args(["--features", &features.join(",")]);
     }
     cmd.args(["--example", name]);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
     cmd.current_dir(workspace_root());
     let status = cmd.status().expect("invoke cargo");
     assert!(
@@ -179,6 +201,42 @@ pub fn build_example_with_features(name: &str, profile: Profile, features: &[&st
     // build artifact exists on disk — that's the load-bearing
     // ordering this function enforces.
     drop(guard);
+}
+
+/// Source the host machine id the way a `machine`-tier build is meant
+/// to: by invoking the canonical `litmask show-machine-id` CLI rather
+/// than calling `machine_uid::get()` directly. The CLI is the single
+/// supported way a consumer captures the id into `LITMASK_MACHINE_ID`,
+/// so tests seal through the same path the docs prescribe — if the CLI
+/// ever post-processes the id (e.g. a self-checking token), the seal and
+/// the runtime stay in lock-step automatically.
+///
+/// Returns `None` when the host has no machine id (the CLI exits
+/// `UNAVAILABLE`/69 with empty stdout): containers, OpenBSD, and
+/// `/etc/machine-id`-less Linux (§1.6.5). Callers skip cleanly rather
+/// than fail.
+pub fn machine_id_via_cli() -> Option<String> {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let output = Command::new(&cargo)
+        .args([
+            "run",
+            "--quiet",
+            "-p",
+            "litmask-cli",
+            "--",
+            "show-machine-id",
+        ])
+        .current_dir(workspace_root())
+        .output()
+        .expect("invoke `cargo run -p litmask-cli -- show-machine-id`");
+    if !output.status.success() {
+        return None;
+    }
+    let id = String::from_utf8(output.stdout)
+        .expect("show-machine-id stdout is UTF-8")
+        .trim()
+        .to_owned();
+    if id.is_empty() { None } else { Some(id) }
 }
 
 /// Run `strings` on `binary` and return its stdout as UTF-8. Asserts

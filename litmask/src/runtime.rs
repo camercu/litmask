@@ -108,6 +108,21 @@ pub fn __init_with_wrapper<P: KeyProvider>(
     Ok(())
 }
 
+/// `init!(machine_id)` seam: construct the crate-private
+/// `MachineIdProvider` from the embedded wrapper nonce and run the shared
+/// init path.
+///
+/// The macro calls this seam rather than naming the provider type:
+/// `MachineIdProvider` is `pub(crate)` and unreachable from the consumer
+/// crate where `init!` expansion lands. Routing the construction through
+/// here keeps the build-wrapper nonce injection in-crate and the type out
+/// of expanded code.
+#[cfg(feature = "machine-id")]
+#[doc(hidden)]
+pub fn __init_machine_id(wrapper: &[u8; WRAPPER_LEN]) -> Result<(), InitError> {
+    __init_with_wrapper(crate::provider::MachineIdProvider::new(wrapper), wrapper)
+}
+
 /// Decrypt a per-string blob to raw bytes. Called by every `mask!()`
 /// expansion regardless of literal kind — the proc-macro emits
 /// type-specific construction (`String::from_utf8` / `CString::new`)

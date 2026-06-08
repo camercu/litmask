@@ -314,10 +314,19 @@ fn twain_fixture_absent_from_canonical_examples() {
 /// `machine_id_provider` is gated behind `--features machine-id` (per its
 /// `required-features` in `Cargo.toml`), so the workspace's default
 /// `cargo build --workspace --examples` skips it cleanly and the
-/// `test-examples` shell recipe cannot run it (init would fail with
-/// `decryption_failed` without a prior `litmask bind` step).
+/// `test-examples` shell recipe never runs it (the host id recomputed at
+/// runtime won't match the placeholder id this scrub builds under, so
+/// `init!(machine_id)` would fail with `decryption_failed`).
 /// The masking property is testable without ever executing the
 /// example: build with the feature and scrub the binary.
+///
+/// `init!(machine_id)` only compiles against a `machine`-tier seal, which
+/// the build script emits only when `LITMASK_MACHINE_ID` is set — so the
+/// build must pass an id via the env channel. The id is sourced through
+/// the canonical `litmask show-machine-id` CLI (the same path the docs
+/// prescribe), falling back to a placeholder on hosts with no machine id.
+/// The value is arbitrary here because the scrub inspects bytes, never
+/// runs the binary — so the scrub coverage holds on every host.
 ///
 /// The test shells out to `cargo build --features machine-id` directly
 /// rather than gating on `#[cfg(feature = "machine-id")]` — the test
@@ -330,14 +339,21 @@ fn twain_fixture_absent_from_canonical_examples() {
 /// allow-listed. The `blake3` allow is the one unavoidable leak:
 /// the `blake3` crate embeds its own name in internal symbol
 /// strings (`blake3_*` function names) regardless of how the
-/// downstream code uses it. The BLAKE3 context literal itself
-/// (`"machine-v1"`) is hidden by `weak_mask!()` in
-/// `MachineIdProvider::unlock_key`, so it does NOT need an
-/// allow-list entry — that's a load-bearing property of the
-/// `weak_mask!()` call.
+/// downstream code uses it. Both BLAKE3 context literals
+/// (`"litmask-machine-id-v1"` and `"litmask-machine-id-salt-v1"`) are
+/// hidden by `weak_mask!()` in `MachineIdProvider::unlock_key`, so they
+/// do NOT need allow-list entries — that's a load-bearing property of the
+/// `weak_mask!()` calls.
 #[test]
 fn machine_id_provider_example_masked_fixtures_absent_from_binary() {
-    common::build_example_with_features("machine_id_provider", Profile::Release, &["machine-id"]);
+    let machine_id = common::machine_id_via_cli()
+        .unwrap_or_else(|| "litmask-scrub-placeholder-machine-id".to_string());
+    common::build_example_with_features_and_env(
+        "machine_id_provider",
+        Profile::Release,
+        &["machine-id"],
+        &[("LITMASK_MACHINE_ID", &machine_id)],
+    );
     let path = common::example_path("machine_id_provider", Profile::Release);
     assert!(
         path.exists(),
@@ -345,11 +361,12 @@ fn machine_id_provider_example_masked_fixtures_absent_from_binary() {
         path.display(),
     );
     common::assert_substring_absent(&path, "The reports of my death");
-    // `machine-v1` MUST be absent: the runtime `weak_mask!()` is the
-    // only thing standing between the BLAKE3 context literal and
-    // a `strings(1)`-visible appearance. If a future refactor
-    // drops the `weak_mask!()` wrapper, this assertion fires.
-    common::assert_substring_absent(&path, "machine-v1");
+    // Both context literals MUST be absent: the runtime `weak_mask!()`
+    // calls are the only thing standing between them and a
+    // `strings(1)`-visible appearance. If a future refactor drops a
+    // `weak_mask!()` wrapper, one of these assertions fires.
+    common::assert_substring_absent(&path, "litmask-machine-id-v1");
+    common::assert_substring_absent(&path, "litmask-machine-id-salt-v1");
     common::assert_no_dirty_words_except(&path, &["blake3"]);
 }
 

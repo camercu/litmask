@@ -124,9 +124,6 @@ pub use provider::{EmbeddedProvider, KeyProvider};
 #[cfg(feature = "std")]
 pub use provider::{EnvVarProvider, FileProvider};
 
-#[cfg(feature = "machine-id")]
-pub use provider::MachineIdProvider;
-
 pub use litmask_macros::{
     init, mask, mask_all, mask_concat, mask_env, mask_file, mask_format, mask_include_bytes,
     mask_include_str, mask_option_env, unmasked, weak_mask,
@@ -307,6 +304,8 @@ macro_rules! __weak_decode_cstr_call {
 #[doc(hidden)]
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.
+    #[cfg(feature = "machine-id")]
+    pub use crate::runtime::__init_machine_id;
     pub use crate::runtime::{
         __decrypt, __init_with_wrapper, __weak_decode, __weak_decode_bytes, WeakByteCell, WeakCell,
     };

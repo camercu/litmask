@@ -1,38 +1,35 @@
-//! `MachineIdProvider` end-to-end example: bind the build's
-//! `unlock_key` to the host machine ID so the binary decrypts only
-//! on the same machine it was bound to. The example itself does
-//! NOT rebind the binary — `litmask bind` re-encrypts the
-//! embedded wrapper under the host's machine-id-derived key.
-//! Here we just demonstrate the provider plumbing: a host with a
-//! stable machine ID will recover the key on every run.
+//! Machine-tier end-to-end example: seal the build's `unlock_key` to the
+//! host machine id so the binary decrypts only on the machine it was
+//! built for.
+//!
+//! The machine factor is supplied at BUILD time via `LITMASK_MACHINE_ID`
+//! and re-sourced at RUNTIME by `init!(machine_id)`, which recomputes the
+//! host id locally via `machine_uid::get()`. For the two to match, build
+//! with `LITMASK_MACHINE_ID` set to this host's id (the CLI prints it):
 //!
 //! ```sh
-//! cargo build --release --features machine-id --example machine_id_provider
+//! LITMASK_MACHINE_ID="$(cargo run -q -p litmask-cli -- show-machine-id)" \
+//!     cargo build --release --features machine-id --example machine_id_provider
 //!
-//! # Rebind the binary so its embedded wrapper is encrypted under
-//! # this host's machine-id-derived key.
-//! litmask bind target/release/examples/machine_id_provider \
-//!     --config target/release/litmask.config
-//!
-//! # Then run the bound binary directly — no env var, no key file.
+//! # Run the prebuilt binary directly on the SAME host — no env var,
+//! # no key file: the machine id is recomputed at startup.
 //! ./target/release/examples/machine_id_provider
+//! # prints the decrypted Twain quote
 //! ```
 //!
-//! Run the bound binary directly, never `cargo run`: a release
-//! `cargo run` reruns `build.rs` and recompiles the example, which
-//! overwrites the freshly bound wrapper with a brand-new one keyed to
-//! the EnvVar-style `unlock_key` — undoing the bind and making init
-//! fail with `decryption_failed`.
+//! Run the prebuilt binary directly, never `cargo run`: a release
+//! `cargo run` reruns `build.rs` and reseals the wrapper, desyncing it
+//! from the host id captured above (see `hello_world.rs`).
 //!
-//! Skipping the bind step makes init fail with `decryption_failed`:
-//! the freshly built wrapper is encrypted under the EnvVar-style key,
-//! not the machine-ID-derived one, so the runtime `MachineIdProvider`
-//! recovers a key the wrapper was not encrypted under.
+//! Moving the binary to a different host makes `init!(machine_id)` fail
+//! with `decryption_failed`: the runtime recomputes a different machine
+//! id, derives a different `unlock_key`, and the wrapper's AEAD tag check
+//! rejects it.
 
-use litmask::{MachineIdProvider, init_with, mask};
+use litmask::{init, mask};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_with!(MachineIdProvider::new())?;
+    init!(machine_id)?;
     println!(
         "{}",
         mask!("The reports of my death have been greatly exaggerated. — Mark Twain"),

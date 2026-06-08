@@ -1,0 +1,18 @@
+# Standalone one-crate workspace for the Machine-tier e2e test
+# (`litmask/tests/machine_tier_e2e.rs`). The empty `[workspace]` table
+# detaches this crate from the parent litmask workspace so building it
+# with `LITMASK_MACHINE_ID` set seals only THIS crate's `machine` tier,
+# never the litmask crate's own embedded build in the shared target dir.
+[workspace]
+
+[package]
+name = "litmask_machine_fixture"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+litmask = { path = "../..", features = ["machine-id"] }
+
+[build-dependencies]
+litmask-build = { path = "../../../litmask-build" }

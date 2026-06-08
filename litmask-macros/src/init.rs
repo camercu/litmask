@@ -35,14 +35,23 @@ const EMBEDDED_TIER: &str = "embedded";
 /// Tier tag whose seal the `init!(<provider>)` form unlocks.
 const EXTERNAL_TIER: &str = "external";
 
-/// The `init!` call form, selected by whether the macro received a
-/// provider expression. Each form unlocks exactly one sealed tier.
+/// Tier tag whose seal the `init!(machine_id)` keyword form unlocks.
+const MACHINE_TIER: &str = "machine";
+
+/// The bare keyword that selects the Machine form: `init!(machine_id)`.
+const MACHINE_ID_KEYWORD: &str = "machine_id";
+
+/// The `init!` call form, selected by the macro argument. Each form
+/// unlocks exactly one sealed tier.
 #[derive(Clone, Copy)]
 pub(crate) enum Form {
     /// `init!()` — keyless Embedded default.
     Embedded,
     /// `init!(<provider-expr>)` — External tier.
     External,
+    /// `init!(machine_id)` — Machine tier (bare keyword, not a provider
+    /// expression).
+    Machine,
 }
 
 impl Form {
@@ -51,6 +60,7 @@ impl Form {
         match self {
             Self::Embedded => EMBEDDED_TIER,
             Self::External => EXTERNAL_TIER,
+            Self::Machine => MACHINE_TIER,
         }
     }
 
@@ -59,7 +69,21 @@ impl Form {
         match self {
             Self::Embedded => "init!()",
             Self::External => "init!(provider)",
+            Self::Machine => "init!(machine_id)",
         }
+    }
+}
+
+/// Whether the macro argument is exactly the bare `machine_id` keyword
+/// (a single identifier, nothing else). Anything else with an argument is
+/// the External provider-expression form. A consumer that genuinely wants
+/// a provider value named `machine_id` is the deliberate cost of making
+/// the keyword unambiguous.
+fn is_machine_keyword(input: &TokenStream) -> bool {
+    let mut tokens = input.clone().into_iter();
+    match (tokens.next(), tokens.next()) {
+        (Some(proc_macro::TokenTree::Ident(id)), None) => id.to_string() == MACHINE_ID_KEYWORD,
+        _ => false,
     }
 }
 
@@ -90,6 +114,8 @@ pub(crate) fn expand(input: &TokenStream) -> TokenStream {
     let span = proc_macro::Span::call_site().into();
     let form = if input.is_empty() {
         Form::Embedded
+    } else if is_machine_keyword(input) {
+        Form::Machine
     } else {
         Form::External
     };
@@ -123,6 +149,14 @@ pub(crate) fn expand(input: &TokenStream) -> TokenStream {
             }}
             .into()
         }
+        // The machine provider is `pub(crate)` and cannot be named in the
+        // consumer crate, so the seam fn constructs it from the wrapper
+        // nonce in-crate.
+        Form::Machine => quote! {{
+            let __litmask_wrapper = ::litmask::__wrapper_bytes!();
+            ::litmask::__internal::__init_machine_id(__litmask_wrapper)
+        }}
+        .into(),
     }
 }
 
@@ -158,5 +192,17 @@ mod tests {
     fn absent_tier_is_rejected_naming_the_env_var() {
         let detail = check_tier(Form::Embedded, None).unwrap_err();
         assert!(detail.contains(SEAL_TIER_VAR));
+    }
+
+    #[test]
+    fn machine_form_accepts_machine_seal() {
+        assert!(check_tier(Form::Machine, Some(MACHINE_TIER)).is_ok());
+    }
+
+    #[test]
+    fn machine_form_rejects_embedded_seal_naming_both() {
+        let detail = check_tier(Form::Machine, Some(EMBEDDED_TIER)).unwrap_err();
+        assert!(detail.contains(MACHINE_TIER));
+        assert!(detail.contains(EMBEDDED_TIER));
     }
 }

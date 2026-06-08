@@ -79,7 +79,7 @@ pub fn mask(input: TokenStream) -> TokenStream {
 ///
 /// - `init!()` — keyless **Embedded** default.
 /// - `init!(<provider-expr>)` — **External** tier, taking any
-///   [`litmask::KeyProvider`] value.
+///   `litmask::KeyProvider` value.
 ///
 /// Both expand at the call site so they can `include_bytes!` the
 /// embedded `mask_key` wrapper from the calling crate's `OUT_DIR`, and

@@ -1,69 +1,53 @@
-//! [`MachineIdProvider`] — derives `unlock_key` from the host's
-//! machine ID via BLAKE3-keyed-hash. Feature-gated behind `machine-id`.
+//! [`MachineIdProvider`] — derives the machine-tier `unlock_key` from
+//! the host's machine id and the build's wrapper nonce. Feature-gated
+//! behind `machine-id`.
 
 use zeroize::Zeroizing;
 
 use crate::error::KeyError;
+use crate::internal::{NONCE_LEN, WRAPPER_LEN, derive_machine_id_key, parse_wrapper};
 use crate::key::UnlockKey;
 use crate::provider::KeyProvider;
 
-/// Derives a 32-byte unlock key from the host's machine ID.
-/// `unlock_key()` is deterministic per host: two calls on the same
-/// machine with the same salt produce byte-identical output, so the
-/// binary's wrapper can be encrypted under this key at build time
-/// and decrypted at runtime without any secret-distribution channel.
+/// Derives the machine-tier 32-byte `unlock_key` from the host machine
+/// id and the build's wrapper nonce.
 ///
-/// # Examples
+/// Crate-private: a machine-sealed binary reaches this provider only
+/// through the `init!(machine_id)` seam ([`crate::__internal`]), which
+/// injects the embedded wrapper nonce at the call site. The macro never
+/// names the type — expansion lands in the consumer crate, which cannot
+/// reach a `pub(crate)` symbol — so there is no public constructor.
 ///
-/// ```no_run
-/// # fn main() -> Result<(), litmask::InitError> {
-/// let provider = litmask::MachineIdProvider::with_salt(b"myapp-v1");
-/// litmask::init_with!(provider)?;
-/// # Ok(())
-/// # }
-/// ```
-///
-/// # Salt
-///
-/// Salt is `Option<&'static [u8]>`. `with_salt(b"...")` mixes the
-/// salt into the BLAKE3-keyed-hash derivation so two products
-/// running on the same host but compiled with different salts
-/// recover distinct unlock keys.
+/// `unlock_key()` is deterministic per (host, build): the salt is the
+/// wrapper nonce, so two products built on the same host but with
+/// different nonces recover distinct keys, and the same product opens
+/// only on the host whose id matches the seal. No secret-distribution
+/// channel is needed — the runtime recomputes the host id locally.
 ///
 /// # Failure mode
 ///
 /// `machine-uid::get()` can fail on container runtimes,
 /// `/etc/machine-id`-less embedded Linux variants, and OpenBSD by
-/// default. The failure surfaces as [`KeyError::Provider`] carrying
-/// the upstream error. Cross-compilation users targeting such
-/// environments MUST verify behavior on the target before relying
-/// on this provider.
+/// default. The failure surfaces as [`KeyError::Provider`] carrying the
+/// upstream error. Cross-compilation users targeting such environments
+/// MUST verify behavior on the target before relying on this provider.
 #[derive(Debug)]
-pub struct MachineIdProvider {
-    salt: Option<&'static [u8]>,
+pub(crate) struct MachineIdProvider {
+    // Non-secret: the wrapper nonce is public and ships in cleartext, so
+    // no zeroize-on-drop is warranted. The salt is derived from it inside
+    // `derive_machine_id_key`.
+    nonce: [u8; NONCE_LEN],
 }
 
 impl MachineIdProvider {
-    /// Construct a provider with no salt. The derived key depends
-    /// only on the host machine ID.
-    #[must_use]
-    pub const fn new() -> Self {
-        Self { salt: None }
-    }
-
-    /// Construct a provider that mixes `salt` into the derived key.
-    /// Salt is a compile-time constant — the type forces this so a
-    /// runtime-supplied salt does not silently invalidate the
-    /// build's wrapper encryption.
-    #[must_use]
-    pub const fn with_salt(salt: &'static [u8]) -> Self {
-        Self { salt: Some(salt) }
-    }
-}
-
-impl Default for MachineIdProvider {
-    fn default() -> Self {
-        Self::new()
+    /// Capture the wrapper's cleartext nonce so [`unlock_key`] can derive
+    /// the machine salt from it on demand.
+    ///
+    /// [`unlock_key`]: KeyProvider::unlock_key
+    pub(crate) fn new(wrapper: &[u8; WRAPPER_LEN]) -> Self {
+        Self {
+            nonce: *parse_wrapper(wrapper).nonce,
+        }
     }
 }
 
@@ -85,17 +69,17 @@ impl KeyProvider for MachineIdProvider {
         // a stable host identifier would linger in the allocator
         // even though `UnlockKey` zeroizes the derived key.
         let machine_id = Zeroizing::new(machine_id);
-        // `weak_mask!()` keeps the BLAKE3 context literal out of
-        // `strings(1)` output for user binaries. The literal MUST
-        // match `litmask_internal::MACHINE_ID_DERIVATION_CONTEXT`
-        // byte-for-byte (which `bind` imports directly) or bind ↔
-        // runtime derivations produce different keys; the drift is
-        // pinned by the `weak_mask_literal_matches_const` unit
-        // test below.
-        Ok(UnlockKey::from_raw(crate::internal::derive_machine_id_key(
-            crate::weak_mask!("machine-v1"),
+        // `weak_mask!()` keeps both BLAKE3 context literals out of
+        // `strings(1)` output for user binaries. Each literal MUST match
+        // its `litmask_internal` const byte-for-byte (which
+        // `litmask-build` uses at seal time) or build ↔ runtime
+        // derivations diverge; pinned by the
+        // `weak_mask_literals_match_consts` test below.
+        Ok(UnlockKey::from_raw(derive_machine_id_key(
+            crate::weak_mask!("litmask-machine-id-v1"),
+            crate::weak_mask!("litmask-machine-id-salt-v1"),
             machine_id.as_bytes(),
-            self.salt.unwrap_or(&[]),
+            &self.nonce,
         )))
     }
 }
@@ -126,28 +110,85 @@ impl core::error::Error for MachineUidError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::internal::MACHINE_ID_DERIVATION_CONTEXT;
+    use crate::internal::{
+        CURRENT_CIPHER, FormatVersion, KEY_LEN, MACHINE_ID_DERIVATION_CONTEXT,
+        MACHINE_ID_SALT_DERIVATION_CONTEXT, WRAPPER_BODY_LEN, WRAPPER_PLAINTEXT_LEN, aead_encrypt,
+        assemble_wrapper,
+    };
 
-    #[test]
-    fn debug_shows_salt() {
-        let p = MachineIdProvider::with_salt(b"myapp-v1");
-        let dbg = alloc::format!("{p:?}");
-        assert!(dbg.contains("salt"), "Debug must mention salt field");
+    /// Seal a wrapper exactly as `litmask-build` does for the Machine
+    /// tier: `unlock_key` derived from the chosen machine id + nonce,
+    /// then `version || mask_key` sealed under it.
+    fn seal_machine_wrapper(
+        nonce: [u8; NONCE_LEN],
+        machine_id: &[u8],
+        mask_key: [u8; KEY_LEN],
+    ) -> [u8; WRAPPER_LEN] {
+        let unlock_key = derive_machine_id_key(
+            MACHINE_ID_DERIVATION_CONTEXT,
+            MACHINE_ID_SALT_DERIVATION_CONTEXT,
+            machine_id,
+            &nonce,
+        );
+        let mut plaintext = [0u8; WRAPPER_PLAINTEXT_LEN];
+        plaintext[0] = FormatVersion::CURRENT.to_byte();
+        plaintext[1..].copy_from_slice(&mask_key);
+        let body = aead_encrypt(CURRENT_CIPHER, &unlock_key, &nonce, &plaintext)
+            .expect("aead_encrypt under derived unlock_key");
+        let body: &[u8; WRAPPER_BODY_LEN] = body.as_slice().try_into().expect("body length");
+        assemble_wrapper(&nonce, body)
     }
 
     #[test]
-    fn debug_no_salt_shows_none() {
-        let p = MachineIdProvider::new();
-        let dbg = alloc::format!("{p:?}");
-        assert!(dbg.contains("None"), "Debug must show None when no salt");
+    fn new_captures_the_wrapper_nonce() {
+        let nonce = [0x5au8; NONCE_LEN];
+        let wrapper = seal_machine_wrapper(nonce, b"host-id-abc", [0u8; KEY_LEN]);
+        let provider = MachineIdProvider::new(&wrapper);
+        assert_eq!(provider.nonce, nonce);
     }
 
+    /// The runtime derivation must use the host's own machine id and the
+    /// captured nonce under the canonical contexts. When `machine_uid`
+    /// is available, `unlock_key()` must equal the const-context
+    /// derivation over that id + the captured nonce; on hosts where
+    /// `machine_uid` is unavailable, the call errors and the assertion is
+    /// skipped (matches the integration test's tolerance).
     #[test]
-    fn machine_id_provider_default_matches_new() {
-        // Pin the `Default` impl: it should match `new()` exactly.
-        let a = MachineIdProvider::default();
-        let b = MachineIdProvider::new();
-        assert_eq!(a.salt, b.salt);
+    fn unlock_key_matches_const_context_derivation() {
+        let Ok(host_id) = machine_uid::get() else {
+            return;
+        };
+        let nonce = [0x21u8; NONCE_LEN];
+        let wrapper = seal_machine_wrapper(nonce, host_id.as_bytes(), [0u8; KEY_LEN]);
+        let provider = MachineIdProvider::new(&wrapper);
+        let recovered = provider.unlock_key().expect("machine_uid available");
+        assert_eq!(
+            recovered.as_bytes(),
+            &derive_machine_id_key(
+                MACHINE_ID_DERIVATION_CONTEXT,
+                MACHINE_ID_SALT_DERIVATION_CONTEXT,
+                host_id.as_bytes(),
+                &nonce,
+            )
+        );
+    }
+
+    /// A wrapper sealed under the host's own machine id round-trips: the
+    /// provider re-derives the same `unlock_key` and opens the wrapper.
+    /// Skipped when `machine_uid` is unavailable.
+    #[test]
+    fn derived_key_round_trips_a_build_emitted_wrapper() {
+        use crate::internal::decrypt_wrapper;
+        let Ok(host_id) = machine_uid::get() else {
+            return;
+        };
+        let nonce = [0x09u8; NONCE_LEN];
+        let mask_key = [0x11u8; KEY_LEN];
+        let wrapper = seal_machine_wrapper(nonce, host_id.as_bytes(), mask_key);
+        let provider = MachineIdProvider::new(&wrapper);
+        let unlock_key = provider.unlock_key().expect("machine_uid available");
+        let recovered = decrypt_wrapper(unlock_key.as_bytes(), &wrapper).expect("round-trip");
+        assert_eq!(recovered, mask_key);
     }
 
     /// Static bound assertion: `MachineUidError` must satisfy
@@ -163,20 +204,21 @@ mod tests {
         assert_send_sync::<MachineUidError>();
     }
 
-    /// Pin the literal-vs-const drift: the runtime call site
-    /// (`KeyProvider::unlock_key` above) inlines `weak_mask!("machine-v1")`
-    /// so the BLAKE3 context bytes are obfuscated in user binaries,
-    /// while `litmask-cli`'s `bind` imports
-    /// `MACHINE_ID_DERIVATION_CONTEXT` directly. The two MUST decode to
-    /// the same string or every freshly-bound binary will fail to
-    /// unlock: bind would derive its mask key under one context and
-    /// runtime would expect a different one. This test verifies the
-    /// `weak_mask!()` literal still matches the canonical const.
+    /// Pin the literal-vs-const drift: the runtime call site inlines
+    /// `weak_mask!()` for both the key context and the salt context so
+    /// the BLAKE3 context bytes are obfuscated in user binaries, while
+    /// `litmask-build` seals using the consts directly. Each pair MUST
+    /// decode to the same string or every machine build fails to unlock
+    /// at runtime.
     #[test]
-    fn weak_mask_literal_matches_const() {
+    fn weak_mask_literals_match_consts() {
         assert_eq!(
-            crate::weak_mask!("machine-v1"),
+            crate::weak_mask!("litmask-machine-id-v1"),
             MACHINE_ID_DERIVATION_CONTEXT
+        );
+        assert_eq!(
+            crate::weak_mask!("litmask-machine-id-salt-v1"),
+            MACHINE_ID_SALT_DERIVATION_CONTEXT
         );
     }
 }
