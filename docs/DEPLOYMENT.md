@@ -39,22 +39,27 @@ The file holds raw material (any length, no encoding); `FileProvider`
 derives the key the same way `EnvVarProvider` does. Set filesystem
 permissions so only the application user can read it (`chmod 400`).
 
-### `MachineIdProvider`
+### Machine tier (`init!(machine_id)`)
 
-Bind the binary to the deployment host's machine ID:
+The Machine tier seals the build's `unlock_key` to a host's machine ID at
+**build** time. Set `LITMASK_MACHINE_ID` to the target host's id (the CLI
+prints it) and build with the `machine-id` feature:
 
 ```sh
-litmask bind target/release/my_app \
-    --config target/release/litmask.config
+LITMASK_MACHINE_ID="$(cargo run -q -p litmask-cli -- show-machine-id)" \
+    cargo build --release --features machine-id
 ```
 
-The binary decrypts only on the machine it was bound to. No environment
-variable or key file required at runtime.
+```rust
+litmask::init!(machine_id)?;
+```
 
-`bind` also works with `EnvVarProvider` binaries — the updated config
-contains the machine-ID-derived key, which can be injected as the
-environment variable. See the [README](../README.md#machine-id-binding-litmask-bind)
-for details.
+At runtime `init!(machine_id)` recomputes the host id locally via
+`machine_uid::get()` and re-derives the same key — so the binary decrypts
+only on the host it was sealed for, with no environment variable or key
+file required. There is no post-build rebind step; re-targeting a different
+host means rebuilding with that host's `LITMASK_MACHINE_ID`. See the
+[README](../README.md#machine-id-binding) for the full walkthrough.
 
 ### Custom provider
 
@@ -76,20 +81,19 @@ impl KeyProvider for VaultProvider {
 
 ## `litmask.config` handling
 
-`litmask-build::emit()` writes `litmask.config` to the Cargo target
-directory at compile time. It contains the `unlock_key` (secret) and
-`locator` (non-secret wrapper identifier).
+Only the **Embedded** tier writes `litmask.config` (to the Cargo target
+directory at compile time); it contains a single `unlock_key` field. The
+Embedded runtime recomputes that key from the wrapper's public nonce, so
+the file is a diagnostic/tooling convenience, not a runtime input. The
+External and Machine tiers write no config — their key material is
+re-sourced at runtime (operator channel / host machine id).
 
-**Do not commit `litmask.config` to version control.** Add it to
-`.gitignore`:
+The `unlock_key` it records is still secret. **Do not commit
+`litmask.config` to version control.** Add it to `.gitignore`:
 
 ```gitignore
 litmask.config
 ```
-
-For CI/CD pipelines that build and deploy, extract the key from the
-config after the build step and inject it into the deployment
-environment.
 
 ## Recommended release profile
 
@@ -161,65 +165,48 @@ part of the stable canonical build. Use it only if hiding the
 dependency fingerprint is in your threat model; the stable
 `strip`-based profile above remains the supported default.
 
-## Rebind workflow
+## Machine-tier deployment workflow
 
-For deployments using `MachineIdProvider`, bind the binary on the
-target host after copying:
+The Machine tier is sealed at **build** time, so the per-host targeting
+happens in the build, not on the deployment host. The binary then runs on
+its sealed host with no config, key file, or CLI present:
 
 ```sh
+LITMASK_MACHINE_ID="$(cargo run -q -p litmask-cli -- show-machine-id)" \
+    cargo build --release --features machine-id
+
 scp target/release/my_app deploy@host:/opt/my_app/
-scp target/release/litmask.config deploy@host:/opt/my_app/
-
-ssh deploy@host 'litmask bind /opt/my_app/my_app \
-    --config /opt/my_app/litmask.config'
+ssh deploy@host '/opt/my_app/my_app'   # decrypts; no extra material
 ```
 
-To rebind with a different salt (e.g., per-product isolation):
+Re-targeting a different host means rebuilding with that host's
+`LITMASK_MACHINE_ID` — there is no in-place rebind.
 
-```sh
-litmask bind /opt/my_app/my_app \
-    --config /opt/my_app/litmask.config \
-    --salt "$(echo -n 'product-v1' | base64url)"
-```
+### Off-box (vendor-side) sealing
 
-The binary must use `MachineIdProvider::with_salt(b"product-v1")` at
-compile time for the salt to match at runtime.
+When you build for a host you cannot reach at build time — the customer's
+machine is air-gapped, or you seal in a build pipeline — seal against a
+machine ID the target reports:
 
-### Off-box (vendor-side) binding
-
-`bind` derives the new `unlock_key` from the machine ID of *the host it
-runs on*. The simplest workflow runs `bind` on the deployment host (the
-`ssh` recipe above), so the CLI must be present there.
-
-When the CLI cannot run on the target — the customer never receives
-litmask tooling, the host is air-gapped, or you bind in a build pipeline
-— bind off-box against a machine ID the target reports:
-
-1. **Enroll.** The target host reports its machine ID. Ship a one-shot
-   helper, or run the CLI's enrollment primitive there:
+1. **Enroll.** The target host reports its machine ID via the CLI's
+   enrollment primitive:
 
    ```sh
    litmask show-machine-id
    # FB1128DE-C00C-5643-BCF4-5487AFA3245A
    ```
 
-   `show-machine-id` prints the exact bytes `MachineIdProvider` feeds into
-   its key derivation — nothing secret, just the host identifier — so
-   the customer can return it over any channel.
+   `show-machine-id` prints the exact bytes the Machine tier feeds into its
+   key derivation — nothing secret, just the host identifier — so the
+   customer can return it over any channel.
 
-2. **Bind vendor-side.** With the reported ID, bind off-box and ship the
-   already-bound binary plus its updated config:
+2. **Seal vendor-side.** Build with the reported ID and ship the binary;
+   it decrypts only on the host whose ID was supplied:
 
    ```sh
-   litmask bind my_app \
-       --config litmask.config \
-       --machine-id FB1128DE-C00C-5643-BCF4-5487AFA3245A
+   LITMASK_MACHINE_ID="FB1128DE-C00C-5643-BCF4-5487AFA3245A" \
+       cargo build --release --features machine-id
    ```
-
-   The bound binary decrypts only on the host whose ID was supplied.
-   With `--machine-id` set, `bind` skips the local machine-ID lookup
-   entirely, so it never fails for a missing machine ID. The flag
-   composes with `--salt`.
 
 ## Sysexits.h exit code reference
 

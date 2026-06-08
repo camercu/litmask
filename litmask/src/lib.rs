@@ -52,7 +52,7 @@
 //! | Key model | Compile-time random per build | Single env var | Layered: `mask_key` + `unlock_key`, multiple providers |
 //! | Format string masking | Separate `fmtools` crate | None | Built-in [`mask_format!`] with single-evaluation semantics |
 //! | Module-level masking | None | None | [`macro@mask_all`] with deep substitution |
-//! | Machine-ID binding | None | None | Yes (post-build rebind via `litmask` CLI) |
+//! | Machine-ID binding | None | None | Yes (build-time seal via `init!(machine_id)`) |
 //! | Multiple literal types (str/bytes/cstr) | str only | str only | All three |
 //! | `no_std` support | Limited | No | Yes (with `alloc`) |
 //! | Threat model documented | Minimal | Minimal | Explicit security ladder, honest scope |

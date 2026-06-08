@@ -40,5 +40,5 @@ consumers — verify with `just ci` (not just the crate's own tests).
   `litmask/src/provider/`, add example under `litmask/examples/`,
   gate behind a cargo feature if it pulls in new deps.
 - **Change wire format:** bump `FormatVersion`, update
-  `litmask-internal` constants, update `litmask-cli` bind/inspect,
+  `litmask-internal` constants, update build/runtime seal + unseal paths,
   add format-version rejection tests.

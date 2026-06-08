@@ -56,7 +56,6 @@ many Rust programs and does not identify litmask.
 - `MachineIdProvider` wraps the machine-id `String` in
   `Zeroizing<String>`.
 - `FileProvider` reads into a `Zeroizing<Vec<u8>>` buffer.
-- `bind.rs` uses `Zeroizing` for the decrypted `mask_key` intermediate.
 
 No path was found where key bytes escape into `String` formatting,
 log lines, error variants, or long-lived buffers.
@@ -121,43 +120,12 @@ without security benefit.
 The AEAD crates (`chacha20poly1305`, `aes-gcm`) use constant-time
 primitives internally. `blake3` uses `constant_time_eq` for comparisons.
 
-Surrounding Rust code (error branching, `locate_wrapper` scanning) is
-not constant-time. Side-channel attacks are out of scope but noted
-for users who assess timing properties.
+Surrounding Rust code (error branching) is not constant-time.
+Side-channel attacks are out of scope but noted for users who assess
+timing properties.
 
 **Category: accepted-risk** — side-channel attacks are out of scope.
 Documented in THREAT_MODEL.md timing section.
-
-## Bind atomicity
-
-**Status: pass**
-
-POSIX atomic commit protocol pinned by
-`commit_sequence_matches_atomic_rename_protocol` unit test. The test
-asserts the exact call sequence through the `CommitFs` trait:
-
-1. Write temp config
-2. Fsync temp config
-3. Write temp binary
-4. Copy permissions
-5. Fsync temp binary
-6. Rename temp binary → binary
-7. Rename temp config → config
-8. Fsync parent directories (best-effort, deduplicated)
-
-Both files use temp+rename so a crash during any write step leaves the
-originals intact (retryable).
-
-`commit_writes_binary_and_config_atomically` exercises the real
-`StdCommitFs` path on the host OS.
-
-Windows bind uses `MoveFileExW` with `MOVEFILE_WRITE_THROUGH`.
-
-**Category: accepted-risk**
-Power loss between step 5 (binary rename) and step 6 (config rename)
-leaves new binary + old config (inconsistent). Recovery requires
-rebind. Filesystem journals on modern OS kernels make this window
-extremely narrow.
 
 ## Reproducibility
 
