@@ -221,16 +221,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: |
-          cargo build --example hello_world
-          cargo build -p litmask-cli
+        run: cargo build -p litmask-cli
 
       - name: Smoke test
-        run: |
-          sh scripts/platform-smoke.sh \
-            target/debug/examples/hello_world \
-            target/debug/litmask.config \
-            target/debug/litmask
+        run: sh scripts/platform-smoke.sh target/debug/litmask
 
   smoke-almalinux:
     runs-on: ubuntu-latest
@@ -251,16 +245,12 @@ jobs:
       - name: Build
         run: |
           . "$HOME/.cargo/env"
-          cargo build --example hello_world
           cargo build -p litmask-cli
 
       - name: Smoke test
         run: |
           . "$HOME/.cargo/env"
-          sh scripts/platform-smoke.sh \
-            target/debug/examples/hello_world \
-            target/debug/litmask.config \
-            target/debug/litmask
+          sh scripts/platform-smoke.sh target/debug/litmask
 
   smoke-windows:
     name: smoke (windows)
@@ -286,20 +276,14 @@ jobs:
         with:
           workspaces: ". -> target"
 
-      - name: Build workspace + example
-        run: |
-          cargo build --workspace
-          cargo build --example hello_world
+      - name: Build workspace
+        run: cargo build --workspace
 
       - name: Test CLI
         run: cargo test -p litmask-cli
 
       - name: Smoke test
-        run: |
-          sh scripts/platform-smoke.sh \
-            target/debug/examples/hello_world.exe \
-            target/debug/litmask.config \
-            target/debug/litmask.exe
+        run: sh scripts/platform-smoke.sh target/debug/litmask.exe
 
   smoke-bsd:
     strategy:
@@ -335,12 +319,9 @@ jobs:
                 ;;
             esac
 
-            cargo build --example hello_world
             cargo build -p litmask-cli
 
             sh scripts/platform-smoke.sh \
-              target/debug/examples/hello_world \
-              target/debug/litmask.config \
               target/debug/litmask \
               ${{ matrix.os.smoke_flags }}
 

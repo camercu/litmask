@@ -2215,10 +2215,12 @@ via `init!(machine_id)`) SHALL execute correctly with output matching
 expected plaintext.
 
 §2.13.2.4 — On platforms where `machine-uid` does NOT produce a stable
-identifier (stock OpenBSD without provisioned machine ID), the machine-tier
-binary's `init!(machine_id)` SHALL fail at runtime with EX_UNAVAILABLE (69)
-and the test SHALL assert this failure mode rather than treating it as a
-test failure. This validates §1.6.5's documented portability behavior.
+identifier (stock OpenBSD without provisioned machine ID), `show-machine-id`
+SHALL exit EX_UNAVAILABLE (69), and a machine-tier binary's
+`init!(machine_id)` SHALL fail at runtime with EX_UNAVAILABLE (69) — the
+`KeyProvider(Provider(_))` → 69 mapping of §1.9.7 — with the marker absent
+from output. The test SHALL assert this failure mode rather than treating it
+as a test failure. This validates §1.6.5's documented portability behavior.
 
 §2.13.2.6 — Platform smoke tests SHALL be written in a CI-portable shell
 script invocable from the GitHub Actions YAML for native platforms and from

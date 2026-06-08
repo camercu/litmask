@@ -26,13 +26,23 @@
 //! id, derives a different `unlock_key`, and the wrapper's AEAD tag check
 //! rejects it.
 
+use std::process::ExitCode;
+
 use litmask::{init, mask};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init!(machine_id)?;
+fn main() -> ExitCode {
+    // Surface the sysexits-aligned code instead of the `?`/`Termination`
+    // default of 1, so a machine-id lookup failure (no `/etc/machine-id`,
+    // stock OpenBSD) exits EX_UNAVAILABLE (69) and a wrong-host seal exits
+    // EX_DATAERR (65) — the contract a deployment script keys on.
+    if let Err(e) = init!(machine_id) {
+        eprintln!("init!(machine_id) failed: {e}");
+        // sysexits codes are 0..=78; the fallback is unreachable.
+        return ExitCode::from(u8::try_from(e.sysexit_code()).unwrap_or(70));
+    }
     println!(
         "{}",
         mask!("The reports of my death have been greatly exaggerated. — Mark Twain"),
     );
-    Ok(())
+    ExitCode::SUCCESS
 }

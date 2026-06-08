@@ -1,75 +1,113 @@
 #!/bin/sh
-# Platform smoke test for litmask CI (§2.13.2).
+# Machine-tier platform smoke test for litmask CI (§2.13.2).
 #
-# Usage: platform-smoke.sh <binary> <config> <cli> [--expect-unavailable]
+# Usage: platform-smoke.sh <cli> [--expect-unavailable]
 #
-# --expect-unavailable: expect bind to fail with EX_UNAVAILABLE (69),
-#     validating the §2.13.2.4 failure path (stock OpenBSD).
+#   <cli>                 path to the built `litmask` CLI binary
+#   --expect-unavailable  this host has no stable machine-uid (stock
+#                         OpenBSD): assert show-machine-id exits 69 and the
+#                         sealed binary's init!(machine_id) fails at runtime
+#                         (§2.13.2.4), instead of treating it as a failure.
+#
+# Machine-tier keying is established at BUILD time: the example is built
+# with LITMASK_MACHINE_ID set to this host's id (from `show-machine-id`),
+# and init!(machine_id) re-derives the same key at runtime. There is no
+# post-build bind step — the script seals and runs the prebuilt binary.
 set -eu
 
 MARKER="greatly exaggerated"
 
-BINARY="$1"
-CONFIG="$2"
-CLI="$3"
+CLI="$1"
 EXPECT_UNAVAILABLE=false
-if [ "${4:-}" = "--expect-unavailable" ]; then
+if [ "${2:-}" = "--expect-unavailable" ]; then
     EXPECT_UNAVAILABLE=true
 fi
 
-# §2.13.2.2 — marker must not be recoverable by strings(1).
-# Falls back to grep -a on platforms without strings (Windows Git Bash).
+EXE=""
+case "$(uname -s)" in
+    MINGW* | MSYS* | CYGWIN*) EXE=".exe" ;;
+esac
+BIN="target/debug/examples/machine_id_provider${EXE}"
+
+# §2.13.2.2 — marker must not be recoverable by strings(1). Falls back to
+# grep -a on platforms without strings (Windows Git Bash).
 assert_marker_absent() {
     if [ ! -f "$1" ]; then
-        echo "FAIL ($2): binary not found: $1"
+        echo "FAIL: binary not found: $1"
         exit 1
     fi
     if command -v strings >/dev/null 2>&1; then
         if strings "$1" | grep -q "$MARKER"; then
-            echo "FAIL ($2): marker found by strings"
+            echo "FAIL: marker found by strings"
             exit 1
         fi
     else
         if grep -qa "$MARKER" "$1"; then
-            echo "FAIL ($2): marker found by grep"
+            echo "FAIL: marker found by grep"
             exit 1
         fi
     fi
-    echo "  ok: marker absent ($2)"
+    echo "  ok: marker absent in binary"
 }
 
-assert_marker_absent "$BINARY" "pre-bind"
-
-# §2.13.2.3 / §2.13.2.4 — bind
-bind_exit=0
-"$CLI" bind "$BINARY" --config "$CONFIG" || bind_exit=$?
+# Determine the build-time machine id from the canonical CLI path — the
+# same value a consumer would seal against. On hosts without a stable id
+# show-machine-id exits 69; seal under a placeholder so we can still build
+# and exercise the runtime failure path (§2.13.2.4).
+id_exit=0
+MACHINE_ID="$("$CLI" show-machine-id 2>/dev/null)" || id_exit=$?
 
 if [ "$EXPECT_UNAVAILABLE" = "true" ]; then
-    if [ "$bind_exit" -ne 69 ]; then
-        echo "FAIL: expected EX_UNAVAILABLE (69), got $bind_exit"
+    if [ "$id_exit" -ne 69 ]; then
+        echo "FAIL: expected show-machine-id EX_UNAVAILABLE (69), got $id_exit"
         exit 1
     fi
-    echo "PASS: bind correctly returned EX_UNAVAILABLE (69)"
+    echo "  ok: show-machine-id reported EX_UNAVAILABLE (69)"
+    MACHINE_ID="unavailable-host-placeholder"
+elif [ "$id_exit" -ne 0 ]; then
+    echo "FAIL: show-machine-id failed ($id_exit) on a host expected to have a stable id"
+    exit 1
+fi
+
+# Seal the example under the chosen machine id. LITMASK_MACHINE_ID is part
+# of the build's rerun key, so this freshly seals the `machine` tier.
+LITMASK_MACHINE_ID="$MACHINE_ID" \
+    cargo build --features machine-id --example machine_id_provider
+echo "  ok: machine-tier example sealed"
+
+assert_marker_absent "$BIN"
+
+# Run the prebuilt binary directly (never `cargo run`, which would reseal
+# under a fresh build). The machine factor is re-sourced from the host.
+run_exit=0
+run_out="$("$BIN" 2>/dev/null)" || run_exit=$?
+
+if [ "$EXPECT_UNAVAILABLE" = "true" ]; then
+    # §2.13.2.4 — init!(machine_id) must fail at runtime with
+    # EX_UNAVAILABLE (69) (machine-uid lookup failed) and the marker
+    # must never appear.
+    if [ "$run_exit" -ne 69 ]; then
+        echo "FAIL: expected EX_UNAVAILABLE (69) on a host without a stable machine id, got $run_exit"
+        exit 1
+    fi
+    if printf '%s' "$run_out" | grep -q "$MARKER"; then
+        echo "FAIL: marker leaked despite machine-id lookup failure"
+        exit 1
+    fi
+    echo "PASS: machine-tier init failed cleanly (EX_UNAVAILABLE) on unavailable host"
     exit 0
 fi
 
-if [ "$bind_exit" -ne 0 ]; then
-    echo "FAIL: bind exited $bind_exit"
+# §2.13.2.3 — sealed and run on the same host: the binary opens and prints
+# the marker.
+if [ "$run_exit" -ne 0 ]; then
+    echo "FAIL: sealed binary exited $run_exit on its own host"
     exit 1
 fi
-echo "  ok: bind succeeded"
-
-# Verify bound binary still decrypts correctly.
-unlock_key=$(awk -F'"' '/^unlock_key/ {print $2}' "$CONFIG")
-LITMASK_UNLOCK_KEY="$unlock_key" "$BINARY" | grep -q "$MARKER"
-echo "  ok: bound binary output matches"
-
-assert_marker_absent "$BINARY" "post-bind"
-
-# §2.13.2.5 — rebind with different salt.
-"$CLI" bind "$BINARY" --config "$CONFIG" --salt "cmViaW5kLXNhbHQ"
-unlock_key=$(awk -F'"' '/^unlock_key/ {print $2}' "$CONFIG")
-LITMASK_UNLOCK_KEY="$unlock_key" "$BINARY" | grep -q "$MARKER"
-echo "  ok: rebind cycle passed"
+if ! printf '%s' "$run_out" | grep -q "$MARKER"; then
+    echo "FAIL: sealed binary did not print the expected marker"
+    exit 1
+fi
+echo "  ok: sealed binary output matches on its own host"
 
 echo "PASS: smoke test complete"
