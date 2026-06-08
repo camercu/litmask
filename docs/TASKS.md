@@ -264,11 +264,12 @@ expanded code (expansion lands in the user crate, which cannot reach a
 - [x] `machine_id_provider` example migrated to `init!(machine_id)`; the
       stale `litmask-cli bind` comment in the `justfile` `test-examples`
       recipe is removed (deferred here from Task 1)
-- [ ] SPECIFICATION §4 documents the machine tier; CONTEXT.md gains the
+- [x] SPECIFICATION documents the machine tier; CONTEXT.md gains the
       `machine_id` keyword and notes MachineIdProvider is now `pub(crate)`
-      (seam-only) — CONTEXT.md done; SPECIFICATION §1.6.2/§1.6.3/§1.6.5
-      still describe the old public `MachineIdProvider` + `litmask bind`
-      design and need migrating
+      (seam-only). Whole-spec consistency pass migrated §1.x and §2.x to the
+      build-sealed design: machine tier via `init!(machine_id)`, `pub(crate)`
+      `MachineIdProvider`, no `litmask bind`/`inspect`/locator, CLI reduced to
+      `show-machine-id`
 - [x] README machine-id surface migrated to `init!(machine_id)` (deferred
       here from Tasks 1–3): retire the `## Machine-ID binding (litmask
       bind)` section and the `MachineIdProvider::with_salt(...)` snippet
