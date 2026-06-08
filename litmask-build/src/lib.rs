@@ -237,13 +237,15 @@ impl BuildArtifacts {
             // Machine: unlock_key = derive_machine_id_key(host id, nonce).
             // The salt is the wrapper nonce (derived inside the KDF), so
             // the runtime recomputes the identical key from the embedded
-            // nonce + the host's own machine id. The id is taken verbatim
-            // — it must match `machine_uid::get()` byte-for-byte, which
-            // emits no trailing newline.
+            // nonce + the host's own machine id. The id is trimmed of a
+            // trailing newline — exactly as External trims its material —
+            // so a `LITMASK_MACHINE_ID` sourced through a newline-bearing
+            // channel still matches `machine_uid::get()` (which emits no
+            // trailing newline) at runtime.
             SealTier::Machine(machine_id) => derive_machine_id_key(
                 MACHINE_ID_DERIVATION_CONTEXT,
                 MACHINE_ID_SALT_DERIVATION_CONTEXT,
-                machine_id.as_bytes(),
+                strip_trailing_newline(machine_id.as_bytes()),
                 &wrapper_nonce,
             ),
         };
@@ -870,6 +872,24 @@ mod tests {
         );
         let recovered = decrypt_wrapper(&artifacts.unlock_key, &artifacts.wrapper).expect("round");
         assert_eq!(recovered, artifacts.mask_key);
+    }
+
+    /// A trailing newline on the build-time machine id is stripped before
+    /// derivation, exactly as the External tier trims its material. The
+    /// runtime sources the id from `machine_uid::get()` (no trailing
+    /// newline), so an operator who seals with `LITMASK_MACHINE_ID` set
+    /// via a newline-bearing channel (a file read, `echo`) must still
+    /// recover a binary that opens on the host — otherwise the seal and
+    /// runtime diverge into an opaque `decryption_failed`.
+    #[test]
+    fn machine_id_trailing_newline_is_stripped_before_derivation() {
+        let seed = [0x71u8; KEY_LEN];
+        let clean = BuildArtifacts::derive(&seed, &machine("host-id-abc")).unlock_key;
+        let newline = BuildArtifacts::derive(&seed, &machine("host-id-abc\n")).unlock_key;
+        assert_eq!(
+            clean, newline,
+            "trailing newline must not change the sealed machine unlock_key",
+        );
     }
 
     /// The Machine tier writes no `litmask.config` (its key is re-sourced
