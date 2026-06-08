@@ -151,10 +151,14 @@ pub(crate) fn expand(input: &TokenStream) -> TokenStream {
         }
         // The machine provider is `pub(crate)` and cannot be named in the
         // consumer crate, so the seam fn constructs it from the wrapper
-        // nonce in-crate.
+        // nonce in-crate. Routed through `__init_machine_id_call!` rather
+        // than the seam fn directly: the macro carries a feature-off
+        // variant that emits a directed `compile_error!`, since a
+        // `machine`-sealed build can reach this arm with the `machine-id`
+        // feature disabled.
         Form::Machine => quote! {{
             let __litmask_wrapper = ::litmask::__wrapper_bytes!();
-            ::litmask::__internal::__init_machine_id(__litmask_wrapper)
+            ::litmask::__init_machine_id_call!(__litmask_wrapper)
         }}
         .into(),
     }

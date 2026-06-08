@@ -301,6 +301,34 @@ macro_rules! __weak_decode_cstr_call {
     };
 }
 
+/// Internal dispatch for `init!(machine_id)` expansion. The seal tier is
+/// chosen at build time by `LITMASK_MACHINE_ID` presence, independent of
+/// this crate's `machine-id` feature, so a `machine`-sealed build can pass
+/// `init!`'s form↔tier cross-check while the feature is off. Without this
+/// guard the expansion would reference the feature-gated
+/// `__init_machine_id` and fail with an opaque "cannot find function";
+/// here the missing feature surfaces a directed message instead.
+#[cfg(feature = "machine-id")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __init_machine_id_call {
+    ($wrapper:expr) => {
+        $crate::__internal::__init_machine_id($wrapper)
+    };
+}
+
+#[cfg(not(feature = "machine-id"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __init_machine_id_call {
+    ($wrapper:expr) => {
+        ::core::compile_error!(
+            "init!(machine_id) requires the `machine-id` feature on the `litmask` crate; \
+             enable it via `litmask = { features = [\"machine-id\"] }`"
+        )
+    };
+}
+
 #[doc(hidden)]
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.
