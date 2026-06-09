@@ -864,7 +864,7 @@ mod tests {
         );
     }
 
-    /// A MachineExternal build publishes the `machine_external` seal tag
+    /// A `MachineExternal` build publishes the `machine_external` seal tag
     /// over rustc-env (the `init!(machine_id + <provider>)` form
     /// cross-checks against it).
     #[test]
@@ -878,7 +878,7 @@ mod tests {
         );
     }
 
-    /// The MachineExternal `unlock_key` is
+    /// The `MachineExternal` `unlock_key` is
     /// `compose(machine_key, external_key)` — byte-identical to what the
     /// runtime derives by composing the `MachineIdProvider` key with the
     /// external provider's key — and the sealed wrapper opens under it.
@@ -932,7 +932,7 @@ mod tests {
         assert_eq!(clean.wrapper, newlined.wrapper);
     }
 
-    /// The MachineExternal tier writes no `litmask.config`: both factors
+    /// The `MachineExternal` tier writes no `litmask.config`: both factors
     /// are re-sourced at runtime (host id + operator channel), so the
     /// composed key is neither needed nor reusable as material. Only
     /// Embedded writes a config.

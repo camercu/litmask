@@ -1,4 +1,4 @@
-//! End-to-end exercise of the **MachineExternal two-factor tier** (§2.3).
+//! End-to-end exercise of the **`MachineExternal` two-factor tier** (§2.3).
 //!
 //! A standalone fixture crate (`tests/machine_external_fixture/`) runs
 //! `litmask_build::emit()` in its own `build.rs` and calls the two-factor

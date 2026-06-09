@@ -56,7 +56,7 @@ pub(crate) enum Form {
     /// `init!(machine_id)` — Machine tier (bare keyword, not a provider
     /// expression).
     Machine,
-    /// `init!(machine_id + <provider-expr>)` — MachineExternal two-factor
+    /// `init!(machine_id + <provider-expr>)` — `MachineExternal` two-factor
     /// tier. The `machine_id` keyword selects the machine factor; the
     /// provider expression after `+` supplies the external factor.
     MachineExternal,
