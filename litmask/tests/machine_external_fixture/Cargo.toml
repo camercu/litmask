@@ -1,0 +1,20 @@
+# Standalone one-crate workspace for the MachineExternal two-factor
+# e2e test (`litmask/tests/machine_external_tier_e2e.rs`). The empty
+# `[workspace]` table detaches this crate from the parent litmask
+# workspace so building it with both `LITMASK_MACHINE_ID` and
+# `LITMASK_UNLOCK_KEY` set seals only THIS crate's `machine_external`
+# tier, never the litmask crate's own embedded build in the shared
+# target dir.
+[workspace]
+
+[package]
+name = "litmask_machine_external_fixture"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+litmask = { path = "../..", features = ["machine-id"] }
+
+[build-dependencies]
+litmask-build = { path = "../../../litmask-build" }

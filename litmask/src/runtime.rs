@@ -87,6 +87,19 @@ pub fn __init_with_wrapper<P: KeyProvider>(
         return Ok(());
     }
     let unlock_key = provider.unlock_key()?;
+    init_with_unlock_key(&unlock_key, wrapper)
+}
+
+/// Decrypt the embedded `mask_key` wrapper under an already-finished
+/// `unlock_key` and store the result in the process-global cell. Shared
+/// tail of every `init!` seam: the tiers differ only in how they obtain
+/// the `unlock_key` (provider, machine id, or two-factor composition),
+/// so the wrapper decrypt + cell-set logic lives here once.
+#[allow(clippy::match_wild_err_arm)]
+fn init_with_unlock_key(
+    unlock_key: &crate::key::UnlockKey,
+    wrapper: &[u8; WRAPPER_LEN],
+) -> Result<(), InitError> {
     let mask_key_bytes = match decrypt_wrapper(unlock_key.as_bytes(), wrapper) {
         Ok(bytes) => bytes,
         Err(DecryptError::AuthenticationFailed) => {
@@ -121,6 +134,33 @@ pub fn __init_with_wrapper<P: KeyProvider>(
 #[doc(hidden)]
 pub fn __init_machine_id(wrapper: &[u8; WRAPPER_LEN]) -> Result<(), InitError> {
     __init_with_wrapper(crate::provider::MachineIdProvider::new(wrapper), wrapper)
+}
+
+/// `init!(machine_id + <provider>)` seam: finish the machine factor key
+/// in-crate (from the embedded wrapper nonce, via the `pub(crate)`
+/// `MachineIdProvider`) and the external factor key from the consumer's
+/// `provider`, compose them machine-first (§2.3), and run the shared init
+/// path under the composition.
+///
+/// The macro routes here rather than naming `MachineIdProvider` for the
+/// same reason as [`__init_machine_id`]: that provider is `pub(crate)`
+/// and unreachable from the consumer crate where `init!` expansion lands.
+/// Composition happens here so neither finished factor key, nor the
+/// `MachineIdProvider` type, appears in expanded code.
+#[cfg(feature = "machine-id")]
+#[doc(hidden)]
+#[allow(clippy::needless_pass_by_value)]
+pub fn __init_machine_id_external<P: KeyProvider>(
+    wrapper: &[u8; WRAPPER_LEN],
+    external: P,
+) -> Result<(), InitError> {
+    if cell::is_set() {
+        return Ok(());
+    }
+    let machine_key = crate::provider::MachineIdProvider::new(wrapper).unlock_key()?;
+    let external_key = external.unlock_key()?;
+    let unlock_key = crate::key::UnlockKey::compose(&machine_key, &external_key);
+    init_with_unlock_key(&unlock_key, wrapper)
 }
 
 /// Decrypt a per-string blob to raw bytes. Called by every `mask!()`

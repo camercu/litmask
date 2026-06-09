@@ -1,0 +1,7 @@
+error: init! grammar: `init!(machine_id + provider)` requires a provider expression after `+`
+  --> tests/compile/init_machine_external_grammar_missing_provider.rs:10:13
+   |
+10 |     let _ = init!(machine_id +);
+   |             ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the macro `init` (in Nightly builds, run with -Z macro-backtrace for more info)

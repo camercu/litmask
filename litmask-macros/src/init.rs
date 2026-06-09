@@ -38,6 +38,10 @@ const EXTERNAL_TIER: &str = "external";
 /// Tier tag whose seal the `init!(machine_id)` keyword form unlocks.
 const MACHINE_TIER: &str = "machine";
 
+/// Tier tag whose seal the `init!(machine_id + <provider>)` two-factor
+/// form unlocks.
+const MACHINE_EXTERNAL_TIER: &str = "machine_external";
+
 /// The bare keyword that selects the Machine form: `init!(machine_id)`.
 const MACHINE_ID_KEYWORD: &str = "machine_id";
 
@@ -52,6 +56,10 @@ pub(crate) enum Form {
     /// `init!(machine_id)` — Machine tier (bare keyword, not a provider
     /// expression).
     Machine,
+    /// `init!(machine_id + <provider-expr>)` — MachineExternal two-factor
+    /// tier. The `machine_id` keyword selects the machine factor; the
+    /// provider expression after `+` supplies the external factor.
+    MachineExternal,
 }
 
 impl Form {
@@ -61,6 +69,7 @@ impl Form {
             Self::Embedded => EMBEDDED_TIER,
             Self::External => EXTERNAL_TIER,
             Self::Machine => MACHINE_TIER,
+            Self::MachineExternal => MACHINE_EXTERNAL_TIER,
         }
     }
 
@@ -70,21 +79,54 @@ impl Form {
             Self::Embedded => "init!()",
             Self::External => "init!(provider)",
             Self::Machine => "init!(machine_id)",
+            Self::MachineExternal => "init!(machine_id + provider)",
         }
     }
 }
 
-/// Whether the macro argument is exactly the bare `machine_id` keyword
-/// (a single identifier, nothing else). Anything else with an argument is
-/// the External provider-expression form. A consumer that genuinely wants
-/// a provider value named `machine_id` is the deliberate cost of making
-/// the keyword unambiguous.
-fn is_machine_keyword(input: &TokenStream) -> bool {
-    let mut tokens = input.clone().into_iter();
-    match (tokens.next(), tokens.next()) {
-        (Some(proc_macro::TokenTree::Ident(id)), None) => id.to_string() == MACHINE_ID_KEYWORD,
-        _ => false,
+/// Classify the `init!` argument into its call form, returning — for the
+/// two provider-bearing forms — the external provider expression tokens.
+///
+/// Grammar:
+/// - empty → [`Form::Embedded`].
+/// - a bare `machine_id` keyword (single ident) → [`Form::Machine`].
+/// - a leading `machine_id` keyword followed by `+` → the two-factor
+///   [`Form::MachineExternal`]; the tokens after `+` are the external
+///   provider. An empty tail is a grammar error (the `+` promises a
+///   provider that is absent).
+/// - anything else → [`Form::External`], the whole input being the
+///   provider expression.
+///
+/// A leading `machine_id` followed by tokens other than `+` falls through
+/// to External: a consumer that genuinely names a provider value
+/// `machine_id` pays the deliberate cost of the keyword being reserved
+/// only in the bare and `+`-prefixed positions.
+fn classify(input: &TokenStream) -> Result<(Form, Option<proc_macro2::TokenStream>), String> {
+    if input.is_empty() {
+        return Ok((Form::Embedded, None));
     }
+    let mut tokens = input.clone().into_iter();
+    let leading_machine_id = matches!(
+        tokens.next(),
+        Some(proc_macro::TokenTree::Ident(id)) if id.to_string() == MACHINE_ID_KEYWORD
+    );
+    if leading_machine_id {
+        match tokens.next() {
+            None => return Ok((Form::Machine, None)),
+            Some(proc_macro::TokenTree::Punct(p)) if p.as_char() == '+' => {
+                let rest: TokenStream = tokens.collect();
+                if rest.is_empty() {
+                    return Err(format!(
+                        "`{}` requires a provider expression after `+`",
+                        Form::MachineExternal.syntax(),
+                    ));
+                }
+                return Ok((Form::MachineExternal, Some(rest.into())));
+            }
+            _ => {}
+        }
+    }
+    Ok((Form::External, Some(input.clone().into())))
 }
 
 /// Decide whether the build-sealed `tier` permits the given call `form`.
@@ -112,12 +154,13 @@ pub(crate) fn check_tier(form: Form, tier: Option<&str>) -> Result<(), String> {
 /// matching init call.
 pub(crate) fn expand(input: &TokenStream) -> TokenStream {
     let span = proc_macro::Span::call_site().into();
-    let form = if input.is_empty() {
-        Form::Embedded
-    } else if is_machine_keyword(input) {
-        Form::Machine
-    } else {
-        Form::External
+    let (form, provider) = match classify(input) {
+        Ok(parsed) => parsed,
+        Err(detail) => {
+            return compile_error(span, MACRO_NAME, FailTag::Grammar, &detail)
+                .to_compile_error()
+                .into();
+        }
     };
     let tier = std::env::var(SEAL_TIER_VAR).ok();
     if let Err(detail) = check_tier(form, tier.as_deref()) {
@@ -140,7 +183,7 @@ pub(crate) fn expand(input: &TokenStream) -> TokenStream {
         // wrapper bytes are still the embedded ones (only the key
         // source differs between tiers).
         Form::External => {
-            let provider: proc_macro2::TokenStream = input.clone().into();
+            let provider = provider.expect("External form carries a provider expression");
             quote! {{
                 ::litmask::__internal::__init_with_wrapper(
                     #provider,
@@ -161,6 +204,21 @@ pub(crate) fn expand(input: &TokenStream) -> TokenStream {
             ::litmask::__init_machine_id_call!(__litmask_wrapper)
         }}
         .into(),
+        // Two-factor: the machine factor is reconstructed in-crate from the
+        // wrapper nonce (its provider is `pub(crate)`), and composed with
+        // the external provider's key. Routed through
+        // `__init_machine_id_external_call!` for the same reason as the
+        // Machine arm — the macro carries a feature-off variant that emits
+        // a directed `compile_error!` when `machine-id` is disabled.
+        Form::MachineExternal => {
+            let provider =
+                provider.expect("MachineExternal form carries an external provider expression");
+            quote! {{
+                let __litmask_wrapper = ::litmask::__wrapper_bytes!();
+                ::litmask::__init_machine_id_external_call!(__litmask_wrapper, #provider)
+            }}
+            .into()
+        }
     }
 }
 
@@ -208,5 +266,24 @@ mod tests {
         let detail = check_tier(Form::Machine, Some(EMBEDDED_TIER)).unwrap_err();
         assert!(detail.contains(MACHINE_TIER));
         assert!(detail.contains(EMBEDDED_TIER));
+    }
+
+    #[test]
+    fn machine_external_form_accepts_machine_external_seal() {
+        assert!(check_tier(Form::MachineExternal, Some(MACHINE_EXTERNAL_TIER)).is_ok());
+    }
+
+    #[test]
+    fn machine_external_form_rejects_machine_seal_naming_both() {
+        let detail = check_tier(Form::MachineExternal, Some(MACHINE_TIER)).unwrap_err();
+        assert!(detail.contains(MACHINE_EXTERNAL_TIER));
+        assert!(detail.contains(MACHINE_TIER));
+    }
+
+    #[test]
+    fn machine_external_form_rejects_external_seal_naming_both() {
+        let detail = check_tier(Form::MachineExternal, Some(EXTERNAL_TIER)).unwrap_err();
+        assert!(detail.contains(MACHINE_EXTERNAL_TIER));
+        assert!(detail.contains(EXTERNAL_TIER));
     }
 }

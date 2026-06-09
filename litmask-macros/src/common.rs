@@ -39,6 +39,7 @@ pub(crate) enum FailTag {
     InvalidPlaceholder,
     TemplateSyntax,
     TierMismatch,
+    Grammar,
 }
 
 impl FailTag {
@@ -58,6 +59,7 @@ impl FailTag {
             Self::InvalidPlaceholder => "invalid-placeholder",
             Self::TemplateSyntax => "template-syntax",
             Self::TierMismatch => "tier-mismatch",
+            Self::Grammar => "grammar",
         }
     }
 }

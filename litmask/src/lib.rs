@@ -329,14 +329,42 @@ macro_rules! __init_machine_id_call {
     };
 }
 
+/// Internal dispatch for `init!(machine_id + <provider>)` expansion. Like
+/// [`__init_machine_id_call!`], the two-factor seal tier is chosen at
+/// build time by env-var presence, independent of this crate's
+/// `machine-id` feature, so the form↔tier cross-check can pass while the
+/// feature is off. This guard turns that case into a directed message
+/// instead of an opaque "cannot find function" against the feature-gated
+/// `__init_machine_id_external`.
+#[cfg(feature = "machine-id")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __init_machine_id_external_call {
+    ($wrapper:expr, $external:expr) => {
+        $crate::__internal::__init_machine_id_external($wrapper, $external)
+    };
+}
+
+#[cfg(not(feature = "machine-id"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __init_machine_id_external_call {
+    ($wrapper:expr, $external:expr) => {
+        ::core::compile_error!(
+            "init!(machine_id + provider) requires the `machine-id` feature on the `litmask` \
+             crate; enable it via `litmask = { features = [\"machine-id\"] }`"
+        )
+    };
+}
+
 #[doc(hidden)]
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.
-    #[cfg(feature = "machine-id")]
-    pub use crate::runtime::__init_machine_id;
     pub use crate::runtime::{
         __decrypt, __init_with_wrapper, __weak_decode, __weak_decode_bytes, WeakByteCell, WeakCell,
     };
+    #[cfg(feature = "machine-id")]
+    pub use crate::runtime::{__init_machine_id, __init_machine_id_external};
     #[cfg(feature = "std")]
     pub use crate::runtime::{__weak_decode_cstr, WeakCStrCell};
     // Re-export under a hygienic alias so the proc-macro emits a
