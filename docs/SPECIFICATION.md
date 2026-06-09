@@ -195,9 +195,18 @@ constants and utilities used by both the runtime and CLI crates.
 | Profile | Seed source priority |
 |---|---|
 | debug | `LITMASK_RNG_SEED` env → `target/litmask-seed` → fresh + persist |
-| release | `LITMASK_RNG_SEED` env → fresh, no persistence, print via `cargo:warning=` |
+| release | `LITMASK_RNG_SEED` env → fresh, no persistence |
 
-`build.rs` detects profile via the `PROFILE` env var that Cargo sets.
+`build.rs` detects profile via the `PROFILE` env var that Cargo sets. The
+seed itself is never echoed to the build log (§6.2). The one sanctioned
+release-profile `cargo:warning=` is the **Embedded-floor notice**: when a
+release build resolves to the keyless Embedded tier — a deliberately bare
+`init!()` *or* an omitted `init!` — `emit()` warns that the wrapper key is
+recoverable from the artifact and points at `LITMASK_UNLOCK_KEY` /
+`LITMASK_MACHINE_ID` for a stronger tier. The notice is presence-driven
+(keyed off the resolved tier, not the `init!` form), carries no secret,
+and rides the build-log channel only — nothing is baked into the shipped
+binary (§7.2).
 
 #### §1.3.3 Reproducibility
 

@@ -151,6 +151,12 @@ pub fn emit() {
     let profile_dir = profile_dir_of(&out_dir);
     let profile = Profile::from_env();
 
+    // §1.1 silent-floor guard: a release build left at the Embedded floor
+    // opens forever and looks healthy, so flag it on the build log.
+    if let Some(warning) = embedded_floor_warning(&tier, profile) {
+        println!("{warning}");
+    }
+
     let (mut seed, _seed_source) = source_seed(&profile_dir, profile);
 
     let artifacts = BuildArtifacts::derive(&seed, &tier);
@@ -360,9 +366,9 @@ impl Drop for BuildArtifacts {
     }
 }
 
-/// Indicates which of the three sources the seed came from. `emit()`
-/// consults this to decide whether a release-profile `cargo:warning=`
-/// should be emitted (only when freshly generated).
+/// Indicates which of the three sources the seed came from. Retained
+/// for `source_seed`'s unit tests, which assert the priority order;
+/// `emit()` does not branch on it (the seed is never echoed, §6.2).
 #[derive(Debug, PartialEq, Eq)]
 enum SeedSource {
     /// Supplied via `LITMASK_RNG_SEED` — highest priority.
@@ -392,6 +398,25 @@ impl Profile {
             _ => Profile::Debug,
         }
     }
+}
+
+/// §1.1 Embedded-floor guard. Returns the `cargo:warning=` line to emit
+/// when a *release* build seals at the Embedded floor — the tier whose
+/// `unlock_key` is recoverable from the artifact.
+///
+/// Presence-driven: keyed off the resolved tier tag, not the `init!`
+/// form, so the one emission covers both a deliberately bare `init!()`
+/// and an omitted `init!` (lazy-init). Returns `None` for any keyed tier
+/// (which fails loud at runtime when its key is absent) and for any
+/// non-release profile. The string rides the build-log channel only — it
+/// is never baked into the shipped binary (§7.2), and carries no secret.
+fn embedded_floor_warning(tier: &SealTier, profile: Profile) -> Option<String> {
+    (profile == Profile::Release && tier.tag_kind() == SealTierTag::Embedded).then(|| {
+        "cargo:warning=litmask: Embedded obfuscation floor in a release build — the wrapper \
+         key is recoverable from the artifact. Set LITMASK_UNLOCK_KEY or LITMASK_MACHINE_ID \
+         to seal a stronger tier."
+            .to_string()
+    })
 }
 
 /// Load the per-build seed in priority order:
@@ -923,6 +948,40 @@ mod tests {
             .tag_kind(),
             SealTierTag::MachineExternal,
         );
+    }
+
+    /// §1.1 floor guard: only a *release* build sealed at the Embedded
+    /// floor warns; every keyed tier and every debug build is silent.
+    #[test]
+    fn embedded_release_emits_floor_warning() {
+        let warning = embedded_floor_warning(&SealTier::Embedded, Profile::Release)
+            .expect("embedded release build must warn");
+        assert!(
+            warning.starts_with("cargo:warning="),
+            "floor warning must ride the cargo:warning= channel; got {warning:?}",
+        );
+    }
+
+    #[test]
+    fn embedded_debug_is_silent() {
+        assert!(embedded_floor_warning(&SealTier::Embedded, Profile::Debug).is_none());
+    }
+
+    /// Presence-driven: a keyed tier in release is NOT the floor, so no
+    /// warning — even though the profile is release.
+    #[test]
+    fn keyed_release_tiers_are_silent() {
+        for tier in [
+            external("operator secret"),
+            machine("host-id-abc"),
+            machine_external("host-id-abc", "operator secret"),
+        ] {
+            assert!(
+                embedded_floor_warning(&tier, Profile::Release).is_none(),
+                "keyed tier {:?} must not emit the floor warning",
+                tier.tag_kind(),
+            );
+        }
     }
 
     /// A `MachineExternal` build publishes the `machine_external` seal tag
