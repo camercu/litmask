@@ -1,0 +1,7 @@
+# Build artifacts and the auto-healed lockfile for this standalone
+# fixture workspace. Cargo.lock is ignored because its litmask path-dep
+# pins the workspace version (e.g. 0.10.0), which `cargo set-version`
+# does NOT reach across the workspace boundary — committing it would go
+# stale on every release bump and dirty the tree on the next build.
+/target
+Cargo.lock
