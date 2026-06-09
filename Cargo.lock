@@ -545,6 +545,8 @@ name = "litmask-cli"
 version = "0.10.0"
 dependencies = [
  "clap",
+ "getrandom 0.4.2",
+ "litmask-internal",
  "machine-uid",
 ]
 

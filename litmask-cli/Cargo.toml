@@ -20,6 +20,8 @@ include = ["src/**/*", "LICENSE-MIT", "LICENSE-APACHE"]
 # parser's edge cases (--help, --version, --flag=value, GNU-typical
 # ordering) without reinventing them.
 clap = { version = "4", features = ["derive"] }
+getrandom = "0.4"
+litmask-internal = { version = "0.10.0", path = "../litmask-internal" }
 machine-uid = "0.6"
 
 [[bin]]

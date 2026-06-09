@@ -9,9 +9,24 @@ use clap::{Parser, Subcommand};
 
 mod exit;
 
+use litmask_internal::{base64url, encode_machine_id_token};
+
 /// Readable diagnostic for a failed machine-id lookup. Kept as a named
 /// constant so the message text is pinned by a unit test.
 const MACHINE_ID_UNAVAILABLE_MSG: &str = "could not read the machine ID (machine-uid failed)";
+
+/// Human guidance printed to **stderr** alongside the machine-id token.
+/// It explains what the stdout token is for. It rides stderr — not
+/// stdout — so a `litmask show-machine-id | …` capture keeps only the
+/// token; the in-band check group (§4.1.1) is what protects the token
+/// itself against copy corruption.
+const MACHINE_ID_GUIDANCE_MSG: &str =
+    "send the token above to whoever builds your binary (it is checksummed against typos)";
+
+/// Bytes of fresh randomness `keygen` emits, before base64url encoding.
+/// Matches the 32-byte `unlock_key` / seed width the external tier and
+/// the build seed derivation consume.
+const KEYGEN_BYTES: usize = 32;
 
 /// `litmask` companion tool.
 #[derive(Parser, Debug)]
@@ -23,15 +38,28 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Print this host's machine ID — the exact bytes a machine-tier
-    /// build feeds into its key derivation.
+    /// Print 32 bytes of fresh randomness, base64url-encoded, to stdout.
     ///
-    /// The enrollment primitive for machine-tier deployments: a target
-    /// host runs `show-machine-id` and reports the value, letting the
-    /// vendor seal a build against it off-box (see `docs/DEPLOYMENT.md`).
+    /// A pure, pipeable generator: nothing is written to stderr and the
+    /// binary is never touched. The value serves as a `LITMASK_UNLOCK_KEY`
+    /// for the external tier or as a per-customer build seed — the role is
+    /// usage, not format (see `docs/DEPLOYMENT.md`).
     ///
     /// Exit codes:
-    /// - 0 on success (prints the machine ID to stdout)
+    /// - 0 on success (prints the key to stdout, newline-terminated)
+    Keygen,
+    /// Print this host's machine ID as a self-checking token — the bytes
+    /// a machine-tier build feeds into its key derivation, plus an
+    /// in-band check group.
+    ///
+    /// The enrollment primitive for machine-tier deployments: a target
+    /// host runs `show-machine-id` and reports the token, letting the
+    /// vendor seal a build against it off-box (see `docs/DEPLOYMENT.md`).
+    /// The token's check group lets the build reject a mistyped id before
+    /// sealing instead of after deployment.
+    ///
+    /// Exit codes:
+    /// - 0 on success (token to stdout, guidance to stderr)
     /// - 69 on machine-id lookup failure (diagnostic to stderr)
     ShowMachineId,
 }
@@ -57,8 +85,27 @@ fn main() -> ExitCode {
     };
 
     match cli.command {
+        Command::Keygen => dispatch_keygen(),
         Command::ShowMachineId => dispatch_show_machine_id(),
     }
+}
+
+/// Encode freshly generated key bytes for stdout. Pure so the encoding
+/// contract (url-safe base64url, no padding) is unit-testable without
+/// consuming OS randomness.
+fn encode_key(bytes: &[u8]) -> String {
+    base64url::encode(bytes)
+}
+
+fn dispatch_keygen() -> ExitCode {
+    let mut bytes = [0u8; KEYGEN_BYTES];
+    if getrandom::fill(&mut bytes).is_err() {
+        eprintln!("litmask: OS randomness unavailable (getrandom failed)");
+        return ExitCode::from(exit::UNAVAILABLE);
+    }
+    // Pipeable: the key is the only thing on stdout, newline-terminated.
+    println!("{}", encode_key(&bytes));
+    ExitCode::from(exit::OK)
 }
 
 /// Where a `show-machine-id` result should be written and with which
@@ -71,16 +118,16 @@ struct MachineIdReport {
     code: u8,
 }
 
-/// Map a machine-id lookup to its presentation. The ID is a
-/// non-secret host identifier — the pre-KDF input a machine-tier seal
-/// feeds into its key derivation — so it goes to stdout for capture. A
-/// lookup failure is an error and goes to stderr (exit 69), keeping
-/// stdout clean for callers piping the ID.
+/// Map a machine-id lookup to its presentation. On success the raw id
+/// is wrapped in its self-checking token (§4.1.1) and goes to stdout for
+/// capture, while human guidance goes to stderr so a piped capture keeps
+/// only the token. A lookup failure is an error and goes to stderr (exit
+/// 69), keeping stdout clean for callers piping the token.
 fn report_machine_id<E>(lookup: Result<String, E>) -> MachineIdReport {
     match lookup {
         Ok(id) => MachineIdReport {
-            stdout: Some(id),
-            stderr: None,
+            stdout: Some(encode_machine_id_token(&id)),
+            stderr: Some(MACHINE_ID_GUIDANCE_MSG.to_string()),
             code: exit::OK,
         },
         Err(_) => MachineIdReport {
@@ -111,10 +158,15 @@ mod tests {
     }
 
     #[test]
-    fn report_machine_id_success_goes_to_stdout_with_ok_code() {
+    fn report_machine_id_success_emits_token_to_stdout_and_guidance_to_stderr() {
         let r = report_machine_id(Ok::<_, std::io::Error>("ABC-123".to_string()));
-        assert_eq!(r.stdout.as_deref(), Some("ABC-123"));
-        assert_eq!(r.stderr, None);
+        let token = r.stdout.expect("success emits a token on stdout");
+        // The stdout token is the self-checking form, not the bare id.
+        assert_eq!(
+            litmask_internal::decode_machine_id_token(&token),
+            Ok("ABC-123")
+        );
+        assert_eq!(r.stderr.as_deref(), Some(MACHINE_ID_GUIDANCE_MSG));
         assert_eq!(r.code, exit::OK);
     }
 
@@ -127,6 +179,30 @@ mod tests {
         assert_eq!(r.stdout, None);
         assert_eq!(r.stderr.as_deref(), Some(MACHINE_ID_UNAVAILABLE_MSG));
         assert_eq!(r.code, exit::UNAVAILABLE);
+    }
+
+    #[test]
+    fn encode_key_is_unpadded_base64url_round_tripping_32_bytes() {
+        let bytes = [0xABu8; KEYGEN_BYTES];
+        let s = encode_key(&bytes);
+        // 32 bytes → 43 base64url chars, no padding.
+        assert_eq!(s.len(), 43);
+        assert!(!s.contains('='), "keygen output must be unpadded: {s}");
+        assert_eq!(
+            base64url::decode(&s).expect("keygen output decodes"),
+            bytes.to_vec()
+        );
+    }
+
+    #[test]
+    fn parses_keygen() {
+        let cli = parse_argv(&["keygen"]).unwrap();
+        assert!(matches!(cli.command, Command::Keygen));
+    }
+
+    #[test]
+    fn rejects_keygen_trailing_positional() {
+        assert!(parse_argv(&["keygen", "extra"]).is_err());
     }
 
     #[test]
