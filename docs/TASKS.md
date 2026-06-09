@@ -280,7 +280,7 @@ expanded code (expansion lands in the user crate, which cannot reach a
 
 ---
 
-## Task 6: Machine + external two-factor (AFK)
+## Task 6: Machine + external two-factor (AFK) ✅ DONE
 
 **Implements:** §2.3 (two-factor), §4; doc: SPECIFICATION §2.3
 **Blocked by:** Task 5
@@ -297,22 +297,22 @@ single-factor key). The compose primitive lives in
 
 ### Acceptance Criteria
 
-- [ ] `init!(machine_id + <expr>)` parses; malformed grammar →
+- [x] `init!(machine_id + <expr>)` parses; malformed grammar →
       `compile_error!`
-- [ ] unlock_key = `UnlockKey::compose(machine_key, external_key)` =
+- [x] unlock_key = `UnlockKey::compose(machine_key, external_key)` =
       `KDF("litmask-2fa-v1", len_prefixed(machine_key) ‖
       len_prefixed(external_key))`, machine-first, 8-byte LE prefixes;
       compose primitive in `litmask-internal::kdf`, shared with build
-- [ ] Compose inputs are finished `UnlockKey`s (type-level anti-footgun:
+- [x] Compose inputs are finished `UnlockKey`s (type-level anti-footgun:
       `compose` takes `UnlockKey`, not bytes)
-- [ ] A build with both `LITMASK_MACHINE_ID` and `LITMASK_UNLOCK_KEY`
+- [x] A build with both `LITMASK_MACHINE_ID` and `LITMASK_UNLOCK_KEY`
       set tags `machine_external`
-- [ ] Full 4-way matrix holds: each of the four `init!` forms compiles
+- [x] Full 4-way matrix holds: each of the four `init!` forms compiles
       only against its matching tag; all 12 mismatches →
       `compile_error!`
-- [ ] e2e: correct only when *both* factors match at runtime; either
+- [x] e2e: correct only when *both* factors match at runtime; either
       factor wrong → decrypt failure
-- [ ] SPECIFICATION §2.3 documents two-factor composition
+- [x] SPECIFICATION §2.3 documents two-factor composition
 
 ---
 
