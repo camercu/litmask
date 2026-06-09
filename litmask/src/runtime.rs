@@ -5,12 +5,19 @@
 //! [`__init_with_wrapper`] (the target of `init!` / `init_with!`) or
 //! lazily by [`__decrypt_str`] on the first `mask!()` call.
 //!
-//! The decryption path uses bare `panic!()` with no custom message
-//! for AEAD authentication and configuration failures. `assert!` and
-//! `.expect(...)` alternatives inject message text that would
-//! identify the code as litmask-related and leak into user binaries;
-//! `match X { Ok(_) => …, Err(_) => panic!() }` is the only form
-//! that keeps the unwind path identifier-free.
+//! In **release** builds the decryption path uses bare `panic!()` with
+//! no custom message for AEAD authentication and configuration
+//! failures. `assert!` and `.expect(...)` alternatives inject message
+//! text that would identify the code as litmask-related and leak into
+//! user binaries; `match X { Ok(_) => …, Err(_) => panic!() }` is the
+//! only form that keeps the unwind path identifier-free.
+//!
+//! In **debug** builds (§5.4) the same failure arms instead call into
+//! the `#[cfg(debug_assertions)]` [`crate::diagnostics`] module, which
+//! panics with actionable, litmask-identifying text. That module is not
+//! compiled into release, so the opacity guarantee above is unaffected;
+//! the cfg-split lives at each failure arm (`#[cfg(debug_assertions)]`
+//! vs `#[cfg(not(debug_assertions))]`).
 
 use alloc::string::String;
 
@@ -184,9 +191,10 @@ pub fn __init_machine_id_external<P: KeyProvider>(
 ///
 /// # Panics
 ///
-/// Panics with no litmask-specific message on AEAD authentication
-/// failure, lazy-init provider failure, or wrapper format / cipher-id
-/// mismatch.
+/// Panics on AEAD authentication failure, lazy-init provider failure, or
+/// wrapper format / cipher-id mismatch. The panic is bare (no message)
+/// in release and carries an actionable [`crate::diagnostics`] message in
+/// debug (§5.4).
 #[doc(hidden)]
 #[allow(clippy::must_use_candidate)]
 pub fn __decrypt(blob: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> alloc::vec::Vec<u8> {
@@ -224,7 +232,8 @@ fn weak_xor_decode(obf: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> alloc::vec::Vec<u
 /// macro only accepts string literals, so the AEAD-equivalent
 /// guarantee here is just that `weak_mask!()` callers don't feed it
 /// arbitrary bytes; UTF-8 failure indicates an in-process tamper of
-/// either the obfuscated bytes or the wrapper.
+/// either the obfuscated bytes or the wrapper. The panic is bare in
+/// release and actionable in debug (§5.4), like the `mask!()` path.
 #[doc(hidden)]
 pub fn __weak_decode<const N: usize>(
     obf: &'static [u8; N],
@@ -233,7 +242,13 @@ pub fn __weak_decode<const N: usize>(
 ) -> &'static str {
     cache.get_or_init(|| {
         let decoded = weak_xor_decode(obf, wrapper);
-        String::from_utf8(decoded).unwrap()
+        match String::from_utf8(decoded) {
+            Ok(text) => text,
+            #[cfg(debug_assertions)]
+            Err(_) => crate::diagnostics::weak_utf8_failure(),
+            #[cfg(not(debug_assertions))]
+            Err(_) => panic!(),
+        }
     })
 }
 
@@ -320,9 +335,10 @@ pub fn __weak_decode_bytes<const N: usize>(
 /// XOR-decode C-string obfuscated data, construct a `CString`, and
 /// cache the result. Returns `&'static CStr`.
 ///
-/// The bare `.unwrap()` mirrors the `__decrypt_cstring_call!` policy:
-/// `LitCStr` rejects interior NUL at parse time, and the XOR cycle
-/// cannot introduce one. Unreachable in practice.
+/// `LitCStr` rejects interior NUL at parse time and the XOR cycle cannot
+/// introduce one, so the error arm is unreachable in practice; it panics
+/// (bare in release, actionable in debug, §5.4) only on an in-process
+/// tamper of the obfuscated bytes or wrapper.
 #[cfg(feature = "std")]
 #[doc(hidden)]
 pub fn __weak_decode_cstr<const N: usize>(
@@ -330,7 +346,15 @@ pub fn __weak_decode_cstr<const N: usize>(
     wrapper: &'static [u8; WRAPPER_LEN],
     cache: &'static WeakCStrCell,
 ) -> &'static std::ffi::CStr {
-    cache.get_or_init(|| std::ffi::CString::new(weak_xor_decode(obf, wrapper)).unwrap())
+    cache.get_or_init(
+        || match std::ffi::CString::new(weak_xor_decode(obf, wrapper)) {
+            Ok(cstring) => cstring,
+            #[cfg(debug_assertions)]
+            Err(_) => crate::diagnostics::weak_cstr_failure(),
+            #[cfg(not(debug_assertions))]
+            Err(_) => panic!(),
+        },
+    )
 }
 
 // The `match … { Ok => …, Err(_) => panic!() }` shape is deliberate
@@ -357,6 +381,9 @@ fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {
             .and_then(|unlock_key| decrypt_mask_key(&unlock_key, wrapper))
         {
             Ok(bytes) => bytes,
+            #[cfg(debug_assertions)]
+            Err(err) => crate::diagnostics::init_failure(&err),
+            #[cfg(not(debug_assertions))]
             Err(_) => panic!(),
         };
         MaskKey::new(bytes)
@@ -370,6 +397,9 @@ fn decrypt_blob_or_panic(
 ) -> alloc::vec::Vec<u8> {
     match decrypt_blob(mask_key, blob) {
         Ok(plaintext) => plaintext,
+        #[cfg(debug_assertions)]
+        Err(_) => crate::diagnostics::blob_failure(),
+        #[cfg(not(debug_assertions))]
         Err(_) => panic!(),
     }
 }

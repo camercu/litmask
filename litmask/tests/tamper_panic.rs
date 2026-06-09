@@ -26,6 +26,33 @@ fn decrypt_panics_on_tampered_blob() {
     });
 }
 
+/// §5.4 profile-split diagnostics: a tampered-blob panic carries
+/// actionable, litmask-identifying text in **debug** builds (so the
+/// developer sees the failure on their own machine) but stays a bare,
+/// opaque `panic!()` in **release** builds (so no identifying string
+/// reaches a shipped binary). The same test binary asserts whichever
+/// half matches the profile it was compiled under.
+#[test]
+fn tampered_blob_panic_message_is_profile_split() {
+    common::init_once();
+
+    let msg = common::assert_panic_msg(|| {
+        let blob = [0u8; MIN_BLOB_LEN];
+        let _ = ::litmask::__internal::__decrypt(&blob, ::litmask::__wrapper_bytes!());
+    });
+
+    #[cfg(debug_assertions)]
+    assert!(
+        msg.contains("litmask:"),
+        "debug build must carry actionable text; got {msg:?}",
+    );
+    #[cfg(not(debug_assertions))]
+    assert!(
+        !msg.to_ascii_lowercase().contains("litmask"),
+        "release build must stay opaque; got {msg:?}",
+    );
+}
+
 /// Scans every file that contributes text to the user binary's
 /// `mask!()` decryption path for `.expect("msg")` and `panic!("msg")`
 /// patterns — the two ways a litmask-specific string would leak into
@@ -41,6 +68,12 @@ fn decrypt_panics_on_tampered_blob() {
 ///   helper and `OUT_DIR` artifact loader; every `.expect`/`panic!`
 ///   here runs at proc-macro expansion time inside rustc, not in
 ///   the user binary.
+///
+/// `litmask/src/diagnostics.rs` is deliberately NOT scanned: the whole
+/// module is `#[cfg(debug_assertions)]`-gated (§5.4), so its actionable
+/// (litmask-identifying) panic messages are never compiled into a
+/// release artifact. The release arms in `runtime.rs` keep the bare
+/// `panic!()` this scan enforces.
 ///
 /// Each entry pairs a path with an allowlist of substrings whose
 /// containing line executes at PROC-MACRO TIME (inside rustc's

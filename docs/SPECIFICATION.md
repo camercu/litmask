@@ -953,14 +953,26 @@ layer.
 #### §1.9.5 Tampering panic policy
 
 When `mask!()` detects ciphertext tampering at runtime, it SHALL panic
-without contributing any litmask-specific message text to the binary.
+without contributing any litmask-specific message text to the **release**
+binary.
 
 The principle: the library MUST NOT contribute string content that uniquely
-identifies the operation as litmask-related. Strings from `std` and from
-dependency crates are acceptable because they exist in many Rust programs and
-do not single out litmask.
+identifies the operation as litmask-related to a shipped artifact. Strings
+from `std` and from dependency crates are acceptable because they exist in
+many Rust programs and do not single out litmask.
 
-The library implementation:
+**Profile split (§5.4).** This hygiene protects shipped binaries, so the
+MUST-NOTs below apply under `cfg(not(debug_assertions))` (release). Under
+`cfg(debug_assertions)` (debug), the failure arms instead route to the
+`#[cfg(debug_assertions)]`-gated `litmask::diagnostics` module, which panics
+with loud, actionable, litmask-identifying text so the developer sees the
+failure on their own machine. That module is never compiled into a release
+artifact, and a debug binary is self-decrypting at the Embedded floor — so
+it MUST NOT be distributed (§7.1). The cfg-split lives at each failure arm
+(`#[cfg(debug_assertions)] Err(..) => diagnostics::…` vs
+`#[cfg(not(debug_assertions))] Err(_) => panic!()`).
+
+The release-build library implementation:
 - MAY use `panic!()` (no message) — preferred for absolute minimum string
   count
 - MAY use `.unwrap()` on `Result` values from std or dependency crates. The
