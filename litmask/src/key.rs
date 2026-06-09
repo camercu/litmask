@@ -106,6 +106,30 @@ impl UnlockKey {
         ))
     }
 
+    /// Compose the machine factor's finished key with the external
+    /// factor's finished key into the two-factor `unlock_key` —
+    /// `KDF("litmask-2fa-v1", len(machine) ‖ machine ‖ len(external) ‖
+    /// external)` (§2.3). Machine-first by construction; the seal side
+    /// (`litmask-build`) runs the identical computation, so build and
+    /// runtime agree.
+    ///
+    /// Takes two `UnlockKey`s, never byte slices: the type pins the
+    /// anti-footgun invariant that nothing but a fully-derived key enters
+    /// composition, so the verbatim/derived split cannot reappear.
+    ///
+    /// `weak_mask!()` keeps the BLAKE3 context literal out of
+    /// `strings(1)` in user binaries; it MUST decode to
+    /// `litmask_internal::TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT` (pinned by
+    /// the `compose_weak_mask_literal_matches_const` test).
+    #[must_use]
+    pub fn compose(machine: &Self, external: &Self) -> Self {
+        Self(crate::internal::derive_two_factor_unlock_key(
+            crate::weak_mask!("litmask-2fa-v1"),
+            &machine.0,
+            &external.0,
+        ))
+    }
+
     pub(crate) fn as_bytes(&self) -> &[u8; KEY_LEN] {
         &self.0
     }
@@ -188,6 +212,49 @@ mod tests {
         assert_eq!(
             crate::weak_mask!("litmask-unlock-v1"),
             crate::internal::EXTERNAL_UNLOCK_DERIVATION_CONTEXT
+        );
+    }
+
+    /// `compose` must equal the internal two-factor KDF over the two
+    /// keys' raw bytes — the same computation `litmask-build` seals the
+    /// two-factor wrapper under. A divergence here means every two-factor
+    /// build fails to unlock at runtime.
+    #[test]
+    fn compose_matches_two_factor_unlock_kdf() {
+        use crate::internal::{TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, derive_two_factor_unlock_key};
+        let machine = UnlockKey([0x11u8; KEY_LEN]);
+        let external = UnlockKey([0x22u8; KEY_LEN]);
+        let composed = UnlockKey::compose(&machine, &external);
+        assert_eq!(
+            composed.as_bytes(),
+            &derive_two_factor_unlock_key(
+                TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT,
+                &[0x11u8; KEY_LEN],
+                &[0x22u8; KEY_LEN],
+            )
+        );
+    }
+
+    /// Machine-first order is fixed by construction: composing (m, e)
+    /// must differ from (e, m) so the runtime never opens a wrapper the
+    /// build sealed in the opposite order.
+    #[test]
+    fn compose_is_order_sensitive() {
+        let m = UnlockKey([0x11u8; KEY_LEN]);
+        let e = UnlockKey([0x22u8; KEY_LEN]);
+        assert_ne!(UnlockKey::compose(&m, &e), UnlockKey::compose(&e, &m));
+    }
+
+    /// Pin the literal-vs-const drift: `UnlockKey::compose` inlines
+    /// `weak_mask!("litmask-2fa-v1")` so the BLAKE3 context bytes are
+    /// obfuscated in user binaries, while `litmask-build` seals the
+    /// two-factor wrapper using `TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT`
+    /// directly. The two MUST decode to the same string.
+    #[test]
+    fn compose_weak_mask_literal_matches_const() {
+        assert_eq!(
+            crate::weak_mask!("litmask-2fa-v1"),
+            crate::internal::TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT
         );
     }
 
