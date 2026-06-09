@@ -130,7 +130,7 @@ else is operational maturity (key management, deployment story, tooling).
 |---|---|---|
 | `litmask` | library | Runtime, proc-macro re-exports, key provider trait and built-ins |
 | `litmask-build` | library (build-dep) | `build.rs` helper for compile-time key generation, writes `litmask.config` |
-| `litmask-cli` | binary | `show-machine-id` command — reports the host machine id for build-time `machine`-tier sealing |
+| `litmask-cli` | binary | `keygen` (random unlock key / seed) and `show-machine-id` (self-checking host-id token) — generate/read-only tools for build-time sealing |
 
 The user-facing API ships as a single `litmask` crate. Internally, Rust
 forbids exporting non-macro items from a `proc-macro = true` crate, so the
@@ -1309,10 +1309,13 @@ Build crate (`litmask-build`):
 CLI crate (`litmask-cli`):
 - `clap` (argument parsing)
 - `machine-uid` (the `show-machine-id` command)
+- `getrandom` (the `keygen` command's randomness)
+- `litmask-internal` (base64url encoding; the machine-id token codec)
 
-The CLI's only command is `show-machine-id` (§2.9.3), so it carries no crypto,
-encoding, or config dependencies: with `bind`/`inspect` removed, there is no
-wrapper to re-encrypt or config to read.
+The CLI exposes `keygen` (§2.9.2) and `show-machine-id` (§2.9.3), both
+generate/read-only. With `bind`/`inspect` removed there is no wrapper to
+re-encrypt or config to read; the only crypto it touches is BLAKE3 (via
+`litmask-internal`) for the machine-id token's check group.
 
 The Rust crypto stack is RustCrypto, not `ring`. Rationale: pure-Rust modular
 crates support `no_std`, are easier to audit per-component, and have no C
@@ -2091,31 +2094,69 @@ not corresponding to a `litmask` semantic) follow standard sysexits
 conventions: EX_USAGE (64) for argument errors, EX_NOINPUT (66) for missing
 files.
 
-#### §2.9.1 litmask show-machine-id
+#### §2.9.1 CLI surface
 
-§2.9.1.1 — In v1 the CLI SHALL expose exactly one subcommand,
-`show-machine-id`. There is no `bind` or `inspect` subcommand: machine-tier
-keying is established at build time via `init!(machine_id)` (§2.5.4,
-§2.6.1.8), not by patching a finished binary, so no post-build rebind tool
-exists.
+§2.9.1.1 — In v1 the CLI SHALL expose exactly two subcommands, `keygen`
+(§2.9.2) and `show-machine-id` (§2.9.3). There is no `bind` or `inspect`
+subcommand: machine-tier keying is established at build time via
+`init!(machine_id)` (§2.5.4, §2.6.1.8), not by patching a finished binary,
+so no post-build rebind tool exists. Both subcommands are generate/read-only;
+neither mutates a binary.
 
 §2.9.1.2 — The CLI is a build/deployment tool and is never shipped in a
 release binary, so the no-identifying-strings rule (§1.9) does NOT apply to
 it.
 
+#### §2.9.2 litmask keygen
+
+§2.9.2.1 — `litmask keygen` SHALL print exactly 32 bytes of
+cryptographically secure randomness, base64url-encoded without padding
+(43 characters), to stdout followed by a single newline, and exit EX_OK (0).
+It SHALL write nothing to stdout other than the key and SHALL write nothing
+to stderr on success, so `litmask keygen | <consumer>` yields a clean,
+pipeable value.
+
+§2.9.2.2 — The value serves equally as a `LITMASK_UNLOCK_KEY` for the
+external tier (§1.6) or as a per-customer build seed; the role is usage, not
+format. The external tier accepts arbitrary material via
+`KDF("litmask-unlock-v1", material)` (§1.6.3), so a keygen value is usable
+without further encoding.
+
+§2.9.2.3 — If the OS randomness source is unavailable, `keygen` SHALL print
+a human-readable diagnostic to stderr (leaving stdout empty) and exit
+EX_UNAVAILABLE (69).
+
+§2.9.2.4 — `keygen` SHALL take no arguments and SHALL NOT modify any file.
+
 #### §2.9.3 litmask show-machine-id
 
-§2.9.3.1 — `litmask show-machine-id` SHALL print this host's machine ID — the
-exact bytes the machine tier feeds into its key derivation (§1.7.5) — to
-stdout and exit EX_OK (0). The ID is a non-secret host identifier; it lets an
-operator confirm which host id a binary must be machine-sealed against
-(`LITMASK_MACHINE_ID` at build time, §1.6).
+§2.9.3.1 — `litmask show-machine-id` SHALL print this host's machine ID as a
+**self-checking token** to stdout and exit EX_OK (0). The token is
+`raw_id ‖ "." ‖ check`, where `check` is the base64url encoding of the first
+five bytes of `BLAKE3(raw_id)`. The raw id is the exact bytes the machine
+tier feeds into its key derivation (§1.7.5) — a non-secret host identifier
+that lets an operator seal a binary against this host (`LITMASK_MACHINE_ID`
+at build time, §1.6).
 
-§2.9.3.2 — If the machine ID cannot be read, `show-machine-id` SHALL print a
+§2.9.3.2 — The check group rides **in-band** in the stdout token, never on a
+separate stream: an operator copies stdout, so a stderr checksum would be
+dropped by the copy channel. Any human guidance SHALL be written to stderr
+only, keeping a piped capture limited to the token itself.
+
+§2.9.3.3 — `litmask-build::emit()` SHALL accept the token form on
+`LITMASK_MACHINE_ID`, validating the check group and recovering the raw id
+before deriving the machine key. A value whose check group does not match,
+or that carries no check group, SHALL be rejected at build time — turning a
+mistyped id into an actionable build error rather than an opaque runtime
+`init` failure on the deploy host. A single trailing newline is stripped
+before validation, so a token sourced through a newline-bearing channel
+still validates.
+
+§2.9.3.4 — If the machine ID cannot be read, `show-machine-id` SHALL print a
 human-readable diagnostic to stderr (leaving stdout empty) and exit
 EX_UNAVAILABLE (69).
 
-§2.9.3.3 — `show-machine-id` SHALL take no arguments and SHALL NOT modify any
+§2.9.3.5 — `show-machine-id` SHALL take no arguments and SHALL NOT modify any
 file.
 
 ### §2.10 Iteration 10 — no_std support

@@ -23,6 +23,15 @@ orchestrator's env-var mechanism. The material must not be committed to
 version control. A single trailing newline is stripped, so the env and
 file channels agree on the same secret regardless of how it was written.
 
+Need fresh material? `litmask keygen` mints 32 random bytes as base64url
+on stdout — a high-entropy `LITMASK_UNLOCK_KEY` you can pipe into the
+build or stash in a secret store:
+
+```sh
+LITMASK_UNLOCK_KEY="$(cargo run -q -p litmask-cli -- keygen)" \
+    cargo build --release
+```
+
 ### `FileProvider` (External tier)
 
 Point to a file whose contents are the unlock material — the same value
@@ -193,18 +202,20 @@ machine ID the target reports:
 
    ```sh
    litmask show-machine-id
-   # FB1128DE-C00C-5643-BCF4-5487AFA3245A
+   # FB1128DE-C00C-5643-BCF4-5487AFA3245A.sE1d6WI
    ```
 
-   `show-machine-id` prints the exact bytes the Machine tier feeds into its
-   key derivation — nothing secret, just the host identifier — so the
-   customer can return it over any channel.
+   `show-machine-id` prints a **self-checking token** — the host
+   identifier (nothing secret), a `.`, and a short checksum — to stdout,
+   with usage prose on stderr. The customer can return the token over any
+   channel; the checksum lets the build reject a token mangled in transit.
 
-2. **Seal vendor-side.** Build with the reported ID and ship the binary;
-   it decrypts only on the host whose ID was supplied:
+2. **Seal vendor-side.** Build with the reported token and ship the
+   binary; it decrypts only on the host whose ID was supplied. `emit()`
+   validates the token's checksum and aborts the build on a mistyped id:
 
    ```sh
-   LITMASK_MACHINE_ID="FB1128DE-C00C-5643-BCF4-5487AFA3245A" \
+   LITMASK_MACHINE_ID="FB1128DE-C00C-5643-BCF4-5487AFA3245A.sE1d6WI" \
        cargo build --release --features machine-id
    ```
 

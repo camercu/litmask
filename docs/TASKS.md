@@ -330,16 +330,27 @@ capture stays clean and copy/paste corruption is detectable.
 
 ### Acceptance Criteria
 
-- [ ] `litmask keygen` prints exactly 32 random bytes base64url-encoded
+- [x] `litmask keygen` prints exactly 32 random bytes base64url-encoded
       to stdout, nothing on stderr, newline-terminated
-- [ ] `litmask keygen | <consumer>` yields a usable `LITMASK_UNLOCK_KEY`
+- [x] `litmask keygen | <consumer>` yields a usable `LITMASK_UNLOCK_KEY`
       value (round-trips through the external tier)
-- [ ] `litmask show-machine-id` prints a self-checking token to stdout
+- [x] `litmask show-machine-id` prints a self-checking token to stdout
       and explanatory prose to stderr; the token's check digits detect
       a single-character corruption
-- [ ] `litmask --help` lists exactly `keygen` and `show-machine-id`
-- [ ] SPECIFICATION §2.9, man pages, and `--help` text reflect the
-      final CLI surface
+- [x] `litmask --help` lists exactly `keygen` and `show-machine-id`
+- [x] SPECIFICATION §2.9, `--help` text, README/DEPLOYMENT/CONTEXT
+      reflect the final CLI surface (no man pages exist in-repo; the CLI
+      doc-comments + SPEC §2.9 + `--help` are the surface of record)
+
+> **Discovery (Task 7):** shipping the token from `show-machine-id` makes
+> the build-input contract for `LITMASK_MACHINE_ID` a **breaking change** —
+> `emit()` now requires the token form (`raw_id "." checksum`) and panics
+> on a bare id, because `machine_id_via_cli()` feeds CLI output straight
+> into the build. The codec lives in `litmask-internal`
+> (`encode_/decode_machine_id_token`) so the CLI (encode) and `emit()`
+> (decode+validate) stay in lockstep. Every machine-tier fixture/test,
+> `example_scrub`, and `scripts/platform-smoke.sh` had to switch their
+> placeholder ids to valid tokens to keep building.
 
 ---
 

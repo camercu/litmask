@@ -175,6 +175,28 @@ Moving the binary to a different host makes `init!(machine_id)` fail: the
 runtime recomputes a different machine ID, derives a different
 `unlock_key`, and the wrapper's AEAD tag check rejects it.
 
+`show-machine-id` prints a **self-checking token** — `raw_id "."
+checksum` — to stdout, with usage prose on stderr. The build-time
+`emit()` validates the checksum and rejects a mistyped id before it can
+seal a binary nobody can open. Pipe stdout straight into the build (above)
+or copy the token to whoever does the sealing.
+
+## CLI
+
+The `litmask` CLI is a small build-time helper with two subcommands:
+
+| Command            | Output                                                       |
+| ------------------ | ----------------------------------------------------------- |
+| `keygen`           | 32 random bytes, base64url, to stdout — a `LITMASK_UNLOCK_KEY` |
+| `show-machine-id`  | this host's self-checking machine-id token to stdout         |
+
+`keygen` is a plain generator you can pipe into a build or a secret store:
+
+```sh
+LITMASK_UNLOCK_KEY="$(cargo run -q -p litmask-cli -- keygen)" \
+    cargo build --release
+```
+
 ## Features
 
 | Feature             | Default |                                                     |
