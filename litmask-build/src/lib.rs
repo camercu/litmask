@@ -37,16 +37,14 @@ use zeroize::{Zeroize, Zeroizing};
 use litmask_internal::{
     CURRENT_CIPHER, EMBEDDED_UNLOCK_DERIVATION_CONTEXT, EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
     FormatVersion, KEY_LEN, MACHINE_ID_DERIVATION_CONTEXT, MACHINE_ID_SALT_DERIVATION_CONTEXT,
-    WRAPPER_BODY_LEN, WRAPPER_LEN, WRAPPER_PLAINTEXT_LEN, aead_encrypt, assemble_wrapper,
-    base64url, derive_embedded_unlock_key, derive_external_unlock_key, derive_machine_id_key,
+    TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, WRAPPER_BODY_LEN, WRAPPER_LEN, WRAPPER_PLAINTEXT_LEN,
+    aead_encrypt, assemble_wrapper, base64url, derive_embedded_unlock_key,
+    derive_external_unlock_key, derive_machine_id_key, derive_two_factor_unlock_key,
     nonce_for_wrapper, strip_trailing_newline,
 };
 
 /// The keying tier `emit()` seals, selected purely from which build
-/// inputs are present (§2.4, presence-driven). The two-factor
-/// `machine_external` tier (both channels set) lands in a later task; for
-/// now both-channels-present is an explicit build error rather than a
-/// silent single-factor seal.
+/// inputs are present (§2.4, presence-driven).
 enum SealTier {
     /// Keyless floor: the `unlock_key` is derived from the public
     /// wrapper nonce, so the runtime recomputes it with nothing stored.
@@ -68,6 +66,14 @@ enum SealTier {
     /// the binary, so it is held here (zeroized on drop) and consumed by
     /// `derive`.
     Machine(Zeroizing<String>),
+    /// Both `LITMASK_MACHINE_ID` and `LITMASK_UNLOCK_KEY` were set at
+    /// build: the `unlock_key` is the §2.3 two-factor composition of the
+    /// machine factor's finished key and the external factor's finished
+    /// key. Holds both raw inputs (zeroized on drop); each is trimmed and
+    /// derived at the one `derive` site, then composed machine-first. The
+    /// runtime re-sources the host id (`machine_uid::get()`) and the
+    /// external material (its provider) and recomposes the identical key.
+    MachineExternal(Zeroizing<String>, Zeroizing<String>),
 }
 
 impl SealTier {
@@ -86,21 +92,12 @@ impl SealTier {
     /// channels to a tier without touching process state, so the
     /// presence rule is unit-testable under `forbid(unsafe_code)`.
     ///
-    /// # Panics
-    ///
-    /// Panics when both channels are present: the two-factor
-    /// `machine_external` seal is not yet implemented, so sealing under a
-    /// single factor while the operator supplied two would silently drop
-    /// the other — a worse failure than a clear build error.
     fn from_material(unlock: Option<String>, machine: Option<String>) -> Self {
         match (unlock, machine) {
             (None, None) => Self::Embedded,
             (Some(s), None) => Self::External(Zeroizing::new(s)),
             (None, Some(m)) => Self::Machine(Zeroizing::new(m)),
-            (Some(_), Some(_)) => panic!(
-                "LITMASK_UNLOCK_KEY and LITMASK_MACHINE_ID are both set, but the \
-                 two-factor machine_external seal tier is not yet implemented"
-            ),
+            (Some(s), Some(m)) => Self::MachineExternal(Zeroizing::new(m), Zeroizing::new(s)),
         }
     }
 
@@ -110,6 +107,7 @@ impl SealTier {
             Self::Embedded => "embedded",
             Self::External(_) => "external",
             Self::Machine(_) => "machine",
+            Self::MachineExternal(_, _) => "machine_external",
         }
     }
 }
@@ -248,6 +246,32 @@ impl BuildArtifacts {
                 strip_trailing_newline(machine_id.as_bytes()),
                 &wrapper_nonce,
             ),
+            // MachineExternal: the §2.3 two-factor composition. Each
+            // factor is finished independently at this one site — the
+            // machine factor exactly as the Machine tier (host id + nonce
+            // salt), the external factor exactly as the External tier
+            // (trimmed material) — then composed machine-first. The
+            // runtime recomposes the identical key from the host id +
+            // embedded nonce and the re-sourced external material, so a
+            // newline on either build channel must be trimmed here to
+            // match (§2.4).
+            SealTier::MachineExternal(machine_id, material) => {
+                let machine_key = derive_machine_id_key(
+                    MACHINE_ID_DERIVATION_CONTEXT,
+                    MACHINE_ID_SALT_DERIVATION_CONTEXT,
+                    strip_trailing_newline(machine_id.as_bytes()),
+                    &wrapper_nonce,
+                );
+                let external_key = derive_external_unlock_key(
+                    EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
+                    strip_trailing_newline(material.as_bytes()),
+                );
+                derive_two_factor_unlock_key(
+                    TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT,
+                    &machine_key,
+                    &external_key,
+                )
+            }
         };
 
         // AEAD plaintext is `version_byte || mask_key` — the format
@@ -809,6 +833,13 @@ mod tests {
         SealTier::Machine(Zeroizing::new(id.to_string()))
     }
 
+    fn machine_external(id: &str, material: &str) -> SealTier {
+        SealTier::MachineExternal(
+            Zeroizing::new(id.to_string()),
+            Zeroizing::new(material.to_string()),
+        )
+    }
+
     /// Presence-driven tier selection (§2.4): no channel floors to
     /// Embedded, the external channel selects External, the machine
     /// channel selects Machine.
@@ -823,18 +854,105 @@ mod tests {
             SealTier::from_material(None, Some("host-id-abc".to_string())).tag(),
             "machine",
         );
+        assert_eq!(
+            SealTier::from_material(
+                Some("operator secret".to_string()),
+                Some("host-id-abc".to_string()),
+            )
+            .tag(),
+            "machine_external",
+        );
     }
 
-    /// Both channels present is an explicit build error until the
-    /// two-factor `machine_external` tier lands — never a silent
-    /// single-factor seal that drops the other factor.
+    /// A MachineExternal build publishes the `machine_external` seal tag
+    /// over rustc-env (the `init!(machine_id + <provider>)` form
+    /// cross-checks against it).
     #[test]
-    #[should_panic(expected = "machine_external")]
-    fn from_material_panics_when_both_channels_set() {
-        let _ = SealTier::from_material(
-            Some("operator secret".to_string()),
-            Some("host-id-abc".to_string()),
+    fn machine_external_tier_publishes_machine_external_seal_tag() {
+        let directives = seal_tier_directives(&machine_external("host-id-abc", "operator secret"));
+        assert!(
+            directives
+                .iter()
+                .any(|d| d == "cargo:rustc-env=LITMASK_SEAL_TIER=machine_external"),
+            "missing machine_external tier tag; got {directives:?}",
         );
+    }
+
+    /// The MachineExternal `unlock_key` is
+    /// `compose(machine_key, external_key)` — byte-identical to what the
+    /// runtime derives by composing the `MachineIdProvider` key with the
+    /// external provider's key — and the sealed wrapper opens under it.
+    /// Without this, a successful two-factor `emit()` could ship a wrapper
+    /// no runtime can open.
+    #[test]
+    fn machine_external_unlock_key_is_composed_and_round_trips() {
+        use litmask_internal::{
+            TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, decrypt_wrapper, derive_two_factor_unlock_key,
+        };
+        let seed = [0x71u8; KEY_LEN];
+        let artifacts = BuildArtifacts::derive(&seed, &machine_external("host-id-abc", "secret"));
+        let nonce = nonce_for_wrapper(&seed);
+        let machine_key = derive_machine_id_key(
+            MACHINE_ID_DERIVATION_CONTEXT,
+            MACHINE_ID_SALT_DERIVATION_CONTEXT,
+            b"host-id-abc",
+            &nonce,
+        );
+        let external_key =
+            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"secret");
+        let expected = derive_two_factor_unlock_key(
+            TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT,
+            &machine_key,
+            &external_key,
+        );
+        assert_eq!(
+            artifacts.unlock_key, expected,
+            "two-factor unlock_key must be the composed machine+external key",
+        );
+        let recovered = decrypt_wrapper(&artifacts.unlock_key, &artifacts.wrapper).expect("round");
+        assert_eq!(recovered, artifacts.mask_key);
+    }
+
+    /// Both factors are trimmed of a single trailing newline before
+    /// derivation, exactly as the single-factor tiers trim. The runtime
+    /// sources the machine id from `machine_uid::get()` (no newline) and
+    /// the external material from the provider (one newline stripped), so
+    /// a newline on either build channel must not change the composed
+    /// `unlock_key`.
+    #[test]
+    fn machine_external_factors_strip_trailing_newline() {
+        let seed = [0x71u8; KEY_LEN];
+        let clean = BuildArtifacts::derive(&seed, &machine_external("host-id-abc", "secret"));
+        let newlined =
+            BuildArtifacts::derive(&seed, &machine_external("host-id-abc\n", "secret\n"));
+        assert_eq!(
+            clean.unlock_key, newlined.unlock_key,
+            "trailing newline on either factor must not change the composed unlock_key",
+        );
+        assert_eq!(clean.wrapper, newlined.wrapper);
+    }
+
+    /// The MachineExternal tier writes no `litmask.config`: both factors
+    /// are re-sourced at runtime (host id + operator channel), so the
+    /// composed key is neither needed nor reusable as material. Only
+    /// Embedded writes a config.
+    #[test]
+    fn write_to_omits_config_for_machine_external_tier() {
+        let seed = [0x71u8; KEY_LEN];
+        let out = TempDir::new().expect("out dir");
+        let profile = TempDir::new().expect("profile dir");
+        let config = profile.path().join("litmask.config");
+
+        BuildArtifacts::derive(&seed, &machine_external("host-id-abc", "secret")).write_to(
+            out.path(),
+            profile.path(),
+            &machine_external("host-id-abc", "secret"),
+        );
+        assert!(
+            !config.exists(),
+            "machine_external tier must not write litmask.config",
+        );
+        assert!(out.path().join("litmask_wrapper.bin").exists());
     }
 
     /// A Machine build publishes the `machine` seal tag over rustc-env
