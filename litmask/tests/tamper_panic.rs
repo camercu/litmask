@@ -72,7 +72,7 @@ fn tampered_blob_panic_message_is_profile_split() {
 ///   Its actionable messages are permitted *only* because each sits on
 ///   the line immediately after a `#[cfg(debug_assertions)]` attribute,
 ///   so it is compiled out of release. The scan enforces that gating
-///   (see `debug_gated` below): an ungated message here still fails.
+///   (see `gated` below): an ungated message here still fails.
 ///
 /// Each entry pairs a path with an allowlist of substrings whose
 /// containing line executes at PROC-MACRO TIME (inside rustc's
@@ -104,37 +104,46 @@ fn no_custom_panic_messages_in_decryption_path() {
                 r#".expect("litmask: OUT_DIR not set; did you add a build.rs running litmask_build::emit()?")"#,
                 r#".expect("AEAD encryption failed during litmask macro expansion")"#,
                 r#"panic!("{macro_name}!: CARGO_MANIFEST_DIR not set")"#,
+                "litmask: failed to read {name} from OUT_DIR",
             ],
         ),
     ];
 
+    // `(?s)` + `\s*` so a `panic!(` / `.expect(` whose message rustfmt
+    // wrapped onto its own line still matches: a per-line regex would miss
+    // the wrapped form and let a message-bearing panic slip past unguarded.
     let custom_panic =
-        regex::Regex::new(r#"\.expect\("[^"]+"\)|panic!\("[^"]+""#).expect("regex compiles");
+        regex::Regex::new(r#"(?s)(?:\.expect|panic!)\(\s*"[^"]+""#).expect("regex compiles");
 
     let mut hits: Vec<(String, usize, String)> = Vec::new();
     for (path, allow) in &scans {
         let src = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
-        // A message-bearing panic is exempt when the immediately
-        // preceding line is `#[cfg(debug_assertions)]` — it is then
-        // compiled out of release, where the opacity contract applies.
-        let mut debug_gated = false;
-        for (i, line) in src.lines().enumerate() {
-            let prev_gated = debug_gated;
-            debug_gated = line.trim() == "#[cfg(debug_assertions)]";
-            // Comment lines (incl. `//!` doc comments) never reach
-            // `.rodata`, so a `.expect("…")`/`panic!("…")` quoted in prose
-            // — e.g. this file's own policy docs — cannot fingerprint the
-            // binary and is not a leak.
-            if line.trim_start().starts_with("//") {
+        let lines: Vec<&str> = src.lines().collect();
+        for mat in custom_panic.find_iter(&src) {
+            // Physical line where the `panic!(` / `.expect(` token opens.
+            let open_idx = src[..mat.start()].bytes().filter(|&b| b == b'\n').count();
+            let open_line = lines[open_idx];
+            // Comment lines (incl. `//!` doc comments) never reach `.rodata`,
+            // so a `.expect("…")`/`panic!("…")` quoted in prose — e.g. this
+            // file's own policy docs — cannot fingerprint the binary.
+            if open_line.trim_start().starts_with("//") {
                 continue;
             }
-            if !custom_panic.is_match(line) {
+            // Exempt when the line immediately above the opener is
+            // `#[cfg(debug_assertions)]` — the message is then compiled out
+            // of release, where the opacity contract applies.
+            let gated = open_idx > 0 && lines[open_idx - 1].trim() == "#[cfg(debug_assertions)]";
+            // Allowlist entries are matched against the whole call text (so a
+            // substring on a wrapped message line still exempts) and the
+            // opener line (for single-line panics carrying trailing args the
+            // capture drops).
+            let exempt = allow
+                .iter()
+                .any(|s| mat.as_str().contains(s) || open_line.contains(s));
+            if gated || exempt {
                 continue;
             }
-            if prev_gated || allow.iter().any(|s| line.contains(s)) {
-                continue;
-            }
-            hits.push((path.clone(), i + 1, line.to_string()));
+            hits.push((path.clone(), open_idx + 1, mat.as_str().to_string()));
         }
     }
 
