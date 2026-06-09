@@ -78,6 +78,7 @@ Configurations and what each defeats:
 | Zero-config build (defaults to keyless `EmbeddedProvider`) | `strings`, casual binary inspection (Level 1) only — the `unlock_key` is recomputed from the wrapper's cleartext nonce, so it is recoverable from the artifact |
 | `FileProvider` + filesystem permissions | Above with OS-enforced access control |
 | `init!(machine_id)` (build-sealed) | Above + binary moved to a different machine |
+| `init!(machine_id + <provider>)` (two-factor) | Above + the external factor (env/file/vault) the binary alone never carries |
 | Custom `KeyProvider` (network call, vault) | Above + offline attackers |
 
 The "zero-config" descriptor refers to absence of project configuration, not to
@@ -660,6 +661,13 @@ without a stored key:
 - **Machine** (`LITMASK_MACHINE_ID` set at build): `init!(machine_id)` recomputes
   the host machine id locally and re-derives the key. No provisioning, but the
   binary opens only on the host it was sealed for.
+- **MachineExternal** (both `LITMASK_MACHINE_ID` and `LITMASK_UNLOCK_KEY` set at
+  build): the two-factor tier. `init!(machine_id + <provider>)` finishes the
+  machine factor key (host id) and the external factor key (operator material)
+  independently, then composes them — `unlock_key = KDF("litmask-2fa-v1",
+  len_prefixed(machine_key) ‖ len_prefixed(external_key))`, machine-first. The
+  binary opens only on the sealed host **and** with the sealed material; either
+  factor wrong fails the wrapper's AEAD check.
 
 Build-sealed keying tiers are specified in full in `docs/SPEC_DEVEX.md`.
 
@@ -766,15 +774,19 @@ audit purposes.
 litmask::init!()?;                    // Embedded tier: keyless, nonce-derived
 litmask::init!(machine_id)?;          // Machine tier: host-id-sealed (machine-id feature)
 litmask::init!(provider)?;            // External tier: any KeyProvider expression
+litmask::init!(machine_id + provider)?; // MachineExternal tier: two-factor (machine-id feature)
 litmask::init_with!(provider)?;       // External tier: declarative form
 ```
 
 `init!` is a proc-macro (form↔tier cross-check); `init_with!` is a
 declarative macro (see §1.4.1 for rationale). The `init!` form is selected by
-its argument: empty → Embedded, the bare keyword `machine_id` → Machine, any
-other expression → External (a provider value). Each form unlocks exactly one
+its argument: empty → Embedded, the bare keyword `machine_id` → Machine,
+`machine_id + <expr>` → MachineExternal (two-factor), any other expression →
+External (a provider value). A `machine_id +` with no following provider
+expression is a `grammar` `compile_error!`. Each form unlocks exactly one
 sealed tier; the macro reads the build's `LITMASK_SEAL_TIER` tag at expansion
-and emits a `compile_error!` on a form↔tier mismatch (§1.9.6).
+and emits a `compile_error!` on a form↔tier mismatch (§1.9.6) — the four forms
+and four tags give a 4-way matrix where only the matching pairs compile.
 
 `init!()` and the External forms delegate to the private
 `litmask::__internal::__init_with_wrapper` function, passing wrapper bytes read
@@ -783,7 +795,11 @@ via `include_bytes!` at the call site; the no-arg form constructs an
 `__init_machine_id_call!` seam macro instead (so a `machine`-sealed build with
 the `machine-id` feature disabled gets a directed `compile_error!` rather than a
 missing-symbol error); the seam constructs the `pub(crate)` `MachineIdProvider`
-from the wrapper nonce in-crate (§2.5.4). The effective signature of every
+from the wrapper nonce in-crate (§2.5.4). `init!(machine_id + <provider>)` routes
+through the analogous `__init_machine_id_external_call!` seam: it finishes the
+machine factor (in-crate `MachineIdProvider`) and the external factor (the
+consumer's provider), composes them via `UnlockKey::compose` (§2.3), and
+decrypts the wrapper under the composition. The effective signature of every
 expansion result is `Result<(), InitError>`.
 
 #### §1.8.3 Public types
