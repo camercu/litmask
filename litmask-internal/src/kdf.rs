@@ -163,6 +163,53 @@ pub fn derive_machine_id_key(
     *hasher.finalize().as_bytes()
 }
 
+/// BLAKE3 `derive_key` domain separator for the two-factor
+/// (`machine_id + <external>`) composed `unlock_key`.
+///
+/// The two-factor tier composes the machine factor's finished
+/// `unlock_key` with the external factor's finished `unlock_key` under
+/// this context (§2.3). The distinct `-2fa-` segment guarantees a
+/// two-factor key can never collide with a single-factor one even on
+/// identical input bytes — domain-separated from every
+/// `derive_*_unlock_key` context above.
+///
+/// The `-v1` suffix reserves a rotation path. Changing this constant is
+/// a BREAKING change: every two-factor wrapper sealed under the old
+/// context fails to decrypt under the new one.
+pub const TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT: &str = "litmask-2fa-v1";
+
+/// Compose the machine and external factors' finished `unlock_key`s into
+/// the two-factor `unlock_key`.
+///
+/// `BLAKE3::derive_key(context, len(machine) ‖ machine ‖ len(external) ‖
+/// external)`, where each `len` is an 8-byte little-endian length prefix
+/// — the crate-wide length-prefix convention (see
+/// [`derive_machine_id_key`] / [`nonce_for_call_site`](crate::nonce_for_call_site)).
+/// Order is fixed by construction (machine first), so there is no
+/// argument-order surface to get wrong; the length prefixes remove any
+/// concatenation ambiguity between the two 32-byte inputs.
+///
+/// Both inputs are already finished `unlock_key`s — the machine factor
+/// via [`derive_machine_id_key`], the external factor via
+/// [`derive_external_unlock_key`] — so this is a pure mixing step over
+/// two fixed-width keys, never raw material. The build seals under this
+/// exact computation; the runtime `UnlockKey::compose` wraps it via
+/// `weak_mask!()` so the context literal stays out of `strings(1)`. The
+/// two MUST match byte-for-byte or build ↔ runtime derivations diverge.
+#[must_use]
+pub fn derive_two_factor_unlock_key(
+    context: &str,
+    machine_key: &[u8; KEY_LEN],
+    external_key: &[u8; KEY_LEN],
+) -> [u8; KEY_LEN] {
+    let mut hasher = blake3::Hasher::new_derive_key(context);
+    hasher.update(&(machine_key.len() as u64).to_le_bytes());
+    hasher.update(machine_key);
+    hasher.update(&(external_key.len() as u64).to_le_bytes());
+    hasher.update(external_key);
+    *hasher.finalize().as_bytes()
+}
+
 /// Derive the XOR key used by `weak_mask!` from the wrapper nonce.
 ///
 /// Returns `rotated(32) || BLAKE3::keyed_hash(rotated, nonce)(32)`:
@@ -336,6 +383,83 @@ mod tests {
         assert_eq!(short.len(), KEY_LEN);
         assert_eq!(long.len(), KEY_LEN);
         assert!(long.iter().any(|&b| b != 0));
+    }
+
+    #[test]
+    fn derive_two_factor_unlock_key_is_deterministic() {
+        let m = [0x11u8; KEY_LEN];
+        let e = [0x22u8; KEY_LEN];
+        assert_eq!(
+            derive_two_factor_unlock_key(TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, &m, &e),
+            derive_two_factor_unlock_key(TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, &m, &e),
+        );
+    }
+
+    /// Order is fixed by construction (machine first). Swapping the two
+    /// factors must change the output, or a build sealing `machine ‖
+    /// external` could be opened by a runtime composing `external ‖
+    /// machine` — the order-significance the 2fa context exists to pin.
+    #[test]
+    fn derive_two_factor_unlock_key_is_order_sensitive() {
+        let m = [0x11u8; KEY_LEN];
+        let e = [0x22u8; KEY_LEN];
+        assert_ne!(
+            derive_two_factor_unlock_key(TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, &m, &e),
+            derive_two_factor_unlock_key(TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, &e, &m),
+        );
+    }
+
+    #[test]
+    fn derive_two_factor_unlock_key_differs_across_each_factor() {
+        let base = derive_two_factor_unlock_key(
+            TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT,
+            &[0x11u8; KEY_LEN],
+            &[0x22u8; KEY_LEN],
+        );
+        let other_machine = derive_two_factor_unlock_key(
+            TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT,
+            &[0x33u8; KEY_LEN],
+            &[0x22u8; KEY_LEN],
+        );
+        let other_external = derive_two_factor_unlock_key(
+            TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT,
+            &[0x11u8; KEY_LEN],
+            &[0x44u8; KEY_LEN],
+        );
+        assert_ne!(base, other_machine);
+        assert_ne!(base, other_external);
+    }
+
+    /// The two-factor context must domain-separate from every
+    /// single-factor context: composing two keys whose bytes happen to
+    /// equal a single-factor derivation's inputs must never collide with
+    /// that single-factor key. Pin it against the machine context (the
+    /// nearest neighbor, since the machine key is one compose input).
+    #[test]
+    fn derive_two_factor_unlock_key_domain_separated_from_single_factor() {
+        let m = [0x11u8; KEY_LEN];
+        let e = [0x22u8; KEY_LEN];
+        let two_factor = derive_two_factor_unlock_key(TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, &m, &e);
+        // Same bytes fed through the machine single-factor derivation.
+        let nonce = [0x11u8; NONCE_LEN];
+        let machine = derive_machine_id_key(
+            MACHINE_ID_DERIVATION_CONTEXT,
+            MACHINE_ID_SALT_DERIVATION_CONTEXT,
+            &m,
+            &nonce,
+        );
+        assert_ne!(two_factor, machine);
+    }
+
+    #[test]
+    fn derive_two_factor_unlock_key_returns_full_32_bytes() {
+        let key = derive_two_factor_unlock_key(
+            TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT,
+            &[0x11u8; KEY_LEN],
+            &[0x22u8; KEY_LEN],
+        );
+        assert_eq!(key.len(), KEY_LEN);
+        assert!(key.iter().any(|&b| b != 0));
     }
 
     #[test]
