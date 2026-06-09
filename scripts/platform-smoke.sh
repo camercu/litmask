@@ -63,7 +63,13 @@ if [ "$EXPECT_UNAVAILABLE" = "true" ]; then
         exit 1
     fi
     echo "  ok: show-machine-id reported EX_UNAVAILABLE (69)"
-    MACHINE_ID="unavailable-host-placeholder"
+    # No host id, but `emit()` requires the self-checking token form
+    # (§4.1.1). Seal under a well-formed placeholder token so the build
+    # still succeeds; the runtime `machine_uid::get()` then fails on this
+    # host, exercising the init failure path (§2.13.2.4). Value is
+    # `litmask show-machine-id`'s token form for the id below
+    # (raw_id ‖ "." ‖ base64url(BLAKE3(raw_id)[..5])).
+    MACHINE_ID="unavailable-host-placeholder.9E6M3pc"
 elif [ "$id_exit" -ne 0 ]; then
     echo "FAIL: show-machine-id failed ($id_exit) on a host expected to have a stable id"
     exit 1

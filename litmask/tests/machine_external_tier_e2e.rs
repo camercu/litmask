@@ -48,9 +48,14 @@ const SEALED_MATERIAL: &str = "two-factor operator unlock material v1";
 /// wrapper's AEAD check) must reject it.
 const WRONG_MATERIAL: &str = "an entirely different operator secret";
 
-/// A machine id that is NOT this host's — re-derives a different machine
-/// factor key, so the composition must reject it at runtime.
-const WRONG_MACHINE_ID: &str = "not-this-hosts-machine-id-0000";
+/// A self-checking token (§4.1.1) for a machine id that is NOT this
+/// host's. It is a *well-formed* token — `emit()` decodes it cleanly —
+/// but its raw id differs from the host, so the composed `unlock_key`
+/// diverges and the runtime must reject it. Built through the token codec
+/// because `emit()` now requires the token form on `LITMASK_MACHINE_ID`.
+fn wrong_machine_token() -> String {
+    litmask_internal::encode_machine_id_token("not-this-hosts-machine-id-0000")
+}
 
 /// Canary plaintext the fixture masks. Lexically unusual so its presence
 /// in captured stdout is an unambiguous round-trip signal.
@@ -142,7 +147,7 @@ fn two_factor_round_trips_only_when_both_factors_match() {
     // Machine factor diverges (wrong id at seal, correct material) →
     // reject. Reseal under the wrong id, then run with the correct
     // material so only the machine factor is wrong.
-    let bin = build_sealed_fixture(WRONG_MACHINE_ID, SEALED_MATERIAL);
+    let bin = build_sealed_fixture(&wrong_machine_token(), SEALED_MATERIAL);
     let (ok, stdout) = run_fixture(&bin, SEALED_MATERIAL);
     assert!(
         !ok,

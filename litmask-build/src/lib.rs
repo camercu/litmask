@@ -38,9 +38,9 @@ use litmask_internal::{
     CURRENT_CIPHER, EMBEDDED_UNLOCK_DERIVATION_CONTEXT, EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
     FormatVersion, KEY_LEN, MACHINE_ID_DERIVATION_CONTEXT, MACHINE_ID_SALT_DERIVATION_CONTEXT,
     SealTierTag, TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, WRAPPER_BODY_LEN, WRAPPER_LEN,
-    WRAPPER_PLAINTEXT_LEN, aead_encrypt, assemble_wrapper, base64url, derive_embedded_unlock_key,
-    derive_external_unlock_key, derive_machine_id_key, derive_two_factor_unlock_key,
-    nonce_for_wrapper, strip_trailing_newline,
+    WRAPPER_PLAINTEXT_LEN, aead_encrypt, assemble_wrapper, base64url, decode_machine_id_token,
+    derive_embedded_unlock_key, derive_external_unlock_key, derive_machine_id_key,
+    derive_two_factor_unlock_key, nonce_for_wrapper, strip_trailing_newline,
 };
 
 /// The keying tier `emit()` seals, selected purely from which build
@@ -195,6 +195,35 @@ struct BuildArtifacts {
     wrapper: [u8; WRAPPER_LEN],
 }
 
+/// Recover the raw machine id from the `LITMASK_MACHINE_ID` value, which
+/// is a self-checking token minted by `litmask show-machine-id` (§4.1.1).
+///
+/// A single trailing newline is stripped first — exactly as the External
+/// tier trims its material — so a token sourced through a newline-bearing
+/// channel (a file read, `echo`) still validates. The check group is then
+/// verified and the raw id returned; the runtime `MachineIdProvider`
+/// recomputes that same raw id via `machine_uid::get()`, so build and
+/// runtime stay in lock-step.
+///
+/// # Panics
+///
+/// Panics at build time if the value is not a valid token (no check
+/// group, or a check mismatch from a mistyped id). Rejecting here turns
+/// what would otherwise be an opaque runtime `decryption_failed` on the
+/// deploy host into an actionable build error (§4.1.1).
+fn machine_seal_id(env_value: &str) -> String {
+    let trimmed = strip_trailing_newline(env_value.as_bytes());
+    let token = core::str::from_utf8(trimmed).expect("LITMASK_MACHINE_ID is UTF-8");
+    decode_machine_id_token(token)
+        .unwrap_or_else(|e| {
+            panic!(
+                "LITMASK_MACHINE_ID is not a valid `litmask show-machine-id` token ({e}); \
+                 capture it with `litmask show-machine-id` on the target host"
+            )
+        })
+        .to_owned()
+}
+
 impl BuildArtifacts {
     /// Derive the full artifact set from a build seed and the selected
     /// keying `tier`. Pure: same seed + tier in, byte-identical fields
@@ -245,7 +274,7 @@ impl BuildArtifacts {
             SealTier::Machine(machine_id) => derive_machine_id_key(
                 MACHINE_ID_DERIVATION_CONTEXT,
                 MACHINE_ID_SALT_DERIVATION_CONTEXT,
-                strip_trailing_newline(machine_id.as_bytes()),
+                machine_seal_id(machine_id).as_bytes(),
                 &wrapper_nonce,
             ),
             // MachineExternal: the §2.3 two-factor composition. Each
@@ -261,7 +290,7 @@ impl BuildArtifacts {
                 let machine_key = derive_machine_id_key(
                     MACHINE_ID_DERIVATION_CONTEXT,
                     MACHINE_ID_SALT_DERIVATION_CONTEXT,
-                    strip_trailing_newline(machine_id.as_bytes()),
+                    machine_seal_id(machine_id).as_bytes(),
                     &wrapper_nonce,
                 );
                 let external_key = derive_external_unlock_key(
@@ -463,7 +492,28 @@ fn write_config(path: &Path, unlock_key: &[u8; KEY_LEN]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use litmask_internal::encode_machine_id_token;
     use tempfile::TempDir;
+
+    #[test]
+    fn machine_seal_id_decodes_a_valid_token_to_its_raw_id() {
+        let token = encode_machine_id_token("host-id-abc");
+        assert_eq!(machine_seal_id(&token), "host-id-abc");
+    }
+
+    #[test]
+    fn machine_seal_id_strips_a_trailing_newline_before_decoding() {
+        let token = encode_machine_id_token("host-id-abc");
+        assert_eq!(machine_seal_id(&format!("{token}\n")), "host-id-abc");
+    }
+
+    #[test]
+    #[should_panic(expected = "not a valid `litmask show-machine-id` token")]
+    fn machine_seal_id_rejects_a_non_token_value() {
+        // A raw id with no check group must be rejected at build time,
+        // not silently sealed and surfaced as a runtime decrypt failure.
+        let _ = machine_seal_id("host-id-abc");
+    }
 
     fn persist_path(dir: &TempDir) -> PathBuf {
         dir.path().join("litmask_seed.bin")
@@ -834,13 +884,16 @@ mod tests {
         SealTier::External(Zeroizing::new(material.to_string()))
     }
 
+    /// Wrap a raw id in the self-checking token form `emit()` expects on
+    /// the `LITMASK_MACHINE_ID` channel — the build decodes it back to the
+    /// raw id before deriving (§4.1.1).
     fn machine(id: &str) -> SealTier {
-        SealTier::Machine(Zeroizing::new(id.to_string()))
+        SealTier::Machine(Zeroizing::new(encode_machine_id_token(id)))
     }
 
     fn machine_external(id: &str, material: &str) -> SealTier {
         SealTier::MachineExternal(
-            Zeroizing::new(id.to_string()),
+            Zeroizing::new(encode_machine_id_token(id)),
             Zeroizing::new(material.to_string()),
         )
     }
@@ -931,8 +984,15 @@ mod tests {
     fn machine_external_factors_strip_trailing_newline() {
         let seed = [0x71u8; KEY_LEN];
         let clean = BuildArtifacts::derive(&seed, &machine_external("host-id-abc", "secret"));
-        let newlined =
-            BuildArtifacts::derive(&seed, &machine_external("host-id-abc\n", "secret\n"));
+        // Model a newline on each build channel: the machine-id token and
+        // the external material each arrive with a trailing newline.
+        let newlined = BuildArtifacts::derive(
+            &seed,
+            &SealTier::MachineExternal(
+                Zeroizing::new(format!("{}\n", encode_machine_id_token("host-id-abc"))),
+                Zeroizing::new("secret\n".to_string()),
+            ),
+        );
         assert_eq!(
             clean.unlock_key, newlined.unlock_key,
             "trailing newline on either factor must not change the composed unlock_key",
@@ -1011,7 +1071,16 @@ mod tests {
     fn machine_id_trailing_newline_is_stripped_before_derivation() {
         let seed = [0x71u8; KEY_LEN];
         let clean = BuildArtifacts::derive(&seed, &machine("host-id-abc")).unlock_key;
-        let newline = BuildArtifacts::derive(&seed, &machine("host-id-abc\n")).unlock_key;
+        // Model a newline-bearing channel: the token arrives with a
+        // trailing newline appended after its check group.
+        let newline = BuildArtifacts::derive(
+            &seed,
+            &SealTier::Machine(Zeroizing::new(format!(
+                "{}\n",
+                encode_machine_id_token("host-id-abc")
+            ))),
+        )
+        .unlock_key;
         assert_eq!(
             clean, newline,
             "trailing newline must not change the sealed machine unlock_key",

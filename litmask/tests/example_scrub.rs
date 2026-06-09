@@ -346,8 +346,12 @@ fn twain_fixture_absent_from_canonical_examples() {
 /// `weak_mask!()` calls.
 #[test]
 fn machine_id_provider_example_masked_fixtures_absent_from_binary() {
-    let machine_id = common::machine_id_via_cli()
-        .unwrap_or_else(|| "litmask-scrub-placeholder-machine-id".to_string());
+    // `machine_id_via_cli` already returns the self-checking token form
+    // `emit()` requires; on hosts without a machine id, fall back to a
+    // well-formed token over a placeholder id so the build still seals.
+    let machine_id = common::machine_id_via_cli().unwrap_or_else(|| {
+        litmask_internal::encode_machine_id_token("litmask-scrub-placeholder-machine-id")
+    });
     common::build_example_with_features_and_env(
         "machine_id_provider",
         Profile::Release,

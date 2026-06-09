@@ -38,10 +38,15 @@ use std::process::Command;
 mod common;
 use common::{machine_id_via_cli, workspace_root};
 
-/// A machine id that is NOT this host's — re-derives a different
-/// `unlock_key`, so the wrapper's AEAD tag check must reject it at
-/// runtime.
-const WRONG_MACHINE_ID: &str = "not-this-hosts-machine-id-0000";
+/// A self-checking token (§4.1.1) for a machine id that is NOT this
+/// host's. It is a *well-formed* token — `emit()` decodes it cleanly —
+/// but its raw id differs from the host, so the runtime re-derives a
+/// different `unlock_key` and the wrapper's AEAD tag check rejects it.
+/// Built through the token codec because `emit()` now requires the token
+/// form on `LITMASK_MACHINE_ID`.
+fn wrong_machine_token() -> String {
+    litmask_internal::encode_machine_id_token("not-this-hosts-machine-id-0000")
+}
 
 /// Canary plaintext the fixture masks. Lexically unusual so its presence
 /// in captured stdout is an unambiguous round-trip signal.
@@ -122,7 +127,7 @@ fn machine_tier_round_trips_when_sealed_with_host_id_and_fails_otherwise() {
     // Reseal with a different id (rerun-if-env-changed forces a fresh
     // seal), then run on this host: the runtime re-derives a different
     // unlock_key and the wrapper's AEAD check rejects it.
-    let bin = build_sealed_fixture(WRONG_MACHINE_ID);
+    let bin = build_sealed_fixture(&wrong_machine_token());
     let (ok, stdout) = run_fixture(&bin);
     assert!(
         !ok,
