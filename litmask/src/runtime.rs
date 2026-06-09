@@ -95,19 +95,30 @@ pub fn __init_with_wrapper<P: KeyProvider>(
 /// tail of every `init!` seam: the tiers differ only in how they obtain
 /// the `unlock_key` (provider, machine id, or two-factor composition),
 /// so the wrapper decrypt + cell-set logic lives here once.
-#[allow(clippy::match_wild_err_arm)]
 fn init_with_unlock_key(
     unlock_key: &crate::key::UnlockKey,
     wrapper: &[u8; WRAPPER_LEN],
 ) -> Result<(), InitError> {
-    let mask_key_bytes = match decrypt_wrapper(unlock_key.as_bytes(), wrapper) {
-        Ok(bytes) => bytes,
-        Err(DecryptError::AuthenticationFailed) => {
-            return Err(InitError::Decryption);
-        }
-        Err(DecryptError::UnsupportedFormat) => {
-            return Err(InitError::UnsupportedFormat);
-        }
+    let mask_key_bytes = decrypt_mask_key(unlock_key, wrapper)?;
+    cell::try_set(MaskKey::new(mask_key_bytes));
+    Ok(())
+}
+
+/// Decrypt the embedded `mask_key` wrapper under `unlock_key`, mapping
+/// the [`DecryptError`] surface onto [`InitError`]. The single home for
+/// that mapping: both the `init!`/`init_with!` seams (which forward the
+/// `InitError`) and the lazy first-`mask!()` path (which panics on
+/// `Err`) decrypt the wrapper through here, so the AEAD-failure and
+/// unknown-format distinction is made once.
+#[allow(clippy::match_wild_err_arm)]
+fn decrypt_mask_key(
+    unlock_key: &crate::key::UnlockKey,
+    wrapper: &[u8; WRAPPER_LEN],
+) -> Result<[u8; crate::internal::KEY_LEN], InitError> {
+    match decrypt_wrapper(unlock_key.as_bytes(), wrapper) {
+        Ok(bytes) => Ok(bytes),
+        Err(DecryptError::AuthenticationFailed) => Err(InitError::Decryption),
+        Err(DecryptError::UnsupportedFormat) => Err(InitError::UnsupportedFormat),
         // `BlobTooShort` cannot reach this branch — `WRAPPER_LEN`
         // is fixed at the type level, so the wrapper is always
         // exactly long enough. A panic here would be a soundness
@@ -116,9 +127,7 @@ fn init_with_unlock_key(
         // `panic!()` (no message) for compile-time exhaustiveness
         // without leaking identifier text into the binary.
         Err(_) => panic!(),
-    };
-    cell::try_set(MaskKey::new(mask_key_bytes));
-    Ok(())
+    }
 }
 
 /// `init!(machine_id)` seam: construct the crate-private
@@ -324,6 +333,10 @@ pub fn __weak_decode_cstr<const N: usize>(
     cache.get_or_init(|| std::ffi::CString::new(weak_xor_decode(obf, wrapper)).unwrap())
 }
 
+// The `match … { Ok => …, Err(_) => panic!() }` shape is deliberate
+// (see the module header): `let…else` / `if let` alternatives or an
+// `.expect()` would inject identifier text into the unwind path and
+// fingerprint user binaries as litmask-built.
 #[allow(
     clippy::single_match_else,
     clippy::match_wild_err_arm,
@@ -333,30 +346,21 @@ fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {
     cell::get_or_init(|| {
         // No explicit `init!` ran: derive the Embedded-tier unlock_key
         // from the wrapper's public nonce — the keyless floor works in
-        // both std and no_std. A failure here panics with no message to
-        // avoid leaking litmask-identifying plaintext.
+        // both std and no_std — then decrypt the wrapper through the same
+        // path the explicit seams use. Any failure (provider or decrypt)
+        // panics with no message to avoid leaking litmask-identifying
+        // plaintext; the eager seams forward the equivalent `InitError`.
         let provider = crate::EmbeddedProvider::new(wrapper);
-        let unlock_key = match provider.unlock_key() {
-            Ok(k) => k,
+        let bytes = match provider
+            .unlock_key()
+            .map_err(InitError::KeyProvider)
+            .and_then(|unlock_key| decrypt_mask_key(&unlock_key, wrapper))
+        {
+            Ok(bytes) => bytes,
             Err(_) => panic!(),
         };
-        let bytes = decrypt_wrapper_or_panic(unlock_key.as_bytes(), wrapper);
         MaskKey::new(bytes)
     })
-}
-
-// Both the lazy Embedded path here and (indirectly) every `mask!`
-// without an explicit `init!` rely on this; `__init_with_wrapper`
-// returns `InitError::Decryption` instead of panicking.
-#[allow(clippy::single_match_else, clippy::match_wild_err_arm)]
-fn decrypt_wrapper_or_panic(
-    unlock_key: &[u8; crate::internal::KEY_LEN],
-    wrapper: &[u8; WRAPPER_LEN],
-) -> [u8; crate::internal::KEY_LEN] {
-    match decrypt_wrapper(unlock_key, wrapper) {
-        Ok(bytes) => bytes,
-        Err(_) => panic!(),
-    }
 }
 
 #[allow(clippy::single_match_else, clippy::match_wild_err_arm)]
