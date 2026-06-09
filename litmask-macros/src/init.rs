@@ -18,6 +18,7 @@
 //!
 //! [`KeyProvider`]: litmask::KeyProvider
 
+use litmask_internal::SealTierTag;
 use proc_macro::TokenStream;
 use quote::quote;
 
@@ -26,21 +27,9 @@ use crate::common::{FailTag, compile_error};
 const MACRO_NAME: &str = "init";
 
 /// rustc-env var carrying the build-sealed tier tag. Set by
-/// `litmask_build::emit`; MUST match the build side byte-for-byte.
+/// `litmask_build::emit`; the tier spelling is the shared
+/// [`SealTierTag`] vocabulary, so build and macro cannot drift.
 const SEAL_TIER_VAR: &str = "LITMASK_SEAL_TIER";
-
-/// Tier tag whose seal the no-arg `init!()` form unlocks.
-const EMBEDDED_TIER: &str = "embedded";
-
-/// Tier tag whose seal the `init!(<provider>)` form unlocks.
-const EXTERNAL_TIER: &str = "external";
-
-/// Tier tag whose seal the `init!(machine_id)` keyword form unlocks.
-const MACHINE_TIER: &str = "machine";
-
-/// Tier tag whose seal the `init!(machine_id + <provider>)` two-factor
-/// form unlocks.
-const MACHINE_EXTERNAL_TIER: &str = "machine_external";
 
 /// The bare keyword that selects the Machine form: `init!(machine_id)`.
 const MACHINE_ID_KEYWORD: &str = "machine_id";
@@ -63,13 +52,13 @@ pub(crate) enum Form {
 }
 
 impl Form {
-    /// The sealed tier tag this form is allowed to unlock.
-    fn tier(self) -> &'static str {
+    /// The sealed tier this form is allowed to unlock.
+    fn tier(self) -> SealTierTag {
         match self {
-            Self::Embedded => EMBEDDED_TIER,
-            Self::External => EXTERNAL_TIER,
-            Self::Machine => MACHINE_TIER,
-            Self::MachineExternal => MACHINE_EXTERNAL_TIER,
+            Self::Embedded => SealTierTag::Embedded,
+            Self::External => SealTierTag::External,
+            Self::Machine => SealTierTag::Machine,
+            Self::MachineExternal => SealTierTag::MachineExternal,
         }
     }
 
@@ -145,10 +134,11 @@ fn classify(
 pub(crate) fn check_tier(form: Form, tier: Option<&str>) -> Result<(), String> {
     let want = form.tier();
     match tier {
-        Some(t) if t == want => Ok(()),
+        Some(t) if SealTierTag::parse(t) == Some(want) => Ok(()),
         Some(other) => Err(format!(
-            "{} unlocks the `{want}` seal tier, but this build sealed `{other}`",
-            form.syntax()
+            "{} unlocks the `{}` seal tier, but this build sealed `{other}`",
+            form.syntax(),
+            want.as_str(),
         )),
         None => Err(format!(
             "{SEAL_TIER_VAR} is unset; this build did not run litmask_build::emit() in build.rs"
@@ -234,6 +224,11 @@ pub(crate) fn expand(input: &TokenStream) -> TokenStream {
 mod tests {
     use super::*;
 
+    const EMBEDDED_TIER: &str = SealTierTag::Embedded.as_str();
+    const EXTERNAL_TIER: &str = SealTierTag::External.as_str();
+    const MACHINE_TIER: &str = SealTierTag::Machine.as_str();
+    const MACHINE_EXTERNAL_TIER: &str = SealTierTag::MachineExternal.as_str();
+
     #[test]
     fn embedded_form_accepts_embedded_seal() {
         assert!(check_tier(Form::Embedded, Some(EMBEDDED_TIER)).is_ok());
@@ -242,6 +237,16 @@ mod tests {
     #[test]
     fn external_form_accepts_external_seal() {
         assert!(check_tier(Form::External, Some(EXTERNAL_TIER)).is_ok());
+    }
+
+    /// An env value that names no known tier is treated as a mismatch,
+    /// not silently accepted — a corrupted or future-versioned tag must
+    /// fail the cross-check just like the wrong tier does.
+    #[test]
+    fn unknown_seal_tag_is_rejected() {
+        let detail = check_tier(Form::Embedded, Some("hardware")).unwrap_err();
+        assert!(detail.contains("hardware"));
+        assert!(detail.contains(EMBEDDED_TIER));
     }
 
     #[test]

@@ -37,8 +37,8 @@ use zeroize::{Zeroize, Zeroizing};
 use litmask_internal::{
     CURRENT_CIPHER, EMBEDDED_UNLOCK_DERIVATION_CONTEXT, EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
     FormatVersion, KEY_LEN, MACHINE_ID_DERIVATION_CONTEXT, MACHINE_ID_SALT_DERIVATION_CONTEXT,
-    TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, WRAPPER_BODY_LEN, WRAPPER_LEN, WRAPPER_PLAINTEXT_LEN,
-    aead_encrypt, assemble_wrapper, base64url, derive_embedded_unlock_key,
+    SealTierTag, TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, WRAPPER_BODY_LEN, WRAPPER_LEN,
+    WRAPPER_PLAINTEXT_LEN, aead_encrypt, assemble_wrapper, base64url, derive_embedded_unlock_key,
     derive_external_unlock_key, derive_machine_id_key, derive_two_factor_unlock_key,
     nonce_for_wrapper, strip_trailing_newline,
 };
@@ -101,13 +101,15 @@ impl SealTier {
         }
     }
 
-    /// The build-authoritative tag published over `cargo:rustc-env`.
-    fn tag(&self) -> &'static str {
+    /// The build-authoritative tier this seal publishes. Its
+    /// [`SealTierTag::as_str`] spelling rides `cargo:rustc-env` and the
+    /// `init!` macro cross-checks against it.
+    fn tag_kind(&self) -> SealTierTag {
         match self {
-            Self::Embedded => "embedded",
-            Self::External(_) => "external",
-            Self::Machine(_) => "machine",
-            Self::MachineExternal(_, _) => "machine_external",
+            Self::Embedded => SealTierTag::Embedded,
+            Self::External(_) => SealTierTag::External,
+            Self::Machine(_) => SealTierTag::Machine,
+            Self::MachineExternal(_, _) => SealTierTag::MachineExternal,
         }
     }
 }
@@ -441,7 +443,10 @@ fn profile_dir_of(out_dir: &Path) -> PathBuf {
 /// `cargo --verbose` and inject into downstream rustc).
 fn seal_tier_directives(tier: &SealTier) -> [String; 3] {
     [
-        format!("cargo:rustc-env=LITMASK_SEAL_TIER={}", tier.tag()),
+        format!(
+            "cargo:rustc-env=LITMASK_SEAL_TIER={}",
+            tier.tag_kind().as_str()
+        ),
         "cargo:rerun-if-env-changed=LITMASK_MACHINE_ID".to_string(),
         "cargo:rerun-if-env-changed=LITMASK_UNLOCK_KEY".to_string(),
     ]
@@ -845,22 +850,25 @@ mod tests {
     /// channel selects Machine.
     #[test]
     fn from_material_presence_selects_tier() {
-        assert_eq!(SealTier::from_material(None, None).tag(), "embedded");
         assert_eq!(
-            SealTier::from_material(Some("operator secret".to_string()), None).tag(),
-            "external",
+            SealTier::from_material(None, None).tag_kind(),
+            SealTierTag::Embedded,
         );
         assert_eq!(
-            SealTier::from_material(None, Some("host-id-abc".to_string())).tag(),
-            "machine",
+            SealTier::from_material(Some("operator secret".to_string()), None).tag_kind(),
+            SealTierTag::External,
+        );
+        assert_eq!(
+            SealTier::from_material(None, Some("host-id-abc".to_string())).tag_kind(),
+            SealTierTag::Machine,
         );
         assert_eq!(
             SealTier::from_material(
                 Some("operator secret".to_string()),
                 Some("host-id-abc".to_string()),
             )
-            .tag(),
-            "machine_external",
+            .tag_kind(),
+            SealTierTag::MachineExternal,
         );
     }
 

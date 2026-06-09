@@ -45,6 +45,9 @@ pub use kdf::{
 mod nonce;
 pub use nonce::{nonce_for_call_site, nonce_for_wrapper};
 
+mod tier;
+pub use tier::SealTierTag;
+
 mod wire;
 pub use wire::{
     CipherId, FormatVersion, KEY_LEN, NONCE_LEN, NONCE_OFFSET, ParsedWrapper, TAG_LEN,
