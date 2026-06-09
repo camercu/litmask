@@ -53,6 +53,27 @@ pub(crate) fn init_failure(err: &InitError) -> ! {
     }
 }
 
+/// Diverge when the lazy first-`mask!()` path runs on a non-Embedded
+/// seal — i.e. a `mask!()` reached the runtime before the `init!(...)`
+/// the higher tier requires. The debug message names the init-ordering
+/// cause (and the offending tier) so the fix is obvious; the release arm
+/// stays bare to preserve opacity. Distinct from [`init_failure`]'s
+/// generic decryption hint, which an unguarded lazy path would otherwise
+/// surface for this same bug.
+pub(crate) fn lazy_init_wrong_tier(tier: &str) -> ! {
+    #[cfg(debug_assertions)]
+    panic!(
+        "litmask: a mask!() reached the runtime before init!() — this build is sealed \
+         `{tier}` (above the Embedded floor), so it must call the matching init!(...) form \
+         before the first mask!()"
+    );
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = tier;
+        panic!();
+    }
+}
+
 /// Diverge on a per-string `mask!()` blob decrypt failure.
 pub(crate) fn blob_failure() -> ! {
     #[cfg(debug_assertions)]
@@ -135,5 +156,18 @@ mod tests {
         assert!(panic_message(|| blob_failure()).contains("litmask:"));
         assert!(panic_message(|| weak_utf8_failure()).contains("litmask:"));
         assert!(panic_message(|| weak_cstr_failure()).contains("litmask:"));
+        assert!(panic_message(|| lazy_init_wrong_tier("external")).contains("litmask:"));
+    }
+
+    /// The lazy-tier refusal must point at the init-ordering cause (so an
+    /// operator calls `init!` first) and name the offending tier — not
+    /// read like the generic decryption hint, which is the misleading
+    /// message an unguarded lazy path would have surfaced for this bug.
+    #[test]
+    fn lazy_init_wrong_tier_names_ordering_and_tier() {
+        let msg = panic_message(|| lazy_init_wrong_tier("external"));
+        assert!(msg.contains("before init!()"));
+        assert!(msg.contains("external"));
+        assert_ne!(msg, init_hint(&InitError::Decryption));
     }
 }

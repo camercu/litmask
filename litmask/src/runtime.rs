@@ -182,17 +182,21 @@ pub fn __init_machine_id_external<P: KeyProvider>(
 /// the embedded encrypted-`mask_key` blob, passed by the macro so lazy
 /// init can derive the Embedded `unlock_key` via
 /// [`crate::EmbeddedProvider`] when no explicit `init!` was issued.
+/// `tier` is the build-sealed `LITMASK_SEAL_TIER` tag (injected by the
+/// `mask!` expansion via `__seal_tier!`); it gates the lazy path so a
+/// higher-tier seal refuses the Embedded fallback (§2.1).
 ///
 /// # Panics
 ///
-/// Panics on AEAD authentication failure, lazy-init provider failure, or
-/// wrapper format / cipher-id mismatch. The panic is bare (no message)
+/// Panics on AEAD authentication failure, lazy-init provider failure,
+/// wrapper format / cipher-id mismatch, or a lazy first-`mask!()` on a
+/// non-Embedded seal (init-ordering bug). The panic is bare (no message)
 /// in release and carries an actionable [`crate::diagnostics`] message in
 /// debug (§5.4).
 #[doc(hidden)]
 #[allow(clippy::must_use_candidate)]
-pub fn __decrypt(blob: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> alloc::vec::Vec<u8> {
-    let mask_key = mask_key_or_lazy_init(wrapper);
+pub fn __decrypt(blob: &[u8], wrapper: &[u8; WRAPPER_LEN], tier: &str) -> alloc::vec::Vec<u8> {
+    let mask_key = mask_key_or_lazy_init(wrapper, tier);
     decrypt_blob_or_panic(mask_key.as_bytes(), blob)
 }
 
@@ -354,14 +358,26 @@ pub fn __weak_decode_cstr<const N: usize>(
     clippy::match_wild_err_arm,
     clippy::manual_let_else
 )]
-fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {
+fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN], tier: &str) -> &'static MaskKey {
     cell::get_or_init(|| {
-        // No explicit `init!` ran: derive the Embedded-tier unlock_key
-        // from the wrapper's public nonce — the keyless floor works in
-        // both std and no_std — then decrypt the wrapper through the same
-        // path the explicit seams use. Any failure (provider or decrypt)
-        // panics with no message to avoid leaking litmask-identifying
-        // plaintext; the eager seams forward the equivalent `InitError`.
+        // No explicit `init!` ran. The lazy fallback derives the
+        // Embedded-tier unlock_key from the wrapper's public nonce, which
+        // is correct ONLY at the Embedded floor. On a higher-tier seal
+        // this would silently derive the wrong key and fail the wrapper
+        // AEAD check, masking the real cause (a missing/late `init!`) as a
+        // generic decryption error. Refuse instead, naming the
+        // init-ordering bug. The cell is set-once: a build that called
+        // `init!` first never reaches this closure, so a correctly
+        // ordered higher-tier program is unaffected.
+        if crate::internal::SealTierTag::parse(tier) != Some(crate::internal::SealTierTag::Embedded)
+        {
+            crate::diagnostics::lazy_init_wrong_tier(tier);
+        }
+        // Derive the keyless Embedded unlock_key (works in both std and
+        // no_std), then decrypt the wrapper through the same path the
+        // explicit seams use. Any failure (provider or decrypt) panics
+        // with no message to avoid leaking litmask-identifying plaintext;
+        // the eager seams forward the equivalent `InitError`.
         let provider = crate::EmbeddedProvider::new(wrapper);
         let bytes = match provider
             .unlock_key()

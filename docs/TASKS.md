@@ -444,16 +444,16 @@ lockstep); they become live as higher tiers and external consumers land.
 Doc drift from the same review (THREAT_MODEL/MIGRATION/SECURITY_AUDIT/
 SPECIFICATION default-provider) is already fixed.
 
-- [ ] **Lazy-init silently picks Embedded in every config**
-      (`litmask/src/runtime.rs`, `mask_key_or_lazy_init`). It now derives
-      the Embedded `unlock_key` in both std and no_std with no tier check.
-      Once a higher tier ships, a `mask!()` that races ahead of an
-      explicit `init_with!(<higher-tier provider>)` will lazy-derive the
-      *wrong* (Embedded) key and panic deep in init instead of surfacing
-      the init-ordering bug. Pre-change no_std panicked loudly. Gate
-      lazy-init on the sealed tier (or panic unless Embedded) when the
-      tier work lands. *Relates to the higher-tier tasks; pairs with Task
-      8's diagnostics split.*
+- [x] **Lazy-init silently picks Embedded in every config**
+      (`litmask/src/runtime.rs`, `mask_key_or_lazy_init`). Fixed: the
+      `mask!` expansion now carries the build-sealed `LITMASK_SEAL_TIER`
+      tag into `__decrypt` via a new `__seal_tier!()` macro, and the lazy
+      path refuses any non-Embedded tier with a dedicated
+      `diagnostics::lazy_init_wrong_tier` panic (profile-split, names the
+      init-ordering cause) instead of lazy-deriving the wrong key.
+      Covered by the `lazy_higher_tier_refusal` e2e fixture (external
+      seal, no `init!`) plus diagnostics unit tests. Spec §2.1.1.12a /
+      §2.6.1.6 narrowed.
 - [ ] **`init!` tier-mismatch `compile_error!` branch has no end-to-end
       coverage** (`litmask-macros/src/init.rs`). litmask's own
       `LITMASK_SEAL_TIER=embedded` rustc-env leaks into the trybuild

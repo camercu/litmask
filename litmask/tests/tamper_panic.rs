@@ -22,7 +22,11 @@ fn decrypt_panics_on_tampered_blob() {
 
     let _ = common::assert_panic_msg(|| {
         let blob = [0u8; MIN_BLOB_LEN];
-        let _ = ::litmask::__internal::__decrypt(&blob, ::litmask::__wrapper_bytes!());
+        let _ = ::litmask::__internal::__decrypt(
+            &blob,
+            ::litmask::__wrapper_bytes!(),
+            ::litmask::__seal_tier!(),
+        );
     });
 }
 
@@ -38,7 +42,11 @@ fn tampered_blob_panic_message_is_profile_split() {
 
     let msg = common::assert_panic_msg(|| {
         let blob = [0u8; MIN_BLOB_LEN];
-        let _ = ::litmask::__internal::__decrypt(&blob, ::litmask::__wrapper_bytes!());
+        let _ = ::litmask::__internal::__decrypt(
+            &blob,
+            ::litmask::__wrapper_bytes!(),
+            ::litmask::__seal_tier!(),
+        );
     });
 
     #[cfg(debug_assertions)]

@@ -224,6 +224,21 @@ macro_rules! __wrapper_bytes {
     };
 }
 
+/// Internal helper: expand to the build-sealed tier tag string
+/// (`LITMASK_SEAL_TIER`, set by `litmask_build::emit`). Read at the
+/// consumer's compile time — the same `cargo:rustc-env` the `init!`
+/// proc-macro cross-checks against — and passed into [`__internal::__decrypt`]
+/// so the lazy first-`mask!()` path can refuse to derive the Embedded
+/// key on a higher-tier seal (an init-ordering bug) instead of failing
+/// the wrapper AEAD check with a misleading decryption error.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __seal_tier {
+    () => {
+        ::core::env!("LITMASK_SEAL_TIER")
+    };
+}
+
 /// Initialize the runtime using a caller-supplied [`KeyProvider`].
 ///
 /// Like [`init!`] but accepts any `KeyProvider` value. Errors flow
@@ -260,7 +275,12 @@ macro_rules! init_with {
 #[macro_export]
 macro_rules! __decrypt_cstring_call {
     ($blob:expr, $wrapper:expr) => {
-        ::std::ffi::CString::new($crate::__internal::__decrypt($blob, $wrapper)).unwrap()
+        ::std::ffi::CString::new($crate::__internal::__decrypt(
+            $blob,
+            $wrapper,
+            $crate::__seal_tier!(),
+        ))
+        .unwrap()
     };
 }
 

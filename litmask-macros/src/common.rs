@@ -424,15 +424,16 @@ fn mask_plaintext(mut plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKin
     debug_assert_eq!(blob_len, NONCE_LEN + ciphertext_and_tag.len());
     let blob_ident = syn::Ident::new("__LITMASK_BLOB", proc_macro2::Span::mixed_site());
     let wrapper = quote! { ::litmask::__wrapper_bytes!() };
+    let seal_tier = quote! { ::litmask::__seal_tier!() };
     let decrypt_expr = match kind {
         MaskKind::Str => quote! {
             ::litmask::__internal::__String::from_utf8(
-                ::litmask::__internal::__decrypt(#blob_ident, #wrapper)
+                ::litmask::__internal::__decrypt(#blob_ident, #wrapper, #seal_tier)
             )
             .unwrap()
         },
         MaskKind::Bytes => quote! {
-            ::litmask::__internal::__decrypt(#blob_ident, #wrapper)
+            ::litmask::__internal::__decrypt(#blob_ident, #wrapper, #seal_tier)
         },
         MaskKind::CStr => quote! {
             ::litmask::__decrypt_cstring_call!(#blob_ident, #wrapper)

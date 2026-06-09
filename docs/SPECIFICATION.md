@@ -251,10 +251,15 @@ Both delegate to a private function
 contains the actual decryption logic; the no-arg `init!()` constructs an
 `EmbeddedProvider` from the wrapper bytes.
 
-Either form is optional — first `mask!()` call performs lazy init with
-`EmbeddedProvider::new(&wrapper)`, deriving the Embedded `unlock_key` from
-the wrapper bytes that `mask!()` itself embeds via `include_bytes!`.
-Explicit init is recommended so initialization failures surface at startup
+On an Embedded-sealed build either form is optional — the first `mask!()`
+call performs lazy init with `EmbeddedProvider::new(&wrapper)`, deriving the
+Embedded `unlock_key` from the wrapper bytes that `mask!()` itself embeds via
+`include_bytes!`. On a higher-tier seal the lazy path is disabled: `mask!()`
+carries the build-sealed `LITMASK_SEAL_TIER` tag into the runtime, and a
+`mask!()` reached before the matching `init!(...)` panics with an
+init-ordering diagnostic rather than lazy-deriving the wrong (Embedded) key
+(§2.1.1.12a). Explicit init is therefore required above the floor, and
+recommended even at the floor so initialization failures surface at startup
 with structured errors rather than panics deep in program execution.
 
 The `OnceLock` is initialized exactly once per process; key rotation at runtime
@@ -1478,8 +1483,17 @@ own substring for this position. See §1.9.6 for rationale.
 policy in §1.9.5.
 
 §2.1.1.12 — Calling `mask!` before `litmask::init!()` or `litmask::init_with!()`
-SHALL trigger lazy initialization using the default keyless `EmbeddedProvider`
-(`unlock_key` recomputed from the wrapper's cleartext nonce).
+on an **Embedded**-sealed build SHALL trigger lazy initialization using the
+default keyless `EmbeddedProvider` (`unlock_key` recomputed from the wrapper's
+cleartext nonce). The `mask!` expansion SHALL carry the build-sealed
+`LITMASK_SEAL_TIER` tag into the runtime so the lazy path can gate on it.
+
+§2.1.1.12a — On a build sealed above the Embedded floor (`external`, `machine`,
+`machine_external`), a `mask!` reached before the matching `init!(...)` SHALL
+NOT lazy-derive the Embedded `unlock_key`. It SHALL panic per §1.9.5, naming the
+init-ordering cause (a higher tier requires an explicit `init!(...)` before the
+first `mask!()`). This prevents the wrong-key lazy derive from surfacing as a
+generic wrapper-decryption failure that hides the real cause.
 
 §2.1.1.13 — Lazy initialization failure SHALL panic per the policy in §1.9.5.
 
@@ -2033,8 +2047,11 @@ initialization SHALL return `Ok(())` without re-running the provider
 provider call.
 
 §2.6.1.6 — Lazy initialization (triggered by first `mask!()` call without
-prior `init!()`) SHALL behave equivalently to explicit `init!()`, except that
-lazy init failures result in panic per §2.1.1.13 rather than `Result` return.
+prior `init!()`) SHALL behave equivalently to explicit `init!()` ONLY on an
+Embedded-sealed build, except that lazy init failures result in panic per
+§2.1.1.13 rather than `Result` return. On a higher-tier seal the lazy path
+SHALL refuse per §2.1.1.12a (the `mask!` expansion carries the sealed tier into
+the runtime gate).
 
 §2.6.1.7 — Initialization failures SHALL return the `InitError` variants
 defined in §1.9.2 according to their documented semantics.
