@@ -20,8 +20,8 @@
 //!   (consumed by the runtime via `include_bytes!` inside the
 //!   `init!` / `init_with!` / `mask!` macro expansions).
 //! - `target/<profile>/litmask.config` — TOML containing `unlock_key`
-//!   (Embedded tier only; the External tier writes no config because
-//!   its key is the KDF of operator material the runtime re-sources).
+//!   (Embedded tier only; every keyed tier re-sources its key material
+//!   at runtime, so none writes a config).
 
 use std::ffi::OsString;
 use std::fs;
@@ -183,10 +183,10 @@ struct BuildArtifacts {
     /// to read at expansion time.
     mask_key: [u8; KEY_LEN],
     /// 32-byte ChaCha20-Poly1305 key that encrypts the wrapper. Its
-    /// origin is tier-dependent (nonce-derived for Embedded, the KDF of
-    /// operator material for External). Written into `litmask.config`
-    /// only for the Embedded tier; the External runtime re-derives it
-    /// from `LITMASK_UNLOCK_KEY` material and never reads the config.
+    /// origin is tier-dependent (nonce-derived for Embedded, a KDF of
+    /// re-sourced material for the keyed tiers). Written into
+    /// `litmask.config` only for the Embedded tier; keyed tiers
+    /// re-derive it at runtime and never read the config.
     unlock_key: [u8; KEY_LEN],
     /// Assembled wrapper bytes — cleartext nonce followed by the AEAD
     /// sealing of `version_byte || mask_key` under `unlock_key`.
