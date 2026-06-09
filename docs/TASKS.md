@@ -354,7 +354,7 @@ capture stays clean and copy/paste corruption is detectable.
 
 ---
 
-## Task 8: Profile-split diagnostics + Embedded floor warning + AC4 (AFK)
+## Task 8: Profile-split diagnostics + Embedded floor warning + AC4 (AFK) ✅ DONE
 
 **Implements:** §5.4 (profile-split diagnostics), §1.1 (floor
 warning), §2.4 (AC4 narrowing); doc: SPECIFICATION §5.4, §1.1
@@ -372,16 +372,31 @@ preserve opacity. Add the §1.1 build-time Embedded floor warning
 
 ### Acceptance Criteria
 
-- [ ] Runtime failure panics carry actionable text under
+- [x] Runtime failure panics carry actionable text under
       `cfg(debug_assertions)` and are bare `panic!()` in release
-      (verified by build-profile-split test)
-- [ ] A release build sealed at `embedded` emits a `cargo:warning=` floor
+      (verified by build-profile-split test —
+      `tampered_blob_panic_message_is_profile_split`, run under both
+      profiles; messages live in the `#[cfg(debug_assertions)]`
+      `litmask::diagnostics` module)
+- [x] A release build sealed at `embedded` emits a `cargo:warning=` floor
       notice; non-release or higher tiers do not
+      (`embedded_floor_warning`, presence-driven on the resolved tier)
 - [x] AC4 test permits `cargo:rustc-env=LITMASK_SEAL_TIER` and still
       bans every other `LITMASK*` rustc-env (done in Task 2)
-- [ ] `just ci` green
-- [ ] SPECIFICATION §5.4 and §1.1 document the diagnostics split and
-      the floor warning
+- [x] `just ci` green
+- [x] SPECIFICATION §5.4 and §1.1 document the diagnostics split and
+      the floor warning (§1.3.2 floor notice, §1.9.5 profile split)
+
+### Discoveries / unplanned work
+
+- **§1.9.5 needed the profile-split caveat.** The spec's panic policy
+  banned all custom messages outright; that now contradicts the debug
+  arm, so §1.9.5 was scoped to `cfg(not(debug_assertions))` with the
+  debug routing through `litmask::diagnostics` documented inline.
+- **Stale seed-echo doc removed.** SPECIFICATION §1.3.2 still claimed the
+  release profile prints the seed via `cargo:warning=` (the echo was
+  removed in Task 2); corrected while adding the floor-warning note, so
+  the floor notice is now the *only* sanctioned release `cargo:warning=`.
 
 ---
 
