@@ -68,12 +68,11 @@ fn tampered_blob_panic_message_is_profile_split() {
 ///   helper and `OUT_DIR` artifact loader; every `.expect`/`panic!`
 ///   here runs at proc-macro expansion time inside rustc, not in
 ///   the user binary.
-///
-/// `litmask/src/diagnostics.rs` is deliberately NOT scanned: the whole
-/// module is `#[cfg(debug_assertions)]`-gated (§5.4), so its actionable
-/// (litmask-identifying) panic messages are never compiled into a
-/// release artifact. The release arms in `runtime.rs` keep the bare
-/// `panic!()` this scan enforces.
+/// - `litmask/src/diagnostics.rs` — the §5.4 profile-split entry points.
+///   Its actionable messages are permitted *only* because each sits on
+///   the line immediately after a `#[cfg(debug_assertions)]` attribute,
+///   so it is compiled out of release. The scan enforces that gating
+///   (see `debug_gated` below): an ungated message here still fails.
 ///
 /// Each entry pairs a path with an allowlist of substrings whose
 /// containing line executes at PROC-MACRO TIME (inside rustc's
@@ -90,6 +89,7 @@ fn no_custom_panic_messages_in_decryption_path() {
             format!("{manifest}/../litmask-macros/src/mask_format.rs"),
             vec![],
         ),
+        (format!("{manifest}/src/diagnostics.rs"), vec![]),
         (
             format!("{manifest}/../litmask-macros/src/common.rs"),
             vec![
@@ -114,11 +114,24 @@ fn no_custom_panic_messages_in_decryption_path() {
     let mut hits: Vec<(String, usize, String)> = Vec::new();
     for (path, allow) in &scans {
         let src = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        // A message-bearing panic is exempt when the immediately
+        // preceding line is `#[cfg(debug_assertions)]` — it is then
+        // compiled out of release, where the opacity contract applies.
+        let mut debug_gated = false;
         for (i, line) in src.lines().enumerate() {
+            let prev_gated = debug_gated;
+            debug_gated = line.trim() == "#[cfg(debug_assertions)]";
+            // Comment lines (incl. `//!` doc comments) never reach
+            // `.rodata`, so a `.expect("…")`/`panic!("…")` quoted in prose
+            // — e.g. this file's own policy docs — cannot fingerprint the
+            // binary and is not a leak.
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
             if !custom_panic.is_match(line) {
                 continue;
             }
-            if allow.iter().any(|s| line.contains(s)) {
+            if prev_gated || allow.iter().any(|s| line.contains(s)) {
                 continue;
             }
             hits.push((path.clone(), i + 1, line.to_string()));

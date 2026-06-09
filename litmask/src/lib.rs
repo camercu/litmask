@@ -109,7 +109,6 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-#[cfg(debug_assertions)]
 mod diagnostics;
 mod error;
 mod key;

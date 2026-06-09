@@ -5,19 +5,13 @@
 //! [`__init_with_wrapper`] (the target of `init!` / `init_with!`) or
 //! lazily by [`__decrypt_str`] on the first `mask!()` call.
 //!
-//! In **release** builds the decryption path uses bare `panic!()` with
-//! no custom message for AEAD authentication and configuration
-//! failures. `assert!` and `.expect(...)` alternatives inject message
-//! text that would identify the code as litmask-related and leak into
-//! user binaries; `match X { Ok(_) => …, Err(_) => panic!() }` is the
-//! only form that keeps the unwind path identifier-free.
-//!
-//! In **debug** builds (§5.4) the same failure arms instead call into
-//! the `#[cfg(debug_assertions)]` [`crate::diagnostics`] module, which
-//! panics with actionable, litmask-identifying text. That module is not
-//! compiled into release, so the opacity guarantee above is unaffected;
-//! the cfg-split lives at each failure arm (`#[cfg(debug_assertions)]`
-//! vs `#[cfg(not(debug_assertions))]`).
+//! The decryption path must not leak litmask-identifying message text
+//! into a shipped (release) binary: `assert!` / `.expect("…")` and
+//! `panic!("…")` with a custom message would all fingerprint user
+//! binaries as litmask-built. Every failure arm here therefore routes
+//! to a [`crate::diagnostics`] entry point, which owns the §5.4 profile
+//! split — bare `panic!()` in release, actionable text in debug — in one
+//! place, so these call sites stay free of per-site `cfg` branching.
 
 use alloc::string::String;
 
@@ -244,10 +238,7 @@ pub fn __weak_decode<const N: usize>(
         let decoded = weak_xor_decode(obf, wrapper);
         match String::from_utf8(decoded) {
             Ok(text) => text,
-            #[cfg(debug_assertions)]
             Err(_) => crate::diagnostics::weak_utf8_failure(),
-            #[cfg(not(debug_assertions))]
-            Err(_) => panic!(),
         }
     })
 }
@@ -349,10 +340,7 @@ pub fn __weak_decode_cstr<const N: usize>(
     cache.get_or_init(
         || match std::ffi::CString::new(weak_xor_decode(obf, wrapper)) {
             Ok(cstring) => cstring,
-            #[cfg(debug_assertions)]
             Err(_) => crate::diagnostics::weak_cstr_failure(),
-            #[cfg(not(debug_assertions))]
-            Err(_) => panic!(),
         },
     )
 }
@@ -381,10 +369,7 @@ fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN]) -> &'static MaskKey {
             .and_then(|unlock_key| decrypt_mask_key(&unlock_key, wrapper))
         {
             Ok(bytes) => bytes,
-            #[cfg(debug_assertions)]
             Err(err) => crate::diagnostics::init_failure(&err),
-            #[cfg(not(debug_assertions))]
-            Err(_) => panic!(),
         };
         MaskKey::new(bytes)
     })
@@ -397,9 +382,6 @@ fn decrypt_blob_or_panic(
 ) -> alloc::vec::Vec<u8> {
     match decrypt_blob(mask_key, blob) {
         Ok(plaintext) => plaintext,
-        #[cfg(debug_assertions)]
         Err(_) => crate::diagnostics::blob_failure(),
-        #[cfg(not(debug_assertions))]
-        Err(_) => panic!(),
     }
 }
