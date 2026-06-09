@@ -47,7 +47,7 @@ const MACHINE_ID_KEYWORD: &str = "machine_id";
 
 /// The `init!` call form, selected by the macro argument. Each form
 /// unlocks exactly one sealed tier.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Form {
     /// `init!()` — keyless Embedded default.
     Embedded,
@@ -90,43 +90,51 @@ impl Form {
 /// Grammar:
 /// - empty → [`Form::Embedded`].
 /// - a bare `machine_id` keyword (single ident) → [`Form::Machine`].
-/// - a leading `machine_id` keyword followed by `+` → the two-factor
-///   [`Form::MachineExternal`]; the tokens after `+` are the external
-///   provider. An empty tail is a grammar error (the `+` promises a
-///   provider that is absent).
+/// - a leading `machine_id` keyword followed by a lone `+` → the
+///   two-factor [`Form::MachineExternal`]; the tokens after `+` are the
+///   external provider. An empty tail is a grammar error (the `+`
+///   promises a provider that is absent).
 /// - anything else → [`Form::External`], the whole input being the
 ///   provider expression.
 ///
-/// A leading `machine_id` followed by tokens other than `+` falls through
-/// to External: a consumer that genuinely names a provider value
+/// A leading `machine_id` followed by tokens other than a lone `+` falls
+/// through to External: a consumer that genuinely names a provider value
 /// `machine_id` pays the deliberate cost of the keyword being reserved
-/// only in the bare and `+`-prefixed positions.
-fn classify(input: &TokenStream) -> Result<(Form, Option<proc_macro2::TokenStream>), String> {
+/// only in the bare and `+`-prefixed positions. The `+` must be
+/// [`Spacing::Alone`] — a joint `+` is the lead of a compound operator
+/// like `+=`, which is not the two-factor operator.
+///
+/// [`Spacing::Alone`]: proc_macro2::Spacing::Alone
+fn classify(
+    input: &proc_macro2::TokenStream,
+) -> Result<(Form, Option<proc_macro2::TokenStream>), String> {
     if input.is_empty() {
         return Ok((Form::Embedded, None));
     }
     let mut tokens = input.clone().into_iter();
     let leading_machine_id = matches!(
         tokens.next(),
-        Some(proc_macro::TokenTree::Ident(id)) if id.to_string() == MACHINE_ID_KEYWORD
+        Some(proc_macro2::TokenTree::Ident(id)) if id == MACHINE_ID_KEYWORD
     );
     if leading_machine_id {
         match tokens.next() {
             None => return Ok((Form::Machine, None)),
-            Some(proc_macro::TokenTree::Punct(p)) if p.as_char() == '+' => {
-                let rest: TokenStream = tokens.collect();
+            Some(proc_macro2::TokenTree::Punct(p))
+                if p.as_char() == '+' && p.spacing() == proc_macro2::Spacing::Alone =>
+            {
+                let rest: proc_macro2::TokenStream = tokens.collect();
                 if rest.is_empty() {
                     return Err(format!(
                         "`{}` requires a provider expression after `+`",
                         Form::MachineExternal.syntax(),
                     ));
                 }
-                return Ok((Form::MachineExternal, Some(rest.into())));
+                return Ok((Form::MachineExternal, Some(rest)));
             }
             _ => {}
         }
     }
-    Ok((Form::External, Some(input.clone().into())))
+    Ok((Form::External, Some(input.clone())))
 }
 
 /// Decide whether the build-sealed `tier` permits the given call `form`.
@@ -154,7 +162,7 @@ pub(crate) fn check_tier(form: Form, tier: Option<&str>) -> Result<(), String> {
 /// matching init call.
 pub(crate) fn expand(input: &TokenStream) -> TokenStream {
     let span = proc_macro::Span::call_site().into();
-    let (form, provider) = match classify(input) {
+    let (form, provider) = match classify(&input.clone().into()) {
         Ok(parsed) => parsed,
         Err(detail) => {
             return compile_error(span, MACRO_NAME, FailTag::Grammar, &detail)
@@ -285,5 +293,62 @@ mod tests {
         let detail = check_tier(Form::MachineExternal, Some(EXTERNAL_TIER)).unwrap_err();
         assert!(detail.contains(MACHINE_EXTERNAL_TIER));
         assert!(detail.contains(EXTERNAL_TIER));
+    }
+
+    fn classify_str(src: &str) -> Result<(Form, Option<proc_macro2::TokenStream>), String> {
+        classify(&src.parse().expect("test source tokenizes"))
+    }
+
+    #[test]
+    fn classify_empty_is_embedded() {
+        let (form, provider) = classify_str("").unwrap();
+        assert_eq!(form, Form::Embedded);
+        assert!(provider.is_none());
+    }
+
+    #[test]
+    fn classify_bare_machine_id_is_machine() {
+        let (form, provider) = classify_str("machine_id").unwrap();
+        assert_eq!(form, Form::Machine);
+        assert!(provider.is_none());
+    }
+
+    #[test]
+    fn classify_machine_id_plus_provider_is_two_factor() {
+        let (form, provider) = classify_str("machine_id + EnvVarProvider::default()").unwrap();
+        assert_eq!(form, Form::MachineExternal);
+        assert_eq!(
+            provider.unwrap().to_string(),
+            "EnvVarProvider :: default ()"
+        );
+    }
+
+    #[test]
+    fn classify_machine_id_plus_nothing_is_grammar_error() {
+        let detail = classify_str("machine_id +").unwrap_err();
+        assert!(detail.contains("provider expression after `+`"));
+    }
+
+    #[test]
+    fn classify_provider_expr_is_external() {
+        let (form, provider) = classify_str("EnvVarProvider::default()").unwrap();
+        assert_eq!(form, Form::External);
+        assert!(provider.is_some());
+    }
+
+    #[test]
+    fn classify_machine_id_method_call_is_external() {
+        let (form, _) = classify_str("machine_id.into_provider()").unwrap();
+        assert_eq!(form, Form::External);
+    }
+
+    /// A compound `+=` is the lead of an assignment operator, not the
+    /// two-factor `+`. It must NOT be misread as `MachineExternal` with a
+    /// malformed `= provider` tail; it falls through to External so the
+    /// whole input is reported as one (malformed) provider expression.
+    #[test]
+    fn classify_machine_id_compound_plus_eq_is_not_two_factor() {
+        let (form, _) = classify_str("machine_id += provider").unwrap();
+        assert_eq!(form, Form::External);
     }
 }
