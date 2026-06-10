@@ -9,8 +9,8 @@ not, and what limitations apply when things go wrong.
 targets **Level 1** only — it recomputes `unlock_key` from the wrapper's
 cleartext nonce, so the key is recoverable from the artifact; this buys
 `strings(1)` resistance, not secrecy. Layered key management
-(`EnvVarProvider`, `FileProvider`, `MachineIdProvider`, or a custom
-provider) raises the baseline to **Level 2** and provides meaningful
+(`EnvVarProvider`, `FileProvider`, the `machine_id` keyword tier, or a
+custom provider) raises the baseline to **Level 2** and provides meaningful
 **Level 3** resistance.
 
 ### Level 1 — Casual inspection
@@ -29,7 +29,7 @@ manually decrypts embedded ciphertext.
 **Stopped by (layered tiers only):** per-string unique nonces, AEAD
 ciphers, and the absence of plaintext key material in the binary.
 `mask_key` is encrypted under `unlock_key`, which under `EnvVarProvider`,
-`FileProvider`, or `MachineIdProvider` is sourced at runtime and never
+`FileProvider`, or the `machine_id` tier is sourced at runtime and never
 embedded. The keyless **Embedded** default does **not** reach Level 2: it
 recomputes `unlock_key` from the wrapper's cleartext nonce, so the key is
 recoverable from the binary.
@@ -63,7 +63,7 @@ decryption runs, any observer with runtime access sees plaintext.
 | Zero-config build (keyless `EmbeddedProvider`) | `strings`, casual binary inspection (Level 1) — `unlock_key` is recoverable from the artifact |
 | `EnvVarProvider` | Above + Level 2: `unlock_key` sourced at runtime, not embedded |
 | `FileProvider` + filesystem permissions | Above with OS-enforced access control |
-| `MachineIdProvider` | Above + binary moved to a different machine |
+| `machine_id` tier (`init!(machine_id)`) | Above + binary moved to a different machine |
 | Custom `KeyProvider` (vault, HSM) | Above + offline attackers |
 
 "Zero-config" means no project configuration beyond `build.rs` and no

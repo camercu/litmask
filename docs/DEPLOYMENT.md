@@ -129,7 +129,8 @@ recommendations, not requirements — `litmask` works with any profile.
 `strip = "symbols"` removes the symbol table but **not** `.rodata`
 string constants. The largest remaining tell is the panic-location
 path string Rust embeds for bounds-check and assert sites — for
-example, a binary using `MachineIdProvider` or `weak_mask!` carries:
+example, a binary sealed under the `machine_id` tier or using `weak_mask!`
+carries:
 
 ```
 .../registry/src/index.crates.io-.../blake3-1.8.5/src/lib.rs
