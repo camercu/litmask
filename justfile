@@ -105,17 +105,26 @@ test-examples:
 
 # ── Coverage ────────────────────────────────────────────────
 
-coverage:
+# Coverage instrumentation bakes a per-file covmap into each object.
+# Deleting a source file or example orphans its covmap inside
+# target/llvm-cov-target (cached binaries + incremental codegen units);
+# `cargo llvm-cov clean` does NOT purge those, so the dead file lingers
+# as a phantom 0%-covered row and deflates the totals. Wipe the coverage
+# build dir so every report reflects only the current source set.
+_cov-purge:
+    rm -rf target/llvm-cov-target
+
+coverage: _cov-purge
     cargo llvm-cov nextest --workspace --all-features
 
 alias cov := coverage
 
-coverage-html:
+coverage-html: _cov-purge
     cargo llvm-cov nextest --workspace --all-features --html
 
 alias cov-html := coverage-html
 
-coverage-lcov:
+coverage-lcov: _cov-purge
     cargo llvm-cov nextest --workspace --all-features --lcov --output-path target/llvm-cov/lcov.info
 
 alias cov-lcov := coverage-lcov
