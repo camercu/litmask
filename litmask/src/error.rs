@@ -249,4 +249,33 @@ mod tests {
             69,
         );
     }
+
+    #[derive(Debug)]
+    struct StubProviderError;
+
+    impl core::fmt::Display for StubProviderError {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            f.write_str("upstream-cause")
+        }
+    }
+
+    impl core::error::Error for StubProviderError {}
+
+    fn boxed_stub() -> alloc::boxed::Box<dyn core::error::Error + Send + Sync + 'static> {
+        alloc::boxed::Box::new(StubProviderError)
+    }
+
+    #[test]
+    fn key_error_provider_display_delegates_to_inner() {
+        let err = KeyError::Provider(boxed_stub());
+        assert_eq!(format!("{err}"), "provider:upstream-cause");
+    }
+
+    #[test]
+    fn key_error_provider_source_is_inner() {
+        use core::error::Error;
+        let err = KeyError::Provider(boxed_stub());
+        let src = err.source().expect("Provider variant has a source");
+        assert_eq!(format!("{src}"), "upstream-cause");
+    }
 }
