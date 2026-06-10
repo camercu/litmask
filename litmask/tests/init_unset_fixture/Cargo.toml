@@ -1,0 +1,17 @@
+# Standalone one-crate workspace for the `init!` unset-tier compile-
+# failure test (`litmask/tests/init_tier_check_e2e.rs`). Its build.rs
+# deliberately does NOT run `litmask_build::emit()` (it only declares
+# rerun-if-env-changed for cache correctness), so `LITMASK_SEAL_TIER` is
+# absent — the `init!()` in `main.rs` then emits the §1.9.6 "unset"
+# compile error the test asserts. The empty `[workspace]` table detaches
+# it from the parent litmask workspace.
+[workspace]
+
+[package]
+name = "litmask_init_unset_fixture"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+litmask = { path = "../.." }
