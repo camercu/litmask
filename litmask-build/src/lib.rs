@@ -257,24 +257,24 @@ impl BuildArtifacts {
         //   so the runtime recomputes the identical key from the
         //   embedded nonce with no stored material (§1). The seed feeds
         //   only mask_key + the nonce.
-        // - External: unlock_key = KDF("litmask-unlock-v1", trimmed
-        //   operator material). The runtime provider re-sources the same
-        //   material and applies the identical KDF — the trim here MUST
-        //   match the provider byte-for-byte (single trailing newline).
+        // - External: unlock_key = KDF("litmask-unlock-v1", operator
+        //   material). The runtime provider re-sources the same material
+        //   and applies the identical KDF; the single-trailing-newline
+        //   trim lives inside `derive_external_unlock_key`, so build and
+        //   provider agree byte-for-byte without trimming at this site.
         let unlock_key = match tier {
             SealTier::Embedded => {
                 derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &wrapper_nonce)
             }
-            SealTier::External(material) => derive_external_unlock_key(
-                EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
-                strip_trailing_newline(material.as_bytes()),
-            ),
+            SealTier::External(material) => {
+                derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, material.as_bytes())
+            }
             // Machine: unlock_key = derive_machine_id_key(host id, nonce).
             // The salt is the wrapper nonce (derived inside the KDF), so
             // the runtime recomputes the identical key from the embedded
-            // nonce + the host's own machine id. The id is trimmed of a
-            // trailing newline — exactly as External trims its material —
-            // so a `LITMASK_MACHINE_ID` sourced through a newline-bearing
+            // nonce + the host's own machine id. `machine_seal_id` trims a
+            // trailing newline off the id before decoding, so a
+            // `LITMASK_MACHINE_ID` sourced through a newline-bearing
             // channel still matches `machine_uid::get()` (which emits no
             // trailing newline) at runtime.
             SealTier::Machine(machine_id) => derive_machine_id_key(
@@ -287,11 +287,10 @@ impl BuildArtifacts {
             // factor is finished independently at this one site — the
             // machine factor exactly as the Machine tier (host id + nonce
             // salt), the external factor exactly as the External tier
-            // (trimmed material) — then composed machine-first. The
-            // runtime recomposes the identical key from the host id +
-            // embedded nonce and the re-sourced external material, so a
-            // newline on either build channel must be trimmed here to
-            // match (§2.4).
+            // (newline trim folded into the external KDF) — then composed
+            // machine-first. The runtime recomposes the identical key from
+            // the host id + embedded nonce and the re-sourced external
+            // material (§2.4).
             SealTier::MachineExternal(machine_id, material) => {
                 let machine_key = derive_machine_id_key(
                     MACHINE_ID_DERIVATION_CONTEXT,
@@ -301,7 +300,7 @@ impl BuildArtifacts {
                 );
                 let external_key = derive_external_unlock_key(
                     EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
-                    strip_trailing_newline(material.as_bytes()),
+                    material.as_bytes(),
                 );
                 derive_two_factor_unlock_key(
                     TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT,

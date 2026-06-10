@@ -94,6 +94,10 @@ impl UnlockKey {
     /// (env, file, custom provider). The seal side (`litmask-build`)
     /// chains the identical KDF, so build and runtime agree.
     ///
+    /// A single trailing newline is stripped inside the KDF, so callers
+    /// pass raw material verbatim — env vars, key files, and the build
+    /// seal all converge on one secret without pre-trimming.
+    ///
     /// `weak_mask!()` keeps the BLAKE3 context literal out of
     /// `strings(1)` in user binaries; it MUST decode to
     /// `litmask_internal::EXTERNAL_UNLOCK_DERIVATION_CONTEXT` (pinned by

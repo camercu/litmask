@@ -94,18 +94,16 @@ fn read_file_bytes(path: &std::path::Path) -> Result<alloc::vec::Vec<u8>, KeyErr
 /// wipes on drop, so a caller cannot accidentally hand in a plain
 /// `Vec<u8>` that lingers in the allocator.
 ///
-/// A single trailing newline is stripped before derivation (editors
+/// A single trailing newline is stripped during derivation (editors
 /// append one when saving) so the file and env channels agree on one
-/// secret; see [`strip_trailing_newline`]. Any remaining bytes are
+/// secret; the trim lives inside [`UnlockKey::derive`]. Any bytes are
 /// valid material — derivation is infallible.
-///
-/// [`strip_trailing_newline`]: crate::internal::strip_trailing_newline
 #[allow(clippy::needless_pass_by_value)]
 fn derive_key_from_buffer<Z>(buffer: Z) -> UnlockKey
 where
     Z: AsRef<[u8]> + Zeroize,
 {
-    UnlockKey::derive(crate::internal::strip_trailing_newline(buffer.as_ref()))
+    UnlockKey::derive(buffer.as_ref())
 }
 
 #[cfg(test)]

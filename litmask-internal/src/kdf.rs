@@ -89,16 +89,23 @@ pub const EXTERNAL_UNLOCK_DERIVATION_CONTEXT: &str = "litmask-unlock-v1";
 
 /// Derive the External-tier `unlock_key` from runtime key material.
 ///
-/// `BLAKE3::derive_key(context, material)`. Unlike the Embedded path,
-/// `material` is arbitrary-length operator input, so the derivation
-/// normalizes it to a fixed 32-byte key — callers pass raw bytes with
-/// no pre-hashing. Build and runtime call this with the same material
-/// to reach the identical key. Domain-separated from
-/// [`derive_embedded_unlock_key`] and [`derive_machine_id_key`] by its
-/// distinct context.
+/// `BLAKE3::derive_key(context, strip_trailing_newline(material))`.
+/// Unlike the Embedded path, `material` is arbitrary-length operator
+/// input, so the derivation normalizes it to a fixed 32-byte key —
+/// callers pass raw bytes with no pre-hashing. Build and runtime call
+/// this with the same material to reach the identical key. Domain-
+/// separated from [`derive_embedded_unlock_key`] and
+/// [`derive_machine_id_key`] by its distinct context.
+///
+/// The single-trailing-newline normalization ([`strip_trailing_newline`])
+/// is applied here, inside the derivation, so every external channel
+/// (env var, key file, build seal) agrees on one secret without each
+/// call site repeating the strip — and so the at-most-one-newline
+/// invariant cannot drift between them. Callers MUST NOT pre-strip:
+/// doing so would remove a second newline that is part of the secret.
 #[must_use]
 pub fn derive_external_unlock_key(context: &str, material: &[u8]) -> [u8; KEY_LEN] {
-    blake3::derive_key(context, material)
+    blake3::derive_key(context, strip_trailing_newline(material))
 }
 
 /// Strip a single trailing line ending (`\r\n` or `\n`) from external
@@ -383,6 +390,28 @@ mod tests {
         assert_eq!(short.len(), KEY_LEN);
         assert_eq!(long.len(), KEY_LEN);
         assert!(long.iter().any(|&b| b != 0));
+    }
+
+    /// The newline-normalization invariant lives inside the external KDF,
+    /// not at each call site: material carrying an editor-appended `\n` or
+    /// `\r\n` derives the same key as the bare secret, so every external
+    /// channel (env, file, build seal) agrees without repeating a strip.
+    /// Only one newline is removed — a second is part of the secret.
+    #[test]
+    fn derive_external_unlock_key_strips_one_trailing_newline() {
+        let bare = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"secret");
+        assert_eq!(
+            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"secret\n"),
+            bare,
+        );
+        assert_eq!(
+            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"secret\r\n"),
+            bare,
+        );
+        assert_ne!(
+            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"secret\n\n"),
+            bare,
+        );
     }
 
     #[test]

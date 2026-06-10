@@ -66,11 +66,10 @@ fn read_env_value(name: &str) -> Option<Zeroizing<alloc::string::String>> {
 /// owned string to the canonical [`KeyError`] surface. `None`
 /// represents "env var unset" and produces [`KeyError::NotFound`];
 /// `Some(value)` is normalized into an [`UnlockKey`] via
-/// [`UnlockKey::derive`] over the raw bytes (any length, no encoding),
-/// after [`strip_trailing_newline`] removes an editor-appended newline
-/// so the env and file channels agree on one secret.
-///
-/// [`strip_trailing_newline`]: crate::internal::strip_trailing_newline
+/// [`UnlockKey::derive`] over the raw bytes (any length, no encoding).
+/// `UnlockKey::derive` removes an editor-appended trailing newline as
+/// part of the derivation, so the env and file channels agree on one
+/// secret without trimming here.
 ///
 /// Takes ownership of a [`Zeroizing<String>`] so the plaintext material
 /// is wiped when this function returns, regardless of which branch
@@ -83,9 +82,7 @@ fn read_env_value(name: &str) -> Option<Zeroizing<alloc::string::String>> {
 fn parse_env_value(value: Option<Zeroizing<alloc::string::String>>) -> Result<UnlockKey, KeyError> {
     match value {
         None => Err(KeyError::NotFound),
-        Some(s) => Ok(UnlockKey::derive(crate::internal::strip_trailing_newline(
-            s.as_bytes(),
-        ))),
+        Some(s) => Ok(UnlockKey::derive(s.as_bytes())),
     }
 }
 
