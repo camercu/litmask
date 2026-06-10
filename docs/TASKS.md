@@ -1,6 +1,7 @@
 # litmask — Build-Sealed Devex Adoption Tasks
 
-Source: [docs/SPEC_DEVEX.md](./SPEC_DEVEX.md)
+Source: [docs/SPECIFICATION.md](./SPECIFICATION.md) (build-sealed model
+folded in; the former `SPEC_DEVEX.md` is now a retired pointer)
 Rolls into: [docs/SPECIFICATION.md](./SPECIFICATION.md), [CONTEXT.md](../CONTEXT.md)
 Style reference: [github.com/camercu/relentless](https://github.com/camercu/relentless)
 
