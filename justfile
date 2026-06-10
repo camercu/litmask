@@ -28,7 +28,7 @@ clean:
 
 # ── Linting ─────────────────────────────────────────────────
 
-lint: fmt-check lint-clippy lint-typos lint-taplo lint-deny
+lint: fmt-check lint-clippy lint-typos lint-taplo lint-markdown lint-deny
 
 lint-clippy:
     cargo clippy --all-targets --workspace -- {{warnings}}
@@ -44,6 +44,12 @@ lint-typos:
 # into a review.
 lint-taplo:
     taplo format --check
+
+# Lint Markdown structure (headings, lists, fenced-code languages).
+# Config + globs/ignores live in `.markdownlint-cli2.yaml`; line-length
+# is disabled there because it can't wrap reference tables.
+lint-markdown:
+    markdownlint-cli2
 
 lint-deny:
     cargo deny check advisories licenses bans sources
@@ -193,6 +199,7 @@ check-tool-versions:
             cargo-nextest) actual=$(cargo nextest --version | head -1 | awk '{print $2}') ;;
             typos-cli)     actual=$(typos --version | awk '{print $2}') ;;
             taplo-cli)     actual=$(taplo --version | awk '{print $2}') ;;
+            markdownlint-cli2) actual=$(markdownlint-cli2 --version 2>&1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/^v//') ;;
             cargo-llvm-cov) actual=$(cargo llvm-cov --version | awk '{print $2}') ;;
             cargo-semver-checks) actual=$(cargo semver-checks --version | awk '{print $2}') ;;
             cargo-fuzz) actual=$(cargo fuzz --version 2>/dev/null | awk '{print $2}') ;;
@@ -238,9 +245,9 @@ setup:
 # ── Hooks ───────────────────────────────────────────────────
 
 # Fast checks run on every git commit via pre-commit. Mirrors the
-# fast tier of `just lint` (fmt + typos + taplo); the heavier checks
-# (clippy, deny, tests) live in `just pre-push`.
-pre-commit: fmt-check lint-typos lint-taplo
+# fast tier of `just lint` (fmt + typos + taplo + markdown); the heavier
+# checks (clippy, deny, tests) live in `just pre-push`.
+pre-commit: fmt-check lint-typos lint-taplo lint-markdown
     cargo check --all-targets --workspace --quiet
 
 # Slower checks run on every git push via pre-commit. Mirrors `just

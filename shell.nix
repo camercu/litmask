@@ -34,6 +34,7 @@ pkgs.mkShell {
     cargo-nextest
     typos
     taplo
+    markdownlint-cli2
     nodejs_22
     # cargo-llvm-cov is omitted: the nixpkgs derivation is marked broken
     # (depends on a Rust nightly feature gate). Install locally via
