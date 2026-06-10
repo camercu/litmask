@@ -23,11 +23,27 @@ set -eu
 EXAMPLE="machine_id_provider"
 BIN="target/release/examples/${EXAMPLE}"
 
+# The example calls `init!(machine_id)`, which cross-checks its form
+# against the build-sealed tier at macro-expansion time. Without a key
+# channel the build seals the Embedded floor and the macro rejects the
+# mismatch, so the Machine tier must be sealed by handing `emit()` a
+# valid self-checking token on LITMASK_MACHINE_ID. This binary is only
+# strings-scanned, never run, so the host-matching property is moot — any
+# well-formed token suffices; source it through the canonical
+# `show-machine-id` path. A host without a readable machine id (§1.6.5)
+# cannot seal the tier, so skip cleanly rather than fail.
+cargo +nightly build --release -p litmask-cli
+if ! MACHINE_TOKEN="$(target/release/litmask show-machine-id 2>/dev/null)"; then
+    echo "scrub-hardened: SKIP — machine id unavailable on this host" >&2
+    exit 0
+fi
+
 # Both flags are nightly-only and apply to every crate compiled in
 # this build (deps included). location-detail=none blanks panic
 # file/line/column records; fmt-debug=none drops derive(Debug) name
 # strings (e.g. StreamCipherError, MachineUidError).
 RUSTFLAGS="-Zlocation-detail=none -Zfmt-debug=none" \
+    LITMASK_MACHINE_ID="${MACHINE_TOKEN}" \
     cargo +nightly build --release \
     -p litmask --features machine-id --example "${EXAMPLE}"
 
