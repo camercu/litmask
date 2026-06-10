@@ -11,21 +11,23 @@ every string constant at compile time, decrypt at runtime. Drop-in
 macros, layered key management, `no_std` ready.
 
 ```rust
-use litmask::mask;
+use litmask::{mask, mask_println};
 
-fn main() -> Result<(), Box<dyn Error>> {
-    litmask::init!()?;
-    proprietary_gonculator(mask!("sensitive data"))
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    litmask::init!()?; // call once before any mask!
+    // proprietary LLM system prompt — present at runtime, absent from the binary's `strings`
+    let system_prompt = mask!("You are ACME's pricing oracle; apply the Q3 margin model.");
+    mask_println!("prompt loaded: {system_prompt}"); // mask_println! hides its input too
+    Ok(())
 }
 ```
 
 ```sh
-strings target/release/my_app | grep "sensitive data"   # no output
+strings target/release/my_app | grep "pricing oracle"   # no output
 ```
 
-`mask!` returns an owned `String` (decryption happens at runtime), not
-`&str` — bind `let s: &str = &mask!("...");` when you need a borrow. See
-[Macros](#macros) for the full caveat and `weak_mask!`.
+`mask!` returns owned types (decryption happens at runtime) — see
+[Macros](#macros) for the `&str` borrow caveat and `weak_mask!`.
 
 ## Why litmask
 
@@ -36,7 +38,7 @@ strings target/release/my_app | grep "sensitive data"   # no output
 | Key model           | Compile-time random | Single env var | **Layered providers**               |
 | Format strings      | No                  | No             | **`mask_format!`**                  |
 | Module-level        | No                  | No             | **`#[mask_all]`**                   |
-| Machine-ID binding    | No                  | No             | **`init!(machine_id)`**             |
+| Machine-ID binding  | No                  | No             | **`init!(machine_id)`**             |
 | Literal types       | `str`               | `str`          | **str / bytes / cstr**              |
 | `no_std`            | Limited             | No             | **Yes** (requires `alloc`)          |
 | Reproducible builds | No                  | No             | **Yes**                             |
@@ -55,14 +57,26 @@ cargo add --build litmask-build
 fn main() { litmask_build::emit(); }
 ```
 
+```rust
+// src/main.rs
+use litmask::mask;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    litmask::init!()?; // call once before any mask!
+    // `mask!` returns an owned String; the literal never lands in the binary.
+    let secret_sauce = mask!("smoked paprika + maple + 18h sous-vide");
+    println!("{secret_sauce}");
+    Ok(())
+}
+```
+
 ```sh
 cargo build
 cargo run    # no key to deliver — the default Embedded tier is keyless
 ```
 
-By default `init!()` uses the keyless `EmbeddedProvider`: it recomputes
-the `unlock_key` from the wrapper's cleartext nonce, so a zero-config
-build runs with nothing to provision. This buys `strings(1)` resistance,
+The zero-config default is keyless: `init!()` uses `EmbeddedProvider`, so
+a build runs with nothing to provision. That buys `strings(1)` resistance,
 not secrecy — the key is recoverable from the artifact. To keep the
 `unlock_key` out of the binary, source it at runtime with a
 [`KeyProvider`](#key-providers) and `init_with!` (e.g. `EnvVarProvider`
@@ -70,7 +84,7 @@ reading `LITMASK_UNLOCK_KEY`).
 
 ## How it works
 
-litmask splits encryption across build time and run time:
+`litmask` splits encryption across build time and run time:
 
 1. **Build** — `litmask_build::emit()` (in `build.rs`) generates a random
    seed, derives the `mask_key`, and writes `litmask.config` plus the env
@@ -119,13 +133,13 @@ use `weak_mask!`, but its key is recoverable statically from the binary.
 
 ## Key providers
 
-| Provider             | Source                 | Feature |
-| -------------------- | ---------------------- | ------- |
-| `EmbeddedProvider`   | Wrapper nonce (keyless default) | always |
-| `EnvVarProvider`     | Environment variable   | default |
-| `FileProvider`       | Filesystem path        | default |
-| `init!(machine_id)`  | Host machine ID + BLAKE3 (build-sealed) | `machine-id` |
-| `impl KeyProvider`   | Anything you write     | --      |
+| Provider            | Source                                  | Feature      |
+| ------------------- | --------------------------------------- | ------------ |
+| `EmbeddedProvider`  | Wrapper nonce (keyless default)         | always       |
+| `EnvVarProvider`    | Environment variable                    | default      |
+| `FileProvider`      | Filesystem path                         | default      |
+| `init!(machine_id)` | Host machine ID + BLAKE3 (build-sealed) | `machine-id` |
+| `impl KeyProvider`  | Anything you write                      | --           |
 
 A runtime provider is sourced explicitly with `init_with!`:
 
@@ -139,13 +153,13 @@ The machine tier is sealed at build time instead — see
 
 ## Security model
 
-| Configuration                | Defeats                             |
-| ---------------------------- | ----------------------------------- |
+| Configuration                        | Defeats                                                      |
+| ------------------------------------ | ------------------------------------------------------------ |
 | Default (keyless `EmbeddedProvider`) | `strings`, casual inspection (key recoverable from artifact) |
-| `EnvVarProvider`             | Above, key sourced from an env var, kept out of the binary |
-| `FileProvider`               | Above, key sourced from a file path |
-| `init!(machine_id)`         | Above + binary redistribution       |
-| Custom provider (vault, HSM) | Above + offline attackers           |
+| `EnvVarProvider`                     | Above, key sourced from an env var, kept out of the binary   |
+| `FileProvider`                       | Above, key sourced from a file path                          |
+| `init!(machine_id)`                  | Above + binary redistribution                                |
+| Custom provider (vault, HSM)         | Above + offline attackers                                    |
 
 **Does NOT protect against:** runtime memory inspection, debugger
 attachment, compromised runtime environments, side-channel attacks,
@@ -185,10 +199,10 @@ or copy the token to whoever does the sealing.
 
 The `litmask` CLI is a small build-time helper with two subcommands:
 
-| Command            | Output                                                       |
-| ------------------ | ----------------------------------------------------------- |
-| `keygen`           | 32 random bytes, base64url, to stdout — a `LITMASK_UNLOCK_KEY` |
-| `show-machine-id`  | this host's self-checking machine-id token to stdout         |
+| Command           | Output                                                         |
+| ----------------- | -------------------------------------------------------------- |
+| `keygen`          | 32 random bytes, base64url, to stdout — a `LITMASK_UNLOCK_KEY` |
+| `show-machine-id` | this host's self-checking machine-id token to stdout           |
 
 `keygen` is a plain generator you can pipe into a build or a secret store:
 
@@ -205,7 +219,7 @@ LITMASK_UNLOCK_KEY="$(cargo run -q -p litmask-cli -- keygen)" \
 | `chacha20-poly1305` | yes     | Default cipher                                      |
 | `aes-gcm`           | no      | AES-256-GCM (takes precedence when enabled)         |
 | `alloc`             | --      | `no_std` + allocator (required for `no_std` builds) |
-| `machine-id`             | no      | `init!(machine_id)` machine-ID binding             |
+| `machine-id`        | no      | `init!(machine_id)` machine-ID binding              |
 
 ## Documentation
 
