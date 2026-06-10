@@ -454,20 +454,23 @@ SPECIFICATION default-provider) is already fixed.
       Covered by the `lazy_higher_tier_refusal` e2e fixture (external
       seal, no `init!`) plus diagnostics unit tests. Spec §2.1.1.12a /
       §2.6.1.6 narrowed.
-- [ ] **`init!` tier-mismatch `compile_error!` branch has no end-to-end
-      coverage** (`litmask-macros/src/init.rs`). litmask's own
-      `LITMASK_SEAL_TIER=embedded` rustc-env leaks into the trybuild
-      subprocess, so the mismatch/`None` paths can't be exercised via a
-      `compile_fail` fixture — only the pure `check_embedded_tier` unit
-      tests cover them. A reorder that put the env read before the
-      args-empty check would silently drop the branch's compile-level
-      coverage. Find a way to exercise the tier-mismatch path (e.g. a
-      fixture built in a subprocess with the env var scrubbed).
+- [x] **`init!` tier-mismatch `compile_error!` branch has no end-to-end
+      coverage** (`litmask-macros/src/init.rs`). Fixed: `init_tier_check_e2e`
+      builds two isolated fixture crates in a subprocess with the
+      `LITMASK_*` seal-input vars scrubbed — `init_mismatch_fixture` (an
+      `external` seal against the Embedded-form `init!()` → `tier-mismatch`)
+      and `init_unset_fixture` (no `emit()` → `unset`). The scrub defeats
+      the ambient-tag leak; the unset fixture's build.rs declares
+      `rerun-if-env-changed=LITMASK_SEAL_TIER` so the proc-macro's
+      otherwise-untracked `env::var` read can't serve a stale artifact.
 - [ ] **Cross-crate version skew is now a hard compile error.** A newer
-      `litmask-macros` (this change) paired with an older `litmask-build`
-      that doesn't emit `cargo:rustc-env=LITMASK_SEAL_TIER` makes
-      `init!()` read `None` and emit `init! tier-mismatch: ... unset`,
-      breaking an otherwise-valid Embedded build. Low risk while the
-      workspace releases in lockstep; revisit if the crates ever version
-      independently (e.g. document a minimum `litmask-build` version, or
-      degrade the unset case to a warning + Embedded assumption).
+      `litmask-macros` paired with an older `litmask-build` that doesn't
+      emit `cargo:rustc-env=LITMASK_SEAL_TIER` makes `init!()` read `None`
+      and emit `init! tier-mismatch: ... unset`, breaking an
+      otherwise-valid Embedded build. **Decision (2026-06-09): keep the
+      hard error — no code change.** The crates ship in lockstep, so the
+      skew is unreachable today; adding a min-version gate or an
+      unset→Embedded-assumption degrade would be speculative surface
+      (YAGNI). The `unset` message already names `litmask_build::emit()` in
+      `build.rs`, which is the correct fix for the realistic case (missing
+      build wiring). Revisit only if/when the crates version independently.
