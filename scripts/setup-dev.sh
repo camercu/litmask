@@ -40,10 +40,9 @@ EOF
 nix-shell --run '
     set -euo pipefail
 
-    # `rustup show active-toolchain` reads rust-toolchain.toml and
-    # triggers a download if the pinned channel is not installed yet.
-    echo "litmask: setup-dev — ensuring Rust toolchain matches rust-toolchain.toml…"
-    rustup show active-toolchain >/dev/null
+    # The Rust toolchain is provided by rust-overlay inside the nix
+    # shell (see shell.nix); entering the shell already materializes the
+    # pinned channel from rust-toolchain.toml, so no rustup step here.
 
     # Tools whose nix derivations are broken or version-mismatched.
     install_cargo_tool() {

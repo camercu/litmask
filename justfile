@@ -210,9 +210,10 @@ check-tool-versions:
             drift=1
         fi
     done < <(grep -v '^#' .tool-versions | grep -v '^$')
-    # `rust-toolchain.toml` is read by rustup when devs `cd` into the
-    # repo, so its `channel` must agree with `.tool-versions`' rust
-    # line — otherwise local builds and CI use different toolchains.
+    # `rust-toolchain.toml` is read by rust-overlay in shell.nix to
+    # build the dev toolchain, so its `channel` must agree with
+    # `.tool-versions`' rust line — otherwise local builds and CI use
+    # different toolchains.
     if [ -f rust-toolchain.toml ]; then
         rt_channel=$(grep -E '^channel\s*=' rust-toolchain.toml | head -1 | sed -E 's/^channel\s*=\s*"([^"]+)".*/\1/')
         tv_rust=$(grep -E '^rust\s' .tool-versions | awk '{print $2}')

@@ -20,7 +20,9 @@ script will refuse to run without `nix-shell` on `$PATH`.
 
 1. Regenerates `rust-toolchain.toml` from `.tool-versions` (the
    canonical source for the pinned Rust channel).
-2. Triggers `rustup` to materialize the pinned channel on first run.
+2. Materializes the pinned Rust toolchain via `rust-overlay` when the
+   nix-shell is entered (an immutable toolchain matching CI, built from
+   `rust-toolchain.toml` — no `rustup`).
 3. Verifies every tool in `.tool-versions` matches the active
    environment (`just check-tool-versions`).
 4. Installs Node devDependencies for commitlint (`npm ci`).
