@@ -401,7 +401,7 @@ preserve opacity. Add the §1.1 build-time Embedded floor warning
 
 ---
 
-## Task 9: Capstone — fold SPEC_DEVEX into SPECIFICATION + docs scrub (HITL)
+## Task 9: Capstone — fold SPEC_DEVEX into SPECIFICATION + docs scrub (HITL) ✅ DONE
 
 **Implements:** §8 (doc edits owed), §9 (surface disposition); doc:
 SPECIFICATION (whole), CONTEXT.md, README, CLAUDE.md, man pages
@@ -417,23 +417,34 @@ anywhere (and no public `MachineIdProvider` reference — it is now
 
 ### Acceptance Criteria
 
-- [ ] All load-bearing `SPEC_DEVEX.md` content (keying model rationale,
+- [x] All load-bearing `SPEC_DEVEX.md` content (keying model rationale,
       §10 residuals, Appendix A friction) is present in
       `SPECIFICATION.md`; `SPEC_DEVEX.md` removed (or reduced to a
-      pointer)
-- [ ] Repo-wide grep is clean of retired vocabulary — `locator`,
-      `bind`, `inspect`, `litmask.config`, `init_with!`, `MultiProvider`,
-      `hardware`/`hw-id` — except where explicitly documenting their removal.
-      `MachineIdProvider` survives only as `pub(crate)` (seam-only) in
-      `litmask` source; it must NOT appear in any public-API doc, README,
-      or example
-- [ ] Every internal doc cross-reference (§ links, file links, CONTEXT
-      glossary terms) resolves to a real target
-- [ ] README, CLAUDE.md architecture notes, docs/DEPLOYMENT.md, and man
+      pointer). Done: folded into `SPECIFICATION.md` Appendix D
+      (§D.1 build guarantees, §D.2 threat deltas, §D.3 residuals I-R1–7,
+      §D.4 friction F1–7/S1, §D.5 surface disposition); `SPEC_DEVEX.md`
+      reduced to a retired pointer.
+- [x] Repo-wide grep is clean of retired vocabulary — `locator`,
+      `init_with!`, `MultiProvider`, `hardware`/`hw-id` — except where
+      explicitly documenting their removal. `MachineIdProvider` survives
+      only as `pub(crate)` (seam-only) in `litmask` source; scrubbed from
+      THREAT_MODEL.md / DEPLOYMENT.md (now the `machine_id` tier framing).
+      **Decision (2026-06-10):** `litmask.config` is NOT retired — the
+      implementation keeps it as the Embedded-tier diagnostic artifact
+      (`emit()` writes it, tests assert it, DEPLOYMENT documents it), so
+      the original "remove the config entirely" premise was superseded;
+      its references are live, not stale. `bind`/`inspect` as retired
+      *commands* are gone; remaining `bind`/`inspect` hits are ordinary
+      English ("bind a `&str`", "inspect text").
+- [x] Every internal doc cross-reference (§ links, file links, CONTEXT
+      glossary terms) resolves to a real target. The seven dangling
+      §3/§5/§6/§7 refs into the old DevEx numbering now point at §D.x.
+- [x] README, CLAUDE.md architecture notes, docs/DEPLOYMENT.md, and man
       pages describe the build-sealed model and the final CLI surface
-- [ ] SPECIFICATION section numbering is contiguous and the table of
-      contents (if any) matches
-- [ ] `just ci` green; `just lint` (typos/links) clean
+      (no litmask man pages ship; CLI is `{keygen, show-machine-id}`).
+- [x] SPECIFICATION section numbering is contiguous (Appendices A–D) and
+      the cross-reference convention note matches.
+- [x] `just ci` green; `just lint` (typos/links) clean
 
 ---
 
