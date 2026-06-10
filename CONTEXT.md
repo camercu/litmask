@@ -142,7 +142,7 @@ feeds to `LITMASK_MACHINE_ID` to seal the **machine** tier.
 **Machine-id token** (self-checking token): The host **machine id**
 followed by `.` and a short checksum — `raw_id "." base64url(BLAKE3(raw_id)
 [..5])`. The in-band checksum lets `emit()` reject an id mistyped or
-mangled in transit *before* it seals a binary nobody can open.
+mangled in transit _before_ it seals a binary nobody can open.
 `LITMASK_MACHINE_ID` requires this token form; `emit()` decodes and
 validates it, then derives the **machine** key from the bare raw id.
 _Avoid_: "machine-id checksum", "fingerprint".

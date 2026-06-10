@@ -40,6 +40,7 @@ Writes tooling that emulates decryption stubs, processes ciphertext
 in bulk.
 
 **Resistance from:**
+
 - `mask_key` encrypted under `unlock_key` that is not in the binary.
 - Per-build key uniqueness — a generic unpacker built against one
   binary does not transfer to another.

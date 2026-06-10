@@ -132,7 +132,7 @@ path string Rust embeds for bounds-check and assert sites — for
 example, a binary sealed under the `machine_id` tier or using `weak_mask!`
 carries:
 
-```
+```text
 .../registry/src/index.crates.io-.../blake3-1.8.5/src/lib.rs
 ```
 

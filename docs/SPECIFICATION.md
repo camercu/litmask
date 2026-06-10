@@ -211,6 +211,7 @@ binary (§D.2.2).
 #### §1.3.3 Reproducibility
 
 A build is reproducible given:
+
 - Same source code
 - Same Rust toolchain version
 - Same dependency versions (`Cargo.lock` pinned)
@@ -268,6 +269,7 @@ is not supported in v1.
 #### §1.4.2 Decryption flow
 
 Each `mask!()` call:
+
 1. Retrieves the cached `mask_key` from the `OnceLock` (lazy-init if needed).
 2. Reads its locally-embedded encrypted blob (format: §1.7.2).
 3. Decrypts using the configured cipher.
@@ -319,7 +321,7 @@ supported.
 Every encrypted blob in the binary uses a unique nonce. Nonces for per-string
 blobs are derived deterministically inside the `mask!` proc-macro as:
 
-```
+```text
 nonce = first_12_bytes(BLAKE3-keyed-hash(
     seed,
     CALL_SITE_TAG
@@ -589,7 +591,7 @@ nonce's random bytes, leaving no grep-across-binaries fingerprint.
 
 Each per-string encrypted blob is a contiguous byte sequence:
 
-```
+```text
 <nonce: 12 bytes><ciphertext: variable length><authentication tag: 16 bytes>
 ```
 
@@ -607,7 +609,7 @@ The encrypted `mask_key` wrapper carries its format version inside the AEAD
 plaintext, so no fixed-value structural byte appears at a known offset. Its
 layout:
 
-```
+```text
 <nonce: 12 bytes><AEAD(format version: 1 byte ‖ mask_key: 32 bytes): 33 bytes ciphertext><authentication tag: 16 bytes>
 ```
 
@@ -626,7 +628,7 @@ Total length: 61 bytes (`nonce 12 ‖ ciphertext 33 ‖ tag 16`).
 
 The wrapper's nonce is derived deterministically as:
 
-```
+```text
 wrapper_nonce = first_12_bytes(BLAKE3-keyed-hash(
     seed,
     WRAPPER_TAG
@@ -726,11 +728,13 @@ always use `mask!` after `init!()` has succeeded. Decode happens once
 per call site (cached in a `OnceLock`).
 
 `weak_mask!` accepts the same three literal kinds as `mask!`:
+
 - `weak_mask!("text")` → `&'static str`
 - `weak_mask!(b"\x...")` → `&'static [u8]`
 - `weak_mask!(c"text")` → `&'static CStr` (requires `std` feature)
 
 `mask!` accepts only the three literal kinds:
+
 - String literal (`"text"`, raw, Unicode-escape) → returns `String`
 - Byte string literal (`b"\x..."`, raw byte) → returns `Vec<u8>`
 - C string literal (`c"text"`, Rust 1.77+) → returns `CString`
@@ -915,7 +919,7 @@ these strings should verify with `strings` on their built binary.
 `Display` implementations for `InitError` and `KeyError` produce only short
 variant tags:
 
-```
+```text
 InitError::KeyProvider(KeyError::NotFound)   → "key_provider:not_found"
 InitError::KeyProvider(KeyError::Permission) → "key_provider:permission"
 InitError::Decryption                        → "decryption_failed"
@@ -979,6 +983,7 @@ it MUST NOT be distributed (§D.2.1). The cfg-split lives at each failure arm
 `#[cfg(not(debug_assertions))] Err(_) => panic!()`).
 
 The release-build library implementation:
+
 - MAY use `panic!()` (no message) — preferred for absolute minimum string
   count
 - MAY use `.unwrap()` on `Result` values from std or dependency crates. The
@@ -1008,7 +1013,7 @@ expressed that way:
 let plaintext = cipher.decrypt(&blob).unwrap();
 ```
 
-The Rust standard library still emits "panicked at <file>:<line>" via the
+The Rust standard library still emits `panicked at <file>:<line>` via the
 default panic handler regardless of which form is used. Applications that
 want a more informative tampering panic may set a panic hook
 (`std::panic::set_hook`) that detects panics in `litmask`-affected locations
@@ -1252,6 +1257,7 @@ listed as out-of-scope in §1.1.3.
 #### §1.12.1 Stability commitments
 
 Stable surface (semver-protected):
+
 - `mask!`, `mask_format!`, `unmasked!` macros
 - `#[mask_all]` attribute and substitution table (additions allowed; removals
   breaking)
@@ -1269,6 +1275,7 @@ Stable surface (semver-protected):
   and the `LITMASK_SEAL_TIER` build tag
 
 Unstable / internal:
+
 - Ciphertext binary format (versioned via format version byte in wrapper)
 - Specific `Display` tag strings (only error variants are stable)
 - Generated code shape from `mask!` expansion
@@ -1316,6 +1323,7 @@ allocator) is not supported in v1.
 ### §1.14 Dependencies
 
 Runtime crate (`litmask`):
+
 - `chacha20poly1305` (RustCrypto, `#[cfg(not(feature = "aes-gcm"))]`)
 - `aes-gcm` (RustCrypto, `#[cfg(feature = "aes-gcm")]`)
 - `base64ct` (constant-time base64)
@@ -1326,6 +1334,7 @@ Runtime crate (`litmask`):
 - `once_cell` (only on `no_std` builds, for `OnceBox`)
 
 Build crate (`litmask-build`):
+
 - `chacha20poly1305` (`#[cfg(not(feature = "aes-gcm"))]`)
 - `aes-gcm` (`#[cfg(feature = "aes-gcm")]`)
 - `base64ct`
@@ -1334,6 +1343,7 @@ Build crate (`litmask-build`):
 - `toml` (write `litmask.config`)
 
 CLI crate (`litmask-cli`):
+
 - `clap` (argument parsing)
 - `machine-uid` (the `show-machine-id` command)
 - `getrandom` (the `keygen` command's randomness)
@@ -1504,6 +1514,7 @@ generic wrapper-decryption failure that hides the real cause.
 literal and SHALL expand to that literal unchanged.
 
 §2.1.2.2 — `unmasked!` SHALL preserve the literal's original type:
+
 - string literal → `&str`
 - byte string literal → `&[u8; N]`
 - C string literal → `&CStr`
@@ -1743,6 +1754,7 @@ module according to the substitution table in §2.3.2.
 
 §2.3.1.3 — `#[mask_all]` SHALL skip literals in the following positions
 without modification:
+
 - Pattern positions (match arms, `if let`, `while let`)
 - `const` and `static` initializers
 - Attribute strings (`#[doc = "..."]`, `#[cfg(...)]`, etc.)
@@ -1787,6 +1799,7 @@ expand after attribute proc-macros).
 `mask!(literal)`.
 
 §2.3.2.2 — `format!(template, args...)` SHALL be rewritten as follows:
+
 - If `template` is a string literal: rewrite to `mask_format!(template, args...)`.
 - If `template` is not a string literal: leave `format!` unchanged;
   recursively mask any string-literal arguments in `args...`. Emit a
@@ -1794,6 +1807,7 @@ expand after attribute proc-macros).
 
 §2.3.2.3 — Output macros (`println!`, `eprintln!`, `print!`, `eprint!`,
 `write!`, `writeln!`) SHALL be rewritten as follows:
+
 - If their template is a string literal: rewrite to
   `{ let __s = mask_format!(template, args...); <original_macro>("{}", __s) }`,
   preserving the original return type and side effects.
@@ -1874,7 +1888,7 @@ fresh and persist to `target/litmask-seed`.
 sourced from `LITMASK_RNG_SEED`), `emit()` SHALL print the seed via
 `cargo:warning=` directives:
 
-```
+```text
 warning: litmask: release build using fresh RNG seed: <base64url>
 warning: litmask: to reproduce this build, set LITMASK_RNG_SEED to the value above
 ```
@@ -1891,6 +1905,7 @@ deterministically from `RNG_SEED` using `rand_chacha::ChaCha20Rng`.
 `cargo:rustc-env` directives, for the leakage reasons documented in §1.3.1.
 
 §2.4.1.9 — `emit()` SHALL emit only the following Cargo directives:
+
 - `cargo:rerun-if-env-changed=LITMASK_RNG_SEED`
 - `cargo:rerun-if-changed=build.rs`
 - (release-only, when fresh) `cargo:warning=...` per §2.4.1.5
@@ -1938,6 +1953,7 @@ provider that reads from the named environment variable.
 §2.5.2.2 — `EnvVarProvider::default()` SHALL read from `LITMASK_UNLOCK_KEY`.
 
 §2.5.2.3 — `EnvVarProvider::unlock_key()` SHALL return:
+
 - `Err(KeyError::NotFound)` if the env var is unset
 - `Ok(UnlockKey)` otherwise, deriving the key from the variable's raw
   bytes via `UnlockKey::derive` after stripping a single trailing
@@ -1950,6 +1966,7 @@ provider that reads from the named environment variable.
 provider that reads the file's bytes as raw unlock material.
 
 §2.5.3.2 — `FileProvider::unlock_key()` SHALL return:
+
 - `Err(KeyError::NotFound)` if the file does not exist
 - `Err(KeyError::Permission)` if the file exists but cannot be read
 - `Ok(UnlockKey)` otherwise, deriving the key from the file's raw bytes
@@ -1976,6 +1993,7 @@ demand (§2.5.4.3), so there is no `with_salt` constructor or runtime salt
 parameter.
 
 §2.5.4.3 — `MachineIdProvider::unlock_key()` SHALL:
+
 - Read the machine ID via `machine-uid::get()`, holding it in a zeroizing
   buffer so the heap copy of the host identifier wipes on return
 - Derive a 32-byte key via `derive_machine_id_key(context, salt_context,
@@ -2260,6 +2278,7 @@ message text required by §1.9.6.
 
 §2.12.1.4 — Integration tests (§1.10.3) SHALL build example binaries and
 verify the following testable assertions:
+
 - `strings` output of compiled binaries contains no high-entropy plaintext
   used in test fixtures (the canonical security-property check)
 - All built-in `KeyProvider`s succeed end-to-end against valid configurations

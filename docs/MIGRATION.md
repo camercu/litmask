@@ -182,6 +182,7 @@ litmask's keyless Embedded default also needs no runtime key; sourcing
 
 3. **Call `init!()` before `mask!()`** — litmask lazily initializes on
    first `mask!` call, but explicit init surfaces errors early:
+
    ```rust
    litmask::init!().expect("litmask init");
    ```

@@ -5,7 +5,7 @@ Auditor: Cameron Unterberger + Claude
 
 ## Strings hygiene
 
-**Status: pass**
+**Status:** pass
 
 Release-profile builds (strip=symbols, debug=false, panic=abort, lto=true)
 are scrubbed by `example_scrub.rs` integration tests against a curated
@@ -21,7 +21,7 @@ Two examples are intentionally excluded from the identifier scrub
 env-var names containing forbidden substrings for pedagogical clarity.
 These are documented in `example_scrub.rs`.
 
-**Category: accepted-risk**
+**Category:** accepted-risk
 Debug-build string leakage is inherent to Rust's debug info. The
 recommended release profile eliminates it. Short `Display` variant
 tags are accepted (they don't identify litmask); panic messages use
@@ -29,7 +29,7 @@ no identifying text.
 
 ## Panic hygiene
 
-**Status: pass**
+**Status:** pass
 
 Grep of the runtime decryption path (`litmask/src/runtime.rs`) for
 `.expect(`, `panic!("`, `unwrap_or_else(|_| panic!`, `unreachable!(`
@@ -40,13 +40,13 @@ The `.expect()` and `panic!("...")` hits in
 `key.rs`, `error.rs`, and provider modules are exclusively in
 `#[cfg(test)]` blocks.
 
-**Category: accepted-risk**
+**Category:** accepted-risk
 Bare `panic!()` produces std's generic panic message, which appears in
 many Rust programs and does not identify litmask.
 
 ## Key zeroization
 
-**Status: pass**
+**Status:** pass
 
 - `UnlockKey` and `MaskKey` both derive `Zeroize` + `ZeroizeOnDrop`.
 - Neither derives `Clone` — no accidental copies.
@@ -60,7 +60,7 @@ many Rust programs and does not identify litmask.
 No path was found where key bytes escape into `String` formatting,
 log lines, error variants, or long-lived buffers.
 
-**Category: accepted-risk**
+**Category:** accepted-risk
 `Zeroize` is best-effort against compiler optimizations (the standard
 caveat for all Rust zeroization). The `zeroize` crate's approach
 (volatile writes) is the state of the art. Runtime memory inspection
@@ -68,7 +68,7 @@ is explicitly out of scope.
 
 ## Threat-model claim verification
 
-**Status: pass**
+**Status:** pass
 
 Reviewed `THREAT_MODEL.md`, `README.md`, `DEPLOYMENT.md`, and
 crate-level rustdoc. No claim promises resistance against out-of-scope
@@ -84,11 +84,11 @@ capabilities:
 
 Tone conforms to deliberate understatement policy.
 
-**Category: accepted-risk** (by design — honesty is the policy)
+**Category:** accepted-risk (by design — honesty is the policy)
 
 ## Dependency surface
 
-**Status: pass**
+**Status:** pass
 
 `cargo tree --all-features` review:
 
@@ -107,7 +107,7 @@ No unexpected transitive dependencies. All crypto dependencies are from
 the RustCrypto ecosystem. `deny.toml` enforces: no advisories, no
 yanked crates, permissive licenses only, crates.io registry only.
 
-**Category: accepted-risk**
+**Category:** accepted-risk
 `machine-uid` is a small crate without formal audit. Its failure mode
 (returns error → exit 69) is well-handled. The alternative (reimplementing
 platform-specific machine-ID lookup) would increase maintenance burden
@@ -115,7 +115,7 @@ without security benefit.
 
 ## Timing surface
 
-**Status: informational**
+**Status:** informational
 
 The AEAD crates (`chacha20poly1305`, `aes-gcm`) use constant-time
 primitives internally. `blake3` uses `constant_time_eq` for comparisons.
@@ -124,15 +124,16 @@ Surrounding Rust code (error branching) is not constant-time.
 Side-channel attacks are out of scope but noted for users who assess
 timing properties.
 
-**Category: accepted-risk** — side-channel attacks are out of scope.
+**Category:** accepted-risk — side-channel attacks are out of scope.
 Documented in THREAT_MODEL.md timing section.
 
 ## Reproducibility
 
-**Status: pass**
+**Status:** pass
 
 `LITMASK_RNG_SEED` env var seeds all key and nonce derivation.
 `litmask-build` sources the seed with priority:
+
 1. `LITMASK_RNG_SEED` (deterministic, cross-machine)
 2. Persisted seed file in target dir (same-machine stability)
 3. Fresh random (new build)
@@ -141,17 +142,18 @@ Integration test `reproducible_builds_produce_identical_artifacts`
 verifies byte-identical output with fixed seed. Reproducibility
 conditions (same seed, same source, same toolchain) are documented.
 
-**Category: accepted-risk**
+**Category:** accepted-risk
 Reproducibility depends on `LITMASK_RNG_SEED` being set explicitly.
 Without it, each clean build generates a new seed. This is documented
 behavior, not a vulnerability.
 
 ## Format-version and cipher-id rejection
 
-**Status: pass**
+**Status:** pass
 
 `litmask-internal/src/cipher.rs` validates version and cipher bytes
 before decryption:
+
 - Unknown format version → `DecryptError::UnsupportedFormat` →
   `InitError::UnsupportedFormat` (exit 70)
 - Unknown cipher ID → `DecryptError::UnsupportedCipher` →
@@ -161,7 +163,7 @@ before decryption:
 
 Unit tests cover: bad version byte, bad cipher byte, truncated wrappers.
 
-**Category: accepted-risk** — none; these are clean passes.
+**Category:** accepted-risk — none; these are clean passes.
 
 ## Summary
 
