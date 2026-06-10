@@ -16,7 +16,7 @@ use litmask::{mask, mask_println};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     litmask::init!()?; // call once before any mask!
     // proprietary LLM system prompt — present at runtime, absent from the binary's `strings`
-    let system_prompt = mask!("You are ACME's pricing oracle; apply the Q3 margin model.");
+    let system_prompt = mask!("You're ACME's pricing oracle; channel Warren Buffett.");
     mask_println!("prompt loaded: {system_prompt}"); // mask_println! hides its input too
     Ok(())
 }
