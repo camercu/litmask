@@ -18,52 +18,10 @@ use crate::internal::{DecryptError, WRAPPER_LEN, decrypt_blob, decrypt_wrapper};
 use crate::key::MaskKey;
 use crate::provider::KeyProvider;
 
+pub(crate) mod cell;
 pub(crate) mod weak;
 
-// `std::sync::OnceLock` and `once_cell::race::OnceBox` have different
-// shapes; this wrapper normalizes them so the rest of the file is
-// feature-flag-free.
-
-#[cfg(feature = "std")]
-mod cell {
-    use crate::key::MaskKey;
-    use std::sync::OnceLock;
-
-    pub(super) static MASK_KEY: OnceLock<MaskKey> = OnceLock::new();
-
-    pub(super) fn try_set(key: MaskKey) {
-        let _ = MASK_KEY.set(key);
-    }
-
-    pub(super) fn get_or_init(init: impl FnOnce() -> MaskKey) -> &'static MaskKey {
-        MASK_KEY.get_or_init(init)
-    }
-
-    pub(super) fn is_set() -> bool {
-        MASK_KEY.get().is_some()
-    }
-}
-
-#[cfg(not(feature = "std"))]
-mod cell {
-    use crate::key::MaskKey;
-    use alloc::boxed::Box;
-    use once_cell::race::OnceBox;
-
-    pub(super) static MASK_KEY: OnceBox<MaskKey> = OnceBox::new();
-
-    pub(super) fn try_set(key: MaskKey) {
-        let _ = MASK_KEY.set(Box::new(key));
-    }
-
-    pub(super) fn get_or_init(init: impl FnOnce() -> MaskKey) -> &'static MaskKey {
-        MASK_KEY.get_or_init(|| Box::new(init()))
-    }
-
-    pub(super) fn is_set() -> bool {
-        MASK_KEY.get().is_some()
-    }
-}
+static MASK_KEY: cell::OnceCell<MaskKey> = cell::OnceCell::new();
 
 /// Decrypt the embedded `mask_key` wrapper and store the result in the
 /// process-global mask key cell.
@@ -84,7 +42,7 @@ pub fn __init_with_wrapper<P: KeyProvider>(
     provider: P,
     wrapper: &[u8; WRAPPER_LEN],
 ) -> Result<(), InitError> {
-    if cell::is_set() {
+    if MASK_KEY.is_set() {
         return Ok(());
     }
     let unlock_key = provider.unlock_key()?;
@@ -101,7 +59,7 @@ fn init_with_unlock_key(
     wrapper: &[u8; WRAPPER_LEN],
 ) -> Result<(), InitError> {
     let mask_key_bytes = decrypt_mask_key(unlock_key, wrapper)?;
-    cell::try_set(MaskKey::new(mask_key_bytes));
+    MASK_KEY.try_set(MaskKey::new(mask_key_bytes));
     Ok(())
 }
 
@@ -164,7 +122,7 @@ pub fn __init_machine_id_external<P: KeyProvider>(
     wrapper: &[u8; WRAPPER_LEN],
     external: P,
 ) -> Result<(), InitError> {
-    if cell::is_set() {
+    if MASK_KEY.is_set() {
         return Ok(());
     }
     let machine_key = crate::provider::MachineIdProvider::new(wrapper).unlock_key()?;
@@ -210,7 +168,7 @@ pub fn __decrypt(blob: &[u8], wrapper: &[u8; WRAPPER_LEN], tier: &str) -> alloc:
     clippy::manual_let_else
 )]
 fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN], tier: &str) -> &'static MaskKey {
-    cell::get_or_init(|| {
+    MASK_KEY.get_or_init(|| {
         // No explicit `init!` ran. The lazy fallback derives the
         // Embedded-tier unlock_key from the wrapper's public nonce, which
         // is correct ONLY at the Embedded floor. On a higher-tier seal
