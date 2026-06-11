@@ -1,9 +1,9 @@
 //! Imperative shell over the pure decryption core
 //! ([`litmask_internal::decrypt_wrapper`]).
 //!
-//! The process-global mask key lives in a `OnceLock` populated by
-//! [`__init_with_wrapper`] (the target of `init!` / `init_with!`) or
-//! lazily by [`__decrypt_str`] on the first `mask!()` call.
+//! The process-global mask key lives in a [`cell::OnceCell`] populated
+//! by [`__init_with_wrapper`] (the target of `init!` / `init_with!`) or
+//! lazily by [`__decrypt`] on the first `mask!()` call.
 //!
 //! The decryption path must not leak litmask-identifying message text
 //! into a shipped (release) binary: `assert!` / `.expect("…")` and
