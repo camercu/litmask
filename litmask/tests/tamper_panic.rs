@@ -68,6 +68,8 @@ fn tampered_blob_panic_message_is_profile_split() {
 ///
 /// - `runtime/mod.rs` — `__decrypt`, lazy-init helpers.
 /// - `runtime/weak.rs` — `__weak_decode*` and the weak caches.
+/// - `runtime/cell.rs` — the once-cell every decrypt path borrows
+///   its key (or cache) through.
 /// - `litmask/src/lib.rs` — `__decrypt_cstring_call!` shim.
 /// - `litmask-macros/src/mask.rs` — proc-macro entry point; emits
 ///   the type-construction wrappers, no `.expect` of its own.
@@ -93,6 +95,7 @@ fn no_custom_panic_messages_in_decryption_path() {
     let scans: Vec<(String, Vec<&str>)> = vec![
         (format!("{manifest}/src/runtime/mod.rs"), vec![]),
         (format!("{manifest}/src/runtime/weak.rs"), vec![]),
+        (format!("{manifest}/src/runtime/cell.rs"), vec![]),
         (format!("{manifest}/src/lib.rs"), vec![]),
         (format!("{manifest}/../litmask-macros/src/mask.rs"), vec![]),
         (
