@@ -66,7 +66,8 @@ fn tampered_blob_panic_message_is_profile_split() {
 /// patterns — the two ways a litmask-specific string would leak into
 /// user binaries. The scan spans five files:
 ///
-/// - `runtime.rs` — `__decrypt`, `__weak_decode`, lazy-init helpers.
+/// - `runtime/mod.rs` — `__decrypt`, lazy-init helpers.
+/// - `runtime/weak.rs` — `__weak_decode*` and the weak caches.
 /// - `litmask/src/lib.rs` — `__decrypt_cstring_call!` shim.
 /// - `litmask-macros/src/mask.rs` — proc-macro entry point; emits
 ///   the type-construction wrappers, no `.expect` of its own.
@@ -90,7 +91,8 @@ fn tampered_blob_panic_message_is_profile_split() {
 fn no_custom_panic_messages_in_decryption_path() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     let scans: Vec<(String, Vec<&str>)> = vec![
-        (format!("{manifest}/src/runtime.rs"), vec![]),
+        (format!("{manifest}/src/runtime/mod.rs"), vec![]),
+        (format!("{manifest}/src/runtime/weak.rs"), vec![]),
         (format!("{manifest}/src/lib.rs"), vec![]),
         (format!("{manifest}/../litmask-macros/src/mask.rs"), vec![]),
         (

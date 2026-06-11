@@ -31,7 +31,7 @@ no identifying text.
 
 **Status:** pass
 
-Grep of the runtime decryption path (`litmask/src/runtime.rs`) for
+Grep of the runtime decryption path (`litmask/src/runtime/`) for
 `.expect(`, `panic!("`, `unwrap_or_else(|_| panic!`, `unreachable!(`
 with custom messages: **zero hits**.
 

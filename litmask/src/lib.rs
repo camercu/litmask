@@ -381,13 +381,12 @@ macro_rules! __init_machine_id_external_call {
 #[doc(hidden)]
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.
-    pub use crate::runtime::{
-        __decrypt, __init_with_wrapper, __weak_decode, __weak_decode_bytes, WeakByteCell, WeakCell,
-    };
+    pub use crate::runtime::weak::{__weak_decode, __weak_decode_bytes, WeakByteCell, WeakCell};
+    #[cfg(feature = "std")]
+    pub use crate::runtime::weak::{__weak_decode_cstr, WeakCStrCell};
+    pub use crate::runtime::{__decrypt, __init_with_wrapper};
     #[cfg(feature = "machine-id")]
     pub use crate::runtime::{__init_machine_id, __init_machine_id_external};
-    #[cfg(feature = "std")]
-    pub use crate::runtime::{__weak_decode_cstr, WeakCStrCell};
     // Re-export under a hygienic alias so the proc-macro emits a
     // single `::litmask::__internal::__String::from_utf8(...)` path
     // for the `mask!("...")` case.

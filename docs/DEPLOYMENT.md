@@ -138,7 +138,7 @@ carries:
 
 This is not unique to BLAKE3: every panic-capable dependency embeds its
 own `crate-version/src/….rs` path, and `litmask`'s own
-`litmask/src/runtime.rs` leaks the same way. Swapping the hash crate
+`litmask/src/runtime/mod.rs` leaks the same way. Swapping the hash crate
 only changes which name appears — it does not remove the class.
 
 Two nightly `rustc` flags remove these strings for every crate compiled
