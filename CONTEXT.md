@@ -93,6 +93,16 @@ before `init!()` runs (env-var names, default file paths). The
 derivation uses only the nonce.
 _Avoid_: "soft mask", "light mask".
 
+**`MaskedSerialize`** (EXPERIMENTAL, `unstable-serde` feature): Derive
+macro generating a `serde::Serialize` impl whose struct and field
+names go through the same AEAD pipeline as `mask!` instead of landing
+as cleartext in the binary. Output is byte-identical to the plain
+serde derive; names decrypt once at first serialization and stay
+cached (leaked) for the process lifetime. Semver-exempt until the
+feature stabilizes as `serde`.
+_Avoid_: "serde mask", "masked serde derive" (the derive masks names,
+not serialized data).
+
 **`init!` / `init_with!`**: Macros that decrypt the **wrapper** with the
 **unlock key** and populate the process-global **mask key** cell. `init!`
 (a proc-macro) has four forms, each cross-checked against the build's
