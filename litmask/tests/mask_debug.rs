@@ -71,6 +71,19 @@ enum MaskedShadow {
     Clash { __f: u8, __builder: u8 },
 }
 
+/// Packed fields cannot be referenced (E0793); the expansion must
+/// copy them like the plain derive does.
+#[derive(MaskDebug)]
+#[repr(packed)]
+struct MaskedPacked {
+    tag_qwxz: u8,
+    count_zzyzx: u32,
+}
+
+#[derive(MaskDebug)]
+#[repr(C, packed(2))]
+struct MaskedPackedTuple(u8, u32);
+
 /// Plain-derive twins with the *same* type names, so the formatted
 /// output (which includes the type name) can be compared verbatim.
 mod plain {
@@ -123,6 +136,17 @@ mod plain {
     pub enum MaskedShadow {
         Clash { __f: u8, __builder: u8 },
     }
+
+    #[derive(Debug)]
+    #[repr(packed)]
+    pub struct MaskedPacked {
+        pub tag_qwxz: u8,
+        pub count_zzyzx: u32,
+    }
+
+    #[derive(Debug)]
+    #[repr(C, packed(2))]
+    pub struct MaskedPackedTuple(pub u8, pub u32);
 }
 
 #[test]
@@ -252,6 +276,25 @@ fn mask_debug_shadowing_field_names_match_plain_derive() {
     };
     assert_eq!(format!("{masked:?}"), format!("{plain:?}"));
     assert_eq!(format!("{masked:#?}"), format!("{plain:#?}"));
+}
+
+#[test]
+fn mask_debug_packed_struct_matches_plain_derive() {
+    common::init_once();
+    let masked = MaskedPacked {
+        tag_qwxz: 7,
+        count_zzyzx: 99,
+    };
+    let plain = plain::MaskedPacked {
+        tag_qwxz: 7,
+        count_zzyzx: 99,
+    };
+    assert_eq!(format!("{masked:?}"), format!("{plain:?}"));
+    assert_eq!(format!("{masked:#?}"), format!("{plain:#?}"));
+
+    let masked = MaskedPackedTuple(1, 2);
+    let plain = plain::MaskedPackedTuple(1, 2);
+    assert_eq!(format!("{masked:?}"), format!("{plain:?}"));
 }
 
 #[test]

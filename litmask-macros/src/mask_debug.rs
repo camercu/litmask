@@ -39,7 +39,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let ident = &input.ident;
     let body = match &input.data {
-        Data::Struct(data) => struct_body(ident, &data.fields),
+        Data::Struct(data) => struct_body(ident, &data.fields, is_packed(input)),
         Data::Enum(data) => enum_body(data),
         Data::Union(_) => {
             return Err(compile_error(
@@ -64,27 +64,57 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
 }
 
 /// Build the `fmt` body for a struct: field values are reached
-/// through `self`.
-fn struct_body(ident: &syn::Ident, fields: &Fields) -> TokenStream2 {
+/// through `self`. Packed fields are unaligned, so referencing them
+/// is rejected (E0793); `&{ ... }` references an aligned copy instead,
+/// matching the plain derive (which likewise requires `Copy` fields).
+fn struct_body(ident: &syn::Ident, fields: &Fields, packed: bool) -> TokenStream2 {
     let name = masked_name_expr(ident.unraw().to_string(), ident.span());
+    let value = |access: TokenStream2| {
+        if packed {
+            quote! { &{ #access } }
+        } else {
+            quote! { &#access }
+        }
+    };
     let values: Vec<TokenStream2> = match fields {
         Fields::Named(named) => named
             .named
             .iter()
             .map(|field| {
                 let ident = field.ident.as_ref().expect("named field has an ident");
-                quote! { &self.#ident }
+                value(quote! { self.#ident })
             })
             .collect(),
         Fields::Unnamed(unnamed) => (0..unnamed.unnamed.len())
             .map(|i| {
                 let index = syn::Index::from(i);
-                quote! { &self.#index }
+                value(quote! { self.#index })
             })
             .collect(),
         Fields::Unit => Vec::new(),
     };
     builder_body(&name, fields, &values)
+}
+
+/// Whether any `#[repr(...)]` attribute carries `packed` /
+/// `packed(N)`. Unparsable repr contents are someone else's error to
+/// report — treat them as not packed.
+fn is_packed(input: &DeriveInput) -> bool {
+    let mut packed = false;
+    for attr in input.attrs.iter().filter(|a| a.path().is_ident("repr")) {
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("packed") {
+                packed = true;
+            }
+            if meta.input.peek(syn::token::Paren) {
+                let content;
+                syn::parenthesized!(content in meta.input);
+                let _: TokenStream2 = content.parse()?;
+            }
+            Ok(())
+        });
+    }
+    packed
 }
 
 /// Build the `fmt` body for an enum: one match arm per variant, each
