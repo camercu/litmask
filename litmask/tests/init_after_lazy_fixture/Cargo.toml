@@ -1,0 +1,18 @@
+# Standalone one-crate workspace for the init-after-lazy fail-fast
+# e2e test (`litmask/tests/init_after_lazy_refusal.rs`). The empty
+# `[workspace]` table detaches this crate from the parent litmask
+# workspace so its Embedded-floor seal never reseals the litmask
+# crate's own build in the shared target dir.
+[workspace]
+
+[package]
+name = "litmask_init_after_lazy_fixture"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+litmask = { path = "../.." }
+
+[build-dependencies]
+litmask-build = { path = "../../../litmask-build" }

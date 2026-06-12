@@ -1517,6 +1517,16 @@ init-ordering cause (a higher tier requires an explicit `init!(...)` before the
 first `mask!()`). This prevents the wrong-key lazy derive from surfacing as a
 generic wrapper-decryption failure that hides the real cause.
 
+§2.1.1.12b — On an Embedded-sealed **debug** build (`cfg(debug_assertions)`),
+an `init!()` / `init_with!()` call that arrives AFTER a `mask!()` has already
+lazily initialized the runtime SHALL panic, naming the init-after-lazy
+ordering cause. Rationale: on the Embedded floor the lazy key equals the
+`init!()` key, so the ordering bug is functionally invisible — until the
+consumer reseals above the floor, where the same ordering refuses at the
+first `mask!()` per §2.1.1.12a. Release builds SHALL retain the silent
+idempotent `Ok(())` of §2.6.1.4 and SHALL NOT compile the diagnostic text
+into the artifact.
+
 §2.1.1.13 — Lazy initialization failure SHALL panic per the policy in §1.9.5.
 
 #### §2.1.2 unmasked! macro
@@ -2072,8 +2082,10 @@ behavior matches the requirements below verbatim.
 §1.7.3), and store the result in the global `OnceLock`.
 
 §2.6.1.4 — Successive calls to `init!()` or `init_with!()` after successful
-initialization SHALL return `Ok(())` without re-running the provider
-(idempotent).
+**explicit** initialization SHALL return `Ok(())` without re-running the
+provider (idempotent). When the mask key was installed by the LAZY path
+instead, a debug build SHALL panic per §2.1.1.12b; a release build SHALL
+keep the silent `Ok(())`.
 
 §2.6.1.5 — Successive calls after a failed initialization SHALL retry the
 provider call.

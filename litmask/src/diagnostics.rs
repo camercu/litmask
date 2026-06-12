@@ -74,6 +74,28 @@ pub(crate) fn lazy_init_wrong_tier(tier: &str) -> ! {
     }
 }
 
+/// Diverge when an `init!` / `init_with!` seam runs AFTER a lazy
+/// first-`mask!()` already installed the mask key. Debug-only: on the
+/// Embedded floor (the only tier where the lazy path succeeds) the lazy
+/// key equals the `init!()` key, so release builds keep the silent
+/// idempotent `Ok(())` (§2.6.1.4) — but the ordering is a latent bug
+/// that turns into the §2.1.1.12a runtime refusal the moment the
+/// consumer reseals at a higher tier. Fail loudly on the developer's
+/// machine instead, naming the fix (move `init!` ahead of the first
+/// `mask!()`).
+#[cfg(debug_assertions)]
+pub(crate) fn init_after_lazy() -> ! {
+    // The line-level cfg is redundant with the fn-level one but
+    // load-bearing for the `tamper_panic` scan, which exempts a
+    // message-bearing panic only when the gate sits directly above it.
+    #[cfg(debug_assertions)]
+    panic!(
+        "litmask: init!() ran after a mask!() had already lazily initialized the runtime — \
+         move init!() ahead of the first mask!(); on a build sealed above the Embedded floor \
+         this ordering would refuse to decrypt at the first mask!()"
+    );
+}
+
 /// Diverge on a per-string `mask!()` blob decrypt failure.
 pub(crate) fn blob_failure() -> ! {
     #[cfg(debug_assertions)]
@@ -157,6 +179,18 @@ mod tests {
         assert!(panic_message(|| weak_utf8_failure()).contains("litmask:"));
         assert!(panic_message(|| weak_cstr_failure()).contains("litmask:"));
         assert!(panic_message(|| lazy_init_wrong_tier("external")).contains("litmask:"));
+        assert!(panic_message(|| init_after_lazy()).contains("litmask:"));
+    }
+
+    /// The init-after-lazy refusal must name the ordering cause and the
+    /// fix (move `init!` ahead of the first `mask!()`) — not read like
+    /// the generic init-failure hints, since no decryption failed.
+    #[test]
+    fn init_after_lazy_names_ordering_and_fix() {
+        let msg = panic_message(|| init_after_lazy());
+        assert!(msg.contains("after"));
+        assert!(msg.contains("mask!"));
+        assert!(msg.contains("ahead of the first mask!"));
     }
 
     /// The lazy-tier refusal must point at the init-ordering cause (so an

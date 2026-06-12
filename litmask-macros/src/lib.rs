@@ -91,6 +91,18 @@ pub fn mask(input: TokenStream) -> TokenStream {
 /// build-authoritative `LITMASK_SEAL_TIER` tag and cross-check the
 /// form against the sealed tier.
 ///
+/// Repeat calls after a successful explicit `init!` are idempotent
+/// (`Ok(())` without re-running the provider).
+///
+/// # Panics
+///
+/// In **debug** builds, panics when called after a `mask!()` already
+/// lazily initialized the runtime (Embedded floor only) — the lazy key
+/// equals the `init!()` key today, but the ordering refuses to decrypt
+/// at runtime the moment the build is resealed above the floor. Move
+/// `init!` ahead of the first `mask!()`. Release builds keep the silent
+/// idempotent `Ok(())`.
+///
 /// # Errors
 ///
 /// Emits a §1.9.6 `compile_error!` carrying `init! tier-mismatch` when

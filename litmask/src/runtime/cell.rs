@@ -32,8 +32,9 @@ impl<T> OnceCell<T> {
     }
 
     /// Best-effort set: the first value wins and a racing loser is
-    /// dropped silently. Both init seams rely on this — a second
-    /// `init!` call is a no-op, never an error.
+    /// dropped silently. Both init seams rely on this — a repeat
+    /// explicit `init!` call is a no-op, never an error (the debug
+    /// init-after-lazy guard fires before any `try_set`).
     pub fn try_set(&self, value: T) {
         #[cfg(feature = "std")]
         let _ = self.inner.set(value);

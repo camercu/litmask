@@ -23,6 +23,30 @@ pub(crate) mod weak;
 
 static MASK_KEY: cell::OnceCell<MaskKey> = cell::OnceCell::new();
 
+/// Debug-only provenance bit: did the lazy first-`mask!()` path (rather
+/// than an explicit `init!` seam) install the mask key? Lets a late
+/// `init!` distinguish the benign repeat-`init!` no-op from the latent
+/// init-after-lazy ordering bug (see [`guard_init_after_lazy`]).
+/// Relaxed ordering suffices: the bit is a best-effort diagnostic, not
+/// a synchronization point — the cell itself stays the source of truth.
+#[cfg(debug_assertions)]
+static LAZY_INIT_USED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Debug fail-fast for an `init!` that arrives after the lazy
+/// first-`mask!()` path already installed the mask key. Called from
+/// every explicit init seam's already-initialized early return. On the
+/// Embedded floor the lazy key equals the `init!()` key, so the bug is
+/// invisible at runtime — until a higher-tier reseal turns it into the
+/// §2.1.1.12a refusal. Release builds keep the silent idempotent
+/// `Ok(())` (§2.6.1.4): this function compiles to nothing there, and no
+/// diagnostic text reaches the artifact.
+fn guard_init_after_lazy() {
+    #[cfg(debug_assertions)]
+    if LAZY_INIT_USED.load(core::sync::atomic::Ordering::Relaxed) {
+        crate::diagnostics::init_after_lazy();
+    }
+}
+
 /// Decrypt the embedded `mask_key` wrapper and store the result in the
 /// process-global mask key cell.
 ///
@@ -43,6 +67,7 @@ pub fn __init_with_wrapper<P: KeyProvider>(
     wrapper: &[u8; WRAPPER_LEN],
 ) -> Result<(), InitError> {
     if MASK_KEY.is_set() {
+        guard_init_after_lazy();
         return Ok(());
     }
     let unlock_key = provider.unlock_key()?;
@@ -123,6 +148,7 @@ pub fn __init_machine_id_external<P: KeyProvider>(
     external: P,
 ) -> Result<(), InitError> {
     if MASK_KEY.is_set() {
+        guard_init_after_lazy();
         return Ok(());
     }
     let machine_key = crate::provider::MachineIdProvider::new(wrapper).unlock_key()?;
@@ -169,6 +195,8 @@ pub fn __decrypt(blob: &[u8], wrapper: &[u8; WRAPPER_LEN], tier: &str) -> alloc:
 )]
 fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN], tier: &str) -> &'static MaskKey {
     MASK_KEY.get_or_init(|| {
+        #[cfg(debug_assertions)]
+        LAZY_INIT_USED.store(true, core::sync::atomic::Ordering::Relaxed);
         // No explicit `init!` ran. The lazy fallback derives the
         // Embedded-tier unlock_key from the wrapper's public nonce, which
         // is correct ONLY at the Embedded floor. On a higher-tier seal
