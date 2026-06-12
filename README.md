@@ -127,10 +127,36 @@ write.
 | `weak_mask!(c"...")`          | `&'static CStr`  | pre-`init!` bootstrap C strings (`std`) |
 | `unmasked!("...")`            | `&'static str`   | opt out of `#[mask_all]`                |
 | `#[mask_all]`                 | --               | rewrites all literals in a module       |
+| `#[derive(MaskDebug)]`        | --               | masks `Debug` type/field/variant names  |
 
 `mask!` returns owned types because decryption happens at runtime. For `&str`,
 bind: `let s: &str = &mask!("...");`. If you absolutely need `&'static str`,
 use `weak_mask!`, but its key is recoverable statically from the binary.
+
+## Debug derive
+
+`#[derive(Debug)]` embeds the type name, every field name, and every enum
+variant name as cleartext in the binary. `#[derive(MaskDebug)]` masks the
+names through the same AEAD pipeline as `mask!` while keeping `{:?}` and
+`{:#?}` output byte-identical to the plain derive:
+
+```rust
+use litmask::MaskDebug;
+
+#[derive(MaskDebug)]
+struct LicenseManifest {
+    license_server_url: String,   // field name absent from the binary
+    activation_token: String,
+}
+```
+
+No feature flag needed — names are decrypted during each `fmt` call (the
+formatter borrows `&str`, so nothing is cached or leaked), and the derive
+works in `no_std` + `alloc` builds. Structs and enums are supported; unions
+are a compile error. Adding a plain `#[derive(Debug)]` to the same type
+re-embeds the names and defeats the masking.
+
+See `examples/mask_debug_demo.rs` and SPECIFICATION.md §2.14.
 
 ## Serde integration (experimental)
 
@@ -155,8 +181,9 @@ Current limitations (the `unstable-` prefix means semver-exempt):
 
 - Named-field structs only — enums, tuple structs, and `#[serde(...)]`
   attributes are compile errors rather than silent cleartext fallbacks.
-- `Serialize` only. A plain `#[derive(serde::Deserialize)]` (or `Debug`) on
-  the same struct re-embeds every name and defeats the masking.
+- `Serialize` only. A plain `#[derive(serde::Deserialize)]` on the same
+  struct re-embeds every name and defeats the masking — same for plain
+  `Debug` (use `#[derive(MaskDebug)]` instead).
 
 See `examples/mask_serde_demo.rs` and SPECIFICATION.md Appendix E.
 

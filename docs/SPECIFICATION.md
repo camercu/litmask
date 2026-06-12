@@ -2369,6 +2369,59 @@ the `cross-platform-actions/action` `run:` block for VM platforms.
 
 ---
 
+### §2.14 Iteration 14 — Debug derive (MaskDebug)
+
+`#[derive(Debug)]` embeds the type name, every field name, and every
+enum variant name as cleartext `&'static str` in `.rodata` (via
+`Formatter::debug_struct(name)` / `.field(name, value)` /
+`write_str(name)`). For the §1.1.1 target user this leaks type
+vocabulary to `strings(1)` even when every field *value* is masked.
+`MaskDebug` closes that channel with the same AEAD pipeline as
+`mask!`.
+
+`MaskDebug` is stable, ungated surface: unlike `MaskSerialize`
+(Appendix E), the `core::fmt` builder API takes `&str` rather than
+`&'static str`, so no decrypt-once leak — and therefore no `std`
+requirement — exists. The derive works in every build configuration,
+including `no_std` + `alloc`.
+
+#### §2.14.1 Acceptance criteria
+
+§2.14.1.1 — `#[derive(MaskDebug)]` SHALL generate a `core::fmt::Debug`
+impl whose `{:?}` and `{:#?}` output is byte-identical to plain
+`#[derive(Debug)]` for the same type.
+
+§2.14.1.2 — The type name, every field name, and every enum variant
+name SHALL be AEAD-encrypted at expansion time using the §1.5.2
+call-site nonce derivation and SHALL NOT appear as plaintext in the
+compiled binary.
+
+§2.14.1.3 — Names SHALL be decrypted on each `fmt` call and released
+afterwards; the expansion SHALL NOT cache or leak decrypted names.
+
+§2.14.1.4 — The derive SHALL accept structs (named-field, tuple, and
+unit) and enums (all variant field shapes, including uninhabited
+enums). Unions SHALL fail with `MaskDebug! grammar` (§1.9.6).
+
+§2.14.1.5 — Raw identifiers SHALL render unraw'd (`r#type` → `type`),
+matching the plain derive.
+
+§2.14.1.6 — Each type parameter SHALL receive a `Debug` where-clause
+bound, mirroring the plain derive's bound model.
+
+§2.14.1.7 — Name decryption SHALL follow `mask!`'s runtime policy:
+lazy Embedded-floor initialization, §1.9.5 profile-split panic on
+decrypt failure. On seal tiers above Embedded, `init!` MUST run
+before the first formatting.
+
+#### §2.14.2 Residual exposure
+
+- A plain `#[derive(Debug)]`, `#[derive(serde::Serialize)]`, or
+  `#[derive(serde::Deserialize)]` on the same type re-embeds every
+  name in the binary and defeats the masking.
+- Formatted output prints decrypted names at runtime — at-rest
+  protection only, per §1.1.
+
 ## Appendix A — Open Items for Implementation
 
 These are decisions deferred to implementation that are not constrained by
@@ -2631,7 +2684,8 @@ named-field struct.
 Residuals (documented, not defects):
 
 - A plain `#[derive(serde::Deserialize)]` or `#[derive(Debug)]` on the same
-  type re-embeds every name in the binary and defeats the masking.
+  type re-embeds every name in the binary and defeats the masking. For
+  `Debug`, pair with `#[derive(MaskDebug)]` (§2.14) instead.
 - Self-describing formats print decrypted names in runtime output and
   runtime error messages — at-rest protection only, per §1.1.
 - serde's own crate-internal strings remain in the binary; the masking

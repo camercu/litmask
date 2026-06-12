@@ -22,9 +22,9 @@
 //! lazily initializes on the first decrypt, exactly as with `mask!`.
 //! Higher seal tiers must run `init!` before the first serialization.
 //!
-//! CAUTION: adding a plain `#[derive(serde::Deserialize)]` (or
-//! `Debug`) to the same struct re-embeds every name in the binary and
-//! defeats the masking.
+//! CAUTION: adding a plain `#[derive(serde::Deserialize)]` (or plain
+//! `Debug` — use `#[derive(MaskDebug)]` instead) to the same struct
+//! re-embeds every name in the binary and defeats the masking.
 
 use litmask::{MaskSerialize, mask};
 

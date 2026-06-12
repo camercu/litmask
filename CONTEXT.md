@@ -93,6 +93,15 @@ before `init!()` runs (env-var names, default file paths). The
 derivation uses only the nonce.
 _Avoid_: "soft mask", "light mask".
 
+**`MaskDebug`**: Derive macro generating a `core::fmt::Debug` impl
+whose type, field, and variant names go through the same AEAD pipeline
+as `mask!` instead of landing as cleartext in the binary. Output is
+byte-identical to the plain derive; names decrypt on each `fmt` call
+and are released afterwards (no cache, no leak, no feature gate —
+works in `no_std` + `alloc`).
+_Avoid_: "debug mask", "masked debug derive" (the derive masks names,
+not formatted values).
+
 **`MaskSerialize`** (EXPERIMENTAL, `unstable-serde` feature): Derive
 macro generating a `serde::Serialize` impl whose struct and field
 names go through the same AEAD pipeline as `mask!` instead of landing
