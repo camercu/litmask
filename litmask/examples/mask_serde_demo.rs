@@ -26,9 +26,12 @@
 //! `Debug` — use `#[derive(MaskDebug)]` instead) to the same struct
 //! re-embeds every name in the binary and defeats the masking.
 
-use litmask::{MaskSerialize, mask};
+use litmask::{MaskDebug, MaskSerialize, mask};
 
-#[derive(MaskSerialize)]
+// `MaskDebug` paired with `MaskSerialize`, as the docs recommend —
+// this binary is scrub-tested, so the pairing is proven to keep every
+// name out of `.rodata`.
+#[derive(MaskSerialize, MaskDebug)]
 struct ClandestineTelemetryManifest {
     covert_endpoint_quux: String,
     activation_token_xyzzy: String,
@@ -42,4 +45,5 @@ fn main() {
         heartbeat_jitter_millis: 250,
     };
     println!("{}", serde_json::to_string(&manifest).unwrap());
+    println!("{manifest:?}");
 }

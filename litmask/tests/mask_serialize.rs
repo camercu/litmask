@@ -142,3 +142,39 @@ fn mask_serialize_repeat_calls_are_stable() {
     let second = serde_json::to_string(&masked).expect("second serialization failed");
     assert_eq!(first, second);
 }
+
+/// The docs recommend pairing `MaskDebug` with `MaskSerialize` (a
+/// plain `Debug` derive would re-embed the names); the pair must
+/// expand cleanly on one type and preserve both output contracts.
+#[derive(MaskSerialize, litmask::MaskDebug)]
+struct MaskedCombined {
+    relay_endpoint_qwxz: String,
+    retry_budget: u32,
+}
+
+mod plain {
+    #[derive(serde::Serialize, Debug)]
+    pub struct MaskedCombined {
+        pub relay_endpoint_qwxz: String,
+        pub retry_budget: u32,
+    }
+}
+
+#[test]
+fn mask_serialize_combines_with_mask_debug_on_one_type() {
+    common::init_once();
+    let masked = MaskedCombined {
+        relay_endpoint_qwxz: "wss://relay.example".to_string(),
+        retry_budget: 3,
+    };
+    let plain = plain::MaskedCombined {
+        relay_endpoint_qwxz: "wss://relay.example".to_string(),
+        retry_budget: 3,
+    };
+    assert_eq!(
+        serde_json::to_string(&masked).expect("masked serialization failed"),
+        serde_json::to_string(&plain).expect("plain serialization failed"),
+    );
+    assert_eq!(format!("{masked:?}"), format!("{plain:?}"));
+    assert_eq!(format!("{masked:#?}"), format!("{plain:#?}"));
+}
