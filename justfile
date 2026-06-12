@@ -86,10 +86,18 @@ test-aes-gcm:
 # Run tests with --all-features so dual-cipher (chacha + aes-gcm)
 # code paths are exercised. Catches bugs like encrypt-with-one-cipher /
 # decrypt-with-another when CURRENT_CIPHER resolves differently than
-# the hardcoded cipher in a test helper. Examples are excluded
-# (`--lib --tests --bins`): the `machine_id_provider` example's
-# `init!(machine_id)` only compiles under a `machine` seal (see
-# `ci-coverage`).
+# the hardcoded cipher in a test helper.
+#
+# Examples are excluded (`--lib --tests --bins`) by necessity, not
+# oversight: the seal tier is fixed per-build from env presence and
+# `init!` forms are compile-time cross-checked against it, while the
+# examples deliberately span tiers — `weak_mask_demo`'s `init!()`
+# needs an `embedded` seal, `machine_id_provider`'s
+# `init!(bind_to_machine)` needs a `machine` seal (LITMASK_MACHINE_ID
+# set). No single env configuration compiles both, so a unified
+# all-features example build cannot exist. Each example is instead
+# built and scrubbed with tailored features + env by
+# `litmask/tests/example_scrub.rs`, and run by `just test-examples`.
 test-all-features:
     cargo nextest run --workspace --all-features --lib --tests --bins
 
