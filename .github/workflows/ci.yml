@@ -44,6 +44,16 @@ jobs:
         with:
           tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }},cargo-llvm-cov@${{ steps.tools.outputs.cargo_llvm_cov }}
 
+      # `just lint` shells out to markdownlint-cli2, an npm tool the
+      # cargo-centric install-action above can't provide. Locally it
+      # comes from nix-shell; here npm -g, pinned via .tool-versions.
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .tool-versions
+
+      - name: Install markdownlint-cli2
+        run: npm install -g markdownlint-cli2@${{ steps.tools.outputs.markdownlint_cli2 }}
+
       - name: Format check
         run: just fmt-check
 
