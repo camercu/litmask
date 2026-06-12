@@ -1,3 +1,77 @@
+## [0.11.0](https://github.com/camercu/litmask/compare/v0.10.0...v0.11.0) (2026-06-12)
+
+### ⚠ BREAKING CHANGES
+
+* **build:** LITMASK_MACHINE_ID must be a `litmask show-machine-id`
+token (raw_id "." checksum); a bare id now aborts the build.
+* **machine:** MachineIdProvider is no longer public. The machine tier
+is reached only through the init!(machine_id) keyword form, which the
+proc-macro cross-checks against the build's seal tier.
+* **build:** a build with LITMASK_UNLOCK_KEY set now seals the
+external tier and emits no litmask.config; previously the variable was
+ignored and the embedded tier was always sealed.
+* **provider:** KeyEncoding and FileProvider::with_encoding are
+removed; FileProvider::new now treats file contents as raw material
+rather than base64url-encoded text.
+* **provider:** LITMASK_UNLOCK_KEY is interpreted as raw key material,
+not a base64url-encoded 32-byte key. Deployers must supply the same
+material fed to the build seal.
+* **provider:** StaticProvider is removed; init!() now unlocks via
+EmbeddedProvider, and derive_embedded_unlock_key takes an explicit
+context argument.
+* **keying:** unlock_key derivation changed; binaries built before
+this change will not decrypt under the new Embedded-tier key.
+* **wire:** wrapper wire format changed (old binaries/wrappers no
+longer decrypt); litmask-cli bind and inspect subcommands removed;
+InitError::UnsupportedCipher and litmask-internal scan/config locator
+APIs removed; litmask.config drops the locator and length fields.
+* HardwareIdProvider -> MachineIdProvider, feature
+hw-id -> machine-id, CLI --hw-id -> --machine-id and show-hw-id ->
+show-machine-id. The derivation context value "hw-v1" -> "machine-v1"
+changes derive_machine_id_key output, so every machine-ID-bound binary
+must be re-bound. External nouns (machine_uid crate, /etc/machine-id,
+AES hardware acceleration) are unchanged.
+
+* rename hardware-id concept to machine-id ([8538435](https://github.com/camercu/litmask/commit/85384357e9281ae63467fe5f8009920d81b5fe6a))
+
+### Features
+
+* **build:** presence-driven external sealing under LITMASK_UNLOCK_KEY ([4950040](https://github.com/camercu/litmask/commit/49500406b22226749ebbc58fc2d985bbfdc0c909))
+* **build:** require self-checking token form for LITMASK_MACHINE_ID ([e1f96f7](https://github.com/camercu/litmask/commit/e1f96f77fe9a7df9166653ac7cb42fd2b08a2334))
+* **build:** seal MachineExternal two-factor tier ([92c0474](https://github.com/camercu/litmask/commit/92c047450a144a18a15f8b05a657a0938314e02b))
+* **build:** warn on Embedded floor in release builds ([c9180d0](https://github.com/camercu/litmask/commit/c9180d023fd7921b3aefc9765ca22c38a7215102))
+* **cli:** add bind --hw-id for off-box (vendor-side) binding ([e7c332d](https://github.com/camercu/litmask/commit/e7c332dfc96a05b766de7d568d8f09ef14c3fc50))
+* **cli:** add keygen and self-checking show-machine-id token ([bcf96cd](https://github.com/camercu/litmask/commit/bcf96cdb4728074cb494c28199639242141ca864))
+* **cli:** add show-hw-id command and send bind errors to stderr ([3383369](https://github.com/camercu/litmask/commit/33833693f7c12faf3a530c6186c55d67686aee89))
+* **init:** add init!(machine_id + provider) two-factor form ([ec28cc8](https://github.com/camercu/litmask/commit/ec28cc8f9f54546b43fe252ec1f0b632aab2bb71))
+* **internal:** add external-tier unlock-key derivation ([792101a](https://github.com/camercu/litmask/commit/792101ab2c44c954561d01b54ccdbf4034ce14c9))
+* **internal:** add self-checking machine-id token codec ([573ad0e](https://github.com/camercu/litmask/commit/573ad0ee250853828e4503bf86095171df1c79e4))
+* **internal:** add strip_trailing_newline for external material ([e757c87](https://github.com/camercu/litmask/commit/e757c87f969f84d4627b53d2e266463565b3c8ef))
+* **internal:** add two-factor unlock-key composition KDF ([c54da46](https://github.com/camercu/litmask/commit/c54da46273ecd29b47720951bfe555076724cfef))
+* **key:** add public UnlockKey::derive for external material ([5a24e73](https://github.com/camercu/litmask/commit/5a24e735375879b09db74405e3c755894222545e))
+* **key:** add UnlockKey::compose for two-factor keying ([4466002](https://github.com/camercu/litmask/commit/446600271c57880b5d82919d82f10ad88f649673))
+* **keying:** embedded nonce-derived unlock_key + seal-tier tag ([f4a0918](https://github.com/camercu/litmask/commit/f4a091852d59f6dd2aa64ba944911728fc8bc340))
+* **machine:** add machine-id seal tier via init!(machine_id) ([eea8e35](https://github.com/camercu/litmask/commit/eea8e351b29f697303385928de4a7aa4c602dc02))
+* **macros:** add init!(<provider>) external form with tier cross-check ([6548f63](https://github.com/camercu/litmask/commit/6548f6300cc40ac3dd870a73ad733342ccc169a0))
+* **macros:** convert init! to proc-macro with form↔tier cross-check ([2ee89cf](https://github.com/camercu/litmask/commit/2ee89cf942d21242365d207c750e8a469c5b9d08))
+* **provider:** env provider derives unlock_key from raw material ([038e5fc](https://github.com/camercu/litmask/commit/038e5fc788db74f1cc869baeebfab61edcfcb403))
+* **provider:** file provider derives unlock_key from raw material ([842c6e0](https://github.com/camercu/litmask/commit/842c6e00834dec0999b69623e8b5369197f6f102))
+* **provider:** make EmbeddedProvider the keyless default unlock path ([fdaf9ba](https://github.com/camercu/litmask/commit/fdaf9bae50cd7f0c0a2ca3658bda2bb5fef57b46))
+* **runtime:** gate lazy init on the build-sealed tier ([e6d2895](https://github.com/camercu/litmask/commit/e6d28954e91abeefd791cd471d24ace774d78303))
+* **runtime:** profile-split failure diagnostics ([b926758](https://github.com/camercu/litmask/commit/b926758934689466665bef863b6d947c0126cca2))
+* **wire:** build-sealed wrapper format, drop locator + CLI bind/inspect ([b8bbeb9](https://github.com/camercu/litmask/commit/b8bbeb91b5537be666c22c1d7eaf5c5caa58e9c5))
+
+### Bug Fixes
+
+* **ci:** drop removed locator_scan fuzz target ([b573c53](https://github.com/camercu/litmask/commit/b573c53830a0506e179c1a90e8e39e34508a412b))
+* **ci:** isolate per-example seal env, exclude machine example from coverage ([55231cf](https://github.com/camercu/litmask/commit/55231cf7dbf19a0b175df540dfedcaaa0375e28e))
+* **ci:** seal machine tier for scrub-hardened example build ([b6a2661](https://github.com/camercu/litmask/commit/b6a26610119446f7864d214cc1b99f7f82f2397a))
+* **cli:** inherit litmask-internal dep from workspace ([f350462](https://github.com/camercu/litmask/commit/f3504622b83e1e716d1693d0dd132f45bbffe73a))
+* **machine:** strip trailing newline from build-time machine id ([45b83ae](https://github.com/camercu/litmask/commit/45b83aeddb9048d6de92c2b37a7061c7c0eb8744))
+* **macros:** guide init!(machine_id) built without the machine-id feature ([8859e75](https://github.com/camercu/litmask/commit/8859e759da0d502411cd2af1582fa9bf9ef4a6cc))
+* **macros:** require lone `+` for two-factor init! form ([794251d](https://github.com/camercu/litmask/commit/794251dd1f7417e38f488139f7416ac37e28e4c4))
+* **test:** match compile-fixture stderr to no-rust-src toolchain ([8299586](https://github.com/camercu/litmask/commit/8299586b43a9f7d348de1a69a3f06808f1b4b799))
+
 ## [0.10.0](https://github.com/camercu/litmask/compare/v0.9.0...v0.10.0) (2026-05-30)
 
 ### ⚠ BREAKING CHANGES
