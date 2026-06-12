@@ -133,9 +133,9 @@ pub use litmask_macros::{
 };
 
 #[cfg(feature = "unstable-serde")]
-pub use litmask_macros::MaskedSerialize;
+pub use litmask_macros::MaskSerialize;
 
-// The `MaskedSerialize` expansion references serde's traits through
+// The `MaskSerialize` expansion references serde's traits through
 // `::litmask::__serde::...` so consumers don't need a direct serde
 // dependency for the generated code to resolve.
 #[cfg(feature = "unstable-serde")]

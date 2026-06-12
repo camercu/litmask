@@ -4,17 +4,17 @@
 //! Plain `#[derive(serde::Serialize)]` embeds every field name and the
 //! struct name as cleartext `&'static str` in the compiled binary's
 //! `.rodata` — `strings(1)` reveals the full schema vocabulary even
-//! when every field *value* is masked. `#[derive(MaskedSerialize)]`
+//! when every field *value* is masked. `#[derive(MaskSerialize)]`
 //! routes the names through the same AEAD pipeline as `mask!`, while
 //! the serialized output stays byte-identical to the plain derive.
 //! Prove it to yourself:
 //!
 //! ```sh
-//! cargo build --release --features unstable-serde --example masked_serde_demo
-//! strings target/release/examples/masked_serde_demo | grep activation_token
+//! cargo build --release --features unstable-serde --example mask_serde_demo
+//! strings target/release/examples/mask_serde_demo | grep activation_token
 //! # (no output — the field names are absent from the binary)
 //!
-//! ./target/release/examples/masked_serde_demo
+//! ./target/release/examples/mask_serde_demo
 //! # prints the full JSON, field names decrypted at runtime
 //! ```
 //!
@@ -26,9 +26,9 @@
 //! `Debug`) to the same struct re-embeds every name in the binary and
 //! defeats the masking.
 
-use litmask::{MaskedSerialize, mask};
+use litmask::{MaskSerialize, mask};
 
-#[derive(MaskedSerialize)]
+#[derive(MaskSerialize)]
 struct ClandestineTelemetryManifest {
     covert_endpoint_quux: String,
     activation_token_xyzzy: String,

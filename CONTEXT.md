@@ -93,7 +93,7 @@ before `init!()` runs (env-var names, default file paths). The
 derivation uses only the nonce.
 _Avoid_: "soft mask", "light mask".
 
-**`MaskedSerialize`** (EXPERIMENTAL, `unstable-serde` feature): Derive
+**`MaskSerialize`** (EXPERIMENTAL, `unstable-serde` feature): Derive
 macro generating a `serde::Serialize` impl whose struct and field
 names go through the same AEAD pipeline as `mask!` instead of landing
 as cleartext in the binary. Output is byte-identical to the plain

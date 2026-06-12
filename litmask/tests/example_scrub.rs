@@ -54,7 +54,7 @@ const EXAMPLES: &[&str] = &[
     "mask_print_e2e",
 ];
 
-const EXCEPTIONS: &[&str] = &["file_provider", "machine_id_provider", "masked_serde_demo"];
+const EXCEPTIONS: &[&str] = &["file_provider", "machine_id_provider", "mask_serde_demo"];
 
 #[test]
 fn no_forbidden_substrings_in_any_example_binary() {
@@ -374,7 +374,7 @@ fn machine_id_provider_example_masked_fixtures_absent_from_binary() {
     common::assert_no_dirty_words_except(&path, &["blake3"]);
 }
 
-/// `masked_serde_demo` derives `MaskedSerialize` (EXPERIMENTAL,
+/// `mask_serde_demo` derives `MaskSerialize` (EXPERIMENTAL,
 /// `unstable-serde`): the struct name and every field name must be
 /// absent from the compiled binary — plain `#[derive(serde::Serialize)]`
 /// would embed each as a cleartext `&'static str` reachable by
@@ -385,12 +385,12 @@ fn machine_id_provider_example_masked_fixtures_absent_from_binary() {
 /// feature enabled, mirroring the `machine_id_provider` pattern, so the
 /// scrub runs under the standard default-features `cargo test`.
 #[test]
-fn masked_serde_demo_names_and_fixtures_absent_from_binary() {
-    common::build_example_with_features("masked_serde_demo", Profile::Release, &["unstable-serde"]);
-    let path = common::example_path("masked_serde_demo", Profile::Release);
+fn mask_serde_demo_names_and_fixtures_absent_from_binary() {
+    common::build_example_with_features("mask_serde_demo", Profile::Release, &["unstable-serde"]);
+    let path = common::example_path("mask_serde_demo", Profile::Release);
     assert!(
         path.exists(),
-        "masked_serde_demo binary missing after build: {}",
+        "mask_serde_demo binary missing after build: {}",
         path.display(),
     );
     // Struct name — passed to `serialize_struct` by the plain derive.

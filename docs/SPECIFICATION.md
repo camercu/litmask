@@ -2591,12 +2591,12 @@ as cleartext `&'static str` in `.rodata` (via
 `serialize_struct(name, len)` / `serialize_field(name, value)`). For the
 §1.1.1 target user, serde-derived serialization therefore leaks schema
 vocabulary — field names, internal service terminology, protocol shape — to
-`strings(1)` even when every field *value* is masked. `MaskedSerialize`
+`strings(1)` even when every field *value* is masked. `MaskSerialize`
 closes that channel with the same AEAD pipeline as `mask!`.
 
 ### §E.2 Surface and normative behavior
 
-`#[derive(MaskedSerialize)]` generates a `serde::Serialize` impl for a
+`#[derive(MaskSerialize)]` generates a `serde::Serialize` impl for a
 named-field struct.
 
 - **§E.2.1 Wire-format identity.** Serialized output MUST be byte-identical
@@ -2620,8 +2620,8 @@ named-field struct.
   decrypt failure. On seal tiers above Embedded, `init!` MUST run before the
   first serialization.
 - **§E.2.5 Reject-loud grammar.** Enums, tuple structs, and unit structs
-  fail with `MaskedSerialize! grammar` (§1.9.6). Any `#[serde(...)]`
-  attribute on the container or a field fails with `MaskedSerialize!
+  fail with `MaskSerialize! grammar` (§1.9.6). Any `#[serde(...)]`
+  attribute on the container or a field fails with `MaskSerialize!
   invalid-arg` — silently ignoring `rename`/`rename_all`/`skip` would break
   §E.2.1 without warning. Generic structs are supported; each type parameter
   receives a `Serialize` where-clause bound, mirroring the plain derive.

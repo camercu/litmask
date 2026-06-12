@@ -70,7 +70,7 @@ alloc = ["chacha20-poly1305"]
 # itself works under `no_std + alloc` via the `WeakCell` shim
 # (see `litmask::runtime::WeakCell`).
 machine-id = ["std", "dep:machine-uid"]
-# EXPERIMENTAL masked serde integration (`#[derive(MaskedSerialize)]`):
+# EXPERIMENTAL masked serde integration (`#[derive(MaskSerialize)]`):
 # field and struct names are AEAD-masked at compile time and leak-cached
 # at first serialize. The `unstable-` prefix is the semver-exemption
 # signal — this surface may change or vanish in any release until it
@@ -104,7 +104,7 @@ required-features = ["machine-id"]
 # Same `required-features` rationale as above: skip cleanly under
 # `cargo build --examples` with default features instead of failing.
 [[example]]
-name = "masked_serde_demo"
+name = "mask_serde_demo"
 required-features = ["unstable-serde"]
 
 [dev-dependencies]

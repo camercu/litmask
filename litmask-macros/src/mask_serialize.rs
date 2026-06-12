@@ -1,4 +1,4 @@
-//! `#[derive(MaskedSerialize)]`: a `serde::Serialize` impl whose
+//! `#[derive(MaskSerialize)]`: a `serde::Serialize` impl whose
 //! struct and field names are AEAD-masked at compile time (EXPERIMENTAL,
 //! `unstable-serde` feature).
 //!
@@ -28,9 +28,9 @@ use syn::{Data, DeriveInput, Fields};
 
 use crate::common::{FailTag, compile_error, mask_str};
 
-const MACRO_NAME: &str = "MaskedSerialize";
+const MACRO_NAME: &str = "MaskSerialize";
 
-/// Implementation of the `#[proc_macro_derive] MaskedSerialize` entry
+/// Implementation of the `#[proc_macro_derive] MaskSerialize` entry
 /// point. Re-exported at the crate root via a one-line wrapper.
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let derive_input: DeriveInput = match syn::parse(input) {

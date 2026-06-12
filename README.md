@@ -137,14 +137,14 @@ use `weak_mask!`, but its key is recoverable statically from the binary.
 `#[derive(serde::Serialize)]` embeds every field name and the struct name as
 cleartext in the binary — `strings(1)` reveals your schema vocabulary even
 when every field value is masked. The `unstable-serde` feature adds
-`#[derive(MaskedSerialize)]`, which masks the names through the same AEAD
+`#[derive(MaskSerialize)]`, which masks the names through the same AEAD
 pipeline as `mask!` while keeping serialized output byte-identical to the
 plain derive for every serde format:
 
 ```rust
-use litmask::MaskedSerialize;
+use litmask::MaskSerialize;
 
-#[derive(MaskedSerialize)]
+#[derive(MaskSerialize)]
 struct LicenseManifest {
     license_server_url: String,   // field name absent from the binary
     activation_token: String,
@@ -158,7 +158,7 @@ Current limitations (the `unstable-` prefix means semver-exempt):
 - `Serialize` only. A plain `#[derive(serde::Deserialize)]` (or `Debug`) on
   the same struct re-embeds every name and defeats the masking.
 
-See `examples/masked_serde_demo.rs` and SPECIFICATION.md Appendix E.
+See `examples/mask_serde_demo.rs` and SPECIFICATION.md Appendix E.
 
 ## Key providers
 
@@ -254,7 +254,7 @@ LITMASK_UNLOCK_KEY="$(cargo run -q -p litmask-cli -- keygen)" \
 | `aes-gcm`           | no      | AES-256-GCM (takes precedence when enabled)         |
 | `alloc`             | --      | `no_std` + allocator (required for `no_std` builds) |
 | `machine-id`        | no      | `init!(bind_to_machine)` machine-ID binding              |
-| `unstable-serde`    | no      | EXPERIMENTAL `#[derive(MaskedSerialize)]` (semver-exempt) |
+| `unstable-serde`    | no      | EXPERIMENTAL `#[derive(MaskSerialize)]` (semver-exempt) |
 
 ## Documentation
 

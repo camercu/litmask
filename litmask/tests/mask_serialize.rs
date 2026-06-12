@@ -1,6 +1,6 @@
-//! Integration tests for `#[derive(MaskedSerialize)]` (serde feature).
+//! Integration tests for `#[derive(MaskSerialize)]` (serde feature).
 //!
-//! Output-identity contract: a struct deriving `MaskedSerialize` must
+//! Output-identity contract: a struct deriving `MaskSerialize` must
 //! produce byte-identical `serde_json` output to the same struct shape
 //! deriving plain `serde::Serialize` — masking field names changes the
 //! binary's `.rodata`, never the serialized wire format.
@@ -9,9 +9,9 @@
 
 mod common;
 
-use litmask::MaskedSerialize;
+use litmask::MaskSerialize;
 
-#[derive(MaskedSerialize)]
+#[derive(MaskSerialize)]
 struct MaskedConfig {
     license_server_url: String,
     activation_count: u32,
@@ -24,7 +24,7 @@ struct PlainConfig {
 }
 
 #[test]
-fn masked_serialize_json_matches_plain_derive() {
+fn mask_serialize_json_matches_plain_derive() {
     common::init_once();
     let masked = MaskedConfig {
         license_server_url: "https://license.example.com".to_string(),
@@ -43,7 +43,7 @@ fn masked_serialize_json_matches_plain_derive() {
     );
 }
 
-#[derive(MaskedSerialize)]
+#[derive(MaskSerialize)]
 struct MaskedEnvelope<T> {
     sequence_marker_zzyzx: u64,
     payload: T,
@@ -56,7 +56,7 @@ struct PlainEnvelope<T> {
 }
 
 #[test]
-fn masked_serialize_generic_struct_matches_plain_derive() {
+fn mask_serialize_generic_struct_matches_plain_derive() {
     common::init_once();
     let masked = MaskedEnvelope {
         sequence_marker_zzyzx: 42,
@@ -72,14 +72,14 @@ fn masked_serialize_generic_struct_matches_plain_derive() {
     );
 }
 
-#[derive(MaskedSerialize)]
+#[derive(MaskSerialize)]
 struct MaskedBorrowed<'a, T> {
     borrowed_label_qwxz: &'a str,
     payload: T,
 }
 
 #[test]
-fn masked_serialize_lifetime_and_type_params() {
+fn mask_serialize_lifetime_and_type_params() {
     common::init_once();
     let masked = MaskedBorrowed {
         borrowed_label_qwxz: "tag",
@@ -91,7 +91,7 @@ fn masked_serialize_lifetime_and_type_params() {
     );
 }
 
-#[derive(MaskedSerialize)]
+#[derive(MaskSerialize)]
 struct MaskedRawIdent {
     r#type: String,
 }
@@ -102,7 +102,7 @@ struct PlainRawIdent {
 }
 
 #[test]
-fn masked_serialize_raw_ident_field_unraws_like_plain_derive() {
+fn mask_serialize_raw_ident_field_unraws_like_plain_derive() {
     common::init_once();
     let masked = MaskedRawIdent {
         r#type: "beacon".to_string(),
@@ -118,11 +118,11 @@ fn masked_serialize_raw_ident_field_unraws_like_plain_derive() {
     assert_eq!(masked_json, r#"{"type":"beacon"}"#);
 }
 
-#[derive(MaskedSerialize)]
+#[derive(MaskSerialize)]
 struct MaskedEmpty {}
 
 #[test]
-fn masked_serialize_empty_struct_serializes_as_empty_object() {
+fn mask_serialize_empty_struct_serializes_as_empty_object() {
     common::init_once();
     assert_eq!(
         serde_json::to_string(&MaskedEmpty {}).expect("masked serialization failed"),
@@ -131,7 +131,7 @@ fn masked_serialize_empty_struct_serializes_as_empty_object() {
 }
 
 #[test]
-fn masked_serialize_repeat_calls_are_stable() {
+fn mask_serialize_repeat_calls_are_stable() {
     common::init_once();
     let masked = MaskedConfig {
         license_server_url: "u".to_string(),

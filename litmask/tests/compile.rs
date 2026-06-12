@@ -7,7 +7,7 @@
 //!
 //! Regenerate `.stderr` snapshots after an intentional message change:
 //! `TRYBUILD=overwrite cargo test --test compile`. The
-//! `masked_serialize_*` fixtures additionally need
+//! `mask_serialize_*` fixtures additionally need
 //! `--features unstable-serde`.
 
 #[test]
@@ -59,18 +59,18 @@ fn compile_fixtures() {
     t.compile_fail("tests/compile/init_machine_external_against_embedded_seal.rs");
 }
 
-/// Rejection fixtures for `#[derive(MaskedSerialize)]` (EXPERIMENTAL,
+/// Rejection fixtures for `#[derive(MaskSerialize)]` (EXPERIMENTAL,
 /// `unstable-serde`). Gated on the feature: trybuild propagates the
 /// running test build's enabled features into the fixture project, so
 /// without the gate the fixtures would fail on "cannot find derive
 /// macro" instead of the intended grammar diagnostics.
 #[cfg(feature = "unstable-serde")]
 #[test]
-fn masked_serialize_compile_fixtures() {
+fn mask_serialize_compile_fixtures() {
     let t = trybuild::TestCases::new();
-    t.compile_fail("tests/compile/masked_serialize_enum.rs");
-    t.compile_fail("tests/compile/masked_serialize_tuple_struct.rs");
-    t.compile_fail("tests/compile/masked_serialize_unit_struct.rs");
-    t.compile_fail("tests/compile/masked_serialize_serde_attr_container.rs");
-    t.compile_fail("tests/compile/masked_serialize_serde_attr_field.rs");
+    t.compile_fail("tests/compile/mask_serialize_enum.rs");
+    t.compile_fail("tests/compile/mask_serialize_tuple_struct.rs");
+    t.compile_fail("tests/compile/mask_serialize_unit_struct.rs");
+    t.compile_fail("tests/compile/mask_serialize_serde_attr_container.rs");
+    t.compile_fail("tests/compile/mask_serialize_serde_attr_field.rs");
 }

@@ -29,7 +29,7 @@ mod mask_include_bytes;
 mod mask_include_str;
 mod mask_option_env;
 #[cfg(feature = "unstable-serde")]
-mod masked_serialize;
+mod mask_serialize;
 mod unmasked;
 mod weak_mask;
 
@@ -458,7 +458,7 @@ pub fn mask_all(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// # Errors
 ///
-/// Emits a §1.9.6 `compile_error!` (`MaskedSerialize! grammar`) for
+/// Emits a §1.9.6 `compile_error!` (`MaskSerialize! grammar`) for
 /// any unsupported input shape, rather than silently degrading to
 /// cleartext names.
 ///
@@ -474,7 +474,7 @@ pub fn mask_all(attr: TokenStream, item: TokenStream) -> TokenStream {
 // attribute" — which lets the derive reject it with a §1.9.6
 // diagnostic explaining the actual limitation.
 #[cfg(feature = "unstable-serde")]
-#[proc_macro_derive(MaskedSerialize, attributes(serde))]
-pub fn masked_serialize(input: TokenStream) -> TokenStream {
-    masked_serialize::expand(input)
+#[proc_macro_derive(MaskSerialize, attributes(serde))]
+pub fn mask_serialize(input: TokenStream) -> TokenStream {
+    mask_serialize::expand(input)
 }

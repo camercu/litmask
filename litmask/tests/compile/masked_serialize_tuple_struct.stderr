@@ -1,5 +1,0 @@
-error: MaskedSerialize! grammar: supports structs with named fields only
- --> tests/compile/masked_serialize_tuple_struct.rs:7:8
-  |
-7 | struct BeaconPair(String, u32);
-  |        ^^^^^^^^^^
