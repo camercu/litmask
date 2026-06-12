@@ -337,6 +337,30 @@ fn filter_source_locations(input: &str) -> String {
     re.replace_all(input, "").into_owned()
 }
 
+/// Assert each fixture `needle` is scrubbed from `binary`: present in
+/// the example's source (positive control — a renamed fixture fails
+/// loudly here instead of leaving the absence assertion vacuous) and
+/// absent from the binary's `strings(1)` output, which is scanned
+/// once for the whole needle list.
+pub fn assert_fixtures_scrubbed(example: &str, binary: &Path, needles: &[&str]) {
+    let source_path = workspace_root().join(format!("litmask/examples/{example}.rs"));
+    let source = std::fs::read_to_string(&source_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", source_path.display()));
+    let haystack = strings_of(binary);
+    for needle in needles {
+        assert!(
+            source.contains(needle),
+            "fixture {needle:?} not found in {} — the needle list is stale and asserts nothing",
+            source_path.display(),
+        );
+        assert!(
+            !haystack.contains(needle),
+            "fixture substring {needle:?} leaked into {}",
+            binary.display(),
+        );
+    }
+}
+
 /// Assert that `needle` does NOT appear in `binary`'s `strings`
 /// output. Case-sensitive by design — used for test fixtures that are
 /// intentionally chosen to be lexically unusual (e.g., Twain

@@ -385,17 +385,23 @@ fn machine_id_provider_example_masked_fixtures_absent_from_binary() {
 fn mask_debug_demo_names_and_fixtures_absent_from_binary() {
     common::build_example("mask_debug_demo", Profile::Release);
     let path = common::example_path("mask_debug_demo", Profile::Release);
-    // Struct name — passed to `debug_struct` by the plain derive.
-    common::assert_substring_absent(&path, "CovertBeaconManifest");
-    // Field names — passed to `.field` by the plain derive.
-    common::assert_substring_absent(&path, "rendezvous_url_quux");
-    common::assert_substring_absent(&path, "activation_token_xyzzy");
-    // Enum variant names — one per match arm in the plain derive.
-    common::assert_substring_absent(&path, "DormantUntilDawn");
-    common::assert_substring_absent(&path, "ExfilWindowOpen");
-    common::assert_substring_absent(&path, "jitter_millis_zzyzx");
-    // `mask!`-ed field value.
-    common::assert_substring_absent(&path, "beacon.fabrikam-exfil.example");
+    common::assert_fixtures_scrubbed(
+        "mask_debug_demo",
+        &path,
+        &[
+            // Struct name — passed to `debug_struct` by the plain derive.
+            "CovertBeaconManifest",
+            // Field names — passed to `.field` by the plain derive.
+            "rendezvous_url_quux",
+            "activation_token_xyzzy",
+            // Enum variant names — one per match arm in the plain derive.
+            "DormantUntilDawn",
+            "ExfilWindowOpen",
+            "jitter_millis_zzyzx",
+            // `mask!`-ed field value.
+            "beacon.fabrikam-exfil.example",
+        ],
+    );
 }
 
 /// `mask_serde_demo` derives `MaskSerialize` (EXPERIMENTAL,
@@ -417,15 +423,22 @@ fn mask_serde_demo_names_and_fixtures_absent_from_binary() {
         "mask_serde_demo binary missing after build: {}",
         path.display(),
     );
-    // Struct name — passed to `serialize_struct` by the plain derive.
-    common::assert_substring_absent(&path, "ClandestineTelemetryManifest");
-    // Field names — passed to `serialize_field` by the plain derive.
-    common::assert_substring_absent(&path, "covert_endpoint_quux");
-    common::assert_substring_absent(&path, "activation_token_xyzzy");
-    common::assert_substring_absent(&path, "heartbeat_jitter_millis");
-    // `mask!`-ed field values.
-    common::assert_substring_absent(&path, "beacon.fabrikam-exfil.example");
-    common::assert_substring_absent(&path, "correct-horse-battery-staple");
+    common::assert_fixtures_scrubbed(
+        "mask_serde_demo",
+        &path,
+        &[
+            // Struct name — passed to `serialize_struct` /
+            // `debug_struct` by the plain derives.
+            "ClandestineTelemetryManifest",
+            // Field names — passed to `serialize_field` / `.field`.
+            "covert_endpoint_quux",
+            "activation_token_xyzzy",
+            "heartbeat_jitter_millis",
+            // `mask!`-ed field values.
+            "beacon.fabrikam-exfil.example",
+            "correct-horse-battery-staple",
+        ],
+    );
     common::assert_no_dirty_words(&path);
 }
 
