@@ -132,6 +132,16 @@ pub use litmask_macros::{
     mask_include_str, mask_option_env, unmasked, weak_mask,
 };
 
+#[cfg(feature = "unstable-serde")]
+pub use litmask_macros::MaskedSerialize;
+
+// The `MaskedSerialize` expansion references serde's traits through
+// `::litmask::__serde::...` so consumers don't need a direct serde
+// dependency for the generated code to resolve.
+#[cfg(feature = "unstable-serde")]
+#[doc(hidden)]
+pub use serde as __serde;
+
 /// Write a `mask_format!`-encrypted format string to a destination.
 ///
 /// Thin wrapper: `mask_write!(dst, "fmt", args)` expands to

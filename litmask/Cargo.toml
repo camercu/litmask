@@ -70,6 +70,13 @@ alloc = ["chacha20-poly1305"]
 # itself works under `no_std + alloc` via the `WeakCell` shim
 # (see `litmask::runtime::WeakCell`).
 machine-id = ["std", "dep:machine-uid"]
+# EXPERIMENTAL masked serde integration (`#[derive(MaskedSerialize)]`):
+# field and struct names are AEAD-masked at compile time and leak-cached
+# at first serialize. The `unstable-` prefix is the semver-exemption
+# signal — this surface may change or vanish in any release until it
+# stabilizes as `serde`. `std` is load-bearing — the generated impl
+# caches decrypted names in `std::sync::OnceLock`.
+unstable-serde = ["std", "dep:serde", "litmask-macros/unstable-serde"]
 
 [dependencies]
 litmask-internal.workspace = true
@@ -79,6 +86,7 @@ once_cell = { version = "1", default-features = false, features = [
   "race",
   "alloc",
 ] }
+serde = { version = "1", optional = true }
 zeroize = { version = "1", features = ["derive"] }
 
 [build-dependencies]
@@ -98,6 +106,8 @@ litmask-internal.workspace = true
 proptest = "1"
 regex = "1"
 rstest = "0.26"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 trybuild = "1"
 
 [lints]

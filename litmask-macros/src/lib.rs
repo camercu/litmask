@@ -28,6 +28,8 @@ mod mask_format;
 mod mask_include_bytes;
 mod mask_include_str;
 mod mask_option_env;
+#[cfg(feature = "unstable-serde")]
+mod masked_serialize;
 mod unmasked;
 mod weak_mask;
 
@@ -431,4 +433,43 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn mask_all(attr: TokenStream, item: TokenStream) -> TokenStream {
     mask_all::expand(attr, item)
+}
+
+/// **EXPERIMENTAL** (`unstable-serde` feature, semver-exempt): derive
+/// a `serde::Serialize` impl whose struct and field names are
+/// AEAD-masked at compile time instead of embedded as cleartext
+/// `&'static str` data in the binary.
+///
+/// Serialized output is byte-identical to plain
+/// `#[derive(serde::Serialize)]` for every serde format: the
+/// expansion goes through `serialize_struct`, decrypting each name on
+/// first use and caching it for the process lifetime (one leaked
+/// allocation per name).
+///
+/// # Limitations (prototype)
+///
+/// - Named-field structs only; enums, tuple structs, unit structs,
+///   and generic structs are compile errors.
+/// - `#[serde(...)]` attributes are not honored.
+/// - `Deserialize` is not provided — a plain
+///   `#[derive(serde::Deserialize)]` on the same type re-embeds every
+///   field name in the binary and defeats this derive's purpose.
+///
+/// # Errors
+///
+/// Emits a §1.9.6 `compile_error!` (`MaskedSerialize! grammar`) for
+/// any unsupported input shape, rather than silently degrading to
+/// cleartext names.
+///
+/// # Panics
+///
+/// Inherits [`mask!`]'s expansion-time panic policy (missing
+/// `OUT_DIR`, unreadable build artifact, AEAD failure). At runtime,
+/// the first serialization panics if decryption fails — same policy
+/// as [`mask!`], so run `init!` before serializing on tiers above
+/// Embedded.
+#[cfg(feature = "unstable-serde")]
+#[proc_macro_derive(MaskedSerialize)]
+pub fn masked_serialize(input: TokenStream) -> TokenStream {
+    masked_serialize::expand(input)
 }
