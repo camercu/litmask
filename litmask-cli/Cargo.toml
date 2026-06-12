@@ -21,7 +21,10 @@ include = ["src/**/*", "LICENSE-MIT", "LICENSE-APACHE"]
 # ordering) without reinventing them.
 clap = { version = "4", features = ["derive"] }
 getrandom = "0.4"
-litmask-internal = { version = "0.10.0", path = "../litmask-internal" }
+# `chacha20-poly1305` re-enables the cipher that the workspace-level
+# `default-features = false` strips; litmask-internal refuses to build
+# cipher-less, and the CLI only needs one backend for keygen.
+litmask-internal = { workspace = true, features = ["chacha20-poly1305"] }
 machine-uid = "0.6"
 
 [[bin]]
