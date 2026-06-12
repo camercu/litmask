@@ -192,7 +192,7 @@ keyless floor; retire or repurpose it rather than port it.
 
 ---
 
-## Task 4: External tier (AFK)
+## Task 4: External tier (AFK) ✅ DONE
 
 **Implements:** §2.2 (always normalize), §2.3 (single-factor), §3
 (channels); doc: SPECIFICATION §1.6.1, §3
@@ -226,7 +226,7 @@ any-length raw material, strip one trailing newline, and derive
 
 ---
 
-## Task 5: Machine tier (AFK)
+## Task 5: Machine tier (AFK) ✅ DONE
 
 **Implements:** §4 (machine-id tier); doc: SPECIFICATION §4, CONTEXT.md
 machine_id
@@ -317,7 +317,7 @@ single-factor key). The compose primitive lives in
 
 ---
 
-## Task 7: CLI additions — keygen + self-checking machine-id (AFK)
+## Task 7: CLI additions — keygen + self-checking machine-id (AFK) ✅ DONE
 
 **Implements:** §4.4 (CLI surface), §4.1.1 (self-checking token); doc:
 SPECIFICATION §2.9, man pages, CLI help
@@ -425,7 +425,7 @@ anywhere (and no public `MachineIdProvider` reference — it is now
       §D.4 friction F1–7/S1, §D.5 surface disposition); `SPEC_DEVEX.md`
       reduced to a retired pointer.
 - [x] Repo-wide grep is clean of retired vocabulary — `locator`,
-      `init_with!`, `MultiProvider`, `hardware`/`hw-id` — except where
+      `MultiProvider`, `hardware`/`hw-id` — except where
       explicitly documenting their removal. `MachineIdProvider` survives
       only as `pub(crate)` (seam-only) in `litmask` source; scrubbed from
       THREAT_MODEL.md / DEPLOYMENT.md (now the `machine_id` tier framing).
