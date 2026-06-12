@@ -11,6 +11,7 @@ use std::sync::{Mutex, OnceLock};
 
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
+use syn::ext::IdentExt;
 use syn::parse::ParseStream;
 use syn::{LitByteStr, LitCStr, LitStr};
 use zeroize::{Zeroize, Zeroizing};
@@ -233,6 +234,48 @@ fn read_out_dir_file(name: &str) -> Zeroizing<Vec<u8>> {
         )
     });
     Zeroizing::new(bytes)
+}
+
+/// Shared `#[proc_macro_derive]` entry shim: parse the input as
+/// `DeriveInput`, run `try_expand`, lower errors via
+/// `to_compile_error`. Single owner of the derive error-handling
+/// idiom, so span or diagnostic changes land in every derive at once.
+pub(crate) fn expand_derive(
+    input: proc_macro::TokenStream,
+    try_expand: impl FnOnce(&syn::DeriveInput) -> syn::Result<TokenStream>,
+) -> proc_macro::TokenStream {
+    let derive_input: syn::DeriveInput = match syn::parse(input) {
+        Ok(parsed) => parsed,
+        Err(e) => return e.to_compile_error().into(),
+    };
+    match try_expand(&derive_input) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+/// Bound every type parameter with `bound`, mirroring the plain
+/// derives' bound model: `struct Envelope<T>` gets the impl iff
+/// `T: Bound`. Bounds land in the where-clause so the impl header
+/// stays valid for params that already carry inline bounds.
+pub(crate) fn with_trait_bounds(mut generics: syn::Generics, bound: &syn::Path) -> syn::Generics {
+    let predicates: Vec<syn::WherePredicate> = generics
+        .type_params()
+        .map(|param| {
+            let ident = &param.ident;
+            syn::parse_quote!(#ident: #bound)
+        })
+        .collect();
+    generics.make_where_clause().predicates.extend(predicates);
+    generics
+}
+
+/// AEAD-mask an identifier's name, emitting a runtime decrypt
+/// expression returning `String`. Single owner of the masking
+/// derives' raw-ident contract: `r#type` renders/serializes as
+/// `type`, never with the raw prefix — matching the plain derives.
+pub(crate) fn mask_ident(ident: &syn::Ident) -> TokenStream {
+    mask_str(ident.span(), ident.unraw().to_string().into_bytes())
 }
 
 /// Emit a byte slice as a byte-string literal token (`b"..."`), typed

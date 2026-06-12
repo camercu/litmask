@@ -16,24 +16,16 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::ext::IdentExt;
 use syn::{Data, DeriveInput, Fields};
 
-use crate::common::{FailTag, compile_error, mask_str};
+use crate::common::{FailTag, compile_error, expand_derive, mask_ident, with_trait_bounds};
 
 const MACRO_NAME: &str = "MaskDebug";
 
 /// Implementation of the `#[proc_macro_derive] MaskDebug` entry
 /// point. Re-exported at the crate root via a one-line wrapper.
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
-    let derive_input: DeriveInput = match syn::parse(input) {
-        Ok(parsed) => parsed,
-        Err(e) => return e.to_compile_error().into(),
-    };
-    match try_expand(&derive_input) {
-        Ok(tokens) => tokens.into(),
-        Err(e) => e.to_compile_error().into(),
-    }
+    expand_derive(input, try_expand)
 }
 
 fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
@@ -51,7 +43,12 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
         }
     };
 
-    let generics = with_debug_bounds(input.generics.clone());
+    // Bound every type param with `Debug`, mirroring the plain
+    // derive's bound model: `Envelope<T>` is debuggable iff `T: Debug`.
+    let generics = with_trait_bounds(
+        input.generics.clone(),
+        &syn::parse_quote!(::core::fmt::Debug),
+    );
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     Ok(quote! {
         #[automatically_derived]
@@ -68,7 +65,7 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
 /// is rejected (E0793); `&{ ... }` references an aligned copy instead,
 /// matching the plain derive (which likewise requires `Copy` fields).
 fn struct_body(ident: &syn::Ident, fields: &Fields, packed: bool) -> TokenStream2 {
-    let name = masked_name_expr(ident.unraw().to_string(), ident.span());
+    let name = mask_ident(ident);
     let value = |access: TokenStream2| {
         if packed {
             quote! { &{ #access } }
@@ -128,7 +125,7 @@ fn enum_body(data: &syn::DataEnum) -> TokenStream2 {
     }
     let arms = data.variants.iter().map(|variant| {
         let vident = &variant.ident;
-        let vname = masked_name_expr(vident.unraw().to_string(), vident.span());
+        let vname = mask_ident(vident);
         match &variant.fields {
             Fields::Named(named) => {
                 let field_idents: Vec<&syn::Ident> = named
@@ -176,9 +173,7 @@ fn builder_body(name: &TokenStream2, fields: &Fields, values: &[TokenStream2]) -
         Fields::Named(named) => {
             let field_calls = named.named.iter().zip(values).map(|(field, value)| {
                 let ident = field.ident.as_ref().expect("named field has an ident");
-                // `unraw` matches the plain derive: `r#type` renders
-                // as `type`, without the raw-ident prefix.
-                let field_name = masked_name_expr(ident.unraw().to_string(), ident.span());
+                let field_name = mask_ident(ident);
                 quote! { __builder.field(&#field_name, #value); }
             });
             quote! {
@@ -199,28 +194,4 @@ fn builder_body(name: &TokenStream2, fields: &Fields, values: &[TokenStream2]) -
         }
         Fields::Unit => quote! { __f.write_str(&#name) },
     }
-}
-
-/// Bound every type parameter with `Debug`, mirroring the plain
-/// derive's bound model: `struct Envelope<T>` is debuggable iff
-/// `T: Debug`. Bounds land in the where-clause so the impl header
-/// stays valid for params that already carry inline bounds.
-fn with_debug_bounds(mut generics: syn::Generics) -> syn::Generics {
-    let predicates: Vec<syn::WherePredicate> = generics
-        .type_params()
-        .map(|param| {
-            let ident = &param.ident;
-            syn::parse_quote!(#ident: ::core::fmt::Debug)
-        })
-        .collect();
-    generics.make_where_clause().predicates.extend(predicates);
-    generics
-}
-
-/// Emit an expression yielding the decrypted `name` as a `String`.
-/// Decrypted fresh on every `fmt` call: the builder API borrows
-/// `&str` only for the duration of the call, so nothing needs to be
-/// cached or leaked.
-fn masked_name_expr(name: String, span: proc_macro2::Span) -> TokenStream2 {
-    mask_str(span, name.into_bytes())
 }
