@@ -107,6 +107,21 @@ pub(crate) fn blob_failure() -> ! {
     panic!();
 }
 
+/// Diverge when a decrypted `mask!("...")` blob is not valid UTF-8.
+/// Practically unreachable — the proc-macro encrypts valid UTF-8 and the
+/// AEAD tag rejects tampered ciphertext before this check — but
+/// `String::from_utf8` forces the branch and the panic must follow the
+/// module's profile-split contract rather than an `.unwrap()`.
+pub(crate) fn blob_utf8_failure() -> ! {
+    #[cfg(debug_assertions)]
+    panic!(
+        "litmask: a mask!() literal decrypted to invalid UTF-8 — the embedded blob \
+         was tampered"
+    );
+    #[cfg(not(debug_assertions))]
+    panic!();
+}
+
 /// Diverge when a `weak_mask!("...")` decode does not yield valid UTF-8.
 pub(crate) fn weak_utf8_failure() -> ! {
     #[cfg(debug_assertions)]

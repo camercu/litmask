@@ -184,6 +184,34 @@ pub fn __decrypt(blob: &[u8], wrapper: &[u8; WRAPPER_LEN], tier: &str) -> alloc:
     decrypt_blob_or_panic(mask_key.as_bytes(), blob)
 }
 
+/// [`__decrypt`] plus `String` construction, in one runtime call.
+/// Exists so the `mask!("...")` expansion never names the `String`
+/// type: rustc's diagnostic path-trimming renders `String` vs the
+/// `__String` re-export alias depending on the consumer's dependency
+/// graph (a serde dep that publicly re-exports `String` flips it),
+/// which made consumer-side error text — and the trybuild snapshots
+/// pinning it — vary with enabled features.
+///
+/// # Panics
+///
+/// Same policy as [`__decrypt`]; additionally diverges via the
+/// profile-split [`crate::diagnostics::blob_utf8_failure`] if the
+/// decrypted bytes are not valid UTF-8 (unreachable in practice — the
+/// proc-macro encrypts valid UTF-8 and the AEAD tag rejects tampering
+/// first).
+#[doc(hidden)]
+#[allow(clippy::must_use_candidate, clippy::single_match_else)]
+pub fn __decrypt_string(
+    blob: &[u8],
+    wrapper: &[u8; WRAPPER_LEN],
+    tier: &str,
+) -> alloc::string::String {
+    match alloc::string::String::from_utf8(__decrypt(blob, wrapper, tier)) {
+        Ok(s) => s,
+        Err(_) => crate::diagnostics::blob_utf8_failure(),
+    }
+}
+
 // The `match … { Ok => …, Err(_) => panic!() }` shape is deliberate
 // (see the module header): `let…else` / `if let` alternatives or an
 // `.expect()` would inject identifier text into the unwind path and

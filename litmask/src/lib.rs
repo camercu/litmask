@@ -396,12 +396,11 @@ pub mod __internal {
     pub use crate::runtime::weak::{__weak_decode, __weak_decode_bytes, WeakByteCell, WeakCell};
     #[cfg(feature = "std")]
     pub use crate::runtime::weak::{__weak_decode_cstr, WeakCStrCell};
-    pub use crate::runtime::{__decrypt, __init_with_wrapper};
+    pub use crate::runtime::{__decrypt, __decrypt_string, __init_with_wrapper};
     #[cfg(feature = "machine-id")]
     pub use crate::runtime::{__init_machine_id, __init_machine_id_external};
-    // Re-export under a hygienic alias so the proc-macro emits a
-    // single `::litmask::__internal::__String::from_utf8(...)` path
-    // for the `mask!("...")` case.
+    // Hygienic `String` alias for the `mask_format!` / `mask_option_env!`
+    // expansions (`__String::new()` / `Option::<__String>::None`).
     //
     // The natural alternative — emitting `::alloc::string::String`
     // directly — does NOT work in std consumer crates: `alloc` is
@@ -411,6 +410,10 @@ pub mod __internal {
     // through `::litmask::`, which the user is already importing,
     // so no extra declaration is required from the consumer side
     // for either std or no_std + alloc.
+    //
+    // `mask!("...")` deliberately does NOT use this alias: its
+    // expansion goes through `__decrypt_string` so consumer-side
+    // diagnostics never render the alias (see that fn's rustdoc).
     pub use alloc::string::String as __String;
 }
 

@@ -426,11 +426,13 @@ fn mask_plaintext(mut plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKin
     let wrapper = quote! { ::litmask::__wrapper_bytes!() };
     let seal_tier = quote! { ::litmask::__seal_tier!() };
     let decrypt_expr = match kind {
+        // One opaque runtime call, no `String` in the expansion: the
+        // type's rendered name in consumer-side diagnostics (`String`
+        // vs the `__String` alias) varies with the consumer's dep
+        // graph, which broke trybuild snapshot stability for const /
+        // static misuse fixtures.
         MaskKind::Str => quote! {
-            ::litmask::__internal::__String::from_utf8(
-                ::litmask::__internal::__decrypt(#blob_ident, #wrapper, #seal_tier)
-            )
-            .unwrap()
+            ::litmask::__internal::__decrypt_string(#blob_ident, #wrapper, #seal_tier)
         },
         MaskKind::Bytes => quote! {
             ::litmask::__internal::__decrypt(#blob_ident, #wrapper, #seal_tier)
