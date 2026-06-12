@@ -1,7 +1,7 @@
 # litmask-macros
 
 Internal proc-macro crate for [`litmask`](https://crates.io/crates/litmask).
-Implements `mask!`, `mask_all!`, and the related compile-time encryption
+Implements `mask!`, `#[mask_all]`, and the related compile-time encryption
 macros, which `litmask` re-exports.
 
 **Not a public API.** Do not depend on this crate directly — its macros are

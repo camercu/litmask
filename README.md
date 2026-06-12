@@ -87,8 +87,9 @@ reading `LITMASK_UNLOCK_KEY`).
 `litmask` splits encryption across build time and run time:
 
 1. **Build** — `litmask_build::emit()` (in `build.rs`) generates a random
-   seed, derives the `mask_key`, and writes `litmask.config` plus the env
-   vars the proc macro reads.
+   seed, derives the `mask_key`, seals it into a wrapper, and writes the
+   `OUT_DIR` artifacts the proc macro reads — plus the seal-tier tag that
+   `init!` cross-checks at compile time.
 2. **Compile** — each `mask!` literal is AEAD-encrypted during macro
    expansion and the ciphertext is embedded in the binary as `&[u8]`. The
    plaintext never appears in the output binary.
@@ -141,7 +142,8 @@ use `weak_mask!`, but its key is recoverable statically from the binary.
 | `init!(machine_id)` | Host machine ID + BLAKE3 (build-sealed) | `machine-id` |
 | `impl KeyProvider`  | Anything you write                      | --           |
 
-A runtime provider is sourced explicitly with `init_with!`:
+A runtime provider is sourced explicitly with `init_with!` (or the
+equivalent `init!(provider)`):
 
 ```rust
 let provider = litmask::EnvVarProvider::new("LITMASK_UNLOCK_KEY");
@@ -149,7 +151,10 @@ litmask::init_with!(provider)?;
 ```
 
 The machine tier is sealed at build time instead — see
-[Machine-ID binding](#machine-id-binding) below.
+[Machine-ID binding](#machine-id-binding) below. Sealing with **both**
+`LITMASK_MACHINE_ID` and `LITMASK_UNLOCK_KEY` gives the two-factor tier,
+unlocked with `init!(machine_id + provider)` — the binary opens only on
+the sealed host _and_ with the sealed material.
 
 ## Security model
 
@@ -159,6 +164,7 @@ The machine tier is sealed at build time instead — see
 | `EnvVarProvider`                     | Above, key sourced from an env var, kept out of the binary   |
 | `FileProvider`                       | Above, key sourced from a file path                          |
 | `init!(machine_id)`                  | Above + binary redistribution                                |
+| `init!(machine_id + provider)`       | Above + the external factor the binary alone never carries   |
 | Custom provider (vault, HSM)         | Above + offline attackers                                    |
 
 **Does NOT protect against:** runtime memory inspection, debugger

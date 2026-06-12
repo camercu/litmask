@@ -25,7 +25,7 @@ See `docs/SPECIFICATION.md` for the full spec with section numbers.
 | `litmask-macros` | proc-macro expansion | Yes: reads keys from `OUT_DIR` files |
 | `litmask-internal` | both build + runtime | Wire format constants only |
 | `litmask` | runtime | Yes: decrypts wrapper + blobs |
-| `litmask-cli` | post-build tool | Yes: rebinds wrapper |
+| `litmask-cli` | build-time helper | Generates unlock material (`keygen`); reads host id (`show-machine-id`). Never touches wrappers |
 
 Changes to `litmask-internal` wire format constants affect all
 consumers — verify with `just ci` (not just the crate's own tests).

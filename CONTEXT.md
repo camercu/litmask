@@ -28,9 +28,9 @@ _Avoid_: "user key", "external key", "configuration key".
 **Seed**:
 A 32-byte build-time random value. The **mask key** and every **nonce**
 derive from it; the **unlock key** does not (it is nonce-derived in the
-Embedded tier, or provider-supplied above it). Persisted at
-`target/<profile>/litmask-seed.bin` so two cargo invocations in the same
-target directory produce matching artifacts.
+Embedded tier, or provider-supplied above it). Persisted (debug builds
+only) at `target/<profile>/litmask_seed.bin` so two cargo invocations in
+the same target directory produce matching artifacts.
 _Avoid_: "rng seed" in code (it's just "seed"); reserve "RNG seed" for the
 `LITMASK_RNG_SEED` env var name.
 
@@ -94,11 +94,14 @@ derivation uses only the nonce.
 _Avoid_: "soft mask", "light mask".
 
 **`init!` / `init_with!`**: Macros that decrypt the **wrapper** with the
-**unlock key** and populate the process-global **mask key** cell. The
-no-arg `init!()` (a proc-macro) uses the keyless [`EmbeddedProvider`] and
-cross-checks the build's **seal tier** tag; the `init!(machine_id)` keyword
-form unlocks a **machine**-sealed build (and `compile_error!`s against any
-other tier). `init_with!` (declarative) takes any [`KeyProvider`].
+**unlock key** and populate the process-global **mask key** cell. `init!`
+(a proc-macro) has four forms, each cross-checked against the build's
+**seal tier** tag: no-arg `init!()` uses the keyless [`EmbeddedProvider`];
+`init!(<provider>)` unlocks an **external** seal; the `init!(machine_id)`
+keyword form unlocks a **machine** seal; `init!(machine_id + <provider>)`
+unlocks the two-factor **machine_external** seal. Any form↔tier mismatch
+is a `compile_error!`. `init_with!` (declarative) takes any
+[`KeyProvider`] — the External form's equivalent.
 
 ### Build pipeline
 
@@ -106,11 +109,13 @@ other tier). `init_with!` (declarative) takes any [`KeyProvider`].
 downstream user's `build.rs`. Generates the **seed**, derives the
 **mask key** and **nonces** from it and the **unlock key** from the
 wrapper **nonce**, encrypts the **mask key** into the **wrapper**, writes
-artifacts to `OUT_DIR` and `litmask.config`.
+artifacts to `OUT_DIR` (and, Embedded tier only, `litmask.config`).
 
-**`litmask.config`**: Deployer-facing TOML written at build time.
-Contains the **unlock key**. Secret; do not commit. Consumed by the
-runtime (via env var).
+**`litmask.config`**: TOML diagnostic artifact written at build time by
+the **Embedded** tier only. Contains that tier's nonce-derived
+**unlock key**; the runtime recomputes the same key from the public
+wrapper nonce, so the file is a tooling convenience, not a runtime
+input. Still secret; do not commit.
 
 **Seal tier**: How the **unlock key** is sourced for a build, in
 ascending strength: **Embedded** (default — nonce-derived, keyless
@@ -158,7 +163,8 @@ _Avoid_: "machine-id checksum", "fingerprint".
 - The **unlock key** lives outside the binary; the **wrapper** lives
   inside it, sealed under the **unlock key** at build time.
 - A **key provider** supplies the **unlock key** at runtime; the
-  user's `init!()` or first `mask!()` call invokes it.
+  user's `init!()` — or, on an Embedded-sealed build only, the first
+  `mask!()` call (lazy init) — invokes it.
 
 ## Example dialogue
 
