@@ -64,6 +64,13 @@ enum MaskedCarrier<T> {
     Tagged { cargo_label_xyzzy: T },
 }
 
+/// Field names chosen to collide with the generated locals — the
+/// expansion must stay hygienic under adversarial user idents.
+#[derive(MaskDebug)]
+enum MaskedShadow {
+    Clash { __f: u8, __builder: u8 },
+}
+
 /// Plain-derive twins with the *same* type names, so the formatted
 /// output (which includes the type name) can be compared verbatim.
 mod plain {
@@ -110,6 +117,11 @@ mod plain {
     pub enum MaskedCarrier<T> {
         Holding(T),
         Tagged { cargo_label_xyzzy: T },
+    }
+
+    #[derive(Debug)]
+    pub enum MaskedShadow {
+        Clash { __f: u8, __builder: u8 },
     }
 }
 
@@ -225,6 +237,21 @@ fn mask_debug_empty_struct_matches_plain_derive() {
         format!("{:?}", MaskedEmpty {}),
         format!("{:?}", plain::MaskedEmpty {})
     );
+}
+
+#[test]
+fn mask_debug_shadowing_field_names_match_plain_derive() {
+    common::init_once();
+    let masked = MaskedShadow::Clash {
+        __f: 1,
+        __builder: 2,
+    };
+    let plain = plain::MaskedShadow::Clash {
+        __f: 1,
+        __builder: 2,
+    };
+    assert_eq!(format!("{masked:?}"), format!("{plain:?}"));
+    assert_eq!(format!("{masked:#?}"), format!("{plain:#?}"));
 }
 
 #[test]

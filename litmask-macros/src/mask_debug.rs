@@ -101,14 +101,20 @@ fn enum_body(data: &syn::DataEnum) -> TokenStream2 {
         let vname = masked_name_expr(vident.unraw().to_string(), vident.span());
         match &variant.fields {
             Fields::Named(named) => {
-                let bindings: Vec<&syn::Ident> = named
+                let field_idents: Vec<&syn::Ident> = named
                     .named
                     .iter()
                     .map(|field| field.ident.as_ref().expect("named field has an ident"))
                     .collect();
+                // Bindings are mangled, never the user's field idents:
+                // a field named `__f` or `__builder` would otherwise
+                // shadow the generated locals and break compilation.
+                let bindings: Vec<syn::Ident> = (0..field_idents.len())
+                    .map(|i| quote::format_ident!("__field{i}"))
+                    .collect();
                 let values: Vec<TokenStream2> = bindings.iter().map(|b| quote! { #b }).collect();
                 let body = builder_body(&vname, &variant.fields, &values);
-                quote! { Self::#vident { #(#bindings),* } => { #body } }
+                quote! { Self::#vident { #(#field_idents: #bindings),* } => { #body } }
             }
             Fields::Unnamed(unnamed) => {
                 let bindings: Vec<syn::Ident> = (0..unnamed.unnamed.len())
