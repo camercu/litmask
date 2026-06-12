@@ -1,4 +1,4 @@
-//! `init!(machine_id + <provider>)` is the MachineExternal two-factor
+//! `init!(bind_to_machine + <provider>)` is the MachineExternal two-factor
 //! form, valid only when the build sealed the `machine_external` tier.
 //! The litmask crate's own `build.rs` seals the default `embedded` tier,
 //! and that `LITMASK_SEAL_TIER` rustc-env leaks into the trybuild
@@ -11,5 +11,5 @@
 use litmask::init;
 
 fn main() {
-    let _ = init!(machine_id + some_provider);
+    let _ = init!(bind_to_machine + some_provider);
 }

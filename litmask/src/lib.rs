@@ -25,8 +25,8 @@
 //! | Zero-config build (defaults to `EmbeddedProvider`) | `strings`, casual binary inspection (Level 1) only — the key is recoverable from the artifact |
 //! | `EnvVarProvider` | Above, key sourced from an env var, kept out of the binary |
 //! | `FileProvider` | Above, key sourced from a file path |
-//! | `init!(machine_id)` (build-sealed) | Above + binary moved to a different machine |
-//! | `init!(machine_id + provider)` (two-factor) | Above + the external factor the binary alone never carries |
+//! | `init!(bind_to_machine)` (build-sealed) | Above + binary moved to a different machine |
+//! | `init!(bind_to_machine + provider)` (two-factor) | Above + the external factor the binary alone never carries |
 //! | Custom `KeyProvider` (network call, vault) | Above + offline attackers |
 //!
 //! The "zero-config" descriptor refers to absence of project
@@ -54,7 +54,7 @@
 //! | Key model | Compile-time random per build | Single env var | Layered: `mask_key` + `unlock_key`, multiple providers |
 //! | Format string masking | Separate `fmtools` crate | None | Built-in [`mask_format!`] with single-evaluation semantics |
 //! | Module-level masking | None | None | [`macro@mask_all`] with deep substitution |
-//! | Machine-ID binding | None | None | Yes (build-time seal via `init!(machine_id)`) |
+//! | Machine-ID binding | None | None | Yes (build-time seal via `init!(bind_to_machine)`) |
 //! | Multiple literal types (str/bytes/cstr) | str only | str only | All three |
 //! | `no_std` support | Limited | No | Yes (with `alloc`) |
 //! | Threat model documented | Minimal | Minimal | Explicit security ladder, honest scope |
@@ -324,7 +324,7 @@ macro_rules! __weak_decode_cstr_call {
     };
 }
 
-/// Internal dispatch for `init!(machine_id)` expansion. The seal tier is
+/// Internal dispatch for `init!(bind_to_machine)` expansion. The seal tier is
 /// chosen at build time by `LITMASK_MACHINE_ID` presence, independent of
 /// this crate's `machine-id` feature, so a `machine`-sealed build can pass
 /// `init!`'s form↔tier cross-check while the feature is off. Without this
@@ -346,13 +346,13 @@ macro_rules! __init_machine_id_call {
 macro_rules! __init_machine_id_call {
     ($wrapper:expr) => {
         ::core::compile_error!(
-            "init!(machine_id) requires the `machine-id` feature on the `litmask` crate; \
+            "init!(bind_to_machine) requires the `machine-id` feature on the `litmask` crate; \
              enable it via `litmask = { features = [\"machine-id\"] }`"
         )
     };
 }
 
-/// Internal dispatch for `init!(machine_id + <provider>)` expansion. Like
+/// Internal dispatch for `init!(bind_to_machine + <provider>)` expansion. Like
 /// [`__init_machine_id_call!`], the two-factor seal tier is chosen at
 /// build time by env-var presence, independent of this crate's
 /// `machine-id` feature, so the form↔tier cross-check can pass while the
@@ -374,7 +374,7 @@ macro_rules! __init_machine_id_external_call {
 macro_rules! __init_machine_id_external_call {
     ($wrapper:expr, $external:expr) => {
         ::core::compile_error!(
-            "init!(machine_id + provider) requires the `machine-id` feature on the `litmask` \
+            "init!(bind_to_machine + provider) requires the `machine-id` feature on the `litmask` \
              crate; enable it via `litmask = { features = [\"machine-id\"] }`"
         )
     };

@@ -151,7 +151,7 @@ pub fn build_example_with_features(name: &str, profile: Profile, features: &[&st
 
 /// `build_example_with_features` plus build-time environment variables,
 /// passed verbatim to the `cargo build` invocation. Used by the
-/// `machine_id_provider` scrub: `init!(machine_id)` only compiles against
+/// `machine_id_provider` scrub: `init!(bind_to_machine)` only compiles against
 /// a `machine`-tier seal, which the build script produces only when
 /// `LITMASK_MACHINE_ID` is set, so that env var must be present at build
 /// time even though the scrub never runs the resulting binary.

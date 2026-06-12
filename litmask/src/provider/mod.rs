@@ -10,7 +10,7 @@
 //! - [`env`] / [`EnvVarProvider`] — `LITMASK_UNLOCK_KEY` environment var
 //! - [`file`] / [`FileProvider`] — filesystem path, raw material
 //! - [`machine_id`] / `MachineIdProvider` — machine-id + nonce-derived
-//!   salt (opt-in, `pub(crate)`: reached only via the `init!(machine_id)`
+//!   salt (opt-in, `pub(crate)`: reached only via the `init!(bind_to_machine)`
 //!   seam, never named in macro expansion)
 
 use crate::error::KeyError;
@@ -35,7 +35,7 @@ pub use env::EnvVarProvider;
 #[cfg(feature = "std")]
 pub use file::FileProvider;
 // `MachineIdProvider` stays `pub(crate)`: a machine-sealed binary reaches
-// it only through the `init!(machine_id)` runtime seam, which injects the
+// it only through the `init!(bind_to_machine)` runtime seam, which injects the
 // build-wrapper nonce. It is never named in macro expansion (which lands
 // in the consumer crate, where a `pub(crate)` symbol is unreachable).
 #[cfg(feature = "machine-id")]

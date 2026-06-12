@@ -89,7 +89,7 @@ fn decrypt_mask_key(
     }
 }
 
-/// `init!(machine_id)` seam: construct the crate-private
+/// `init!(bind_to_machine)` seam: construct the crate-private
 /// `MachineIdProvider` from the embedded wrapper nonce and run the shared
 /// init path.
 ///
@@ -104,7 +104,7 @@ pub fn __init_machine_id(wrapper: &[u8; WRAPPER_LEN]) -> Result<(), InitError> {
     __init_with_wrapper(crate::provider::MachineIdProvider::new(wrapper), wrapper)
 }
 
-/// `init!(machine_id + <provider>)` seam: finish the machine factor key
+/// `init!(bind_to_machine + <provider>)` seam: finish the machine factor key
 /// in-crate (from the embedded wrapper nonce, via the `pub(crate)`
 /// `MachineIdProvider`) and the external factor key from the consumer's
 /// `provider`, compose them machine-first (§2.3), and run the shared init

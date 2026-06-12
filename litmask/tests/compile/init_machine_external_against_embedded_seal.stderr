@@ -1,7 +1,7 @@
-error: init! tier-mismatch: init!(machine_id + provider) unlocks the `machine_external` seal tier, but this build sealed `embedded`
+error: init! tier-mismatch: init!(bind_to_machine + provider) unlocks the `machine_external` seal tier, but this build sealed `embedded`
   --> tests/compile/init_machine_external_against_embedded_seal.rs:14:13
    |
-14 |     let _ = init!(machine_id + some_provider);
-   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 |     let _ = init!(bind_to_machine + some_provider);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
    = note: this error originates in the macro `init` (in Nightly builds, run with -Z macro-backtrace for more info)

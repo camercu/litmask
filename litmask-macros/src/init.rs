@@ -31,8 +31,9 @@ const MACRO_NAME: &str = "init";
 /// [`SealTierTag`] vocabulary, so build and macro cannot drift.
 const SEAL_TIER_VAR: &str = "LITMASK_SEAL_TIER";
 
-/// The bare keyword that selects the Machine form: `init!(machine_id)`.
-const MACHINE_ID_KEYWORD: &str = "machine_id";
+/// The bare keyword that selects the Machine form:
+/// `init!(bind_to_machine)`.
+const BIND_TO_MACHINE_KEYWORD: &str = "bind_to_machine";
 
 /// The `init!` call form, selected by the macro argument. Each form
 /// unlocks exactly one sealed tier.
@@ -42,12 +43,13 @@ pub(crate) enum Form {
     Embedded,
     /// `init!(<provider-expr>)` — External tier.
     External,
-    /// `init!(machine_id)` — Machine tier (bare keyword, not a provider
-    /// expression).
+    /// `init!(bind_to_machine)` — Machine tier (bare keyword, not a
+    /// provider expression).
     Machine,
-    /// `init!(machine_id + <provider-expr>)` — `MachineExternal` two-factor
-    /// tier. The `machine_id` keyword selects the machine factor; the
-    /// provider expression after `+` supplies the external factor.
+    /// `init!(bind_to_machine + <provider-expr>)` — `MachineExternal`
+    /// two-factor tier. The `bind_to_machine` keyword selects the machine
+    /// factor; the provider expression after `+` supplies the external
+    /// factor.
     MachineExternal,
 }
 
@@ -67,8 +69,8 @@ impl Form {
         match self {
             Self::Embedded => "init!()",
             Self::External => "init!(provider)",
-            Self::Machine => "init!(machine_id)",
-            Self::MachineExternal => "init!(machine_id + provider)",
+            Self::Machine => "init!(bind_to_machine)",
+            Self::MachineExternal => "init!(bind_to_machine + provider)",
         }
     }
 }
@@ -78,18 +80,18 @@ impl Form {
 ///
 /// Grammar:
 /// - empty → [`Form::Embedded`].
-/// - a bare `machine_id` keyword (single ident) → [`Form::Machine`].
-/// - a leading `machine_id` keyword followed by a lone `+` → the
+/// - a bare `bind_to_machine` keyword (single ident) → [`Form::Machine`].
+/// - a leading `bind_to_machine` keyword followed by a lone `+` → the
 ///   two-factor [`Form::MachineExternal`]; the tokens after `+` are the
 ///   external provider. An empty tail is a grammar error (the `+`
 ///   promises a provider that is absent).
 /// - anything else → [`Form::External`], the whole input being the
 ///   provider expression.
 ///
-/// A leading `machine_id` followed by tokens other than a lone `+` falls
-/// through to External: a consumer that genuinely names a provider value
-/// `machine_id` pays the deliberate cost of the keyword being reserved
-/// only in the bare and `+`-prefixed positions. The `+` must be
+/// A leading `bind_to_machine` followed by tokens other than a lone `+`
+/// falls through to External: a consumer that genuinely names a provider
+/// value `bind_to_machine` pays the deliberate cost of the keyword being
+/// reserved only in the bare and `+`-prefixed positions. The `+` must be
 /// [`Spacing::Alone`] — a joint `+` is the lead of a compound operator
 /// like `+=`, which is not the two-factor operator.
 ///
@@ -101,11 +103,11 @@ fn classify(
         return Ok((Form::Embedded, None));
     }
     let mut tokens = input.clone().into_iter();
-    let leading_machine_id = matches!(
+    let leading_bind_to_machine = matches!(
         tokens.next(),
-        Some(proc_macro2::TokenTree::Ident(id)) if id == MACHINE_ID_KEYWORD
+        Some(proc_macro2::TokenTree::Ident(id)) if id == BIND_TO_MACHINE_KEYWORD
     );
-    if leading_machine_id {
+    if leading_bind_to_machine {
         match tokens.next() {
             None => return Ok((Form::Machine, None)),
             Some(proc_macro2::TokenTree::Punct(p))
@@ -312,15 +314,15 @@ mod tests {
     }
 
     #[test]
-    fn classify_bare_machine_id_is_machine() {
-        let (form, provider) = classify_str("machine_id").unwrap();
+    fn classify_bare_bind_to_machine_is_machine() {
+        let (form, provider) = classify_str("bind_to_machine").unwrap();
         assert_eq!(form, Form::Machine);
         assert!(provider.is_none());
     }
 
     #[test]
-    fn classify_machine_id_plus_provider_is_two_factor() {
-        let (form, provider) = classify_str("machine_id + EnvVarProvider::default()").unwrap();
+    fn classify_bind_to_machine_plus_provider_is_two_factor() {
+        let (form, provider) = classify_str("bind_to_machine + EnvVarProvider::default()").unwrap();
         assert_eq!(form, Form::MachineExternal);
         assert_eq!(
             provider.unwrap().to_string(),
@@ -329,8 +331,8 @@ mod tests {
     }
 
     #[test]
-    fn classify_machine_id_plus_nothing_is_grammar_error() {
-        let detail = classify_str("machine_id +").unwrap_err();
+    fn classify_bind_to_machine_plus_nothing_is_grammar_error() {
+        let detail = classify_str("bind_to_machine +").unwrap_err();
         assert!(detail.contains("provider expression after `+`"));
     }
 
@@ -342,8 +344,8 @@ mod tests {
     }
 
     #[test]
-    fn classify_machine_id_method_call_is_external() {
-        let (form, _) = classify_str("machine_id.into_provider()").unwrap();
+    fn classify_bind_to_machine_method_call_is_external() {
+        let (form, _) = classify_str("bind_to_machine.into_provider()").unwrap();
         assert_eq!(form, Form::External);
     }
 
@@ -352,8 +354,8 @@ mod tests {
     /// malformed `= provider` tail; it falls through to External so the
     /// whole input is reported as one (malformed) provider expression.
     #[test]
-    fn classify_machine_id_compound_plus_eq_is_not_two_factor() {
-        let (form, _) = classify_str("machine_id += provider").unwrap();
+    fn classify_bind_to_machine_compound_plus_eq_is_not_two_factor() {
+        let (form, _) = classify_str("bind_to_machine += provider").unwrap();
         assert_eq!(form, Form::External);
     }
 }

@@ -984,7 +984,7 @@ mod tests {
     }
 
     /// A `MachineExternal` build publishes the `machine_external` seal tag
-    /// over rustc-env (the `init!(machine_id + <provider>)` form
+    /// over rustc-env (the `init!(bind_to_machine + <provider>)` form
     /// cross-checks against it).
     #[test]
     fn machine_external_tier_publishes_machine_external_seal_tag() {
@@ -1082,7 +1082,7 @@ mod tests {
     }
 
     /// A Machine build publishes the `machine` seal tag over rustc-env
-    /// (the `init!(machine_id)` form cross-checks against it).
+    /// (the `init!(bind_to_machine)` form cross-checks against it).
     #[test]
     fn machine_tier_publishes_machine_seal_tag() {
         let directives = seal_tier_directives(&machine("host-id-abc"));

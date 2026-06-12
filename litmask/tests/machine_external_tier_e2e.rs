@@ -2,7 +2,7 @@
 //!
 //! A standalone fixture crate (`tests/machine_external_fixture/`) runs
 //! `litmask_build::emit()` in its own `build.rs` and calls the two-factor
-//! `init!(machine_id + <provider>)` form. Building it with BOTH
+//! `init!(bind_to_machine + <provider>)` form. Building it with BOTH
 //! `LITMASK_MACHINE_ID` and `LITMASK_UNLOCK_KEY` set seals the
 //! `machine_external` tier: the build finishes each factor key
 //! independently (machine id + nonce; KDF of operator material), composes

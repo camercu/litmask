@@ -316,11 +316,11 @@ fn twain_fixture_absent_from_canonical_examples() {
 /// `cargo build --workspace --examples` skips it cleanly and the
 /// `test-examples` shell recipe never runs it (the host id recomputed at
 /// runtime won't match the placeholder id this scrub builds under, so
-/// `init!(machine_id)` would fail with `decryption_failed`).
+/// `init!(bind_to_machine)` would fail with `decryption_failed`).
 /// The masking property is testable without ever executing the
 /// example: build with the feature and scrub the binary.
 ///
-/// `init!(machine_id)` only compiles against a `machine`-tier seal, which
+/// `init!(bind_to_machine)` only compiles against a `machine`-tier seal, which
 /// the build script emits only when `LITMASK_MACHINE_ID` is set — so the
 /// build must pass an id via the env channel. The id is sourced through
 /// the canonical `litmask show-machine-id` CLI (the same path the docs

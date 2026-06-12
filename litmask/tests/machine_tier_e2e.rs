@@ -2,10 +2,10 @@
 //!
 //! A standalone fixture crate (`tests/machine_fixture/`) runs
 //! `litmask_build::emit()` in its own `build.rs` and calls
-//! `init!(machine_id)`. Building it with `LITMASK_MACHINE_ID` set seals
+//! `init!(bind_to_machine)`. Building it with `LITMASK_MACHINE_ID` set seals
 //! the `machine` tier: the build derives `unlock_key =
 //! derive_machine_id_key(<id>, wrapper_nonce)` and wraps `mask_key` under
-//! it. At runtime `init!(machine_id)` recomputes the host id and
+//! it. At runtime `init!(bind_to_machine)` recomputes the host id and
 //! re-derives the same key — so the binary opens only on a host whose id
 //! matches the build's.
 //!
@@ -18,7 +18,7 @@
 //! machine factor is fixed at runtime (it is the host's own id), so this
 //! test varies the factor at *build* time instead:
 //!
-//! - seal with the host's real id → `init!(machine_id)` re-derives the
+//! - seal with the host's real id → `init!(bind_to_machine)` re-derives the
 //!   same `unlock_key`, unwraps `mask_key`, and `mask!` round-trips the
 //!   canary plaintext.
 //! - seal with a *different* id → the host re-derives a different

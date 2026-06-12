@@ -13,7 +13,7 @@ use crate::provider::KeyProvider;
 /// id and the build's wrapper nonce.
 ///
 /// Crate-private: a machine-sealed binary reaches this provider only
-/// through the `init!(machine_id)` seam ([`crate::__internal`]), which
+/// through the `init!(bind_to_machine)` seam ([`crate::__internal`]), which
 /// injects the embedded wrapper nonce at the call site. The macro never
 /// names the type — expansion lands in the consumer crate, which cannot
 /// reach a `pub(crate)` symbol — so there is no public constructor.
