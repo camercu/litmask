@@ -8,10 +8,10 @@
  # Cargo.toml
  [dependencies]
 -litcrypt = "0.2"
-+litmask = "0.7"
++litmask = "0.10"
 +
 +[build-dependencies]
-+litmask-build = "0.7"
++litmask-build = "0.10"
 ```
 
 ```rust
@@ -34,8 +34,8 @@ fn main() { litmask_build::emit(); }
 ### Runtime
 
 litcrypt v1 reads `LITCRYPT_ENCRYPT_KEY` at compile time and embeds it.
-litmask generates a random key per build and writes it to
-`litmask.config`. At runtime:
+litmask generates a random key per build; how it is unlocked at runtime
+is sealed at **build** time (the seal tier):
 
 ```sh
 # litcrypt (key baked into binary — no runtime step)
@@ -44,9 +44,10 @@ litmask generates a random key per build and writes it to
 # litmask, keyless Embedded default — no runtime step either
 ./my_app
 
-# litmask, unlock_key sourced at runtime (opt-in, via init_with!)
-LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' litmask.config) \
-    ./my_app
+# litmask, unlock material sourced at runtime: seal the build under
+# LITMASK_UNLOCK_KEY, then re-supply the same material when running
+# (the app calls init_with!(EnvVarProvider::default()))
+LITMASK_UNLOCK_KEY='same material the build was sealed with' ./my_app
 ```
 
 ### Key differences
@@ -66,10 +67,10 @@ LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' litmask.config) \
  # Cargo.toml
  [dependencies]
 -litcrypt2 = "0.1"
-+litmask = "0.7"
++litmask = "0.10"
 +
 +[build-dependencies]
-+litmask-build = "0.7"
++litmask-build = "0.10"
 ```
 
 ```rust
@@ -95,7 +96,8 @@ type changes needed at call sites.
 ### Runtime
 
 Same as litcrypt v1 migration above. litcrypt2 also embeds the key;
-litmask externalizes it.
+litmask's keyless Embedded default needs no runtime step, and higher
+seal tiers keep the key out of the binary entirely.
 
 ## From `obfstr`
 
@@ -105,10 +107,10 @@ litmask externalizes it.
  # Cargo.toml
  [dependencies]
 -obfstr = "0.6"
-+litmask = "0.7"
++litmask = "0.10"
 +
 +[build-dependencies]
-+litmask-build = "0.7"
++litmask-build = "0.10"
 ```
 
 ```rust
@@ -176,12 +178,16 @@ litmask's keyless Embedded default also needs no runtime key; sourcing
 1. **Add `build.rs`** — every litmask project needs
    `litmask_build::emit()` in a build script.
 
-2. **Provision the key at runtime** — unlike litcrypt and obfstr,
-   litmask does not embed key material in the binary. This is the
-   core security improvement but requires a deployment step.
+2. **Pick a seal tier** — the keyless Embedded default needs no
+   deployment step but is `strings(1)` resistance only (the key is
+   recoverable from the artifact, like litcrypt/obfstr). To keep the
+   `unlock_key` out of the binary — the core security improvement —
+   seal under `LITMASK_UNLOCK_KEY` (or `LITMASK_MACHINE_ID`) at build
+   time and re-supply that factor at runtime.
 
-3. **Call `init!()` before `mask!()`** — litmask lazily initializes on
-   first `mask!` call, but explicit init surfaces errors early:
+3. **Call `init!()` before `mask!()`** — on an Embedded-sealed build
+   litmask lazily initializes on first `mask!` call (higher tiers
+   require explicit init), but explicit init surfaces errors early:
 
    ```rust
    litmask::init!().expect("litmask init");
