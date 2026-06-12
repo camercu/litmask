@@ -28,6 +28,30 @@ enum MaskedMode {
     Active { since_epoch: u64 },
 }
 
+#[derive(MaskDebug)]
+struct MaskedEnvelope<'a, T> {
+    sequence_marker_zzyzx: u64,
+    borrowed_label_qwxz: &'a str,
+    payload: T,
+}
+
+#[derive(MaskDebug)]
+struct MaskedRawIdent {
+    r#type: String,
+}
+
+#[derive(MaskDebug)]
+enum MaskedRawVariant {
+    r#Loop,
+}
+
+#[derive(MaskDebug)]
+struct MaskedEmpty {}
+
+/// Uninhabited: only needs to compile — there is no value to format.
+#[derive(MaskDebug)]
+enum MaskedNever {}
+
 /// Plain-derive twins with the *same* type names, so the formatted
 /// output (which includes the type name) can be compared verbatim.
 mod plain {
@@ -49,6 +73,26 @@ mod plain {
         Probing(String, u8),
         Active { since_epoch: u64 },
     }
+
+    #[derive(Debug)]
+    pub struct MaskedEnvelope<'a, T> {
+        pub sequence_marker_zzyzx: u64,
+        pub borrowed_label_qwxz: &'a str,
+        pub payload: T,
+    }
+
+    #[derive(Debug)]
+    pub struct MaskedRawIdent {
+        pub r#type: String,
+    }
+
+    #[derive(Debug)]
+    pub enum MaskedRawVariant {
+        r#Loop,
+    }
+
+    #[derive(Debug)]
+    pub struct MaskedEmpty {}
 }
 
 #[test]
@@ -115,5 +159,52 @@ fn mask_debug_enum_variants_match_plain_derive() {
     assert_eq!(
         format!("{:?}", MaskedMode::Active { since_epoch: 99 }),
         "Active { since_epoch: 99 }"
+    );
+}
+
+#[test]
+fn mask_debug_generic_struct_matches_plain_derive() {
+    common::init_once();
+    let masked = MaskedEnvelope {
+        sequence_marker_zzyzx: 42,
+        borrowed_label_qwxz: "tag",
+        payload: vec!["a", "b"],
+    };
+    let plain = plain::MaskedEnvelope {
+        sequence_marker_zzyzx: 42,
+        borrowed_label_qwxz: "tag",
+        payload: vec!["a", "b"],
+    };
+    assert_eq!(format!("{masked:?}"), format!("{plain:?}"));
+    assert_eq!(format!("{masked:#?}"), format!("{plain:#?}"));
+}
+
+#[test]
+fn mask_debug_raw_idents_unraw_like_plain_derive() {
+    common::init_once();
+    let masked = MaskedRawIdent {
+        r#type: "beacon".to_string(),
+    };
+    let plain = plain::MaskedRawIdent {
+        r#type: "beacon".to_string(),
+    };
+    assert_eq!(format!("{masked:?}"), format!("{plain:?}"));
+    assert_eq!(
+        format!("{masked:?}"),
+        r#"MaskedRawIdent { type: "beacon" }"#
+    );
+    assert_eq!(
+        format!("{:?}", MaskedRawVariant::r#Loop),
+        format!("{:?}", plain::MaskedRawVariant::r#Loop),
+    );
+    assert_eq!(format!("{:?}", MaskedRawVariant::r#Loop), "Loop");
+}
+
+#[test]
+fn mask_debug_empty_struct_matches_plain_derive() {
+    common::init_once();
+    assert_eq!(
+        format!("{:?}", MaskedEmpty {}),
+        format!("{:?}", plain::MaskedEmpty {})
     );
 }

@@ -51,7 +51,8 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
         }
     };
 
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let generics = with_debug_bounds(input.generics.clone());
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     Ok(quote! {
         #[automatically_derived]
         impl #impl_generics ::core::fmt::Debug for #ident #ty_generics #where_clause {
@@ -90,6 +91,11 @@ fn struct_body(ident: &syn::Ident, fields: &Fields) -> TokenStream2 {
 /// formatting under the masked *variant* name — the plain derive
 /// never prints the enum's own name.
 fn enum_body(data: &syn::DataEnum) -> TokenStream2 {
+    if data.variants.is_empty() {
+        // An uninhabited enum has no arms; `match *self {}` is how the
+        // plain derive proves exhaustiveness (`&Self` would not).
+        return quote! { match *self {} };
+    }
     let arms = data.variants.iter().map(|variant| {
         let vident = &variant.ident;
         let vname = masked_name_expr(vident.unraw().to_string(), vident.span());
@@ -157,6 +163,22 @@ fn builder_body(name: &TokenStream2, fields: &Fields, values: &[TokenStream2]) -
         }
         Fields::Unit => quote! { __f.write_str(&#name) },
     }
+}
+
+/// Bound every type parameter with `Debug`, mirroring the plain
+/// derive's bound model: `struct Envelope<T>` is debuggable iff
+/// `T: Debug`. Bounds land in the where-clause so the impl header
+/// stays valid for params that already carry inline bounds.
+fn with_debug_bounds(mut generics: syn::Generics) -> syn::Generics {
+    let predicates: Vec<syn::WherePredicate> = generics
+        .type_params()
+        .map(|param| {
+            let ident = &param.ident;
+            syn::parse_quote!(#ident: ::core::fmt::Debug)
+        })
+        .collect();
+    generics.make_where_clause().predicates.extend(predicates);
+    generics
 }
 
 /// Emit an expression yielding the decrypted `name` as a `String`.
