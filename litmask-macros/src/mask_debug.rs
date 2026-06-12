@@ -66,31 +66,21 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
 /// matching the plain derive (which likewise requires `Copy` fields).
 fn struct_body(ident: &syn::Ident, fields: &Fields, packed: bool) -> TokenStream2 {
     let name = mask_ident(ident);
-    let value = |access: TokenStream2| {
+    let shape = BuilderFields::collect(fields, |i, field| {
+        let access = match &field.ident {
+            Some(field_ident) => quote! { self.#field_ident },
+            None => {
+                let index = syn::Index::from(i);
+                quote! { self.#index }
+            }
+        };
         if packed {
             quote! { &{ #access } }
         } else {
             quote! { &#access }
         }
-    };
-    let values: Vec<TokenStream2> = match fields {
-        Fields::Named(named) => named
-            .named
-            .iter()
-            .map(|field| {
-                let ident = field.ident.as_ref().expect("named field has an ident");
-                value(quote! { self.#ident })
-            })
-            .collect(),
-        Fields::Unnamed(unnamed) => (0..unnamed.unnamed.len())
-            .map(|i| {
-                let index = syn::Index::from(i);
-                value(quote! { self.#index })
-            })
-            .collect(),
-        Fields::Unit => Vec::new(),
-    };
-    builder_body(&name, fields, &values)
+    });
+    builder_body(&name, &shape)
 }
 
 /// Whether any `#[repr(...)]` attribute carries `packed` /
@@ -126,36 +116,29 @@ fn enum_body(data: &syn::DataEnum) -> TokenStream2 {
     let arms = data.variants.iter().map(|variant| {
         let vident = &variant.ident;
         let vname = mask_ident(vident);
-        match &variant.fields {
+        // Bindings are mangled, never the user's field idents: a
+        // field named `__f` or `__builder` would otherwise shadow the
+        // generated locals and break compilation.
+        let bindings: Vec<syn::Ident> = (0..variant.fields.len())
+            .map(|i| quote::format_ident!("__field{i}"))
+            .collect();
+        let shape = BuilderFields::collect(&variant.fields, |i, _| {
+            let binding = &bindings[i];
+            quote! { #binding }
+        });
+        let body = builder_body(&vname, &shape);
+        let pattern = match &variant.fields {
             Fields::Named(named) => {
-                let field_idents: Vec<&syn::Ident> = named
+                let field_idents = named
                     .named
                     .iter()
-                    .map(|field| field.ident.as_ref().expect("named field has an ident"))
-                    .collect();
-                // Bindings are mangled, never the user's field idents:
-                // a field named `__f` or `__builder` would otherwise
-                // shadow the generated locals and break compilation.
-                let bindings: Vec<syn::Ident> = (0..field_idents.len())
-                    .map(|i| quote::format_ident!("__field{i}"))
-                    .collect();
-                let values: Vec<TokenStream2> = bindings.iter().map(|b| quote! { #b }).collect();
-                let body = builder_body(&vname, &variant.fields, &values);
-                quote! { Self::#vident { #(#field_idents: #bindings),* } => { #body } }
+                    .map(|field| field.ident.as_ref().expect("named field has an ident"));
+                quote! { { #(#field_idents: #bindings),* } }
             }
-            Fields::Unnamed(unnamed) => {
-                let bindings: Vec<syn::Ident> = (0..unnamed.unnamed.len())
-                    .map(|i| quote::format_ident!("__field{i}"))
-                    .collect();
-                let values: Vec<TokenStream2> = bindings.iter().map(|b| quote! { #b }).collect();
-                let body = builder_body(&vname, &variant.fields, &values);
-                quote! { Self::#vident(#(#bindings),*) => { #body } }
-            }
-            Fields::Unit => {
-                let body = builder_body(&vname, &variant.fields, &[]);
-                quote! { Self::#vident => { #body } }
-            }
-        }
+            Fields::Unnamed(_) => quote! { ( #(#bindings),* ) },
+            Fields::Unit => quote! {},
+        };
+        quote! { Self::#vident #pattern => { #body } }
     });
     quote! {
         match self {
@@ -164,16 +147,55 @@ fn enum_body(data: &syn::DataEnum) -> TokenStream2 {
     }
 }
 
+/// A variant or struct body's fields, each value expression
+/// pre-paired with its masked field name. Pairing at construction
+/// (rather than zipping parallel slices later) makes a name/value
+/// desync unrepresentable — a future field filter (e.g. a `skip`
+/// attribute) cannot silently drop trailing fields.
+enum BuilderFields {
+    Named(Vec<(TokenStream2, TokenStream2)>),
+    Tuple(Vec<TokenStream2>),
+    Unit,
+}
+
+impl BuilderFields {
+    /// Walk `fields` once, rendering each field's value via
+    /// `value_of` — the only per-caller difference between struct
+    /// bodies (`self.x` access) and enum arms (match bindings).
+    fn collect(fields: &Fields, value_of: impl Fn(usize, &syn::Field) -> TokenStream2) -> Self {
+        match fields {
+            Fields::Named(named) => Self::Named(
+                named
+                    .named
+                    .iter()
+                    .enumerate()
+                    .map(|(i, field)| {
+                        let ident = field.ident.as_ref().expect("named field has an ident");
+                        (mask_ident(ident), value_of(i, field))
+                    })
+                    .collect(),
+            ),
+            Fields::Unnamed(unnamed) => Self::Tuple(
+                unnamed
+                    .unnamed
+                    .iter()
+                    .enumerate()
+                    .map(|(i, field)| value_of(i, field))
+                    .collect(),
+            ),
+            Fields::Unit => Self::Unit,
+        }
+    }
+}
+
 /// Emit the builder calls the plain derive expands to
 /// (`debug_struct` / `debug_tuple` / `write_str`), with every name
 /// routed through its masked expression — so `{:?}` and `{:#?}`
 /// render identically to `#[derive(Debug)]`.
-fn builder_body(name: &TokenStream2, fields: &Fields, values: &[TokenStream2]) -> TokenStream2 {
+fn builder_body(name: &TokenStream2, fields: &BuilderFields) -> TokenStream2 {
     match fields {
-        Fields::Named(named) => {
-            let field_calls = named.named.iter().zip(values).map(|(field, value)| {
-                let ident = field.ident.as_ref().expect("named field has an ident");
-                let field_name = mask_ident(ident);
+        BuilderFields::Named(pairs) => {
+            let field_calls = pairs.iter().map(|(field_name, value)| {
                 quote! { __builder.field(&#field_name, #value); }
             });
             quote! {
@@ -182,7 +204,7 @@ fn builder_body(name: &TokenStream2, fields: &Fields, values: &[TokenStream2]) -
                 __builder.finish()
             }
         }
-        Fields::Unnamed(_) => {
+        BuilderFields::Tuple(values) => {
             let field_calls = values.iter().map(|value| {
                 quote! { __builder.field(#value); }
             });
@@ -192,6 +214,6 @@ fn builder_body(name: &TokenStream2, fields: &Fields, values: &[TokenStream2]) -
                 __builder.finish()
             }
         }
-        Fields::Unit => quote! { __f.write_str(&#name) },
+        BuilderFields::Unit => quote! { __f.write_str(&#name) },
     }
 }
