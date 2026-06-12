@@ -39,7 +39,7 @@ regardless.
 | ----------------------- | ------------------------------------------------------------------------- |
 | `just`                  | Lists every recipe.                                                       |
 | `just fmt`              | Rustfmt + taplo across the workspace.                                     |
-| `just lint`             | fmt-check, clippy, typos, taplo, cargo-deny.                              |
+| `just lint`             | fmt-check, clippy, typos, taplo, markdownlint, cargo-deny.                |
 | `just test`             | `cargo nextest run` + doctests.                                           |
 | `just test-examples`    | Builds and runs every example under `litmask/examples/`.                  |
 | `just check-no-default` | Verifies `--no-default-features --features alloc` (no_std + alloc) build. |
@@ -56,7 +56,7 @@ Three tiers, wired into the local clone by `just setup`:
 
 | Hook         | Stage      | What runs (recipe)                                              |
 | ------------ | ---------- | --------------------------------------------------------------- |
-| `pre-commit` | every commit | `just pre-commit` — fmt-check, lint-typos, lint-taplo, `cargo check` |
+| `pre-commit` | every commit | `just pre-commit` — fmt-check, lint-typos, lint-taplo, lint-markdown, `cargo check` |
 | `pre-push`   | every push   | `just pre-push` — `just lint test test-examples check-no-default doc` (mirrors `just ci`) |
 | `commit-msg` | every commit | `commitlint` against Conventional Commits                       |
 
@@ -98,6 +98,8 @@ the convention silently drops your commit from the next release.
 | --------------------- | ----------------- | --------------------------------------------------------- |
 | Canonical gate        | `.tool-versions`  | Blocks PR merge.                                          |
 | Latest stable advisory | latest stable    | Blocks PR merge — drives `.tool-versions` bumps.          |
+| Semver check          | `.tool-versions`  | Advisory (`continue-on-error`) until first crates.io publish. |
+| Fuzz (10s budget)     | nightly           | Blocks PR merge.                                          |
 | Commitlint            | n/a              | Blocks PR merge / push.                                   |
 
 Dependabot opens weekly PRs against cargo, GitHub Actions, npm, and
