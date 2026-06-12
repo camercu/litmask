@@ -51,6 +51,7 @@ const EXAMPLES: &[&str] = &[
     "mask_format_demo",
     "mask_macros_demo",
     "mask_all_demo",
+    "mask_debug_demo",
     "mask_print_e2e",
 ];
 
@@ -372,6 +373,29 @@ fn machine_id_provider_example_masked_fixtures_absent_from_binary() {
     common::assert_substring_absent(&path, "litmask-machine-id-v1");
     common::assert_substring_absent(&path, "litmask-machine-id-salt-v1");
     common::assert_no_dirty_words_except(&path, &["blake3"]);
+}
+
+/// `mask_debug_demo` derives `MaskDebug`: the struct name, field
+/// names, and enum variant names must be absent from the compiled
+/// binary — plain `#[derive(Debug)]` would embed each as a cleartext
+/// `&'static str` in `.rodata` reachable by `strings(1)`. The
+/// `mask!`-ed field values are scrubbed too, same as every other
+/// example.
+#[test]
+fn mask_debug_demo_names_and_fixtures_absent_from_binary() {
+    common::build_example("mask_debug_demo", Profile::Release);
+    let path = common::example_path("mask_debug_demo", Profile::Release);
+    // Struct name — passed to `debug_struct` by the plain derive.
+    common::assert_substring_absent(&path, "CovertBeaconManifest");
+    // Field names — passed to `.field` by the plain derive.
+    common::assert_substring_absent(&path, "rendezvous_url_quux");
+    common::assert_substring_absent(&path, "activation_token_xyzzy");
+    // Enum variant names — one per match arm in the plain derive.
+    common::assert_substring_absent(&path, "DormantUntilDawn");
+    common::assert_substring_absent(&path, "ExfilWindowOpen");
+    common::assert_substring_absent(&path, "jitter_millis_zzyzx");
+    // `mask!`-ed field value.
+    common::assert_substring_absent(&path, "beacon.fabrikam-exfil.example");
 }
 
 /// `mask_serde_demo` derives `MaskSerialize` (EXPERIMENTAL,
