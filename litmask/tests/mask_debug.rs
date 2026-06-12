@@ -5,6 +5,12 @@
 //! plain `Debug` — masking names changes the binary's `.rodata`, never
 //! the formatted output.
 
+// Fixture fields are read only through the generated Debug impls,
+// and rustc deliberately ignores `#[automatically_derived]` Debug
+// impls in dead-code analysis — plain `derive(Debug)` fixtures would
+// warn identically.
+#![allow(dead_code)]
+
 mod common;
 
 use litmask::MaskDebug;
@@ -52,6 +58,12 @@ struct MaskedEmpty {}
 #[derive(MaskDebug)]
 enum MaskedNever {}
 
+#[derive(MaskDebug)]
+enum MaskedCarrier<T> {
+    Holding(T),
+    Tagged { cargo_label_xyzzy: T },
+}
+
 /// Plain-derive twins with the *same* type names, so the formatted
 /// output (which includes the type name) can be compared verbatim.
 mod plain {
@@ -93,6 +105,12 @@ mod plain {
 
     #[derive(Debug)]
     pub struct MaskedEmpty {}
+
+    #[derive(Debug)]
+    pub enum MaskedCarrier<T> {
+        Holding(T),
+        Tagged { cargo_label_xyzzy: T },
+    }
 }
 
 #[test]
@@ -128,14 +146,14 @@ fn mask_debug_tuple_struct_matches_plain_derive() {
 fn mask_debug_unit_struct_matches_plain_derive() {
     common::init_once();
     assert_eq!(
-        format!("{:?}", MaskedMarker),
+        format!("{MaskedMarker:?}"),
         format!("{:?}", plain::MaskedMarker)
     );
     assert_eq!(
-        format!("{:#?}", MaskedMarker),
+        format!("{MaskedMarker:#?}"),
         format!("{:#?}", plain::MaskedMarker)
     );
-    assert_eq!(format!("{:?}", MaskedMarker), "MaskedMarker");
+    assert_eq!(format!("{MaskedMarker:?}"), "MaskedMarker");
 }
 
 #[test]
@@ -206,5 +224,28 @@ fn mask_debug_empty_struct_matches_plain_derive() {
     assert_eq!(
         format!("{:?}", MaskedEmpty {}),
         format!("{:?}", plain::MaskedEmpty {})
+    );
+}
+
+#[test]
+fn mask_debug_generic_enum_matches_plain_derive() {
+    common::init_once();
+    assert_eq!(
+        format!("{:?}", MaskedCarrier::Holding(vec![1u8, 2])),
+        format!("{:?}", plain::MaskedCarrier::Holding(vec![1u8, 2])),
+    );
+    assert_eq!(
+        format!(
+            "{:#?}",
+            MaskedCarrier::Tagged {
+                cargo_label_xyzzy: "x"
+            }
+        ),
+        format!(
+            "{:#?}",
+            plain::MaskedCarrier::Tagged {
+                cargo_label_xyzzy: "x"
+            }
+        ),
     );
 }

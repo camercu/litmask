@@ -26,6 +26,12 @@
 //! / `Deserialize`) to the same type re-embeds every name in the
 //! binary and defeats the masking.
 
+// Fields here are read only through the generated Debug impl, and
+// rustc deliberately ignores `#[automatically_derived]` Debug impls
+// in dead-code analysis — a plain `derive(Debug)` demo would warn
+// identically.
+#![allow(dead_code)]
+
 use litmask::{MaskDebug, mask};
 
 #[derive(MaskDebug)]
