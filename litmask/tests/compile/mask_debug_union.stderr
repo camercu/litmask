@@ -1,0 +1,5 @@
+error: MaskDebug! grammar: supports structs and enums only
+ --> tests/compile/mask_debug_union.rs:8:7
+  |
+8 | union RawHandle {
+  |       ^^^^^^^^^

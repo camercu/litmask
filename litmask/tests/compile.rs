@@ -13,6 +13,7 @@
 #[test]
 fn compile_fixtures() {
     let t = trybuild::TestCases::new();
+    t.compile_fail("tests/compile/mask_debug_union.rs");
     t.compile_fail("tests/compile/mask_integer_literal.rs");
     t.compile_fail("tests/compile/mask_non_literal_expr.rs");
     t.compile_fail("tests/compile/mask_non_whitelisted_macro.rs");
