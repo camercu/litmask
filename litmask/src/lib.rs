@@ -22,9 +22,11 @@
 //!
 //! | Configuration | Defeats |
 //! |---|---|
-//! | Zero-config build (defaults to `EmbeddedProvider`) | `strings`, casual binary inspection (Level 1) |
+//! | Zero-config build (defaults to `EmbeddedProvider`) | `strings`, casual binary inspection (Level 1) only — the key is recoverable from the artifact |
+//! | `EnvVarProvider` | Above, key sourced from an env var, kept out of the binary |
 //! | `FileProvider` | Above, key sourced from a file path |
-//! | `MachineIdProvider` | Above + binary moved to a different machine |
+//! | `init!(machine_id)` (build-sealed) | Above + binary moved to a different machine |
+//! | `init!(machine_id + provider)` (two-factor) | Above + the external factor the binary alone never carries |
 //! | Custom `KeyProvider` (network call, vault) | Above + offline attackers |
 //!
 //! The "zero-config" descriptor refers to absence of project
