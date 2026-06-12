@@ -70,6 +70,28 @@ file required. There is no post-build rebind step; re-targeting a different
 host means rebuilding with that host's `LITMASK_MACHINE_ID`. See the
 [README](../README.md#machine-id-binding) for the full walkthrough.
 
+### Two-factor tier (`init!(machine_id + provider)`)
+
+Set **both** `LITMASK_MACHINE_ID` and `LITMASK_UNLOCK_KEY` at build time to
+seal the MachineExternal tier. At runtime the binary decrypts only on the
+sealed host **and** with the sealed external material — either factor wrong
+fails the wrapper's AEAD check:
+
+```sh
+LITMASK_MACHINE_ID="$(cargo run -q -p litmask-cli -- show-machine-id)" \
+LITMASK_UNLOCK_KEY="$(cargo run -q -p litmask-cli -- keygen)" \
+    cargo build --release --features machine-id
+```
+
+```rust
+let provider = litmask::EnvVarProvider::default(); // LITMASK_UNLOCK_KEY
+litmask::init!(machine_id + provider)?;
+```
+
+The machine factor is recomputed from the host (no provisioning); the
+external factor is re-supplied at runtime exactly as in the External tier
+above (env var, file, or custom provider).
+
 ### Custom provider
 
 Implement `KeyProvider` for any key source (vault, HSM, network
@@ -167,7 +189,7 @@ Two categories survive and are intentionally acceptable:
   `litmask` or its cryptography. Removing them requires
   `-Z build-std`.
 - **`litmask`'s own `category:variant` Display tags** (e.g.
-  `unsupported_cipher`, `decryption_failed`). These are deliberately
+  `unsupported_format`, `decryption_failed`). These are deliberately
   generic ASCII tags (spec §1.9.3), not `litmask`-identifying.
 
 Both flags are **nightly-only and unstable**, so this recipe cannot be
@@ -229,7 +251,7 @@ init failure:
 |---|---|---|---|
 | 65 | `EX_DATAERR` | `KeyProvider(InvalidFormat)`, `Decryption` | Malformed key data or AEAD authentication failure |
 | 69 | `EX_UNAVAILABLE` | `KeyProvider(Provider(_))` | Provider-specific failure (network, service, machine ID unavailable) |
-| 70 | `EX_SOFTWARE` | `UnsupportedFormat`, `UnsupportedCipher` | Format version or cipher feature mismatch |
+| 70 | `EX_SOFTWARE` | `UnsupportedFormat` | Wrapper format version unknown to this runtime |
 | 77 | `EX_NOPERM` | `KeyProvider(Permission)` | OS-level permission denied reading key |
 | 78 | `EX_CONFIG` | `KeyProvider(NotFound)` | Missing key (env var unset, file absent) |
 

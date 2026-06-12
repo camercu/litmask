@@ -17,9 +17,9 @@ custom provider) raises the baseline to **Level 2** and provides meaningful
 
 Runs `strings`, opens a hex editor, or browses `.rodata`.
 
-**Stopped by:** any encryption. `litmask` encrypts every literal with
-ChaCha20-Poly1305 (or AES-256-GCM) at compile time. No plaintext
-survives in the binary.
+**Stopped by:** any encryption. `litmask` encrypts every masked literal
+with ChaCha20-Poly1305 (or AES-256-GCM) at compile time. No masked
+plaintext survives in the binary.
 
 ### Level 2 — Static reverse engineering
 
@@ -65,6 +65,7 @@ decryption runs, any observer with runtime access sees plaintext.
 | `EnvVarProvider` | Above + Level 2: `unlock_key` sourced at runtime, not embedded |
 | `FileProvider` + filesystem permissions | Above with OS-enforced access control |
 | `machine_id` tier (`init!(machine_id)`) | Above + binary moved to a different machine |
+| Two-factor tier (`init!(machine_id + <provider>)`) | Above + the external factor (env/file/vault) the binary alone never carries |
 | Custom `KeyProvider` (vault, HSM) | Above + offline attackers |
 
 "Zero-config" means no project configuration beyond `build.rs` and no

@@ -99,9 +99,9 @@ Tone conforms to deliberate understatement policy.
 | `blake3` | Key derivation, nonce | Official impl, constant-time eq |
 | `zeroize` | Key wiping | RustCrypto standard |
 | `base64ct` | Base64url encoding | Constant-time, RustCrypto |
-| `machine-uid` | Machine ID (CLI) | Small crate, reads `/etc/machine-id` or equivalent |
+| `machine-uid` | Machine ID (CLI + runtime `machine-id` feature) | Small crate, reads `/etc/machine-id` or equivalent |
 | `clap` | CLI argument parsing | Standard, CLI-only |
-| `toml` | Config parsing | Standard, CLI-only |
+| `toml` | `litmask.config` writing | Standard, build-time only (`litmask-build`) |
 
 No unexpected transitive dependencies. All crypto dependencies are from
 the RustCrypto ecosystem. `deny.toml` enforces: no advisories, no
@@ -147,21 +147,23 @@ Reproducibility depends on `LITMASK_RNG_SEED` being set explicitly.
 Without it, each clean build generates a new seed. This is documented
 behavior, not a vulnerability.
 
-## Format-version and cipher-id rejection
+## Format-version rejection
 
 **Status:** pass
 
-`litmask-internal/src/cipher.rs` validates version and cipher bytes
-before decryption:
+`litmask-internal/src/decrypt.rs` authenticates before it trusts: the
+wrapper's format-version byte lives *inside* the AEAD plaintext and is
+validated only after the tag verifies (decrypt-then-check):
 
-- Unknown format version → `DecryptError::UnsupportedFormat` →
-  `InitError::UnsupportedFormat` (exit 70)
-- Unknown cipher ID → `DecryptError::UnsupportedCipher` →
-  `InitError::UnsupportedCipher` (exit 70)
-- Truncated wrapper → AEAD authentication failure →
+- Unknown authenticated format version → `InitError::UnsupportedFormat`
+  (exit 70)
+- Tampered or truncated wrapper → AEAD authentication failure →
   `InitError::Decryption` (exit 65)
 
-Unit tests cover: bad version byte, bad cipher byte, truncated wrappers.
+There is no cipher-id byte on the wire; the cipher is fixed at compile
+time (`CURRENT_CIPHER`), so no runtime cipher-mismatch path exists.
+
+Unit tests cover: bad authenticated version byte, tampered wrappers.
 
 **Category:** accepted-risk — none; these are clean passes.
 
@@ -175,10 +177,9 @@ Unit tests cover: bad version byte, bad cipher byte, truncated wrappers.
 | Threat-model honesty policy | accepted-risk |
 | `machine-uid` unaudited | accepted-risk |
 | Non-constant-time Rust code | accepted-risk |
-| Bind power-loss window | accepted-risk |
 | Reproducibility requires explicit seed | accepted-risk |
 
 **Blockers: 0**
 **Fix-before-1.0: 0**
 **Track-for-v2: 0**
-**Accepted-risk: 8** (all with justification)
+**Accepted-risk: 7** (all with justification)
