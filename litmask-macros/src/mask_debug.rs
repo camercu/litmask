@@ -39,13 +39,14 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let ident = &input.ident;
     let body = match &input.data {
-        Data::Struct(data) => fields_body(ident, &data.fields),
-        _ => {
+        Data::Struct(data) => struct_body(ident, &data.fields),
+        Data::Enum(data) => enum_body(data),
+        Data::Union(_) => {
             return Err(compile_error(
                 ident.span(),
                 MACRO_NAME,
                 FailTag::Grammar,
-                "supports structs only",
+                "supports structs and enums only",
             ));
         }
     };
@@ -61,20 +62,82 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
     })
 }
 
-/// Build the `fmt` body for a struct's fields. The masked type name
-/// goes through the same builder the plain derive expands to
-/// (`debug_struct` / `debug_tuple` / `write_str`), so `{:?}` and
-/// `{:#?}` render identically.
-fn fields_body(ident: &syn::Ident, fields: &Fields) -> TokenStream2 {
+/// Build the `fmt` body for a struct: field values are reached
+/// through `self`.
+fn struct_body(ident: &syn::Ident, fields: &Fields) -> TokenStream2 {
     let name = masked_name_expr(ident.unraw().to_string(), ident.span());
+    let values: Vec<TokenStream2> = match fields {
+        Fields::Named(named) => named
+            .named
+            .iter()
+            .map(|field| {
+                let ident = field.ident.as_ref().expect("named field has an ident");
+                quote! { &self.#ident }
+            })
+            .collect(),
+        Fields::Unnamed(unnamed) => (0..unnamed.unnamed.len())
+            .map(|i| {
+                let index = syn::Index::from(i);
+                quote! { &self.#index }
+            })
+            .collect(),
+        Fields::Unit => Vec::new(),
+    };
+    builder_body(&name, fields, &values)
+}
+
+/// Build the `fmt` body for an enum: one match arm per variant, each
+/// formatting under the masked *variant* name — the plain derive
+/// never prints the enum's own name.
+fn enum_body(data: &syn::DataEnum) -> TokenStream2 {
+    let arms = data.variants.iter().map(|variant| {
+        let vident = &variant.ident;
+        let vname = masked_name_expr(vident.unraw().to_string(), vident.span());
+        match &variant.fields {
+            Fields::Named(named) => {
+                let bindings: Vec<&syn::Ident> = named
+                    .named
+                    .iter()
+                    .map(|field| field.ident.as_ref().expect("named field has an ident"))
+                    .collect();
+                let values: Vec<TokenStream2> = bindings.iter().map(|b| quote! { #b }).collect();
+                let body = builder_body(&vname, &variant.fields, &values);
+                quote! { Self::#vident { #(#bindings),* } => { #body } }
+            }
+            Fields::Unnamed(unnamed) => {
+                let bindings: Vec<syn::Ident> = (0..unnamed.unnamed.len())
+                    .map(|i| quote::format_ident!("__field{i}"))
+                    .collect();
+                let values: Vec<TokenStream2> = bindings.iter().map(|b| quote! { #b }).collect();
+                let body = builder_body(&vname, &variant.fields, &values);
+                quote! { Self::#vident(#(#bindings),*) => { #body } }
+            }
+            Fields::Unit => {
+                let body = builder_body(&vname, &variant.fields, &[]);
+                quote! { Self::#vident => { #body } }
+            }
+        }
+    });
+    quote! {
+        match self {
+            #(#arms)*
+        }
+    }
+}
+
+/// Emit the builder calls the plain derive expands to
+/// (`debug_struct` / `debug_tuple` / `write_str`), with every name
+/// routed through its masked expression — so `{:?}` and `{:#?}`
+/// render identically to `#[derive(Debug)]`.
+fn builder_body(name: &TokenStream2, fields: &Fields, values: &[TokenStream2]) -> TokenStream2 {
     match fields {
         Fields::Named(named) => {
-            let field_calls = named.named.iter().map(|field| {
+            let field_calls = named.named.iter().zip(values).map(|(field, value)| {
                 let ident = field.ident.as_ref().expect("named field has an ident");
                 // `unraw` matches the plain derive: `r#type` renders
                 // as `type`, without the raw-ident prefix.
-                let name = masked_name_expr(ident.unraw().to_string(), ident.span());
-                quote! { __builder.field(&#name, &self.#ident); }
+                let field_name = masked_name_expr(ident.unraw().to_string(), ident.span());
+                quote! { __builder.field(&#field_name, #value); }
             });
             quote! {
                 let mut __builder = __f.debug_struct(&#name);
@@ -82,10 +145,9 @@ fn fields_body(ident: &syn::Ident, fields: &Fields) -> TokenStream2 {
                 __builder.finish()
             }
         }
-        Fields::Unnamed(unnamed) => {
-            let field_calls = (0..unnamed.unnamed.len()).map(|i| {
-                let index = syn::Index::from(i);
-                quote! { __builder.field(&self.#index); }
+        Fields::Unnamed(_) => {
+            let field_calls = values.iter().map(|value| {
+                quote! { __builder.field(#value); }
             });
             quote! {
                 let mut __builder = __f.debug_tuple(&#name);

@@ -21,6 +21,13 @@ struct MaskedPair(String, u32);
 #[derive(MaskDebug)]
 struct MaskedMarker;
 
+#[derive(MaskDebug)]
+enum MaskedMode {
+    Idle,
+    Probing(String, u8),
+    Active { since_epoch: u64 },
+}
+
 /// Plain-derive twins with the *same* type names, so the formatted
 /// output (which includes the type name) can be compared verbatim.
 mod plain {
@@ -35,6 +42,13 @@ mod plain {
 
     #[derive(Debug)]
     pub struct MaskedMarker;
+
+    #[derive(Debug)]
+    pub enum MaskedMode {
+        Idle,
+        Probing(String, u8),
+        Active { since_epoch: u64 },
+    }
 }
 
 #[test]
@@ -78,4 +92,28 @@ fn mask_debug_unit_struct_matches_plain_derive() {
         format!("{:#?}", plain::MaskedMarker)
     );
     assert_eq!(format!("{:?}", MaskedMarker), "MaskedMarker");
+}
+
+#[test]
+fn mask_debug_enum_variants_match_plain_derive() {
+    common::init_once();
+    let cases = [
+        (MaskedMode::Idle, plain::MaskedMode::Idle),
+        (
+            MaskedMode::Probing("ping".to_string(), 2),
+            plain::MaskedMode::Probing("ping".to_string(), 2),
+        ),
+        (
+            MaskedMode::Active { since_epoch: 99 },
+            plain::MaskedMode::Active { since_epoch: 99 },
+        ),
+    ];
+    for (masked, plain) in &cases {
+        assert_eq!(format!("{masked:?}"), format!("{plain:?}"));
+        assert_eq!(format!("{masked:#?}"), format!("{plain:#?}"));
+    }
+    assert_eq!(
+        format!("{:?}", MaskedMode::Active { since_epoch: 99 }),
+        "Active { since_epoch: 99 }"
+    );
 }
