@@ -54,7 +54,7 @@ const EXAMPLES: &[&str] = &[
     "mask_print_e2e",
 ];
 
-const EXCEPTIONS: &[&str] = &["file_provider", "machine_id_provider"];
+const EXCEPTIONS: &[&str] = &["file_provider", "machine_id_provider", "masked_serde_demo"];
 
 #[test]
 fn no_forbidden_substrings_in_any_example_binary() {
@@ -372,6 +372,37 @@ fn machine_id_provider_example_masked_fixtures_absent_from_binary() {
     common::assert_substring_absent(&path, "litmask-machine-id-v1");
     common::assert_substring_absent(&path, "litmask-machine-id-salt-v1");
     common::assert_no_dirty_words_except(&path, &["blake3"]);
+}
+
+/// `masked_serde_demo` derives `MaskedSerialize` (EXPERIMENTAL,
+/// `unstable-serde`): the struct name and every field name must be
+/// absent from the compiled binary — plain `#[derive(serde::Serialize)]`
+/// would embed each as a cleartext `&'static str` reachable by
+/// `strings(1)`. The `mask!`-ed field values are scrubbed too, same as
+/// every other example. The example sits in `EXCEPTIONS` because its
+/// `required-features = ["unstable-serde"]` makes the default-features
+/// `EXAMPLES` loop unable to build it; this test shells out with the
+/// feature enabled, mirroring the `machine_id_provider` pattern, so the
+/// scrub runs under the standard default-features `cargo test`.
+#[test]
+fn masked_serde_demo_names_and_fixtures_absent_from_binary() {
+    common::build_example_with_features("masked_serde_demo", Profile::Release, &["unstable-serde"]);
+    let path = common::example_path("masked_serde_demo", Profile::Release);
+    assert!(
+        path.exists(),
+        "masked_serde_demo binary missing after build: {}",
+        path.display(),
+    );
+    // Struct name — passed to `serialize_struct` by the plain derive.
+    common::assert_substring_absent(&path, "ClandestineTelemetryManifest");
+    // Field names — passed to `serialize_field` by the plain derive.
+    common::assert_substring_absent(&path, "covert_endpoint_quux");
+    common::assert_substring_absent(&path, "activation_token_xyzzy");
+    common::assert_substring_absent(&path, "heartbeat_jitter_millis");
+    // `mask!`-ed field values.
+    common::assert_substring_absent(&path, "beacon.fabrikam-exfil.example");
+    common::assert_substring_absent(&path, "correct-horse-battery-staple");
+    common::assert_no_dirty_words(&path);
 }
 
 /// Every `.rs` file under `litmask/examples/` must appear in either

@@ -101,6 +101,12 @@ litmask-build.workspace = true
 name = "machine_id_provider"
 required-features = ["machine-id"]
 
+# Same `required-features` rationale as above: skip cleanly under
+# `cargo build --examples` with default features instead of failing.
+[[example]]
+name = "masked_serde_demo"
+required-features = ["unstable-serde"]
+
 [dev-dependencies]
 litmask-internal.workspace = true
 proptest = "1"

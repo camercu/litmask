@@ -19,6 +19,15 @@ for src in litmask/examples/*.rs; do
         continue
     fi
     echo "litmask: test-examples — running $name"
+    # `masked_serde_demo` requires the `unstable-serde` feature
+    # (EXPERIMENTAL); it is Embedded-tier like the plain examples, so
+    # the same env-stripping applies — only the feature flag differs.
+    if [ "$name" = "masked_serde_demo" ]; then
+        env -u LITMASK_UNLOCK_KEY -u LITMASK_MACHINE_ID \
+            cargo run --quiet --features unstable-serde --example "$name"
+        found=$((found + 1))
+        continue
+    fi
     # Seal-tier hinges on env presence: setting LITMASK_UNLOCK_KEY at
     # build selects the External tier and reseals the shared wrapper.
     # So only the runtime-sourced examples (`init_with!` providers) may
