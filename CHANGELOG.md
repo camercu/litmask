@@ -1,3 +1,16 @@
+## [0.12.0](https://github.com/camercu/litmask/compare/v0.11.0...v0.12.0) (2026-06-12)
+
+### ⚠ BREAKING CHANGES
+
+* **macros:** init!(machine_id) and init!(machine_id + provider) no
+longer select the Machine/MachineExternal forms; use
+init!(bind_to_machine) / init!(bind_to_machine + provider).
+
+### Features
+
+* **macros:** rename init! machine_id keyword to bind_to_machine ([d375c19](https://github.com/camercu/litmask/commit/d375c197e8445d8c198a9c243f5dac8e54dc364d))
+* **runtime:** fail fast in debug when init! runs after lazy mask! init ([d7ade90](https://github.com/camercu/litmask/commit/d7ade90036aadcffd31857dfd20c42b3710dc708))
+
 ## [0.11.0](https://github.com/camercu/litmask/compare/v0.10.0...v0.11.0) (2026-06-12)
 
 ### ⚠ BREAKING CHANGES
