@@ -2658,18 +2658,24 @@ closes that channel with the same AEAD pipeline as `mask!`.
 
 ### §E.2 Surface and normative behavior
 
-`#[derive(MaskSerialize)]` generates a `serde::Serialize` impl for a
-named-field struct.
+`#[derive(MaskSerialize)]` generates a `serde::Serialize` impl for any
+struct (named-field, tuple, newtype, unit) or enum.
 
 - **§E.2.1 Wire-format identity.** Serialized output MUST be byte-identical
-  to the plain serde derive for every serde format. The expansion uses
-  `serialize_struct` — never `serialize_map` — because non-self-describing
-  formats (bincode, postcard) serialize structs positionally; a map-based
-  impl would change their wire shape and re-introduce names on the wire.
-- **§E.2.2 Name masking.** The container name and every field name MUST be
-  AEAD-encrypted at expansion time using the §1.5.2 call-site nonce
-  derivation and MUST NOT appear as plaintext in the compiled binary. Raw
-  identifiers serialize unraw'd (`r#type` → `"type"`), matching serde.
+  to the plain serde derive for every serde format. The expansion mirrors
+  serde's own shape dispatch — each shape calls the dedicated `Serializer`
+  entry point the plain derive would (`serialize_struct`,
+  `serialize_tuple_struct`, `serialize_newtype_struct`,
+  `serialize_unit_struct`, and the four `*_variant` forms) — never
+  `serialize_map`, because non-self-describing formats (bincode, postcard)
+  serialize structs positionally and enums by declaration-order variant
+  index; a map-based impl would change their wire shape and re-introduce
+  names on the wire.
+- **§E.2.2 Name masking.** The container name, every field name, and every
+  enum variant name MUST be AEAD-encrypted at expansion time using the
+  §1.5.2 call-site nonce derivation and MUST NOT appear as plaintext in the
+  compiled binary. Raw identifiers serialize unraw'd (`r#type` → `"type"`),
+  matching serde.
 - **§E.2.3 Decrypt-once caching.** Each name is decrypted on first use,
   leaked, and cached in a `std::sync::OnceLock<&'static str>` —
   `serialize_struct` / `serialize_field` require `&'static str`, which a
@@ -2681,12 +2687,13 @@ named-field struct.
   policy: lazy Embedded-floor initialization, §1.9.5 profile-split panic on
   decrypt failure. On seal tiers above Embedded, `init!` MUST run before the
   first serialization.
-- **§E.2.5 Reject-loud grammar.** Enums, tuple structs, and unit structs
-  fail with `MaskSerialize! grammar` (§1.9.6). Any `#[serde(...)]`
-  attribute on the container or a field fails with `MaskSerialize!
-  invalid-arg` — silently ignoring `rename`/`rename_all`/`skip` would break
-  §E.2.1 without warning. Generic structs are supported; each type parameter
-  receives a `Serialize` where-clause bound, mirroring the plain derive.
+- **§E.2.5 Reject-loud grammar.** Unions fail with `MaskSerialize! grammar`
+  (§1.9.6), matching the plain derive's refusal. Any `#[serde(...)]`
+  attribute on the container, a variant, or a field fails with
+  `MaskSerialize! invalid-arg` — silently ignoring
+  `rename`/`rename_all`/`skip` would break §E.2.1 without warning. Generic
+  types are supported; each type parameter receives a `Serialize`
+  where-clause bound, mirroring the plain derive.
 
 ### §E.3 Residual exposure and stabilization criteria
 
@@ -2702,5 +2709,5 @@ Residuals (documented, not defects):
 
 Stabilization (rename to `serde`) requires at minimum: `MaskedDeserialize`
 (the larger leak surface: `FIELDS` arrays, field-visitor match arms,
-`missing_field` diagnostics), a decision on the supportable `#[serde(...)]`
-attribute subset, and enum support.
+`missing_field` diagnostics) and a decision on the supportable
+`#[serde(...)]` attribute subset.

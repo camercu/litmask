@@ -36,6 +36,16 @@ struct ClandestineTelemetryManifest {
     covert_endpoint_quux: String,
     activation_token_xyzzy: String,
     heartbeat_jitter_millis: u32,
+    uplink_channel_state: UplinkChannelState,
+}
+
+// Enum variant names are masked too — self-describing formats print
+// them as the externally-tagged key, so the plain derive would embed
+// each as cleartext.
+#[derive(MaskSerialize, MaskDebug)]
+enum UplinkChannelState {
+    DormantUntilDawnZzyzx,
+    ActiveRelayWindow { relay_handle_quux: String },
 }
 
 fn main() {
@@ -43,7 +53,14 @@ fn main() {
         covert_endpoint_quux: mask!("https://beacon.fabrikam-exfil.example/v1"),
         activation_token_xyzzy: mask!("correct-horse-battery-staple"),
         heartbeat_jitter_millis: 250,
+        uplink_channel_state: UplinkChannelState::ActiveRelayWindow {
+            relay_handle_quux: mask!("relay-handle-7-zzyzx"),
+        },
     };
     println!("{}", serde_json::to_string(&manifest).unwrap());
     println!("{manifest:?}");
+    println!(
+        "{}",
+        serde_json::to_string(&UplinkChannelState::DormantUntilDawnZzyzx).unwrap()
+    );
 }

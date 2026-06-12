@@ -178,10 +178,13 @@ struct LicenseManifest {
 }
 ```
 
+Every struct shape (named-field, tuple, newtype, unit) and enums are
+supported, including the variant names self-describing formats print.
+
 Current limitations (the `unstable-` prefix means semver-exempt):
 
-- Named-field structs only — enums, tuple structs, and `#[serde(...)]`
-  attributes are compile errors rather than silent cleartext fallbacks.
+- `#[serde(...)]` attributes and unions are compile errors rather than
+  silent cleartext fallbacks.
 - `Serialize` only. A plain `#[derive(serde::Deserialize)]` on the same
   struct re-embeds every name and defeats the masking — same for plain
   `Debug` (use `#[derive(MaskDebug)]` instead).

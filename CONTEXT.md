@@ -103,9 +103,9 @@ _Avoid_: "debug mask", "masked debug derive" (the derive masks names,
 not formatted values).
 
 **`MaskSerialize`** (EXPERIMENTAL, `unstable-serde` feature): Derive
-macro generating a `serde::Serialize` impl whose struct and field
-names go through the same AEAD pipeline as `mask!` instead of landing
-as cleartext in the binary. Output is byte-identical to the plain
+macro generating a `serde::Serialize` impl whose type, field, and enum
+variant names go through the same AEAD pipeline as `mask!` instead of
+landing as cleartext in the binary. Output is byte-identical to the plain
 serde derive; names decrypt once at first serialization and stay
 cached (leaked) for the process lifetime. Semver-exempt until the
 feature stabilizes as `serde`.

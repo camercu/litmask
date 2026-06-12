@@ -427,16 +427,24 @@ fn mask_serde_demo_names_and_fixtures_absent_from_binary() {
         "mask_serde_demo",
         &path,
         &[
-            // Struct name — passed to `serialize_struct` /
-            // `debug_struct` by the plain derives.
+            // Type names — passed to `serialize_struct` /
+            // `*_variant` / `debug_struct` by the plain derives.
             "ClandestineTelemetryManifest",
+            "UplinkChannelState",
             // Field names — passed to `serialize_field` / `.field`.
             "covert_endpoint_quux",
             "activation_token_xyzzy",
             "heartbeat_jitter_millis",
+            "uplink_channel_state",
+            "relay_handle_quux",
+            // Enum variant names — the externally-tagged key in
+            // self-describing formats.
+            "DormantUntilDawnZzyzx",
+            "ActiveRelayWindow",
             // `mask!`-ed field values.
             "beacon.fabrikam-exfil.example",
             "correct-horse-battery-staple",
+            "relay-handle-7-zzyzx",
         ],
     );
     common::assert_no_dirty_words(&path);
