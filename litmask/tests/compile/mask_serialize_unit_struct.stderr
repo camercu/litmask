@@ -1,5 +1,0 @@
-error: MaskSerialize! grammar: supports structs with named fields only
- --> tests/compile/mask_serialize_unit_struct.rs:7:8
-  |
-7 | struct NothingToMask;
-  |        ^^^^^^^^^^^^^

@@ -71,7 +71,6 @@ fn mask_serialize_compile_fixtures() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/compile/mask_serialize_enum.rs");
     t.compile_fail("tests/compile/mask_serialize_tuple_struct.rs");
-    t.compile_fail("tests/compile/mask_serialize_unit_struct.rs");
     t.compile_fail("tests/compile/mask_serialize_serde_attr_container.rs");
     t.compile_fail("tests/compile/mask_serialize_serde_attr_field.rs");
 }

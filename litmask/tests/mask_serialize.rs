@@ -119,6 +119,24 @@ fn mask_serialize_raw_ident_field_unraws_like_plain_derive() {
 }
 
 #[derive(MaskSerialize)]
+struct MaskedUnitBeacon;
+
+#[derive(serde::Serialize)]
+struct PlainUnitBeacon;
+
+#[test]
+fn mask_serialize_unit_struct_matches_plain_derive() {
+    common::init_once();
+    let masked_json =
+        serde_json::to_string(&MaskedUnitBeacon).expect("masked serialization failed");
+    assert_eq!(
+        masked_json,
+        serde_json::to_string(&PlainUnitBeacon).expect("plain serialization failed"),
+    );
+    assert_eq!(masked_json, "null");
+}
+
+#[derive(MaskSerialize)]
 struct MaskedEmpty {}
 
 #[test]

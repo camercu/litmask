@@ -36,25 +36,9 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 }
 
 fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
-    let fields = named_fields(input)?;
-    reject_serde_attrs(input, fields)?;
+    let body = serialize_body(input)?;
 
     let struct_ident = &input.ident;
-    let struct_name = masked_name_expr(struct_ident);
-    let field_count = fields.named.len();
-
-    let serialize_fields = fields.named.iter().map(|field| {
-        let ident = field.ident.as_ref().expect("named field has an ident");
-        let name = masked_name_expr(ident);
-        quote! {
-            ::litmask::__serde::ser::SerializeStruct::serialize_field(
-                &mut __state,
-                #name,
-                &self.#ident,
-            )?;
-        }
-    });
-
     // Bound every type param with `Serialize`, mirroring the plain
     // serde derive's bound model: `Envelope<T>` serializes iff
     // `T: Serialize`.
@@ -76,40 +60,66 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
             where
                 __S: ::litmask::__serde::Serializer,
             {
-                let mut __state = ::litmask::__serde::Serializer::serialize_struct(
-                    serializer,
-                    #struct_name,
-                    #field_count,
-                )?;
-                #(#serialize_fields)*
-                ::litmask::__serde::ser::SerializeStruct::end(__state)
+                #body
             }
         }
     })
 }
 
-/// Extract the named fields, rejecting every shape the prototype does
-/// not mask. Each rejection is loud: silently falling back to the
-/// plain-derive behavior would embed cleartext names — the exact leak
-/// the user opted in to prevent.
-fn named_fields(input: &DeriveInput) -> syn::Result<&syn::FieldsNamed> {
-    let Data::Struct(data) = &input.data else {
-        return Err(compile_error(
+/// Dispatch on the input's shape, mirroring serde's own
+/// classification: each shape maps to the dedicated `Serializer`
+/// entry point the plain derive would call, which is what keeps the
+/// wire format byte-identical (§E.2.1).
+fn serialize_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
+    let data = match &input.data {
+        Data::Struct(data) => data,
+        Data::Enum(_) | Data::Union(_) => {
+            return Err(compile_error(
+                input.ident.span(),
+                MACRO_NAME,
+                FailTag::Grammar,
+                "supports structs only",
+            ));
+        }
+    };
+    reject_serde_attrs(input, &data.fields)?;
+    let name = masked_name_expr(&input.ident);
+    match &data.fields {
+        Fields::Named(fields) => Ok(named_struct_body(&name, fields)),
+        Fields::Unit => Ok(quote! {
+            ::litmask::__serde::Serializer::serialize_unit_struct(serializer, #name)
+        }),
+        Fields::Unnamed(_) => Err(compile_error(
             input.ident.span(),
             MACRO_NAME,
             FailTag::Grammar,
-            "supports structs with named fields only",
-        ));
-    };
-    let Fields::Named(fields) = &data.fields else {
-        return Err(compile_error(
-            input.ident.span(),
-            MACRO_NAME,
-            FailTag::Grammar,
-            "supports structs with named fields only",
-        ));
-    };
-    Ok(fields)
+            "supports structs only",
+        )),
+    }
+}
+
+fn named_struct_body(name: &TokenStream2, fields: &syn::FieldsNamed) -> TokenStream2 {
+    let field_count = fields.named.len();
+    let serialize_fields = fields.named.iter().map(|field| {
+        let ident = field.ident.as_ref().expect("named field has an ident");
+        let field_name = masked_name_expr(ident);
+        quote! {
+            ::litmask::__serde::ser::SerializeStruct::serialize_field(
+                &mut __state,
+                #field_name,
+                &self.#ident,
+            )?;
+        }
+    });
+    quote! {
+        let mut __state = ::litmask::__serde::Serializer::serialize_struct(
+            serializer,
+            #name,
+            #field_count,
+        )?;
+        #(#serialize_fields)*
+        ::litmask::__serde::ser::SerializeStruct::end(__state)
+    }
 }
 
 /// Reject any `#[serde(...)]` attribute on the container or a field.
@@ -117,9 +127,9 @@ fn named_fields(input: &DeriveInput) -> syn::Result<&syn::FieldsNamed> {
 /// `rename_all` / `skip` would serialize under different names (or a
 /// different shape) than the plain derive — the wire-format-identity
 /// contract would break without warning.
-fn reject_serde_attrs(input: &DeriveInput, fields: &syn::FieldsNamed) -> syn::Result<()> {
+fn reject_serde_attrs(input: &DeriveInput, fields: &Fields) -> syn::Result<()> {
     let container_attrs = input.attrs.iter();
-    let field_attrs = fields.named.iter().flat_map(|field| field.attrs.iter());
+    let field_attrs = fields.iter().flat_map(|field| field.attrs.iter());
     for attr in container_attrs.chain(field_attrs) {
         if attr.path().is_ident("serde") {
             return Err(compile_error(
