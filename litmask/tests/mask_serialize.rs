@@ -288,6 +288,49 @@ fn mask_serialize_enum_variants_match_plain_derive_postcard() {
     }
 }
 
+/// Empty bracketed variants are NOT unit variants to serde: `V()` is
+/// a zero-arity tuple variant, `V {}` a zero-field struct variant,
+/// and self-describing formats give each a distinct wire shape.
+#[derive(MaskSerialize)]
+enum MaskedEmptyVariants {
+    BareDrop,
+    HollowTuple(),
+    HollowStruct {},
+}
+
+#[derive(serde::Serialize)]
+enum PlainEmptyVariants {
+    BareDrop,
+    HollowTuple(),
+    HollowStruct {},
+}
+
+#[test]
+fn mask_serialize_empty_variants_match_plain_derive() {
+    common::init_once();
+    let pairs = [
+        (MaskedEmptyVariants::BareDrop, PlainEmptyVariants::BareDrop),
+        (
+            MaskedEmptyVariants::HollowTuple(),
+            PlainEmptyVariants::HollowTuple(),
+        ),
+        (
+            MaskedEmptyVariants::HollowStruct {},
+            PlainEmptyVariants::HollowStruct {},
+        ),
+    ];
+    for (masked, plain) in pairs {
+        assert_eq!(
+            serde_json::to_string(&masked).expect("masked serialization failed"),
+            serde_json::to_string(&plain).expect("plain serialization failed"),
+        );
+        assert_eq!(
+            postcard::to_stdvec(&masked).expect("masked serialization failed"),
+            postcard::to_stdvec(&plain).expect("plain serialization failed"),
+        );
+    }
+}
+
 #[derive(MaskSerialize)]
 enum MaskedRawVariant {
     r#Loop { r#fn: u8 },
