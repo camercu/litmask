@@ -152,9 +152,10 @@ struct LicenseManifest {
 
 No feature flag needed — names are decrypted during each `fmt` call (the
 formatter borrows `&str`, so nothing is cached or leaked), and the derive
-works in `no_std` + `alloc` builds. Structs and enums are supported; unions
-are a compile error. Adding a plain `#[derive(Debug)]` to the same type
-re-embeds the names and defeats the masking.
+works in `no_std` + `alloc` builds. Structs (including `#[repr(packed)]`)
+and enums are supported; unions are a compile error. Adding a plain
+`#[derive(Debug)]` to the same type re-embeds the names and defeats the
+masking.
 
 See `examples/mask_debug_demo.rs` and SPECIFICATION.md §2.14.
 

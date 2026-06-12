@@ -2414,6 +2414,15 @@ lazy Embedded-floor initialization, §1.9.5 profile-split panic on
 decrypt failure. On seal tiers above Embedded, `init!` MUST run
 before the first formatting.
 
+§2.14.1.8 — The expansion SHALL be hygienic against user identifiers:
+field names that collide with generated locals (e.g. `__f`,
+`__builder`) SHALL NOT alter or break the expansion.
+
+§2.14.1.9 — `#[repr(packed)]` structs SHALL be supported by copying
+each field before formatting — references to packed fields are
+undefined behavior (E0793) — mirroring the plain derive, including
+its effective `Copy`-field requirement.
+
 #### §2.14.2 Residual exposure
 
 - A plain `#[derive(Debug)]`, `#[derive(serde::Serialize)]`, or
