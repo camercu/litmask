@@ -15,7 +15,13 @@ struct MaskedConfig {
     activation_count: u32,
 }
 
-/// Plain-derive twin with the *same* type name, so the formatted
+#[derive(MaskDebug)]
+struct MaskedPair(String, u32);
+
+#[derive(MaskDebug)]
+struct MaskedMarker;
+
+/// Plain-derive twins with the *same* type names, so the formatted
 /// output (which includes the type name) can be compared verbatim.
 mod plain {
     #[derive(Debug)]
@@ -23,6 +29,12 @@ mod plain {
         pub license_server_url: String,
         pub activation_count: u32,
     }
+
+    #[derive(Debug)]
+    pub struct MaskedPair(pub String, pub u32);
+
+    #[derive(Debug)]
+    pub struct MaskedMarker;
 }
 
 #[test]
@@ -42,4 +54,28 @@ fn mask_debug_named_struct_matches_plain_derive() {
         format!("{masked:?}"),
         r#"MaskedConfig { license_server_url: "https://license.example.com", activation_count: 7 }"#,
     );
+}
+
+#[test]
+fn mask_debug_tuple_struct_matches_plain_derive() {
+    common::init_once();
+    let masked = MaskedPair("beacon".to_string(), 3);
+    let plain = plain::MaskedPair("beacon".to_string(), 3);
+    assert_eq!(format!("{masked:?}"), format!("{plain:?}"));
+    assert_eq!(format!("{masked:#?}"), format!("{plain:#?}"));
+    assert_eq!(format!("{masked:?}"), r#"MaskedPair("beacon", 3)"#);
+}
+
+#[test]
+fn mask_debug_unit_struct_matches_plain_derive() {
+    common::init_once();
+    assert_eq!(
+        format!("{:?}", MaskedMarker),
+        format!("{:?}", plain::MaskedMarker)
+    );
+    assert_eq!(
+        format!("{:#?}", MaskedMarker),
+        format!("{:#?}", plain::MaskedMarker)
+    );
+    assert_eq!(format!("{:?}", MaskedMarker), "MaskedMarker");
 }

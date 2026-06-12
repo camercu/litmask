@@ -39,15 +39,13 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let ident = &input.ident;
     let body = match &input.data {
-        Data::Struct(data) if matches!(data.fields, Fields::Named(_)) => {
-            fields_body(ident, &data.fields)
-        }
+        Data::Struct(data) => fields_body(ident, &data.fields),
         _ => {
             return Err(compile_error(
                 ident.span(),
                 MACRO_NAME,
                 FailTag::Grammar,
-                "supports structs with named fields only",
+                "supports structs only",
             ));
         }
     };
@@ -64,8 +62,8 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
 }
 
 /// Build the `fmt` body for a struct's fields. The masked type name
-/// goes through `debug_struct`, each field name through `.field` —
-/// the same builders the plain derive expands to, so `{:?}` and
+/// goes through the same builder the plain derive expands to
+/// (`debug_struct` / `debug_tuple` / `write_str`), so `{:?}` and
 /// `{:#?}` render identically.
 fn fields_body(ident: &syn::Ident, fields: &Fields) -> TokenStream2 {
     let name = masked_name_expr(ident.unraw().to_string(), ident.span());
@@ -84,7 +82,18 @@ fn fields_body(ident: &syn::Ident, fields: &Fields) -> TokenStream2 {
                 __builder.finish()
             }
         }
-        Fields::Unnamed(_) | Fields::Unit => unreachable!("rejected by try_expand"),
+        Fields::Unnamed(unnamed) => {
+            let field_calls = (0..unnamed.unnamed.len()).map(|i| {
+                let index = syn::Index::from(i);
+                quote! { __builder.field(&self.#index); }
+            });
+            quote! {
+                let mut __builder = __f.debug_tuple(&#name);
+                #(#field_calls)*
+                __builder.finish()
+            }
+        }
+        Fields::Unit => quote! { __f.write_str(&#name) },
     }
 }
 
