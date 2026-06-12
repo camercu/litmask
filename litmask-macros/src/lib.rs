@@ -22,6 +22,7 @@ mod init;
 mod mask;
 mod mask_all;
 mod mask_concat;
+mod mask_debug;
 mod mask_env;
 mod mask_file;
 mod mask_format;
@@ -477,4 +478,30 @@ pub fn mask_all(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_derive(MaskSerialize, attributes(serde))]
 pub fn mask_serialize(input: TokenStream) -> TokenStream {
     mask_serialize::expand(input)
+}
+
+/// Derive a `core::fmt::Debug` impl whose type and field names are
+/// AEAD-masked at compile time instead of embedded as cleartext
+/// `&'static str` data in the binary.
+///
+/// Formatted output (`{:?}` and `{:#?}`) is byte-identical to plain
+/// `#[derive(Debug)]`. Names are decrypted on each `fmt` call and
+/// dropped afterwards — nothing is cached or leaked, and the derive
+/// works in `no_std` + `alloc` builds.
+///
+/// # Errors
+///
+/// Emits a §1.9.6 `compile_error!` (`MaskDebug! grammar`) for any
+/// unsupported input shape, rather than silently degrading to
+/// cleartext names.
+///
+/// # Panics
+///
+/// Inherits [`mask!`]'s expansion-time panic policy (missing
+/// `OUT_DIR`, unreadable build artifact, AEAD failure). At runtime,
+/// formatting panics if decryption fails — same policy as [`mask!`],
+/// so run `init!` before formatting on tiers above Embedded.
+#[proc_macro_derive(MaskDebug)]
+pub fn mask_debug(input: TokenStream) -> TokenStream {
+    mask_debug::expand(input)
 }
