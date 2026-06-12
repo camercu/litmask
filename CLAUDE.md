@@ -39,8 +39,8 @@ Tool versions pinned in `.tool-versions` — single source of truth.
 - `litmask-macros` reads the key/seed artifacts from the caller's
   `OUT_DIR` at macro expansion time, encrypts each literal, embeds
   ciphertext as `&[u8]` in the output.
-- `litmask` runtime: `init!()` / `init!(provider)` / `init!(machine_id)` /
-  `init!(machine_id + provider)` decrypt `mask_key` from the embedded
+- `litmask` runtime: `init!()` / `init!(provider)` / `init!(bind_to_machine)` /
+  `init!(bind_to_machine + provider)` decrypt `mask_key` from the embedded
   wrapper using `unlock_key` from the tier's `KeyProvider`; the form is
   cross-checked against the sealed tier at compile time. `mask!()`
   decrypts individual blobs using `mask_key`.

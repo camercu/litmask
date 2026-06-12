@@ -38,7 +38,7 @@ strings target/release/my_app | grep "pricing oracle"   # no output
 | Key model           | Compile-time random | Single env var | **Layered providers**               |
 | Format strings      | No                  | No             | **`mask_format!`**                  |
 | Module-level        | No                  | No             | **`#[mask_all]`**                   |
-| Machine-ID binding  | No                  | No             | **`init!(machine_id)`**             |
+| Machine-ID binding  | No                  | No             | **`init!(bind_to_machine)`**             |
 | Literal types       | `str`               | `str`          | **str / bytes / cstr**              |
 | `no_std`            | Limited             | No             | **Yes** (requires `alloc`)          |
 | Reproducible builds | No                  | No             | **Yes**                             |
@@ -139,7 +139,7 @@ use `weak_mask!`, but its key is recoverable statically from the binary.
 | `EmbeddedProvider`  | Wrapper nonce (keyless default)         | always       |
 | `EnvVarProvider`    | Environment variable                    | default      |
 | `FileProvider`      | Filesystem path                         | default      |
-| `init!(machine_id)` | Host machine ID + BLAKE3 (build-sealed) | `machine-id` |
+| `init!(bind_to_machine)` | Host machine ID + BLAKE3 (build-sealed) | `machine-id` |
 | `impl KeyProvider`  | Anything you write                      | --           |
 
 A runtime provider is sourced explicitly with `init_with!` (or the
@@ -153,7 +153,7 @@ litmask::init_with!(provider)?;
 The machine tier is sealed at build time instead — see
 [Machine-ID binding](#machine-id-binding) below. Sealing with **both**
 `LITMASK_MACHINE_ID` and `LITMASK_UNLOCK_KEY` gives the two-factor tier,
-unlocked with `init!(machine_id + provider)` — the binary opens only on
+unlocked with `init!(bind_to_machine + provider)` — the binary opens only on
 the sealed host _and_ with the sealed material.
 
 ## Security model
@@ -163,8 +163,8 @@ the sealed host _and_ with the sealed material.
 | Default (keyless `EmbeddedProvider`) | `strings`, casual inspection (key recoverable from artifact) |
 | `EnvVarProvider`                     | Above, key sourced from an env var, kept out of the binary   |
 | `FileProvider`                       | Above, key sourced from a file path                          |
-| `init!(machine_id)`                  | Above + binary redistribution                                |
-| `init!(machine_id + provider)`       | Above + the external factor the binary alone never carries   |
+| `init!(bind_to_machine)`                  | Above + binary redistribution                                |
+| `init!(bind_to_machine + provider)`       | Above + the external factor the binary alone never carries   |
 | Custom provider (vault, HSM)         | Above + offline attackers                                    |
 
 **Does NOT protect against:** runtime memory inspection, debugger
@@ -177,7 +177,7 @@ or a motivated reverse engineer with runtime access. See
 The `machine-id` feature seals the build's `unlock_key` to a host's
 machine ID, so the binary decrypts only on the machine it was built for.
 The factor is supplied at **build** time via `LITMASK_MACHINE_ID` and
-re-sourced at **run** time by `init!(machine_id)`, which recomputes the
+re-sourced at **run** time by `init!(bind_to_machine)`, which recomputes the
 host ID locally — no env var or key file to deliver at runtime:
 
 ```sh
@@ -188,10 +188,10 @@ LITMASK_MACHINE_ID="$(cargo run -q -p litmask-cli -- show-machine-id)" \
 ```
 
 ```rust
-litmask::init!(machine_id)?;
+litmask::init!(bind_to_machine)?;
 ```
 
-Moving the binary to a different host makes `init!(machine_id)` fail: the
+Moving the binary to a different host makes `init!(bind_to_machine)` fail: the
 runtime recomputes a different machine ID, derives a different
 `unlock_key`, and the wrapper's AEAD tag check rejects it.
 
@@ -225,7 +225,7 @@ LITMASK_UNLOCK_KEY="$(cargo run -q -p litmask-cli -- keygen)" \
 | `chacha20-poly1305` | yes     | Default cipher                                      |
 | `aes-gcm`           | no      | AES-256-GCM (takes precedence when enabled)         |
 | `alloc`             | --      | `no_std` + allocator (required for `no_std` builds) |
-| `machine-id`        | no      | `init!(machine_id)` machine-ID binding              |
+| `machine-id`        | no      | `init!(bind_to_machine)` machine-ID binding              |
 
 ## Documentation
 

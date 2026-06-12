@@ -73,7 +73,7 @@ Trait that supplies the **unlock key** at runtime. Built-in
 implementations: [`EmbeddedProvider`] (keyless default — recomputes the
 **unlock key** from the wrapper's cleartext **nonce**), [`EnvVarProvider`]
 (env var), `FileProvider` (path). The machine-ID provider is `pub(crate)`,
-reachable only through the `init!(machine_id)` seam — never named in
+reachable only through the `init!(bind_to_machine)` seam — never named in
 downstream code.
 _Avoid_: "key source", "key backend".
 
@@ -97,11 +97,15 @@ _Avoid_: "soft mask", "light mask".
 **unlock key** and populate the process-global **mask key** cell. `init!`
 (a proc-macro) has four forms, each cross-checked against the build's
 **seal tier** tag: no-arg `init!()` uses the keyless [`EmbeddedProvider`];
-`init!(<provider>)` unlocks an **external** seal; the `init!(machine_id)`
-keyword form unlocks a **machine** seal; `init!(machine_id + <provider>)`
+`init!(<provider>)` unlocks an **external** seal; the `init!(bind_to_machine)`
+keyword form unlocks a **machine** seal; `init!(bind_to_machine + <provider>)`
 unlocks the two-factor **machine_external** seal. Any form↔tier mismatch
 is a `compile_error!`. `init_with!` (declarative) takes any
 [`KeyProvider`] — the External form's equivalent.
+Vocabulary: the build **seals** (fixes the tier and key material at
+compile time); `bind_to_machine` **binds** (re-reads the host machine id
+at runtime and succeeds only on the sealed machine).
+_Avoid_: "lock to machine", "machine_id form".
 
 ### Build pipeline
 

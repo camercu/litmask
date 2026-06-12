@@ -229,10 +229,10 @@ any-length raw material, strip one trailing newline, and derive
 ## Task 5: Machine tier (AFK) ✅ DONE
 
 **Implements:** §4 (machine-id tier); doc: SPECIFICATION §4, CONTEXT.md
-machine_id
+bind_to_machine
 **Blocked by:** Task 4
 
-Add the `init!(machine_id)` keyword form. Machine salt becomes
+Add the `init!(bind_to_machine)` keyword form. Machine salt becomes
 nonce-derived: `machine_salt = KDF(wrapper_nonce,
 "litmask-machine-id-salt-v1")` — drop the user-supplied salt param from
 `derive_machine_id_key`; context string → `"litmask-machine-id-v1"`.
@@ -252,9 +252,9 @@ expanded code (expansion lands in the user crate, which cannot reach a
       `"litmask-machine-id-v1"`
 - [x] A build with `LITMASK_MACHINE_ID` set tags `machine` and emits
       `rerun-if-env-changed=LITMASK_MACHINE_ID`
-- [x] `init!(machine_id)` against tag `machine` round-trips on the
+- [x] `init!(bind_to_machine)` against tag `machine` round-trips on the
       sealing machine; a different machine id → decrypt failure
-- [x] `init!(machine_id)` against any non-`machine` tag →
+- [x] `init!(bind_to_machine)` against any non-`machine` tag →
       `compile_error!`
 - [x] `MachineIdProvider` demoted to `pub(crate)`, reachable only via the
       `init!` seam (`__internal`); the macro instantiates it through a
@@ -262,22 +262,22 @@ expanded code (expansion lands in the user crate, which cannot reach a
 - [x] The machine factor yields a finished `UnlockKey` (single-factor IS
       that key; reused as a compose input in Task 6)
 - [x] No stale `hardware` / `hw-id` identifiers remain (grep clean)
-- [x] `machine_id_provider` example migrated to `init!(machine_id)`; the
+- [x] `machine_id_provider` example migrated to `init!(bind_to_machine)`; the
       stale `litmask-cli bind` comment in the `justfile` `test-examples`
       recipe is removed (deferred here from Task 1)
 - [x] SPECIFICATION documents the machine tier; CONTEXT.md gains the
-      `machine_id` keyword and notes MachineIdProvider is now `pub(crate)`
+      `bind_to_machine` keyword and notes MachineIdProvider is now `pub(crate)`
       (seam-only). Whole-spec consistency pass migrated §1.x and §2.x to the
-      build-sealed design: machine tier via `init!(machine_id)`, `pub(crate)`
+      build-sealed design: machine tier via `init!(bind_to_machine)`, `pub(crate)`
       `MachineIdProvider`, no `litmask bind`/`inspect`/locator, CLI reduced to
       `show-machine-id`
-- [x] README machine-id surface migrated to `init!(machine_id)` (deferred
+- [x] README machine-id surface migrated to `init!(bind_to_machine)` (deferred
       here from Tasks 1–3): retire the `## Machine-ID binding (litmask
       bind)` section and the `MachineIdProvider::with_salt(...)` snippet
       (both name now-unreachable APIs — `litmask bind` was deleted in Task 1,
       `MachineIdProvider` is demoted to `pub(crate)` here), and update the "Why litmask"
       comparison-table `Machine-ID binding` row from `litmask bind` to the
-      `init!(machine_id)` form
+      `init!(bind_to_machine)` form
 
 ---
 
@@ -286,7 +286,7 @@ expanded code (expansion lands in the user crate, which cannot reach a
 **Implements:** §2.3 (two-factor), §4; doc: SPECIFICATION §2.3
 **Blocked by:** Task 5
 
-Add the `init!(machine_id + <expr>)` grammar. Two-factor composes the two
+Add the `init!(bind_to_machine + <expr>)` grammar. Two-factor composes the two
 **finished `UnlockKey`s** (machine + external) via `UnlockKey::compose`:
 `unlock_key = KDF("litmask-2fa-v1", len_prefixed(machine_key) ‖
 len_prefixed(external_key))` — machine-first fixed order, 8-byte LE
@@ -298,7 +298,7 @@ single-factor key). The compose primitive lives in
 
 ### Acceptance Criteria
 
-- [x] `init!(machine_id + <expr>)` parses; malformed grammar →
+- [x] `init!(bind_to_machine + <expr>)` parses; malformed grammar →
       `compile_error!`
 - [x] unlock_key = `UnlockKey::compose(machine_key, external_key)` =
       `KDF("litmask-2fa-v1", len_prefixed(machine_key) ‖
@@ -428,7 +428,7 @@ anywhere (and no public `MachineIdProvider` reference — it is now
       `MultiProvider`, `hardware`/`hw-id` — except where
       explicitly documenting their removal. `MachineIdProvider` survives
       only as `pub(crate)` (seam-only) in `litmask` source; scrubbed from
-      THREAT_MODEL.md / DEPLOYMENT.md (now the `machine_id` tier framing).
+      THREAT_MODEL.md / DEPLOYMENT.md (now the machine tier framing).
       **Decision (2026-06-10):** `litmask.config` is NOT retired — the
       implementation keeps it as the Embedded-tier diagnostic artifact
       (`emit()` writes it, tests assert it, DEPLOYMENT documents it), so

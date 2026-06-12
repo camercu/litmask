@@ -48,7 +48,7 @@ The file holds raw material (any length, no encoding); `FileProvider`
 derives the key the same way `EnvVarProvider` does. Set filesystem
 permissions so only the application user can read it (`chmod 400`).
 
-### Machine tier (`init!(machine_id)`)
+### Machine tier (`init!(bind_to_machine)`)
 
 The Machine tier seals the build's `unlock_key` to a host's machine ID at
 **build** time. Set `LITMASK_MACHINE_ID` to the target host's id (the CLI
@@ -60,17 +60,17 @@ LITMASK_MACHINE_ID="$(cargo run -q -p litmask-cli -- show-machine-id)" \
 ```
 
 ```rust
-litmask::init!(machine_id)?;
+litmask::init!(bind_to_machine)?;
 ```
 
-At runtime `init!(machine_id)` recomputes the host id locally via
+At runtime `init!(bind_to_machine)` recomputes the host id locally via
 `machine_uid::get()` and re-derives the same key — so the binary decrypts
 only on the host it was sealed for, with no environment variable or key
 file required. There is no post-build rebind step; re-targeting a different
 host means rebuilding with that host's `LITMASK_MACHINE_ID`. See the
 [README](../README.md#machine-id-binding) for the full walkthrough.
 
-### Two-factor tier (`init!(machine_id + provider)`)
+### Two-factor tier (`init!(bind_to_machine + provider)`)
 
 Set **both** `LITMASK_MACHINE_ID` and `LITMASK_UNLOCK_KEY` at build time to
 seal the MachineExternal tier. At runtime the binary decrypts only on the
@@ -85,7 +85,7 @@ LITMASK_UNLOCK_KEY="$(cargo run -q -p litmask-cli -- keygen)" \
 
 ```rust
 let provider = litmask::EnvVarProvider::default(); // LITMASK_UNLOCK_KEY
-litmask::init!(machine_id + provider)?;
+litmask::init!(bind_to_machine + provider)?;
 ```
 
 The machine factor is recomputed from the host (no provisioning); the
@@ -151,7 +151,7 @@ recommendations, not requirements — `litmask` works with any profile.
 `strip = "symbols"` removes the symbol table but **not** `.rodata`
 string constants. The largest remaining tell is the panic-location
 path string Rust embeds for bounds-check and assert sites — for
-example, a binary sealed under the `machine_id` tier or using `weak_mask!`
+example, a binary sealed under the machine tier or using `weak_mask!`
 carries:
 
 ```text

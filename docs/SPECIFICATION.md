@@ -77,8 +77,8 @@ Configurations and what each defeats:
 |---|---|
 | Zero-config build (defaults to keyless `EmbeddedProvider`) | `strings`, casual binary inspection (Level 1) only — the `unlock_key` is recomputed from the wrapper's cleartext nonce, so it is recoverable from the artifact |
 | `FileProvider` + filesystem permissions | Above with OS-enforced access control |
-| `init!(machine_id)` (build-sealed) | Above + binary moved to a different machine |
-| `init!(machine_id + <provider>)` (two-factor) | Above + the external factor (env/file/vault) the binary alone never carries |
+| `init!(bind_to_machine)` (build-sealed) | Above + binary moved to a different machine |
+| `init!(bind_to_machine + <provider>)` (two-factor) | Above + the external factor (env/file/vault) the binary alone never carries |
 | Custom `KeyProvider` (network call, vault) | Above + offline attackers |
 
 The "zero-config" descriptor refers to absence of project configuration, not to
@@ -89,7 +89,7 @@ provider but without the corresponding state will fail at init. Two configuratio
 need no operator provisioning: the default `EmbeddedProvider` stores no key and
 recomputes `unlock_key` from the public wrapper nonce (Level 1 only — the nonce
 ships in the binary, so the key is honestly recoverable from the artifact); and
-the machine tier (`init!(machine_id)`) re-sources its factor from the host's own
+the machine tier (`init!(bind_to_machine)`) re-sources its factor from the host's own
 machine id at startup, so it requires no delivered secret — but it does require
 running on the host the build was sealed for, and fails at init anywhere else.
 
@@ -112,7 +112,7 @@ This table SHALL appear in the README and in the crate-level rustdoc:
 | Key model | Compile-time random per build | Single env var | Layered: `mask_key` + `unlock_key`, multiple providers |
 | Format string masking | Separate `fmtools` crate | None | Built-in `mask_format!` with single-evaluation semantics |
 | Module-level masking | None | None | `#[mask_all]` with deep substitution |
-| Machine-ID binding | None | None | Yes (build-time seal via `init!(machine_id)`) |
+| Machine-ID binding | None | None | Yes (build-time seal via `init!(bind_to_machine)`) |
 | Multiple literal types (str/bytes/cstr) | str only | str only | All three |
 | `no_std` support | Limited | No | Yes (with `alloc`) |
 | Threat model documented | Minimal | Minimal | Explicit security ladder, honest scope |
@@ -515,7 +515,7 @@ Default provider when `init!()` is called without arguments:
 `unlock_key` from the wrapper's public nonce (no stored key material).
 
 `MachineIdProvider` is **not** part of the public API: it is `pub(crate)` and
-reachable only through the `init!(machine_id)` keyword form, which constructs
+reachable only through the `init!(bind_to_machine)` keyword form, which constructs
 it from the embedded wrapper nonce via a `#[doc(hidden)]` seam fn in
 `litmask::__internal` (§2.5.4). The macro never names the type — expansion lands
 in the consumer crate, which cannot reach a `pub(crate)` symbol — so there is no
@@ -552,12 +552,12 @@ to clear their contents from memory when dropped.
 #### §1.6.5 Cross-compilation note for the machine tier
 
 The machine factor is recomputed on the **target** host at runtime (via the
-`init!(machine_id)` seam), not on the build host. `machine-uid` supports all
+`init!(bind_to_machine)` seam), not on the build host. `machine-uid` supports all
 standard `std` targets (Linux, macOS, Windows). On constrained or unusual
 targets where `machine-uid` cannot read a stable machine identifier (some
 container runtimes, certain embedded Linux variants without `/etc/machine-id`,
 OpenBSD by default), the seam's `unlock_key()` returns
-`Err(KeyError::Provider(...))` and `init!(machine_id)` fails. Builds targeting
+`Err(KeyError::Provider(...))` and `init!(bind_to_machine)` fails. Builds targeting
 such environments MUST verify behavior on the target before relying on the
 machine tier. The same constraint applies at **build** time: sealing reads the
 host id from `LITMASK_MACHINE_ID` (typically captured via `litmask
@@ -676,11 +676,11 @@ without a stored key:
 - **External** (`LITMASK_UNLOCK_KEY` set at build): the operator provisions the
   same material at runtime via `EnvVarProvider` / `FileProvider`, which re-runs
   the KDF over it.
-- **Machine** (`LITMASK_MACHINE_ID` set at build): `init!(machine_id)` recomputes
+- **Machine** (`LITMASK_MACHINE_ID` set at build): `init!(bind_to_machine)` recomputes
   the host machine id locally and re-derives the key. No provisioning, but the
   binary opens only on the host it was sealed for.
 - **MachineExternal** (both `LITMASK_MACHINE_ID` and `LITMASK_UNLOCK_KEY` set at
-  build): the two-factor tier. `init!(machine_id + <provider>)` finishes the
+  build): the two-factor tier. `init!(bind_to_machine + <provider>)` finishes the
   machine factor key (host id) and the external factor key (operator material)
   independently, then composes them — `unlock_key = KDF("litmask-2fa-v1",
   len_prefixed(machine_key) ‖ len_prefixed(external_key))`, machine-first. The
@@ -793,17 +793,17 @@ audit purposes.
 
 ```rust
 litmask::init!()?;                    // Embedded tier: keyless, nonce-derived
-litmask::init!(machine_id)?;          // Machine tier: host-id-sealed (machine-id feature)
+litmask::init!(bind_to_machine)?;          // Machine tier: host-id-sealed (machine-id feature)
 litmask::init!(provider)?;            // External tier: any KeyProvider expression
-litmask::init!(machine_id + provider)?; // MachineExternal tier: two-factor (machine-id feature)
+litmask::init!(bind_to_machine + provider)?; // MachineExternal tier: two-factor (machine-id feature)
 litmask::init_with!(provider)?;       // External tier: declarative form
 ```
 
 `init!` is a proc-macro (form↔tier cross-check); `init_with!` is a
 declarative macro (see §1.4.1 for rationale). The `init!` form is selected by
-its argument: empty → Embedded, the bare keyword `machine_id` → Machine,
-`machine_id + <expr>` → MachineExternal (two-factor), any other expression →
-External (a provider value). A `machine_id +` with no following provider
+its argument: empty → Embedded, the bare keyword `bind_to_machine` → Machine,
+`bind_to_machine + <expr>` → MachineExternal (two-factor), any other expression →
+External (a provider value). A `bind_to_machine +` with no following provider
 expression is a `grammar` `compile_error!`. Each form unlocks exactly one
 sealed tier; the macro reads the build's `LITMASK_SEAL_TIER` tag at expansion
 and emits a `compile_error!` on a form↔tier mismatch (§1.9.6) — the four forms
@@ -812,11 +812,11 @@ and four tags give a 4-way matrix where only the matching pairs compile.
 `init!()` and the External forms delegate to the private
 `litmask::__internal::__init_with_wrapper` function, passing wrapper bytes read
 via `include_bytes!` at the call site; the no-arg form constructs an
-`EmbeddedProvider` from those bytes. `init!(machine_id)` routes through the
+`EmbeddedProvider` from those bytes. `init!(bind_to_machine)` routes through the
 `__init_machine_id_call!` seam macro instead (so a `machine`-sealed build with
 the `machine-id` feature disabled gets a directed `compile_error!` rather than a
 missing-symbol error); the seam constructs the `pub(crate)` `MachineIdProvider`
-from the wrapper nonce in-crate (§2.5.4). `init!(machine_id + <provider>)` routes
+from the wrapper nonce in-crate (§2.5.4). `init!(bind_to_machine + <provider>)` routes
 through the analogous `__init_machine_id_external_call!` seam: it finishes the
 machine factor (in-crate `MachineIdProvider`) and the external factor (the
 consumer's provider), composes them via `UnlockKey::compose` (§2.3), and
@@ -839,7 +839,7 @@ pub struct FileProvider { ... }
 
 `MachineIdProvider` is intentionally **absent** from the public types: under
 the `machine-id` feature it is `pub(crate)`, reachable only through the
-`init!(machine_id)` seam (§1.6.2, §2.5.4), so it carries no semver surface.
+`init!(bind_to_machine)` seam (§1.6.2, §2.5.4), so it carries no semver surface.
 
 #### §1.8.4 Internal types (not stable API)
 
@@ -1067,7 +1067,7 @@ proc-macro SHALL include both:
 | `invalid-arg` | `mask_concat!` was passed an argument that is not a string literal or a compile-time-resolvable string macro. |
 | `args-not-allowed` | `mask_file!` was given any argument (the macro takes none). |
 | `tier-mismatch` | An `init!` form was invoked against a build whose sealed `LITMASK_SEAL_TIER` does not match that form (§1.8.2's 4-way matrix), or that set no tier at all (no `litmask_build::emit()` in `build.rs`). |
-| `grammar` | `init!`'s argument failed to parse as any of the four forms — e.g. `machine_id +` with no following provider expression. |
+| `grammar` | `init!`'s argument failed to parse as any of the four forms — e.g. `bind_to_machine +` with no following provider expression. |
 | `duplicate-name` | `mask_format!` was given the same named argument twice. |
 | `positional-after-named` | `mask_format!` was given a positional argument after a named one. |
 | `positional-unused` | `mask_format!` was given a positional argument never referenced by any placeholder. |
@@ -1209,7 +1209,7 @@ intentional failure-path validation on stock OpenBSD) are specified in §2.13.
 
 OpenBSD installations that have provisioned a machine ID via third-party
 means may pass the full smoke test sequence; the job tolerates either
-outcome but requires consistency (decryption succeeds OR `init!(machine_id)`
+outcome but requires consistency (decryption succeeds OR `init!(bind_to_machine)`
 fails cleanly, never partial success).
 
 NetBSD, DragonFly BSD, Illumos, and other distributions are not in v1's CI
@@ -1268,7 +1268,7 @@ Stable surface (semver-protected):
 - `UnlockKey` type
 - `EmbeddedProvider`, `EnvVarProvider`, `FileProvider` (public providers;
   `MachineIdProvider` is `pub(crate)` and NOT part of the stable surface)
-- `init!()`, `init!(machine_id)`, `init!(<provider>)`, `init_with!()` macros
+- `init!()`, `init!(bind_to_machine)`, `init!(<provider>)`, `init_with!()` macros
 - `InitError::sysexit_code()` method and the sysexits mapping in §1.9.7
 - Error type variants (new variants non-breaking via `#[non_exhaustive]`)
 - `litmask.config` schema (additions allowed; removals breaking)
@@ -1319,7 +1319,7 @@ specific versions.
 | `chacha20-poly1305` | yes | Default cipher |
 | `aes-gcm` | no | Use AES-256-GCM instead of ChaCha20-Poly1305 (takes precedence when both cipher features are enabled) |
 | `alloc` | no | Marks the `no_std + alloc` build target (pulls in the default cipher) |
-| `machine-id` | no | `init!(machine_id)` machine-ID binding (pulls in `machine-uid`; implies `std`) |
+| `machine-id` | no | `init!(bind_to_machine)` machine-ID binding (pulls in `machine-uid`; implies `std`) |
 
 `std` and `no_std` are not mutually exclusive features (Cargo can't enforce
 that); disabling `std` enables `no_std + alloc` mode. Pure `core` (no
@@ -1994,7 +1994,7 @@ immediately after extracting the key.
 
 §2.5.4.1 — `MachineIdProvider` SHALL be `pub(crate)`, with no public
 constructor and no public type alias. A machine-sealed binary reaches it
-only through the `init!(machine_id)` seam (§2.6.1.8), which constructs it
+only through the `init!(bind_to_machine)` seam (§2.6.1.8), which constructs it
 in-crate from the embedded wrapper. The macro never names the type —
 expansion lands in the consumer crate, which cannot reach a `pub(crate)`
 symbol — so it is absent from the public API surface (§1.12.1).
@@ -2043,7 +2043,7 @@ call site to keep the literal out of `strings(1)` output; it MUST decode to
 `EmbeddedProvider::new(&wrapper)` — the keyless Embedded-tier provider that
 recomputes `unlock_key` from the wrapper's cleartext nonce — returning
 `Result<(), InitError>`. As a proc-macro, `init!` SHALL select its form from
-the macro argument: empty → Embedded, the bare keyword `machine_id` →
+the macro argument: empty → Embedded, the bare keyword `bind_to_machine` →
 Machine (§2.6.1.8), any other argument → External provider expression
 (§2.6.1.2). It SHALL read the build's `LITMASK_SEAL_TIER` tag and emit a
 §1.9.6 `init! tier-mismatch` `compile_error!` when the selected form's tier
@@ -2053,7 +2053,7 @@ does not match the sealed tier (or the tag is absent).
 `litmask::init_with!(provider)`) SHALL initialize the runtime using the
 given External-tier provider expression, returning `Result<(), InitError>`.
 
-§2.6.1.8 — `litmask::init!(machine_id)` SHALL initialize the runtime using
+§2.6.1.8 — `litmask::init!(bind_to_machine)` SHALL initialize the runtime using
 the `pub(crate)` `MachineIdProvider` (§2.5.4), constructed in-crate from the
 embedded wrapper by a hidden seam function `__init_machine_id(wrapper)` in
 `litmask::__internal` — the macro never names the provider type. The
@@ -2170,7 +2170,7 @@ files.
 §2.9.1.1 — In v1 the CLI SHALL expose exactly two subcommands, `keygen`
 (§2.9.2) and `show-machine-id` (§2.9.3). There is no `bind` or `inspect`
 subcommand: machine-tier keying is established at build time via
-`init!(machine_id)` (§2.5.4, §2.6.1.8), not by patching a finished binary,
+`init!(bind_to_machine)` (§2.5.4, §2.6.1.8), not by patching a finished binary,
 so no post-build rebind tool exists. Both subcommands are generate/read-only;
 neither mutates a binary.
 
@@ -2299,7 +2299,7 @@ verify the following testable assertions:
 - Tampering with any ciphertext byte causes AEAD authentication failure
 - Reproducible builds with fixed `LITMASK_RNG_SEED` produce byte-identical
   artifacts under the conditions in §1.3.3
-- A machine-tier build (`LITMASK_MACHINE_ID` set, `init!(machine_id)`) runs
+- A machine-tier build (`LITMASK_MACHINE_ID` set, `init!(bind_to_machine)`) runs
   correctly on the sealed host and the wrong-host failure path surfaces as
   an `InitError`
 - `InitError::sysexit_code()` returns the values specified in §1.9.7 for
@@ -2340,13 +2340,13 @@ any marker is found, the job SHALL fail.
 (Ubuntu, AlmaLinux, macOS, Windows, FreeBSD, and OpenBSD instances with
 provisioned machine ID), a machine-tier binary (built with
 `LITMASK_MACHINE_ID` equal to the host's `show-machine-id` and initialized
-via `init!(machine_id)`) SHALL execute correctly with output matching
+via `init!(bind_to_machine)`) SHALL execute correctly with output matching
 expected plaintext.
 
 §2.13.2.4 — On platforms where `machine-uid` does NOT produce a stable
 identifier (stock OpenBSD without provisioned machine ID), `show-machine-id`
 SHALL exit EX_UNAVAILABLE (69), and a machine-tier binary's
-`init!(machine_id)` SHALL fail at runtime with EX_UNAVAILABLE (69) — the
+`init!(bind_to_machine)` SHALL fail at runtime with EX_UNAVAILABLE (69) — the
 `KeyProvider(Provider(_))` → 69 mapping of §1.9.7 — with the marker absent
 from output. The test SHALL assert this failure mode rather than treating it
 as a test failure. This validates §1.6.5's documented portability behavior.
@@ -2397,11 +2397,11 @@ Per-string key derivation is rejected, not deferred — see §1.5.5.
   present (`Embedded`, `External`, `Machine`, `MachineExternal`), recorded in
   `LITMASK_SEAL_TIER` and cross-checked by `init!` (§1.6, §2.6.1).
 - **machine_external tier**: The two-factor seal (both `LITMASK_MACHINE_ID`
-  and `LITMASK_UNLOCK_KEY` set at build). `init!(machine_id + <provider>)`
+  and `LITMASK_UNLOCK_KEY` set at build). `init!(bind_to_machine + <provider>)`
   composes the machine factor (host id) and the external factor (operator
   material); either factor wrong fails the wrapper's AEAD check (§1.7.6).
 - **machine tier**: A build sealed under a host machine id
-  (`LITMASK_MACHINE_ID` at build, `init!(machine_id)` at runtime). The
+  (`LITMASK_MACHINE_ID` at build, `init!(bind_to_machine)` at runtime). The
   `unlock_key` is derived from the host's machine id and the wrapper nonce;
   there is no post-build rebind step.
 - **wrapper**: The 61-byte structure containing the encrypted `mask_key`
@@ -2558,9 +2558,9 @@ a derived locator, and a split init macro). Documents what was removed and why.
 | Derived locator + recorded-locator config | **removed** — runtime finds the wrapper by compile-time address (§1.7.1) |
 | Machine-id | **build-time raw id only** (§1.7.6); no post-build reseal |
 | CLI surface | **`{keygen, show-machine-id}`** — generate/read-only, no binary mutation |
-| Init macro | **single `init!`** with four forms: `()` / `(<expr>)` / `(machine_id)` / `(machine_id + <expr>)`; `init_with!` survives as the declarative equivalent of the External form (§1.8.2) |
-| Factor selection | external = `impl KeyProvider` **value**; `machine_id` = one-keyword carve-out. No keyword DSL, no general `MultiProvider` (§1.6.2) |
-| Multi-factor | **fixed `machine_id + <external>`** — arity-2, order fixed by construction (§1.7.6) |
+| Init macro | **single `init!`** with four forms: `()` / `(<expr>)` / `(bind_to_machine)` / `(bind_to_machine + <expr>)`; `init_with!` survives as the declarative equivalent of the External form (§1.8.2) |
+| Factor selection | external = `impl KeyProvider` **value**; `bind_to_machine` = one-keyword carve-out. No keyword DSL, no general `MultiProvider` (§1.6.2) |
+| Multi-factor | **fixed `bind_to_machine + <external>`** — arity-2, order fixed by construction (§1.7.6) |
 | Build/runtime tier agreement | **tracked `LITMASK_SEAL_TIER` tag, cross-checked at compile time** (§2.6.1); replaces silent runtime AEAD failure on mismatch |
 | Embedded-in-release guard | **build-time `emit()` floor warning** (§1.3.2); no runtime warning string |
 | Runtime failure diagnostics | **profile-split** — loud/actionable in debug, bare/opaque in release (§1.9.5) |
