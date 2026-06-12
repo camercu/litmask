@@ -67,12 +67,11 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
 fn struct_body(ident: &syn::Ident, fields: &Fields, packed: bool) -> TokenStream2 {
     let name = mask_ident(ident);
     let shape = BuilderFields::collect(fields, |i, field| {
-        let access = match &field.ident {
-            Some(field_ident) => quote! { self.#field_ident },
-            None => {
-                let index = syn::Index::from(i);
-                quote! { self.#index }
-            }
+        let access = if let Some(field_ident) = &field.ident {
+            quote! { self.#field_ident }
+        } else {
+            let index = syn::Index::from(i);
+            quote! { self.#index }
         };
         if packed {
             quote! { &{ #access } }
