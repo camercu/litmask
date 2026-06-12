@@ -69,7 +69,6 @@ fn masked_serialize_compile_fixtures() {
     t.compile_fail("tests/compile/masked_serialize_enum.rs");
     t.compile_fail("tests/compile/masked_serialize_tuple_struct.rs");
     t.compile_fail("tests/compile/masked_serialize_unit_struct.rs");
-    t.compile_fail("tests/compile/masked_serialize_generic_struct.rs");
     t.compile_fail("tests/compile/masked_serialize_serde_attr_container.rs");
     t.compile_fail("tests/compile/masked_serialize_serde_attr_field.rs");
 }

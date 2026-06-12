@@ -1,5 +1,0 @@
-error: MaskedSerialize! grammar: generic structs are not yet supported
- --> tests/compile/masked_serialize_generic_struct.rs:7:15
-  |
-7 | struct Wrapper<T> {
-  |               ^

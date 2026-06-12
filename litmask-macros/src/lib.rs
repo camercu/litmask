@@ -448,8 +448,9 @@ pub fn mask_all(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// # Limitations (prototype)
 ///
-/// - Named-field structs only; enums, tuple structs, unit structs,
-///   and generic structs are compile errors.
+/// - Named-field structs only; enums, tuple structs, and unit structs
+///   are compile errors. Generic structs are supported — each type
+///   parameter is bounded `Serialize`, mirroring the plain derive.
 /// - `#[serde(...)]` attributes are not honored.
 /// - `Deserialize` is not provided — a plain
 ///   `#[derive(serde::Deserialize)]` on the same type re-embeds every

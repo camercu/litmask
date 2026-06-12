@@ -43,6 +43,54 @@ fn masked_serialize_json_matches_plain_derive() {
     );
 }
 
+#[derive(MaskedSerialize)]
+struct MaskedEnvelope<T> {
+    sequence_marker_zzyzx: u64,
+    payload: T,
+}
+
+#[derive(serde::Serialize)]
+struct PlainEnvelope<T> {
+    sequence_marker_zzyzx: u64,
+    payload: T,
+}
+
+#[test]
+fn masked_serialize_generic_struct_matches_plain_derive() {
+    common::init_once();
+    let masked = MaskedEnvelope {
+        sequence_marker_zzyzx: 42,
+        payload: vec!["a".to_string(), "b".to_string()],
+    };
+    let plain = PlainEnvelope {
+        sequence_marker_zzyzx: 42,
+        payload: vec!["a".to_string(), "b".to_string()],
+    };
+    assert_eq!(
+        serde_json::to_string(&masked).expect("masked serialization failed"),
+        serde_json::to_string(&plain).expect("plain serialization failed"),
+    );
+}
+
+#[derive(MaskedSerialize)]
+struct MaskedBorrowed<'a, T> {
+    borrowed_label_qwxz: &'a str,
+    payload: T,
+}
+
+#[test]
+fn masked_serialize_lifetime_and_type_params() {
+    common::init_once();
+    let masked = MaskedBorrowed {
+        borrowed_label_qwxz: "tag",
+        payload: 9u8,
+    };
+    assert_eq!(
+        serde_json::to_string(&masked).expect("masked serialization failed"),
+        r#"{"borrowed_label_qwxz":"tag","payload":9}"#
+    );
+}
+
 #[test]
 fn masked_serialize_repeat_calls_are_stable() {
     common::init_once();

@@ -65,9 +65,14 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
         }
     });
 
+    let generics = with_serialize_bounds(input.generics.clone());
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
     Ok(quote! {
         #[automatically_derived]
-        impl ::litmask::__serde::Serialize for #struct_ident {
+        impl #impl_generics ::litmask::__serde::Serialize
+            for #struct_ident #ty_generics #where_clause
+        {
             fn serialize<__S>(
                 &self,
                 serializer: __S,
@@ -92,14 +97,6 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
 /// plain-derive behavior would embed cleartext names — the exact leak
 /// the user opted in to prevent.
 fn named_fields(input: &DeriveInput) -> syn::Result<&syn::FieldsNamed> {
-    if !input.generics.params.is_empty() {
-        return Err(compile_error(
-            input.generics.span(),
-            MACRO_NAME,
-            FailTag::Grammar,
-            "generic structs are not yet supported",
-        ));
-    }
     let Data::Struct(data) = &input.data else {
         return Err(compile_error(
             input.ident.span(),
@@ -117,6 +114,22 @@ fn named_fields(input: &DeriveInput) -> syn::Result<&syn::FieldsNamed> {
         ));
     };
     Ok(fields)
+}
+
+/// Bound every type parameter with `Serialize`, mirroring the plain
+/// serde derive's bound model: `struct Envelope<T>` serializes iff
+/// `T: Serialize`. Bounds land in the where-clause so the impl header
+/// stays valid for params that already carry inline bounds.
+fn with_serialize_bounds(mut generics: syn::Generics) -> syn::Generics {
+    let predicates: Vec<syn::WherePredicate> = generics
+        .type_params()
+        .map(|param| {
+            let ident = &param.ident;
+            syn::parse_quote!(#ident: ::litmask::__serde::Serialize)
+        })
+        .collect();
+    generics.make_where_clause().predicates.extend(predicates);
+    generics
 }
 
 /// Reject any `#[serde(...)]` attribute on the container or a field.
