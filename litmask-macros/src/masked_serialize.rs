@@ -45,6 +45,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 
 fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let fields = named_fields(input)?;
+    reject_serde_attrs(input, fields)?;
 
     let struct_ident = &input.ident;
     let struct_name = masked_name_expr(struct_ident.unraw().to_string(), struct_ident.span());
@@ -116,6 +117,27 @@ fn named_fields(input: &DeriveInput) -> syn::Result<&syn::FieldsNamed> {
         ));
     };
     Ok(fields)
+}
+
+/// Reject any `#[serde(...)]` attribute on the container or a field.
+/// The derive honors none of them; silently ignoring `rename` /
+/// `rename_all` / `skip` would serialize under different names (or a
+/// different shape) than the plain derive — the wire-format-identity
+/// contract would break without warning.
+fn reject_serde_attrs(input: &DeriveInput, fields: &syn::FieldsNamed) -> syn::Result<()> {
+    let container_attrs = input.attrs.iter();
+    let field_attrs = fields.named.iter().flat_map(|field| field.attrs.iter());
+    for attr in container_attrs.chain(field_attrs) {
+        if attr.path().is_ident("serde") {
+            return Err(compile_error(
+                attr.span(),
+                MACRO_NAME,
+                FailTag::InvalidArg,
+                "`#[serde(...)]` attributes are not supported",
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Emit a `&'static str` expression yielding `name` at runtime:

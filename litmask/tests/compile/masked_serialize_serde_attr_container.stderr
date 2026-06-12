@@ -1,0 +1,5 @@
+error: MaskedSerialize! invalid-arg: `#[serde(...)]` attributes are not supported
+ --> tests/compile/masked_serialize_serde_attr_container.rs:8:1
+  |
+8 | #[serde(rename_all = "camelCase")]
+  | ^

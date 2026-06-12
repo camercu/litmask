@@ -468,8 +468,12 @@ pub fn mask_all(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// the first serialization panics if decryption fails — same policy
 /// as [`mask!`], so run `init!` before serializing on tiers above
 /// Embedded.
+// `attributes(serde)` registers the helper attribute so rustc parses
+// `#[serde(...)]` on the input instead of erroring "cannot find
+// attribute" — which lets the derive reject it with a §1.9.6
+// diagnostic explaining the actual limitation.
 #[cfg(feature = "unstable-serde")]
-#[proc_macro_derive(MaskedSerialize)]
+#[proc_macro_derive(MaskedSerialize, attributes(serde))]
 pub fn masked_serialize(input: TokenStream) -> TokenStream {
     masked_serialize::expand(input)
 }
