@@ -1,23 +1,26 @@
-//! `#[derive(MaskSerialize)]`: a `serde::Serialize` impl whose
-//! struct and field names are AEAD-masked at compile time (EXPERIMENTAL,
-//! `unstable-serde` feature).
+//! `#[derive(MaskSerialize)]`: a `serde::Serialize` impl whose type,
+//! field, and enum variant names are AEAD-masked at compile time
+//! (EXPERIMENTAL, `unstable-serde` feature).
 //!
-//! Plain `#[derive(serde::Serialize)]` embeds every field name as a
+//! Plain `#[derive(serde::Serialize)]` embeds every name as a
 //! cleartext `&'static str` in `.rodata` via
-//! `SerializeStruct::serialize_field("name", ...)`. This derive routes
-//! each name through the same AEAD blob pipeline as `mask!` and
-//! decrypts on first serialization.
+//! `SerializeStruct::serialize_field("name", ...)` and friends. This
+//! derive routes each name through the same AEAD blob pipeline as
+//! `mask!` and decrypts on first serialization.
 //!
 //! Wire-format contract: output is byte-identical to the plain derive
-//! for every serde format. That is why the expansion uses
-//! `serialize_struct` (not `serialize_map`) — non-self-describing
-//! formats (bincode, postcard) serialize structs positionally without
-//! names, and a map-based impl would both change their wire shape and
-//! re-introduce the names on the wire. `serialize_struct` requires
-//! `&'static str` names, so each decrypted name is leaked once and
-//! cached in a `OnceLock`. The leak is bounded (one allocation per
-//! name per process) and consistent with litmask's threat model: the
-//! protected asset is the binary at rest, not process memory.
+//! for every serde format. That is why the expansion mirrors serde's
+//! shape dispatch — each struct shape and variant kind calls the
+//! dedicated `Serializer` entry point the plain derive would, never
+//! `serialize_map` — because non-self-describing formats (bincode,
+//! postcard) serialize structs positionally and enums by
+//! declaration-order variant index; a map-based impl would both change
+//! their wire shape and re-introduce the names on the wire. The serde
+//! entry points require `&'static str` names, so each decrypted name
+//! is leaked once and cached in a `OnceLock`. The leak is bounded (one
+//! allocation per name per process) and consistent with litmask's
+//! threat model: the protected asset is the binary at rest, not
+//! process memory.
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
