@@ -129,7 +129,7 @@ else is operational maturity (key management, deployment story, tooling).
 | Crate | Type | Purpose |
 |---|---|---|
 | `litmask` | library | Runtime, proc-macro re-exports, key provider trait and built-ins |
-| `litmask-build` | library (build-dep) | `build.rs` helper for compile-time key generation, writes `litmask.config` |
+| `litmask-build` | library (build-dep) | `build.rs` helper for compile-time key generation and tier sealing; writes `litmask.config` (Embedded tier only, §1.7.4) |
 | `litmask-cli` | binary | `keygen` (random unlock key / seed) and `show-machine-id` (self-checking host-id token) — generate/read-only tools for build-time sealing |
 
 The user-facing API ships as a single `litmask` crate. Internally, Rust
@@ -153,7 +153,8 @@ constants and utilities used by both the runtime and CLI crates.
 2. User adds a one-line `build.rs`: `litmask_build::emit();`.
 3. `build.rs` runs:
    - Sources `RNG_SEED` from `LITMASK_RNG_SEED` env var, then (debug builds
-     only) from `target/litmask-seed`, then generates a fresh seed.
+     only) from `target/<profile>/litmask_seed.bin`, then generates a fresh
+     seed.
    - Generates `mask_key` (32 bytes) and the **nonces** deterministically
      from the seed.
    - Derives `unlock_key` (32 bytes) for the default **Embedded** seal tier
@@ -180,9 +181,9 @@ constants and utilities used by both the runtime and CLI crates.
      - `cargo:rerun-if-env-changed` for the tier's key-source env vars
        (`LITMASK_UNLOCK_KEY`, `LITMASK_MACHINE_ID`).
    - Writes `litmask.config` (schema in §1.7.4) to the build profile
-     directory.
-   - In debug profile, writes `target/litmask-seed` for incremental build
-     stability.
+     directory (Embedded tier only, §1.7.4).
+   - In debug profile, writes `target/<profile>/litmask_seed.bin` for
+     incremental build stability.
    - Never prints the seed, `unlock_key`, `mask_key`, or any secret to the
      build log (§D.1.2): no key material reaches the terminal, CI logs, or
      build-cache snapshots.
@@ -194,7 +195,7 @@ constants and utilities used by both the runtime and CLI crates.
 
 | Profile | Seed source priority |
 |---|---|
-| debug | `LITMASK_RNG_SEED` env → `target/litmask-seed` → fresh + persist |
+| debug | `LITMASK_RNG_SEED` env → `target/<profile>/litmask_seed.bin` → fresh + persist |
 | release | `LITMASK_RNG_SEED` env → fresh, no persistence |
 
 `build.rs` detects profile via the `PROFILE` env var that Cargo sets. The
@@ -231,8 +232,9 @@ paths) is configured in application code, not in a config file.
 
 #### §1.4.1 Initialization
 
-The runtime maintains a single `OnceLock<MaskKey>` for the decrypted `mask_key`.
-Initialization happens via:
+The runtime maintains a single once-initialized cell for the decrypted
+`mask_key` (`std::sync::OnceLock` under `std`, `once_cell::race::OnceBox`
+under `no_std`; §2.10.6). Initialization happens via:
 
 ```rust
 litmask::init!()?;                              // Embedded tier: keyless, nonce-derived
@@ -306,9 +308,9 @@ implementation. Both ciphers are NOT compiled simultaneously; the
 implementation. This avoids ambiguity about which cipher is in use and keeps
 the binary footprint minimal.
 
-`litmask-cli` does not decrypt wrappers (its only v1 subcommand is
-`show-machine-id`), so it links no cipher and the single-cipher rule does
-not apply to it.
+`litmask-cli` does not decrypt wrappers (its v1 subcommands, `keygen` and
+`show-machine-id`, are generate/read-only), so it links no cipher and the
+single-cipher rule does not apply to it.
 
 Rejected ciphers: AES-CTR (no authentication), Salsa20 (superseded by
 ChaCha20), RC4 (cryptographically broken).
@@ -419,7 +421,7 @@ patterns from appearing as recognizable structure in `.rodata`.
 **Threat model: seed compromise.** Because `plaintext` is mixed
 into the keyed hash, an attacker who recovers `seed` (via
 `LITMASK_RNG_SEED` env leakage, the debug-profile
-`target/<profile>/litmask-seed.bin` persistence file, or any
+`target/<profile>/litmask_seed.bin` persistence file, or any
 side-channel that exposes the build seed) can compute the expected
 nonce for a guessed plaintext at known `(file, line, column)` and
 compare to the observed nonce in the binary. A match confirms the
@@ -1063,8 +1065,9 @@ proc-macro SHALL include both:
 | `unset` | `mask_env!` was given a name that resolves to no environment variable. (`mask_option_env!`'s unset case is a runtime `None`, not a compile error.) |
 | `unicode-failure` | Environment-variable value is set but not valid UTF-8. |
 | `invalid-arg` | `mask_concat!` was passed an argument that is not a string literal or a compile-time-resolvable string macro. |
-| `args-not-allowed` | `mask_file!` was given any argument (the macro takes none), or `init!` was given an argument (the no-arg `init!()` form is the only one in this release). |
-| `tier-mismatch` | `init!()` was invoked against a build whose sealed `LITMASK_SEAL_TIER` is not `embedded`, or that set no tier at all (no `litmask_build::emit()` in `build.rs`). |
+| `args-not-allowed` | `mask_file!` was given any argument (the macro takes none). |
+| `tier-mismatch` | An `init!` form was invoked against a build whose sealed `LITMASK_SEAL_TIER` does not match that form (§1.8.2's 4-way matrix), or that set no tier at all (no `litmask_build::emit()` in `build.rs`). |
+| `grammar` | `init!`'s argument failed to parse as any of the four forms — e.g. `machine_id +` with no following provider expression. |
 | `duplicate-name` | `mask_format!` was given the same named argument twice. |
 | `positional-after-named` | `mask_format!` was given a positional argument after a named one. |
 | `positional-unused` | `mask_format!` was given a positional argument never referenced by any placeholder. |
@@ -1313,12 +1316,17 @@ specific versions.
 | Feature | Default | Purpose |
 |---|---|---|
 | `std` | yes | Standard library support; disabling = `no_std + alloc` |
-| `machine-id` | no | `init!(machine_id)` machine-ID binding (pulls in `machine-uid`) |
-| `aes-gcm` | no | Use AES-256-GCM instead of ChaCha20-Poly1305 |
+| `chacha20-poly1305` | yes | Default cipher |
+| `aes-gcm` | no | Use AES-256-GCM instead of ChaCha20-Poly1305 (takes precedence when both cipher features are enabled) |
+| `alloc` | no | Marks the `no_std + alloc` build target (pulls in the default cipher) |
+| `machine-id` | no | `init!(machine_id)` machine-ID binding (pulls in `machine-uid`; implies `std`) |
 
 `std` and `no_std` are not mutually exclusive features (Cargo can't enforce
 that); disabling `std` enables `no_std + alloc` mode. Pure `core` (no
-allocator) is not supported in v1.
+allocator) is not supported in v1. Because Cargo unifies features, the
+single-cipher property of §1.5.1 requires `--no-default-features` when
+selecting `aes-gcm`; with both cipher features enabled, `aes-gcm` is
+compiled and ChaCha20-Poly1305 is not.
 
 ### §1.14 Dependencies
 
@@ -1327,11 +1335,14 @@ Runtime crate (`litmask`):
 - `chacha20poly1305` (RustCrypto, `#[cfg(not(feature = "aes-gcm"))]`)
 - `aes-gcm` (RustCrypto, `#[cfg(feature = "aes-gcm")]`)
 - `base64ct` (constant-time base64)
-- `proc-macro2`, `quote`, `syn` (proc-macro authoring)
 - `blake3` (nonce derivation)
 - `machine-uid` (behind `machine-id` feature)
 - `zeroize` (`UnlockKey`/`MaskKey` zero-on-drop)
 - `once_cell` (only on `no_std` builds, for `OnceBox`)
+
+Proc-macro crate (`litmask-macros`, re-exported by `litmask`):
+
+- `proc-macro2`, `quote`, `syn` (proc-macro authoring)
 
 Build crate (`litmask-build`):
 
@@ -1878,20 +1889,18 @@ explicitly marked with `unmasked!()`.
 environment variable.
 
 §2.4.1.3 — In debug profile, `emit()` SHALL source `RNG_SEED` in priority
-order: `LITMASK_RNG_SEED` env var, then `target/litmask-seed`, then generate
-fresh and persist to `target/litmask-seed`.
+order: `LITMASK_RNG_SEED` env var, then `target/<profile>/litmask_seed.bin`,
+then generate fresh and persist to `target/<profile>/litmask_seed.bin`.
 
 §2.4.1.4 — In release profile, `emit()` SHALL source `RNG_SEED` from
 `LITMASK_RNG_SEED` env var if set; otherwise generate fresh and NOT persist.
 
-§2.4.1.5 — In release profile, when `RNG_SEED` is freshly generated (not
-sourced from `LITMASK_RNG_SEED`), `emit()` SHALL print the seed via
-`cargo:warning=` directives:
-
-```text
-warning: litmask: release build using fresh RNG seed: <base64url>
-warning: litmask: to reproduce this build, set LITMASK_RNG_SEED to the value above
-```
+§2.4.1.5 — `emit()` SHALL NOT print the seed, `unlock_key`, `mask_key`, or
+any other secret to the build log (§D.1.2). Reproducible rebuilds rely on
+the operator pinning `LITMASK_RNG_SEED` up front; there is no post-hoc
+seed-recovery channel. The only sanctioned release-profile
+`cargo:warning=` is the Embedded-floor notice (§1.3.2), which carries no
+secret.
 
 §2.4.1.6 — `emit()` SHALL generate `mask_key` and `unlock_key`
 deterministically from `RNG_SEED` using `rand_chacha::ChaCha20Rng`.
@@ -1907,8 +1916,12 @@ deterministically from `RNG_SEED` using `rand_chacha::ChaCha20Rng`.
 §2.4.1.9 — `emit()` SHALL emit only the following Cargo directives:
 
 - `cargo:rerun-if-env-changed=LITMASK_RNG_SEED`
+- `cargo:rerun-if-env-changed=LITMASK_UNLOCK_KEY`
+- `cargo:rerun-if-env-changed=LITMASK_MACHINE_ID`
 - `cargo:rerun-if-changed=build.rs`
-- (release-only, when fresh) `cargo:warning=...` per §2.4.1.5
+- `cargo:rustc-env=LITMASK_SEAL_TIER=<tier>` (the sole `LITMASK*`
+  rustc-env value, §1.3.1)
+- (release Embedded tier only) the `cargo:warning=` floor notice per §1.3.2
 
 §2.4.1.10 — `emit()` SHALL write `litmask.config` to the location specified
 in §1.7.5 with the schema specified in §1.7.4.
@@ -2106,8 +2119,9 @@ return an error on verification failure.
 
 §2.7.8 — Format version byte in the wrapper SHALL be `0x01` for v1.
 
-§2.7.9 — Cipher id byte in the wrapper SHALL be `0x01` for ChaCha20-Poly1305
-and `0x02` for AES-256-GCM.
+§2.7.9 — No cipher identifier SHALL appear on the wire (§1.7.3): the cipher
+is a compile-time property (`CURRENT_CIPHER`), and every wrapper and blob in
+a binary uses the single cipher the build was compiled for.
 
 §2.7.10 — Nonce derivation SHALL NOT depend on global state shared between
 proc-macro expansions; each invocation derives its nonce solely from its
@@ -2118,7 +2132,7 @@ source location and the build seed.
 #### §2.8.1 Binary embedding
 
 §2.8.1.1 — The encrypted `mask_key` wrapper SHALL be embedded in the
-compiled binary as an ordinary `[u8; 62]` static, with no `#[link_section]`,
+compiled binary as an ordinary `[u8; 61]` static, with no `#[link_section]`,
 no `#[no_mangle]` marker, and no symbol name suggesting `litmask`.
 
 §2.8.1.2 — The runtime SHALL obtain the wrapper bytes from a fixed,
@@ -2390,8 +2404,9 @@ Per-string key derivation is rejected, not deferred — see §1.5.5.
   (`LITMASK_MACHINE_ID` at build, `init!(machine_id)` at runtime). The
   `unlock_key` is derived from the host's machine id and the wrapper nonce;
   there is no post-build rebind step.
-- **wrapper**: The 62-byte structure containing the encrypted `mask_key`
-  along with format version, cipher id, nonce, and authentication tag.
+- **wrapper**: The 61-byte structure containing the encrypted `mask_key`
+  along with its cleartext nonce, AEAD-authenticated format version, and
+  authentication tag (§1.7.3). No cipher id appears on the wire.
 - **AEAD**: Authenticated Encryption with Associated Data. The cipher class
   used by `litmask` (ChaCha20-Poly1305 and AES-256-GCM both qualify).
 - **sysexits**: BSD `<sysexits.h>` standard exit codes (0, 64-78). Used by
@@ -2543,7 +2558,7 @@ a derived locator, and a split init macro). Documents what was removed and why.
 | Derived locator + recorded-locator config | **removed** — runtime finds the wrapper by compile-time address (§1.7.1) |
 | Machine-id | **build-time raw id only** (§1.7.6); no post-build reseal |
 | CLI surface | **`{keygen, show-machine-id}`** — generate/read-only, no binary mutation |
-| Init macro | **single `init!`** (the `init_with!` split folded in), four forms: `()` / `(<expr>)` / `(machine_id)` / `(machine_id + <expr>)` |
+| Init macro | **single `init!`** with four forms: `()` / `(<expr>)` / `(machine_id)` / `(machine_id + <expr>)`; `init_with!` survives as the declarative equivalent of the External form (§1.8.2) |
 | Factor selection | external = `impl KeyProvider` **value**; `machine_id` = one-keyword carve-out. No keyword DSL, no general `MultiProvider` (§1.6.2) |
 | Multi-factor | **fixed `machine_id + <external>`** — arity-2, order fixed by construction (§1.7.6) |
 | Build/runtime tier agreement | **tracked `LITMASK_SEAL_TIER` tag, cross-checked at compile time** (§2.6.1); replaces silent runtime AEAD failure on mismatch |
