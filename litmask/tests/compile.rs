@@ -6,7 +6,9 @@
 //! only verify they compile, not that they decrypt correctly.
 //!
 //! Regenerate `.stderr` snapshots after an intentional message change:
-//! `TRYBUILD=overwrite cargo test --test compile`.
+//! `TRYBUILD=overwrite cargo test --test compile`. The
+//! `masked_serialize_*` fixtures additionally need
+//! `--features unstable-serde`.
 
 #[test]
 fn compile_fixtures() {

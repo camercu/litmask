@@ -91,6 +91,45 @@ fn masked_serialize_lifetime_and_type_params() {
     );
 }
 
+#[derive(MaskedSerialize)]
+struct MaskedRawIdent {
+    r#type: String,
+}
+
+#[derive(serde::Serialize)]
+struct PlainRawIdent {
+    r#type: String,
+}
+
+#[test]
+fn masked_serialize_raw_ident_field_unraws_like_plain_derive() {
+    common::init_once();
+    let masked = MaskedRawIdent {
+        r#type: "beacon".to_string(),
+    };
+    let plain = PlainRawIdent {
+        r#type: "beacon".to_string(),
+    };
+    let masked_json = serde_json::to_string(&masked).expect("masked serialization failed");
+    assert_eq!(
+        masked_json,
+        serde_json::to_string(&plain).expect("plain serialization failed"),
+    );
+    assert_eq!(masked_json, r#"{"type":"beacon"}"#);
+}
+
+#[derive(MaskedSerialize)]
+struct MaskedEmpty {}
+
+#[test]
+fn masked_serialize_empty_struct_serializes_as_empty_object() {
+    common::init_once();
+    assert_eq!(
+        serde_json::to_string(&MaskedEmpty {}).expect("masked serialization failed"),
+        "{}"
+    );
+}
+
 #[test]
 fn masked_serialize_repeat_calls_are_stable() {
     common::init_once();
