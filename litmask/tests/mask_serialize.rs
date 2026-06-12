@@ -137,6 +137,72 @@ fn mask_serialize_unit_struct_matches_plain_derive() {
 }
 
 #[derive(MaskSerialize)]
+struct MaskedToken(String);
+
+#[derive(serde::Serialize)]
+struct PlainToken(String);
+
+#[test]
+fn mask_serialize_newtype_struct_matches_plain_derive() {
+    common::init_once();
+    let masked_json = serde_json::to_string(&MaskedToken("opaque-handle".to_string()))
+        .expect("masked serialization failed");
+    assert_eq!(
+        masked_json,
+        serde_json::to_string(&PlainToken("opaque-handle".to_string()))
+            .expect("plain serialization failed"),
+    );
+    assert_eq!(masked_json, r#""opaque-handle""#);
+}
+
+#[derive(MaskSerialize)]
+struct MaskedBeaconPair(String, u32);
+
+#[derive(serde::Serialize)]
+struct PlainBeaconPair(String, u32);
+
+#[test]
+fn mask_serialize_tuple_struct_matches_plain_derive() {
+    common::init_once();
+    let masked_json = serde_json::to_string(&MaskedBeaconPair("relay-7".to_string(), 31))
+        .expect("masked serialization failed");
+    assert_eq!(
+        masked_json,
+        serde_json::to_string(&PlainBeaconPair("relay-7".to_string(), 31))
+            .expect("plain serialization failed"),
+    );
+    assert_eq!(masked_json, r#"["relay-7",31]"#);
+}
+
+#[derive(MaskSerialize)]
+struct MaskedEmptyTuple();
+
+#[derive(serde::Serialize)]
+struct PlainEmptyTuple();
+
+#[test]
+fn mask_serialize_empty_tuple_struct_matches_plain_derive() {
+    common::init_once();
+    assert_eq!(
+        serde_json::to_string(&MaskedEmptyTuple()).expect("masked serialization failed"),
+        serde_json::to_string(&PlainEmptyTuple()).expect("plain serialization failed"),
+    );
+}
+
+#[derive(MaskSerialize)]
+struct MaskedGenericWrapper<T>(T);
+
+#[test]
+fn mask_serialize_generic_newtype_struct() {
+    common::init_once();
+    assert_eq!(
+        serde_json::to_string(&MaskedGenericWrapper(vec![1u8, 2]))
+            .expect("masked serialization failed"),
+        "[1,2]"
+    );
+}
+
+#[derive(MaskSerialize)]
 struct MaskedEmpty {}
 
 #[test]

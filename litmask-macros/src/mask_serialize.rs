@@ -89,12 +89,39 @@ fn serialize_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
         Fields::Unit => Ok(quote! {
             ::litmask::__serde::Serializer::serialize_unit_struct(serializer, #name)
         }),
-        Fields::Unnamed(_) => Err(compile_error(
-            input.ident.span(),
-            MACRO_NAME,
-            FailTag::Grammar,
-            "supports structs only",
-        )),
+        Fields::Unnamed(fields) => Ok(tuple_struct_body(&name, fields)),
+    }
+}
+
+/// Tuple-struct dispatch mirrors serde's: exactly one field is a
+/// newtype (`serialize_newtype_struct`), any other arity — including
+/// zero — goes through `serialize_tuple_struct`. Collapsing the two
+/// would change the wire shape in self-describing formats (`"v"` vs
+/// `["v"]`).
+fn tuple_struct_body(name: &TokenStream2, fields: &syn::FieldsUnnamed) -> TokenStream2 {
+    let field_count = fields.unnamed.len();
+    if field_count == 1 {
+        return quote! {
+            ::litmask::__serde::Serializer::serialize_newtype_struct(serializer, #name, &self.0)
+        };
+    }
+    let serialize_fields = (0..field_count).map(|i| {
+        let index = syn::Index::from(i);
+        quote! {
+            ::litmask::__serde::ser::SerializeTupleStruct::serialize_field(
+                &mut __state,
+                &self.#index,
+            )?;
+        }
+    });
+    quote! {
+        let mut __state = ::litmask::__serde::Serializer::serialize_tuple_struct(
+            serializer,
+            #name,
+            #field_count,
+        )?;
+        #(#serialize_fields)*
+        ::litmask::__serde::ser::SerializeTupleStruct::end(__state)
     }
 }
 

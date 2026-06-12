@@ -1,5 +1,0 @@
-error: MaskSerialize! grammar: supports structs only
- --> tests/compile/mask_serialize_tuple_struct.rs:7:8
-  |
-7 | struct BeaconPair(String, u32);
-  |        ^^^^^^^^^^
