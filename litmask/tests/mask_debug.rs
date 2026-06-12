@@ -74,7 +74,7 @@ enum MaskedShadow {
 /// Packed fields cannot be referenced (E0793); the expansion must
 /// copy them like the plain derive does.
 #[derive(MaskDebug)]
-#[repr(packed)]
+#[repr(C, packed)]
 struct MaskedPacked {
     tag_qwxz: u8,
     count_zzyzx: u32,
@@ -138,7 +138,7 @@ mod plain {
     }
 
     #[derive(Debug)]
-    #[repr(packed)]
+    #[repr(C, packed)]
     pub struct MaskedPacked {
         pub tag_qwxz: u8,
         pub count_zzyzx: u32,
