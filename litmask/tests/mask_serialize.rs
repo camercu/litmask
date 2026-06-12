@@ -214,6 +214,129 @@ fn mask_serialize_empty_struct_serializes_as_empty_object() {
     );
 }
 
+#[derive(MaskSerialize)]
+enum MaskedChannelState {
+    DormantUntilDusk,
+    RelayHandle(String),
+    JitterWindow(u32, u32),
+    ActiveBeacon {
+        uplink_url_zzyzx: String,
+        burst_quota: u8,
+    },
+}
+
+#[derive(serde::Serialize)]
+enum PlainChannelState {
+    DormantUntilDusk,
+    RelayHandle(String),
+    JitterWindow(u32, u32),
+    ActiveBeacon {
+        uplink_url_zzyzx: String,
+        burst_quota: u8,
+    },
+}
+
+fn channel_state_pairs() -> Vec<(MaskedChannelState, PlainChannelState)> {
+    vec![
+        (
+            MaskedChannelState::DormantUntilDusk,
+            PlainChannelState::DormantUntilDusk,
+        ),
+        (
+            MaskedChannelState::RelayHandle("relay-9".to_string()),
+            PlainChannelState::RelayHandle("relay-9".to_string()),
+        ),
+        (
+            MaskedChannelState::JitterWindow(50, 250),
+            PlainChannelState::JitterWindow(50, 250),
+        ),
+        (
+            MaskedChannelState::ActiveBeacon {
+                uplink_url_zzyzx: "wss://uplink.example".to_string(),
+                burst_quota: 4,
+            },
+            PlainChannelState::ActiveBeacon {
+                uplink_url_zzyzx: "wss://uplink.example".to_string(),
+                burst_quota: 4,
+            },
+        ),
+    ]
+}
+
+#[test]
+fn mask_serialize_enum_variants_match_plain_derive_json() {
+    common::init_once();
+    for (masked, plain) in channel_state_pairs() {
+        assert_eq!(
+            serde_json::to_string(&masked).expect("masked serialization failed"),
+            serde_json::to_string(&plain).expect("plain serialization failed"),
+        );
+    }
+}
+
+/// Non-self-describing formats encode the variant *index*, not its
+/// name — byte-identity here proves the masked derive preserves
+/// declaration-order variant indices (§E.2.1).
+#[test]
+fn mask_serialize_enum_variants_match_plain_derive_postcard() {
+    common::init_once();
+    for (masked, plain) in channel_state_pairs() {
+        assert_eq!(
+            postcard::to_stdvec(&masked).expect("masked serialization failed"),
+            postcard::to_stdvec(&plain).expect("plain serialization failed"),
+        );
+    }
+}
+
+#[derive(MaskSerialize)]
+enum MaskedRawVariant {
+    r#Loop { r#fn: u8 },
+}
+
+#[derive(serde::Serialize)]
+enum PlainRawVariant {
+    r#Loop { r#fn: u8 },
+}
+
+#[test]
+fn mask_serialize_raw_ident_variant_unraws_like_plain_derive() {
+    common::init_once();
+    let masked_json = serde_json::to_string(&MaskedRawVariant::r#Loop { r#fn: 1 })
+        .expect("masked serialization failed");
+    assert_eq!(
+        masked_json,
+        serde_json::to_string(&PlainRawVariant::r#Loop { r#fn: 1 })
+            .expect("plain serialization failed"),
+    );
+    assert_eq!(masked_json, r#"{"Loop":{"fn":1}}"#);
+}
+
+#[derive(MaskSerialize)]
+enum MaskedGenericEvent<T> {
+    Payload(T),
+}
+
+#[test]
+fn mask_serialize_generic_enum() {
+    common::init_once();
+    assert_eq!(
+        serde_json::to_string(&MaskedGenericEvent::Payload(vec![7u8]))
+            .expect("masked serialization failed"),
+        r#"{"Payload":[7]}"#
+    );
+}
+
+/// Uninhabited enums must still derive — the plain serde derive
+/// generates `match *self {}`, and so must the masked one.
+#[derive(MaskSerialize)]
+enum MaskedNever {}
+
+#[test]
+fn mask_serialize_uninhabited_enum_derives() {
+    fn assert_serialize<T: serde::Serialize>() {}
+    assert_serialize::<MaskedNever>();
+}
+
 #[test]
 fn mask_serialize_repeat_calls_are_stable() {
     common::init_once();

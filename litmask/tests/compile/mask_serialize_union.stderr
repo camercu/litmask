@@ -1,0 +1,5 @@
+error: MaskSerialize! grammar: supports structs and enums only
+ --> tests/compile/mask_serialize_union.rs:8:7
+  |
+8 | union RawHandle {
+  |       ^^^^^^^^^

@@ -1,5 +1,0 @@
-error: MaskSerialize! grammar: supports structs only
- --> tests/compile/mask_serialize_enum.rs:7:6
-  |
-7 | enum CovertChannel {
-  |      ^^^^^^^^^^^^^

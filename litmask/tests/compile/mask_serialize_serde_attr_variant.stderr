@@ -1,0 +1,5 @@
+error: MaskSerialize! invalid-arg: `#[serde(...)]` attributes are not supported
+ --> tests/compile/mask_serialize_serde_attr_variant.rs:9:5
+  |
+9 |     #[serde(rename = "dns")]
+  |     ^
