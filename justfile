@@ -23,7 +23,7 @@ fmt-check:
 
 # ── Cleaning ───────────────────────────────────────────────
 
-clean:
+clean: _profraw-purge
     cargo clean
 
 # ── Linting ─────────────────────────────────────────────────
@@ -120,17 +120,26 @@ test-examples:
 _cov-purge:
     rm -rf target/llvm-cov-target
 
-coverage: _cov-purge
+# Instrumented child processes (rustc expanding the instrumented
+# proc-macro, example/CLI binaries spawned by e2e tests) can lose
+# LLVM_PROFILE_FILE and fall back to LLVM's default profile name,
+# dropping `default_*.profraw` into their cwd (workspace root, crate
+# dirs) instead of under target/. Sweep after every coverage recipe
+# (and in `clean`) so the fallout never lingers in the tree.
+_profraw-purge:
+    find . -name '*.profraw' -not -path '*/target/*' -not -path './node_modules/*' -delete
+
+coverage: _cov-purge && _profraw-purge
     cargo llvm-cov nextest --workspace --all-features
 
 alias cov := coverage
 
-coverage-html: _cov-purge
+coverage-html: _cov-purge && _profraw-purge
     cargo llvm-cov nextest --workspace --all-features --html
 
 alias cov-html := coverage-html
 
-coverage-lcov: _cov-purge
+coverage-lcov: _cov-purge && _profraw-purge
     cargo llvm-cov nextest --workspace --all-features --lcov --output-path target/llvm-cov/lcov.info
 
 alias cov-lcov := coverage-lcov
@@ -334,7 +343,7 @@ ci-timed:
 # `embedded` (no `LITMASK_MACHINE_ID`), so compiling the example would
 # `compile_error!`. Its masking + round-trip behavior is covered by
 # `tests/example_scrub.rs` and `tests/machine_tier_e2e.rs` instead.
-ci-coverage:
+ci-coverage: && _profraw-purge
     cargo llvm-cov nextest --workspace --all-features --lib --tests --bins
 
 # Stable-channel best-effort sanity check; runs in a continue-on-error
