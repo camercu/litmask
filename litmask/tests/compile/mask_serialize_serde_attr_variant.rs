@@ -1,12 +1,12 @@
-//! `MaskSerialize` must reject `#[serde(...)]` on an enum variant —
-//! silently ignoring `rename` would break the wire-format-identity
-//! contract without warning.
+//! `MaskSerialize` reject-loud on a not-yet-supported variant-level
+//! `#[serde(...)]` key: silently ignoring `other` would break the
+//! wire-format-identity contract without warning.
 
 use litmask::MaskSerialize;
 
 #[derive(MaskSerialize)]
 enum CovertChannel {
-    #[serde(rename = "dns")]
+    #[serde(other)]
     Dns { hostname: String },
 }
 

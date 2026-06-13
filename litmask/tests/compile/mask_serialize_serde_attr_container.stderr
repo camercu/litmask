@@ -1,5 +1,5 @@
-error: MaskSerialize! invalid-arg: `#[serde(...)]` attributes are not supported
- --> tests/compile/mask_serialize_serde_attr_container.rs:8:1
+error: MaskSerialize! invalid-arg: `#[serde(tag)]` is not yet supported; keep a plain derive (or `#[unmasked_derive]` under `#[mask_all]`)
+ --> tests/compile/mask_serialize_serde_attr_container.rs:8:9
   |
-8 | #[serde(rename_all = "camelCase")]
-  | ^
+8 | #[serde(tag = "type")]
+  |         ^^^

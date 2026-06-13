@@ -1,11 +1,11 @@
-//! `MaskSerialize` must reject container-level `#[serde(...)]`
-//! attributes — honoring none of them silently (e.g. `rename_all`)
-//! would serialize under different names than the plain derive.
+//! `MaskSerialize` reject-loud on a not-yet-supported container-level
+//! `#[serde(...)]` key: silently ignoring an alternate enum
+//! representation (`tag`) would change the wire format.
 
 use litmask::MaskSerialize;
 
 #[derive(MaskSerialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(tag = "type")]
 struct ExfilManifest {
     field_name: String,
 }

@@ -1,5 +1,5 @@
-error: MaskDeserialize! invalid-arg: `#[serde(...)]` attributes are not supported
- --> tests/compile/mask_deserialize_serde_attr_field.rs:9:5
+error: MaskDeserialize! invalid-arg: `#[serde(flatten)]` is not yet supported; keep a plain derive (or `#[unmasked_derive]` under `#[mask_all]`)
+ --> tests/compile/mask_deserialize_serde_attr_field.rs:9:13
   |
-9 |     #[serde(rename = "url")]
-  |     ^
+9 |     #[serde(flatten)]
+  |             ^^^^^^^

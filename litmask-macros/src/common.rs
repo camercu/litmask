@@ -270,25 +270,33 @@ pub(crate) fn with_trait_bounds(mut generics: syn::Generics, bound: &syn::Path) 
     generics
 }
 
+/// AEAD-mask an arbitrary resolved name, emitting a runtime decrypt
+/// expression returning `String`. The serde derives pass the name a
+/// field/variant/container resolves to after `#[serde(rename = ...)]`;
+/// `mask_ident` is the bare-ident path on top of this.
+pub(crate) fn mask_name(span: proc_macro2::Span, name: &str) -> TokenStream {
+    mask_str(span, name.as_bytes().to_vec())
+}
+
 /// AEAD-mask an identifier's name, emitting a runtime decrypt
 /// expression returning `String`. Single owner of the masking
 /// derives' raw-ident contract: `r#type` renders/serializes as
 /// `type`, never with the raw prefix — matching the plain derives.
 pub(crate) fn mask_ident(ident: &syn::Ident) -> TokenStream {
-    mask_str(ident.span(), ident.unraw().to_string().into_bytes())
+    mask_name(ident.span(), &ident.unraw().to_string())
 }
 
-/// Emit a `&'static str` expression yielding the masked identifier's
-/// name at runtime: decrypt the AEAD blob once, leak the `String`,
-/// cache in a `OnceLock`. The serde derives need `&'static str` names
+/// Emit a `&'static str` expression yielding a masked resolved name at
+/// runtime: decrypt the AEAD blob once, leak the `String`, cache in a
+/// `OnceLock`. The serde derives need `&'static str` names
 /// (`serialize_field`, `Error::missing_field`, ...), which a
 /// runtime-decrypted name can only satisfy by leaking; the cache
 /// bounds the leak to one allocation per use site. (`MaskDebug` uses
 /// bare `mask_ident` instead — the `Formatter` API takes `&str`, so
 /// it never needs the leak.)
 #[cfg(feature = "unstable-serde")]
-pub(crate) fn masked_name_expr(ident: &syn::Ident) -> TokenStream {
-    let decrypt = mask_ident(ident);
+pub(crate) fn masked_static_name(span: proc_macro2::Span, name: &str) -> TokenStream {
+    let decrypt = mask_name(span, name);
     quote! {
         {
             static __LITMASK_NAME: ::std::sync::OnceLock<&'static str> =
@@ -298,30 +306,6 @@ pub(crate) fn masked_name_expr(ident: &syn::Ident) -> TokenStream {
             ))
         }
     }
-}
-
-/// Reject any `#[serde(...)]` attribute on the container, a variant,
-/// or a field of a masking serde derive. The derives honor none of
-/// them; silently ignoring `rename` / `rename_all` / `skip` would
-/// serialize or deserialize under different names (or a different
-/// shape) than the plain derive — the behavior-identity contract
-/// (§E.2.1) would break without warning.
-#[cfg(feature = "unstable-serde")]
-pub(crate) fn reject_serde_attrs<'a>(
-    macro_name: &str,
-    attrs: impl Iterator<Item = &'a syn::Attribute>,
-) -> syn::Result<()> {
-    for attr in attrs {
-        if attr.path().is_ident("serde") {
-            return Err(compile_error(
-                syn::spanned::Spanned::span(attr),
-                macro_name,
-                FailTag::InvalidArg,
-                "`#[serde(...)]` attributes are not supported",
-            ));
-        }
-    }
-    Ok(())
 }
 
 /// Emit a byte slice as a byte-string literal token (`b"..."`), typed

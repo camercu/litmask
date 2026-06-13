@@ -1,12 +1,12 @@
-//! `MaskSerialize` must reject field-level `#[serde(...)]`
-//! attributes — a silently ignored `rename` would change the wire
-//! format relative to the plain derive.
+//! `MaskSerialize` reject-loud on a not-yet-supported field-level
+//! `#[serde(...)]` key: silently ignoring `flatten` would change the
+//! wire format relative to the plain derive.
 
 use litmask::MaskSerialize;
 
 #[derive(MaskSerialize)]
 struct ExfilManifest {
-    #[serde(rename = "url")]
+    #[serde(flatten)]
     endpoint: String,
 }
 

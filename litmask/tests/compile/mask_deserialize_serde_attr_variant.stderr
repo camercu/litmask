@@ -1,5 +1,5 @@
-error: MaskDeserialize! invalid-arg: `#[serde(...)]` attributes are not supported
- --> tests/compile/mask_deserialize_serde_attr_variant.rs:9:5
+error: MaskDeserialize! invalid-arg: `#[serde(other)]` is not yet supported; keep a plain derive (or `#[unmasked_derive]` under `#[mask_all]`)
+ --> tests/compile/mask_deserialize_serde_attr_variant.rs:9:13
   |
-9 |     #[serde(rename = "dns")]
-  |     ^
+9 |     #[serde(other)]
+  |             ^^^^^

@@ -33,6 +33,8 @@ mod mask_include_str;
 mod mask_option_env;
 #[cfg(feature = "unstable-serde")]
 mod mask_serialize;
+#[cfg(feature = "unstable-serde")]
+mod serde_attrs;
 mod unmasked;
 mod weak_mask;
 
