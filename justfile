@@ -32,6 +32,13 @@ lint: fmt-check lint-clippy lint-typos lint-taplo lint-markdown lint-deny
 
 lint-clippy:
     cargo clippy --all-targets --workspace -- {{warnings}}
+    # Second pass under --all-features: feature-gated modules (the
+    # `unstable-serde` proc-macro derives, `machine-id` paths) are not
+    # compiled by the default-feature pass above, so without this they
+    # escape clippy entirely. Examples are excluded (`--lib --tests
+    # --bins`) for the same seal-tier reason as `test-all-features`: no
+    # single env config compiles every example's `init!` form.
+    cargo clippy --all-features --workspace --lib --tests --bins -- {{warnings}}
 
 lint-clippy-stable:
     cargo {{stable_toolchain}} clippy --all-targets --workspace
