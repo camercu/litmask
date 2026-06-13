@@ -270,6 +270,29 @@ pub(crate) fn with_trait_bounds(mut generics: syn::Generics, bound: &syn::Path) 
     generics
 }
 
+/// Apply trait bounds to `generics`: with no `#[serde(bound = "...")]`
+/// override, fall back to [`with_trait_bounds`] (the default per-param
+/// `T: Bound`); with an override, add exactly the user's predicates and
+/// skip the default — matching serde's `bound` semantics.
+#[cfg(feature = "unstable-serde")]
+pub(crate) fn apply_bounds(
+    generics: syn::Generics,
+    default_bound: &syn::Path,
+    custom: Option<&[syn::WherePredicate]>,
+) -> syn::Generics {
+    match custom {
+        Some(predicates) => {
+            let mut generics = generics;
+            generics
+                .make_where_clause()
+                .predicates
+                .extend(predicates.iter().cloned());
+            generics
+        }
+        None => with_trait_bounds(generics, default_bound),
+    }
+}
+
 /// AEAD-mask an arbitrary resolved name, emitting a runtime decrypt
 /// expression returning `String`. The serde derives pass the name a
 /// field/variant/container resolves to after `#[serde(rename = ...)]`;

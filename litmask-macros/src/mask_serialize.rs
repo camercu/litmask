@@ -27,7 +27,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields};
 
-use crate::common::{FailTag, compile_error, expand_derive, masked_static_name, with_trait_bounds};
+use crate::common::{FailTag, apply_bounds, compile_error, expand_derive, masked_static_name};
 use crate::serde_attrs::{self, ContainerAttrs, RenameRule};
 
 const MACRO_NAME: &str = "MaskSerialize";
@@ -39,15 +39,17 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 }
 
 fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
-    let body = serialize_body(input)?;
+    let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
+    let body = serialize_body(input, &container)?;
 
     let struct_ident = &input.ident;
-    // Bound every type param with `Serialize`, mirroring the plain
-    // serde derive's bound model: `Envelope<T>` serializes iff
-    // `T: Serialize`.
-    let generics = with_trait_bounds(
+    // Bound every type param with `Serialize` (the plain derive's bound
+    // model: `Envelope<T>` serializes iff `T: Serialize`), unless a
+    // `#[serde(bound)]` override supplies the predicates instead.
+    let generics = apply_bounds(
         input.generics.clone(),
         &syn::parse_quote!(::litmask::__serde::Serialize),
+        container.bound.serialize.as_deref(),
     );
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
@@ -73,8 +75,7 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
 /// classification: each shape maps to the dedicated `Serializer`
 /// entry point the plain derive would call, which is what keeps the
 /// wire format byte-identical (§E.2.1).
-fn serialize_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
-    let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
+fn serialize_body(input: &DeriveInput, container: &ContainerAttrs) -> syn::Result<TokenStream2> {
     let name = masked_static_name(input.ident.span(), &container.serialize_name(&input.ident));
     match &input.data {
         Data::Struct(data) => match &data.fields {
@@ -86,7 +87,7 @@ fn serialize_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
             }),
             Fields::Unnamed(fields) => tuple_struct_body(&name, fields),
         },
-        Data::Enum(data) => enum_body(&name, data, &container),
+        Data::Enum(data) => enum_body(&name, data, container),
         Data::Union(_) => Err(compile_error(
             input.ident.span(),
             MACRO_NAME,

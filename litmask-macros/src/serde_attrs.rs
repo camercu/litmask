@@ -13,7 +13,7 @@
 //! variants, and fields as serde allows, plus `skip` /
 //! `skip_serializing` / `skip_deserializing` / `skip_serializing_if` /
 //! `default` (and `default = "path"`) / `alias` on named fields, and
-//! `deny_unknown_fields` on the container. Every other key is
+//! `deny_unknown_fields` / `bound` on the container. Every other key is
 //! reject-loud and listed for a later slice.
 
 use syn::ext::IdentExt;
@@ -136,14 +136,25 @@ pub(crate) struct RenameAll {
     pub(crate) deserialize: Option<RenameRule>,
 }
 
+/// A `#[serde(bound = "...")]` override of the generated where-clause
+/// predicates, possibly split per direction. `None` keeps the derive's
+/// default per-type-param bound; `Some(preds)` replaces it entirely.
+#[derive(Default)]
+pub(crate) struct BoundOverride {
+    pub(crate) serialize: Option<Vec<syn::WherePredicate>>,
+    pub(crate) deserialize: Option<Vec<syn::WherePredicate>>,
+}
+
 /// Container-level (`struct` / `enum`) serde attributes.
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub(crate) struct ContainerAttrs {
     pub(crate) rename: Rename,
     pub(crate) rename_all: RenameAll,
     /// `#[serde(deny_unknown_fields)]`: an unknown field key is a hard
     /// error (`unknown_field`) instead of being skipped.
     pub(crate) deny_unknown_fields: bool,
+    /// `#[serde(bound = "...")]` where-clause override.
+    pub(crate) bound: BoundOverride,
 }
 
 /// Field-level serde attributes.
@@ -272,11 +283,48 @@ pub(crate) fn parse_container(
         } else if meta.path.is_ident("deny_unknown_fields") {
             out.deny_unknown_fields = true;
             Ok(())
+        } else if meta.path.is_ident("bound") {
+            out.bound = parse_bound(&meta)?;
+            Ok(())
         } else {
             Err(unsupported(macro_name, &meta))
         }
     })?;
     Ok(out)
+}
+
+/// Parse `bound = "preds"` or `bound(serialize = "...", deserialize =
+/// "...")` into where-clause predicate lists.
+fn parse_bound(meta: &ParseNestedMeta) -> syn::Result<BoundOverride> {
+    if meta.input.peek(syn::Token![=]) {
+        let lit: LitStr = meta.value()?.parse()?;
+        let preds = parse_predicates(&lit)?;
+        return Ok(BoundOverride {
+            serialize: Some(preds.clone()),
+            deserialize: Some(preds),
+        });
+    }
+    let mut bound = BoundOverride::default();
+    meta.parse_nested_meta(|inner| {
+        if inner.path.is_ident("serialize") {
+            bound.serialize = Some(parse_predicates(&inner.value()?.parse::<LitStr>()?)?);
+        } else if inner.path.is_ident("deserialize") {
+            bound.deserialize = Some(parse_predicates(&inner.value()?.parse::<LitStr>()?)?);
+        } else {
+            return Err(inner.error("expected `serialize` or `deserialize`"));
+        }
+        Ok(())
+    })?;
+    Ok(bound)
+}
+
+/// Parse a `bound` string literal as a comma-separated list of
+/// where-clause predicates (`"T: Foo, U: Bar"`).
+fn parse_predicates(lit: &LitStr) -> syn::Result<Vec<syn::WherePredicate>> {
+    let parsed = lit.parse_with(
+        syn::punctuated::Punctuated::<syn::WherePredicate, syn::Token![,]>::parse_terminated,
+    )?;
+    Ok(parsed.into_iter().collect())
 }
 
 /// Parse a field's `#[serde(...)]` attributes.
@@ -531,7 +579,10 @@ mod tests {
             struct S { x: u8 }
         })
         .expect("parses");
-        let err = parse_container("MaskSerialize", &di.attrs).expect_err("must reject");
+        let err = match parse_container("MaskSerialize", &di.attrs) {
+            Ok(_) => panic!("expected unknown rule to be reject-loud"),
+            Err(err) => err,
+        };
         assert!(
             err.to_string()
                 .contains("unknown `rename_all` rule `bogus`"),
@@ -591,6 +642,21 @@ mod tests {
         let f = field(&quote! { #[serde(alias = "id", alias = "key")] primary: u8 });
         let attrs = parse_field("MaskDeserialize", &f.attrs).expect("parses");
         assert_eq!(attrs.aliases, vec!["id".to_string(), "key".to_string()]);
+    }
+
+    #[test]
+    fn bound_parses_split_predicates() {
+        let di: syn::DeriveInput = syn::parse2(quote! {
+            #[serde(bound(serialize = "T: Clone", deserialize = "T: Default"))]
+            struct S<T> { x: T }
+        })
+        .expect("parses");
+        let attrs = parse_container("MaskSerialize", &di.attrs).expect("parses");
+        let ser = attrs.bound.serialize.expect("serialize preds");
+        let de = attrs.bound.deserialize.expect("deserialize preds");
+        assert_eq!(ser.len(), 1);
+        assert_eq!(de.len(), 1);
+        assert_eq!(quote!(#(#ser)*).to_string(), quote!(T: Clone).to_string());
     }
 
     #[test]

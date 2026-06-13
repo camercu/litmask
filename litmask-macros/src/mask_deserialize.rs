@@ -37,7 +37,7 @@ use quote::quote;
 use syn::{Data, DeriveInput, Fields};
 
 use crate::common::{
-    FailTag, compile_error, expand_derive, mask_name, masked_static_name, with_trait_bounds,
+    FailTag, apply_bounds, compile_error, expand_derive, mask_name, masked_static_name,
 };
 use crate::serde_attrs::{self, ContainerAttrs, RenameRule, VariantAttrs};
 
@@ -258,9 +258,19 @@ struct DeGenerics {
 }
 
 fn split_de_generics(input: &DeriveInput) -> DeGenerics {
-    let generics = with_trait_bounds(
+    // A `#[serde(bound)]` override replaces the default `T:
+    // Deserialize<'de>` predicate. Parsing here keeps every generated
+    // visitor's generics consistent without threading the bound through
+    // each builder; the container is already validated by the time this
+    // runs (a bad bound surfaces from the body parse first).
+    let bound = serde_attrs::parse_container(MACRO_NAME, &input.attrs)
+        .unwrap_or_default()
+        .bound
+        .deserialize;
+    let generics = apply_bounds(
         input.generics.clone(),
         &syn::parse_quote!(::litmask::__serde::Deserialize<'de>),
+        bound.as_deref(),
     );
     let mut de_generics = generics.clone();
     let borrowed = borrowed_lifetimes(input);
