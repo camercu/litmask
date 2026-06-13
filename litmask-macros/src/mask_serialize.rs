@@ -28,7 +28,7 @@ use quote::quote;
 use syn::{Data, DeriveInput, Fields};
 
 use crate::common::{FailTag, compile_error, expand_derive, masked_static_name, with_trait_bounds};
-use crate::serde_attrs;
+use crate::serde_attrs::{self, ContainerAttrs, RenameRule};
 
 const MACRO_NAME: &str = "MaskSerialize";
 
@@ -78,13 +78,15 @@ fn serialize_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let name = masked_static_name(input.ident.span(), &container.serialize_name(&input.ident));
     match &input.data {
         Data::Struct(data) => match &data.fields {
-            Fields::Named(fields) => named_struct_body(&name, fields),
+            Fields::Named(fields) => {
+                named_struct_body(&name, fields, container.rename_all.serialize)
+            }
             Fields::Unit => Ok(quote! {
                 ::litmask::__serde::Serializer::serialize_unit_struct(serializer, #name)
             }),
             Fields::Unnamed(fields) => tuple_struct_body(&name, fields),
         },
-        Data::Enum(data) => enum_body(&name, data),
+        Data::Enum(data) => enum_body(&name, data, &container),
         Data::Union(_) => Err(compile_error(
             input.ident.span(),
             MACRO_NAME,
@@ -98,7 +100,11 @@ fn serialize_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
 /// point the plain derive would. The variant *index* (declaration
 /// order, `u32`) is what non-self-describing formats put on the wire;
 /// the masked *name* is what self-describing formats print.
-fn enum_body(name: &TokenStream2, data: &syn::DataEnum) -> syn::Result<TokenStream2> {
+fn enum_body(
+    name: &TokenStream2,
+    data: &syn::DataEnum,
+    container: &ContainerAttrs,
+) -> syn::Result<TokenStream2> {
     if data.variants.is_empty() {
         // An uninhabited enum has no arms; `match *self {}` is how the
         // plain derive proves exhaustiveness (`&Self` would not).
@@ -108,7 +114,7 @@ fn enum_body(name: &TokenStream2, data: &syn::DataEnum) -> syn::Result<TokenStre
         .variants
         .iter()
         .enumerate()
-        .map(|(index, variant)| variant_arm(name, index, variant))
+        .map(|(index, variant)| variant_arm(name, index, variant, container))
         .collect::<syn::Result<Vec<_>>>()?;
     Ok(quote! {
         match self {
@@ -121,10 +127,14 @@ fn variant_arm(
     name: &TokenStream2,
     index: usize,
     variant: &syn::Variant,
+    container: &ContainerAttrs,
 ) -> syn::Result<TokenStream2> {
     let vident = &variant.ident;
     let vattrs = serde_attrs::parse_variant(MACRO_NAME, &variant.attrs)?;
-    let vname = masked_static_name(vident.span(), &vattrs.serialize_name(vident));
+    let vname = masked_static_name(
+        vident.span(),
+        &vattrs.serialize_name(vident, container.rename_all.serialize),
+    );
     let vindex = u32::try_from(index).expect("variant count exceeds u32");
     // Bindings are mangled, never the user's field idents: a field
     // named `serializer` or `__state` would otherwise shadow the
@@ -191,7 +201,10 @@ fn variant_arm(
             for (field, binding) in fields.named.iter().zip(&bindings) {
                 let ident = field.ident.as_ref().expect("named field has an ident");
                 let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
-                let field_name = masked_static_name(ident.span(), &attrs.serialize_name(ident));
+                let field_name = masked_static_name(
+                    ident.span(),
+                    &attrs.serialize_name(ident, vattrs.rename_all.serialize),
+                );
                 serialize_fields.push(quote! {
                     ::litmask::__serde::ser::SerializeStructVariant::serialize_field(
                         &mut __state,
@@ -265,13 +278,17 @@ fn check_unnamed_field_attrs(fields: &syn::FieldsUnnamed) -> syn::Result<()> {
     Ok(())
 }
 
-fn named_struct_body(name: &TokenStream2, fields: &syn::FieldsNamed) -> syn::Result<TokenStream2> {
+fn named_struct_body(
+    name: &TokenStream2,
+    fields: &syn::FieldsNamed,
+    rename_all: Option<RenameRule>,
+) -> syn::Result<TokenStream2> {
     let field_count = fields.named.len();
     let mut serialize_fields = Vec::with_capacity(field_count);
     for field in &fields.named {
         let ident = field.ident.as_ref().expect("named field has an ident");
         let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
-        let field_name = masked_static_name(ident.span(), &attrs.serialize_name(ident));
+        let field_name = masked_static_name(ident.span(), &attrs.serialize_name(ident, rename_all));
         serialize_fields.push(quote! {
             ::litmask::__serde::ser::SerializeStruct::serialize_field(
                 &mut __state,

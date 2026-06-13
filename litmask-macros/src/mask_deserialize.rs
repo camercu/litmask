@@ -39,7 +39,7 @@ use syn::{Data, DeriveInput, Fields};
 use crate::common::{
     FailTag, compile_error, expand_derive, mask_name, masked_static_name, with_trait_bounds,
 };
-use crate::serde_attrs;
+use crate::serde_attrs::{self, ContainerAttrs, RenameRule, VariantAttrs};
 
 const MACRO_NAME: &str = "MaskDeserialize";
 
@@ -105,28 +105,46 @@ fn container_de_name(input: &DeriveInput) -> syn::Result<(proc_macro2::Span, Str
 }
 
 /// Resolve each named field's deserialize-side name (parsing + reject-
-/// loud on unsupported `#[serde(...)]` keys along the way).
-fn field_de_names(fields: &syn::FieldsNamed) -> syn::Result<Vec<(proc_macro2::Span, String)>> {
+/// loud on unsupported `#[serde(...)]` keys along the way). `parent` is
+/// the applicable `rename_all` rule (container's for a struct, variant's
+/// for a struct variant), applied unless the field has its own `rename`.
+fn field_de_names(
+    fields: &syn::FieldsNamed,
+    parent: Option<RenameRule>,
+) -> syn::Result<Vec<(proc_macro2::Span, String)>> {
     fields
         .named
         .iter()
         .map(|field| {
             let ident = field.ident.as_ref().expect("named field has an ident");
             let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
-            Ok((ident.span(), attrs.deserialize_name(ident)))
+            Ok((ident.span(), attrs.deserialize_name(ident, parent)))
         })
         .collect()
 }
 
-/// Resolve each variant's deserialize-side name.
-fn variant_de_names(data: &syn::DataEnum) -> syn::Result<Vec<(proc_macro2::Span, String)>> {
+/// Resolve each variant's deserialize-side name. `parent` is the
+/// container's `rename_all` rule, applied unless the variant has its
+/// own `rename`.
+fn variant_de_names(
+    data: &syn::DataEnum,
+    parent: Option<RenameRule>,
+) -> syn::Result<Vec<(proc_macro2::Span, String)>> {
     data.variants
         .iter()
         .map(|variant| {
             let attrs = serde_attrs::parse_variant(MACRO_NAME, &variant.attrs)?;
-            Ok((variant.ident.span(), attrs.deserialize_name(&variant.ident)))
+            Ok((
+                variant.ident.span(),
+                attrs.deserialize_name(&variant.ident, parent),
+            ))
         })
         .collect()
+}
+
+/// The container's deserialize type-name tuple `(span, resolved name)`.
+fn type_name_tuple(input: &DeriveInput, container: &ContainerAttrs) -> (proc_macro2::Span, String) {
+    (input.ident.span(), container.deserialize_name(&input.ident))
 }
 
 /// Reject-loud any unsupported `#[serde(...)]` on unnamed (tuple)
@@ -771,9 +789,10 @@ fn named_visit_map(
 
 fn named_struct_body(input: &DeriveInput, fields: &syn::FieldsNamed) -> syn::Result<TokenStream2> {
     let struct_ident = &input.ident;
-    let de_names = field_de_names(fields)?;
+    let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
+    let de_names = field_de_names(fields, container.rename_all.deserialize)?;
     let names_fn = quote::format_ident!("__litmask_names");
-    let type_name_fn = type_name_fn(&container_de_name(input)?);
+    let type_name_fn = type_name_fn(&type_name_tuple(input, &container));
     let names_fn_decl = names_list_fn(&names_fn, &de_names);
     let field_identifier =
         identifier_block(&names_fn, de_names.len(), &IdentifierKind::StructField);
@@ -969,9 +988,10 @@ fn tuple_struct_body(
 /// expansion scopes them.
 fn enum_body(input: &DeriveInput, data: &syn::DataEnum) -> syn::Result<TokenStream2> {
     let enum_ident = &input.ident;
-    let de_names = variant_de_names(data)?;
+    let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
+    let de_names = variant_de_names(data, container.rename_all.deserialize)?;
     let names_fn = quote::format_ident!("__litmask_names");
-    let type_name_fn = type_name_fn(&container_de_name(input)?);
+    let type_name_fn = type_name_fn(&type_name_tuple(input, &container));
     let names_fn_decl = names_list_fn(&names_fn, &de_names);
     let variant_identifier =
         identifier_block(&names_fn, de_names.len(), &IdentifierKind::EnumVariant);
@@ -992,7 +1012,7 @@ fn enum_body(input: &DeriveInput, data: &syn::DataEnum) -> syn::Result<TokenStre
             .variants
             .iter()
             .enumerate()
-            .map(|(index, variant)| variant_arm(input, index, variant))
+            .map(|(index, variant)| variant_arm(input, index, variant, &container))
             .collect::<syn::Result<Vec<_>>>()?;
         quote! {
             match ::litmask::__serde::de::EnumAccess::variant(__data)? {
@@ -1060,12 +1080,16 @@ fn variant_arm(
     input: &DeriveInput,
     index: usize,
     variant: &syn::Variant,
+    container: &ContainerAttrs,
 ) -> syn::Result<TokenStream2> {
     let enum_ident = &input.ident;
     let vident = &variant.ident;
     let field_variant = quote::format_ident!("__field{index}");
     let vattrs = serde_attrs::parse_variant(MACRO_NAME, &variant.attrs)?;
-    let variant_name = masked_static_name(vident.span(), &vattrs.deserialize_name(vident));
+    let variant_name = masked_static_name(
+        vident.span(),
+        &vattrs.deserialize_name(vident, container.rename_all.deserialize),
+    );
     let variant_name_fn = quote! {
         fn __litmask_variant_name() -> &'static str {
             #variant_name
@@ -1105,6 +1129,7 @@ fn variant_arm(
             &variant_name_fn,
             &variant_name_call,
             fields,
+            &vattrs,
         ),
     }
 }
@@ -1205,9 +1230,10 @@ fn struct_variant_arm(
     variant_name_fn: &TokenStream2,
     variant_name_call: &TokenStream2,
     fields: &syn::FieldsNamed,
+    vattrs: &VariantAttrs,
 ) -> syn::Result<TokenStream2> {
     let enum_ident = &input.ident;
-    let de_names = field_de_names(fields)?;
+    let de_names = field_de_names(fields, vattrs.rename_all.deserialize)?;
     let vfields_fn = quote::format_ident!("__litmask_vfields");
     let vfields_decl = names_list_fn(&vfields_fn, &de_names);
     // The inner `__Field` shadows the enum-level variant identifier
