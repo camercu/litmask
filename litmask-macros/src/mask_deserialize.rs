@@ -297,6 +297,72 @@ enum IdentifierKind {
     EnumVariant,
 }
 
+/// The `IdentifierKind`-specific pieces of the identifier visitor: the
+/// optional trailing `__ignore` enum variant, the `expecting()` text,
+/// and the three no-match fallthrough arms (`visit_u64`/`visit_str`/
+/// `visit_bytes`).
+struct IdentifierFallthrough {
+    ignore_variant: Option<TokenStream2>,
+    expecting: &'static str,
+    u64_arm: TokenStream2,
+    str_arm: TokenStream2,
+    bytes_arm: TokenStream2,
+}
+
+/// Resolve the [`IdentifierKind`]-specific fallthrough behavior:
+/// struct field keys skip to `__ignore`; enum variant tags are hard
+/// errors (`unknown_variant`, or `invalid_value` for an out-of-range
+/// `visit_u64` index).
+fn identifier_fallthrough(
+    names_fn: &syn::Ident,
+    count: usize,
+    kind: &IdentifierKind,
+) -> IdentifierFallthrough {
+    match kind {
+        IdentifierKind::StructField => IdentifierFallthrough {
+            ignore_variant: Some(quote! { __ignore, }),
+            expecting: "field identifier",
+            u64_arm: quote! { ::core::result::Result::Ok(__Field::__ignore) },
+            str_arm: quote! { ::core::result::Result::Ok(__Field::__ignore) },
+            bytes_arm: quote! { ::core::result::Result::Ok(__Field::__ignore) },
+        },
+        IdentifierKind::EnumVariant => {
+            // The index-range text embeds only the variant count —
+            // no schema vocabulary — so a compile-time literal
+            // matching serde's wording exactly is safe here.
+            let index_msg = format!("variant index 0 <= i < {count}");
+            IdentifierFallthrough {
+                ignore_variant: None,
+                expecting: "variant identifier",
+                u64_arm: quote! {
+                    ::core::result::Result::Err(
+                        ::litmask::__serde::de::Error::invalid_value(
+                            ::litmask::__serde::de::Unexpected::Unsigned(__value),
+                            &#index_msg,
+                        ),
+                    )
+                },
+                str_arm: quote! {
+                    ::core::result::Result::Err(
+                        ::litmask::__serde::de::Error::unknown_variant(__value, #names_fn()),
+                    )
+                },
+                bytes_arm: quote! {
+                    {
+                        let __value = ::std::string::String::from_utf8_lossy(__value);
+                        ::core::result::Result::Err(
+                            ::litmask::__serde::de::Error::unknown_variant(
+                                &__value,
+                                #names_fn(),
+                            ),
+                        )
+                    }
+                },
+            }
+        }
+    }
+}
+
 /// Generate the `__Field` identifier enum, its visitor, and its
 /// `Deserialize` impl — the machinery `MapAccess::next_key` /
 /// `EnumAccess::variant` use to classify each incoming key or tag.
@@ -323,50 +389,13 @@ fn identifier_block(names_fn: &syn::Ident, count: usize, kind: &IdentifierKind) 
         }
     });
 
-    let (ignore_variant, expecting, u64_fallthrough, str_fallthrough, bytes_fallthrough) =
-        match kind {
-            IdentifierKind::StructField => (
-                Some(quote! { __ignore, }),
-                "field identifier",
-                quote! { ::core::result::Result::Ok(__Field::__ignore) },
-                quote! { ::core::result::Result::Ok(__Field::__ignore) },
-                quote! { ::core::result::Result::Ok(__Field::__ignore) },
-            ),
-            IdentifierKind::EnumVariant => {
-                // The index-range text embeds only the variant count —
-                // no schema vocabulary — so a compile-time literal
-                // matching serde's wording exactly is safe here.
-                let index_msg = format!("variant index 0 <= i < {count}");
-                (
-                    None,
-                    "variant identifier",
-                    quote! {
-                        ::core::result::Result::Err(
-                            ::litmask::__serde::de::Error::invalid_value(
-                                ::litmask::__serde::de::Unexpected::Unsigned(__value),
-                                &#index_msg,
-                            ),
-                        )
-                    },
-                    quote! {
-                        ::core::result::Result::Err(
-                            ::litmask::__serde::de::Error::unknown_variant(__value, #names_fn()),
-                        )
-                    },
-                    quote! {
-                        {
-                            let __value = ::std::string::String::from_utf8_lossy(__value);
-                            ::core::result::Result::Err(
-                                ::litmask::__serde::de::Error::unknown_variant(
-                                    &__value,
-                                    #names_fn(),
-                                ),
-                            )
-                        }
-                    },
-                )
-            }
-        };
+    let IdentifierFallthrough {
+        ignore_variant,
+        expecting,
+        u64_arm: u64_fallthrough,
+        str_arm: str_fallthrough,
+        bytes_arm: bytes_fallthrough,
+    } = identifier_fallthrough(names_fn, count, kind);
 
     quote! {
         #[allow(non_camel_case_types)]
@@ -462,17 +491,18 @@ struct NamedFieldsCx {
 
 /// `Option<&'static str>` tokens for `ExpectedElements.variant`.
 fn variant_option(variant_name: Option<&TokenStream2>) -> TokenStream2 {
-    match variant_name {
-        Some(call) => quote! { ::core::option::Option::Some(#call) },
-        None => quote! { ::core::option::Option::None },
+    if let Some(call) = variant_name {
+        quote! { ::core::option::Option::Some(#call) }
+    } else {
+        quote! { ::core::option::Option::None }
     }
 }
 
 /// `expecting()` body rendering `"<shape> <Name>"` (structs) or
 /// `"<shape> <Name>::<Variant>"` (variants) from decrypted names.
 fn expecting_body(shape: &str, variant_name: Option<&TokenStream2>) -> TokenStream2 {
-    match variant_name {
-        Some(call) => quote! {
+    if let Some(call) = variant_name {
+        quote! {
             ::core::write!(
                 __formatter,
                 "{} {}::{}",
@@ -480,10 +510,11 @@ fn expecting_body(shape: &str, variant_name: Option<&TokenStream2>) -> TokenStre
                 __litmask_type_name(),
                 #call,
             )
-        },
-        None => quote! {
+        }
+    } else {
+        quote! {
             ::core::write!(__formatter, "{} {}", #shape, __litmask_type_name())
-        },
+        }
     }
 }
 
@@ -542,14 +573,12 @@ fn named_fields_visitor(
         .map(|field| field.ident.as_ref().expect("named field has an ident"))
         .collect();
     let field_tys: Vec<&syn::Type> = fields.named.iter().map(|field| &field.ty).collect();
-    let field_count = field_idents.len();
     // Bindings are mangled, never the user's field idents: a field
     // named `__map` or `__seq` would otherwise shadow the generated
     // locals and break compilation.
-    let bindings: Vec<syn::Ident> = (0..field_count)
+    let bindings: Vec<syn::Ident> = (0..field_idents.len())
         .map(|i| quote::format_ident!("__field{i}"))
         .collect();
-    let field_variants = &bindings; // `__Field::__fieldN` reuses the same idents.
 
     let NamedFieldsCx {
         construct,
@@ -559,15 +588,95 @@ fn named_fields_visitor(
         visitor,
     } = cx;
 
-    let seq_lets = seq_field_lets(
-        &bindings,
+    let expecting = expecting_body(shape, variant_name.as_ref());
+    let visit_seq = named_visit_seq(
+        &field_idents,
         &field_tys,
+        &bindings,
+        construct,
         shape,
         variant_name.as_ref(),
-        field_count,
     );
-    let expecting = expecting_body(shape, variant_name.as_ref());
+    let visit_map = named_visit_map(&field_idents, &field_tys, &bindings, names_fn, construct);
 
+    let generics = split_de_generics(input);
+    let DeGenerics {
+        de_impl,
+        de_ty,
+        ty,
+        where_clause,
+    } = &generics;
+
+    quote! {
+        struct #visitor #de_impl #where_clause {
+            marker: ::core::marker::PhantomData<#struct_ident #ty>,
+            lifetime: ::core::marker::PhantomData<&'de ()>,
+        }
+
+        #[automatically_derived]
+        impl #de_impl ::litmask::__serde::de::Visitor<'de>
+            for #visitor #de_ty #where_clause
+        {
+            type Value = #struct_ident #ty;
+
+            fn expecting(
+                &self,
+                __formatter: &mut ::core::fmt::Formatter,
+            ) -> ::core::fmt::Result {
+                #expecting
+            }
+
+            #visit_seq
+            #visit_map
+        }
+    }
+}
+
+/// The `visit_seq` method of a named-fields visitor: pull each field
+/// positionally (the path non-self-describing formats take).
+fn named_visit_seq(
+    field_idents: &[&syn::Ident],
+    field_tys: &[&syn::Type],
+    bindings: &[syn::Ident],
+    construct: &TokenStream2,
+    shape: &str,
+    variant_name: Option<&TokenStream2>,
+) -> TokenStream2 {
+    let field_count = bindings.len();
+    let seq_lets = seq_field_lets(bindings, field_tys, shape, variant_name, field_count);
+    // A zero-field struct never touches its SeqAccess; binding it
+    // `mut` would warn, binding it `_` mirrors serde's expansion.
+    let seq_binding = if field_count == 0 {
+        quote! { _ }
+    } else {
+        quote! { mut __seq }
+    };
+    quote! {
+        #[inline]
+        fn visit_seq<__A>(
+            self,
+            #seq_binding: __A,
+        ) -> ::core::result::Result<Self::Value, __A::Error>
+        where
+            __A: ::litmask::__serde::de::SeqAccess<'de>,
+        {
+            #(#seq_lets)*
+            ::core::result::Result::Ok(#construct {
+                #(#field_idents: #bindings),*
+            })
+        }
+    }
+}
+
+/// The `visit_map` method of a named-fields visitor: duplicate-field
+/// detection, unknown-field skipping, and missing-field resolution.
+fn named_visit_map(
+    field_idents: &[&syn::Ident],
+    field_tys: &[&syn::Type],
+    bindings: &[syn::Ident],
+    names_fn: &syn::Ident,
+    construct: &TokenStream2,
+) -> TokenStream2 {
     let map_lets = bindings.iter().enumerate().map(|(i, binding)| {
         let fty = field_tys[i];
         quote! {
@@ -601,82 +710,32 @@ fn named_fields_visitor(
             };
         }
     });
-
-    // A zero-field struct never touches its SeqAccess; binding it
-    // `mut` would warn, binding it `_` mirrors serde's expansion.
-    let seq_binding = if field_count == 0 {
-        quote! { _ }
-    } else {
-        quote! { mut __seq }
-    };
-
-    let generics = split_de_generics(input);
-    let DeGenerics {
-        de_impl,
-        de_ty,
-        ty,
-        where_clause,
-    } = &generics;
-
     quote! {
-        struct #visitor #de_impl #where_clause {
-            marker: ::core::marker::PhantomData<#struct_ident #ty>,
-            lifetime: ::core::marker::PhantomData<&'de ()>,
-        }
-
-        #[automatically_derived]
-        impl #de_impl ::litmask::__serde::de::Visitor<'de>
-            for #visitor #de_ty #where_clause
+        #[inline]
+        fn visit_map<__A>(
+            self,
+            mut __map: __A,
+        ) -> ::core::result::Result<Self::Value, __A::Error>
+        where
+            __A: ::litmask::__serde::de::MapAccess<'de>,
         {
-            type Value = #struct_ident #ty;
-
-            fn expecting(
-                &self,
-                __formatter: &mut ::core::fmt::Formatter,
-            ) -> ::core::fmt::Result {
-                #expecting
-            }
-
-            #[inline]
-            fn visit_seq<__A>(
-                self,
-                #seq_binding: __A,
-            ) -> ::core::result::Result<Self::Value, __A::Error>
-            where
-                __A: ::litmask::__serde::de::SeqAccess<'de>,
+            #(#map_lets)*
+            while let ::core::option::Option::Some(__key) =
+                ::litmask::__serde::de::MapAccess::next_key::<__Field>(&mut __map)?
             {
-                #(#seq_lets)*
-                ::core::result::Result::Ok(#construct {
-                    #(#field_idents: #bindings),*
-                })
-            }
-
-            #[inline]
-            fn visit_map<__A>(
-                self,
-                mut __map: __A,
-            ) -> ::core::result::Result<Self::Value, __A::Error>
-            where
-                __A: ::litmask::__serde::de::MapAccess<'de>,
-            {
-                #(#map_lets)*
-                while let ::core::option::Option::Some(__key) =
-                    ::litmask::__serde::de::MapAccess::next_key::<__Field>(&mut __map)?
-                {
-                    match __key {
-                        #(#map_arms)*
-                        _ => {
-                            let _ = ::litmask::__serde::de::MapAccess::next_value::<
-                                ::litmask::__serde::de::IgnoredAny,
-                            >(&mut __map)?;
-                        }
+                match __key {
+                    #(#map_arms)*
+                    _ => {
+                        let _ = ::litmask::__serde::de::MapAccess::next_value::<
+                            ::litmask::__serde::de::IgnoredAny,
+                        >(&mut __map)?;
                     }
                 }
-                #(#map_extracts)*
-                ::core::result::Result::Ok(#construct {
-                    #(#field_idents: #field_variants),*
-                })
             }
+            #(#map_extracts)*
+            ::core::result::Result::Ok(#construct {
+                #(#field_idents: #bindings),*
+            })
         }
     }
 }
@@ -999,125 +1058,164 @@ fn variant_arm(input: &DeriveInput, index: usize, variant: &syn::Variant) -> Tok
                 ),
             }
         }
-        Fields::Unnamed(fields) => {
-            let field_tys: Vec<&syn::Type> = fields.unnamed.iter().map(|field| &field.ty).collect();
-            let field_count = field_tys.len();
-            let bindings: Vec<syn::Ident> = (0..field_count)
-                .map(|i| quote::format_ident!("__field{i}"))
-                .collect();
-            let seq_lets = seq_field_lets(
-                &bindings,
-                &field_tys,
-                "tuple variant",
-                Some(&variant_name_call),
-                field_count,
-            );
-            let seq_binding = if field_count == 0 {
-                quote! { _ }
-            } else {
-                quote! { mut __seq }
-            };
-            let expecting = expecting_body("tuple variant", Some(&variant_name_call));
-            let generics = split_de_generics(input);
-            let DeGenerics {
-                de_impl,
-                de_ty,
-                ty,
-                where_clause,
-            } = &generics;
-            quote! {
-                (__Field::#field_variant, __variant) => {
-                    #variant_name_fn
+        Fields::Unnamed(fields) => tuple_variant_arm(
+            input,
+            vident,
+            &field_variant,
+            &variant_name_fn,
+            &variant_name_call,
+            fields,
+        ),
+        Fields::Named(fields) => struct_variant_arm(
+            input,
+            vident,
+            &field_variant,
+            &variant_name_fn,
+            &variant_name_call,
+            fields,
+        ),
+    }
+}
 
-                    struct __VariantVisitor #de_impl #where_clause {
-                        marker: ::core::marker::PhantomData<#enum_ident #ty>,
-                        lifetime: ::core::marker::PhantomData<&'de ()>,
-                    }
+/// `visit_enum` arm for a multi-field (or zero-arity) tuple variant: a
+/// dedicated inner visitor whose `visit_seq` pulls each field
+/// positionally, dispatched via `tuple_variant`.
+fn tuple_variant_arm(
+    input: &DeriveInput,
+    vident: &syn::Ident,
+    field_variant: &syn::Ident,
+    variant_name_fn: &TokenStream2,
+    variant_name_call: &TokenStream2,
+    fields: &syn::FieldsUnnamed,
+) -> TokenStream2 {
+    let enum_ident = &input.ident;
+    let field_tys: Vec<&syn::Type> = fields.unnamed.iter().map(|field| &field.ty).collect();
+    let field_count = field_tys.len();
+    let bindings: Vec<syn::Ident> = (0..field_count)
+        .map(|i| quote::format_ident!("__field{i}"))
+        .collect();
+    let seq_lets = seq_field_lets(
+        &bindings,
+        &field_tys,
+        "tuple variant",
+        Some(variant_name_call),
+        field_count,
+    );
+    let seq_binding = if field_count == 0 {
+        quote! { _ }
+    } else {
+        quote! { mut __seq }
+    };
+    let expecting = expecting_body("tuple variant", Some(variant_name_call));
+    let generics = split_de_generics(input);
+    let DeGenerics {
+        de_impl,
+        de_ty,
+        ty,
+        where_clause,
+    } = &generics;
+    quote! {
+        (__Field::#field_variant, __variant) => {
+            #variant_name_fn
 
-                    #[automatically_derived]
-                    impl #de_impl ::litmask::__serde::de::Visitor<'de>
-                        for __VariantVisitor #de_ty #where_clause
-                    {
-                        type Value = #enum_ident #ty;
+            struct __VariantVisitor #de_impl #where_clause {
+                marker: ::core::marker::PhantomData<#enum_ident #ty>,
+                lifetime: ::core::marker::PhantomData<&'de ()>,
+            }
 
-                        fn expecting(
-                            &self,
-                            __formatter: &mut ::core::fmt::Formatter,
-                        ) -> ::core::fmt::Result {
-                            #expecting
-                        }
+            #[automatically_derived]
+            impl #de_impl ::litmask::__serde::de::Visitor<'de>
+                for __VariantVisitor #de_ty #where_clause
+            {
+                type Value = #enum_ident #ty;
 
-                        #[inline]
-                        fn visit_seq<__A>(
-                            self,
-                            #seq_binding: __A,
-                        ) -> ::core::result::Result<Self::Value, __A::Error>
-                        where
-                            __A: ::litmask::__serde::de::SeqAccess<'de>,
-                        {
-                            #(#seq_lets)*
-                            ::core::result::Result::Ok(
-                                #enum_ident::#vident( #(#bindings),* ),
-                            )
-                        }
-                    }
+                fn expecting(
+                    &self,
+                    __formatter: &mut ::core::fmt::Formatter,
+                ) -> ::core::fmt::Result {
+                    #expecting
+                }
 
-                    ::litmask::__serde::de::VariantAccess::tuple_variant(
-                        __variant,
-                        #field_count,
-                        __VariantVisitor {
-                            marker: ::core::marker::PhantomData,
-                            lifetime: ::core::marker::PhantomData,
-                        },
+                #[inline]
+                fn visit_seq<__A>(
+                    self,
+                    #seq_binding: __A,
+                ) -> ::core::result::Result<Self::Value, __A::Error>
+                where
+                    __A: ::litmask::__serde::de::SeqAccess<'de>,
+                {
+                    #(#seq_lets)*
+                    ::core::result::Result::Ok(
+                        #enum_ident::#vident( #(#bindings),* ),
                     )
                 }
             }
-        }
-        Fields::Named(fields) => {
-            let field_idents: Vec<&syn::Ident> = fields
-                .named
-                .iter()
-                .map(|field| field.ident.as_ref().expect("named field has an ident"))
-                .collect();
-            let vfields_fn = quote::format_ident!("__litmask_vfields");
-            let vfields_decl = names_list_fn(&vfields_fn, &field_idents);
-            // The inner `__Field` shadows the enum-level variant
-            // identifier inside this arm's block — intentional, and
-            // exactly how serde scopes its per-variant expansion.
-            let field_identifier = identifier_block(
-                &vfields_fn,
-                field_idents.len(),
-                &IdentifierKind::StructField,
-            );
-            let visitor_ident = quote::format_ident!("__VariantVisitor");
-            let visitor = named_fields_visitor(
-                input,
-                fields,
-                &NamedFieldsCx {
-                    construct: quote! { #enum_ident::#vident },
-                    names_fn: vfields_fn.clone(),
-                    shape: "struct variant",
-                    variant_name: Some(variant_name_call),
-                    visitor: visitor_ident,
+
+            ::litmask::__serde::de::VariantAccess::tuple_variant(
+                __variant,
+                #field_count,
+                __VariantVisitor {
+                    marker: ::core::marker::PhantomData,
+                    lifetime: ::core::marker::PhantomData,
                 },
-            );
-            quote! {
-                (__Field::#field_variant, __variant) => {
-                    #variant_name_fn
-                    #vfields_decl
-                    #field_identifier
-                    #visitor
+            )
+        }
+    }
+}
 
-                    ::litmask::__serde::de::VariantAccess::struct_variant(
-                        __variant,
-                        #vfields_fn(),
-                        __VariantVisitor {
-                            marker: ::core::marker::PhantomData,
-                            lifetime: ::core::marker::PhantomData,
-                        },
-                    )
-                }
-            }
+/// `visit_enum` arm for a struct variant: an inner field-identifier
+/// enum plus a named-fields visitor, dispatched via `struct_variant`.
+fn struct_variant_arm(
+    input: &DeriveInput,
+    vident: &syn::Ident,
+    field_variant: &syn::Ident,
+    variant_name_fn: &TokenStream2,
+    variant_name_call: &TokenStream2,
+    fields: &syn::FieldsNamed,
+) -> TokenStream2 {
+    let enum_ident = &input.ident;
+    let field_idents: Vec<&syn::Ident> = fields
+        .named
+        .iter()
+        .map(|field| field.ident.as_ref().expect("named field has an ident"))
+        .collect();
+    let vfields_fn = quote::format_ident!("__litmask_vfields");
+    let vfields_decl = names_list_fn(&vfields_fn, &field_idents);
+    // The inner `__Field` shadows the enum-level variant identifier
+    // inside this arm's block — intentional, and exactly how serde
+    // scopes its per-variant expansion.
+    let field_identifier = identifier_block(
+        &vfields_fn,
+        field_idents.len(),
+        &IdentifierKind::StructField,
+    );
+    let visitor_ident = quote::format_ident!("__VariantVisitor");
+    let visitor = named_fields_visitor(
+        input,
+        fields,
+        &NamedFieldsCx {
+            construct: quote! { #enum_ident::#vident },
+            names_fn: vfields_fn.clone(),
+            shape: "struct variant",
+            variant_name: Some(variant_name_call.clone()),
+            visitor: visitor_ident,
+        },
+    );
+    quote! {
+        (__Field::#field_variant, __variant) => {
+            #variant_name_fn
+            #vfields_decl
+            #field_identifier
+            #visitor
+
+            ::litmask::__serde::de::VariantAccess::struct_variant(
+                __variant,
+                #vfields_fn(),
+                __VariantVisitor {
+                    marker: ::core::marker::PhantomData,
+                    lifetime: ::core::marker::PhantomData,
+                },
+            )
         }
     }
 }

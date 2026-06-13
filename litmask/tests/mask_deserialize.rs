@@ -52,7 +52,7 @@ fn mask_deserialize_json_matches_plain_derive() {
     assert_eq!(masked.activation_count, plain.activation_count);
 }
 
-/// serde_json deserializes a struct from a JSON array via `visit_seq`
+/// `serde_json` deserializes a struct from a JSON array via `visit_seq`
 /// — same entry point non-self-describing formats use.
 #[test]
 fn mask_deserialize_json_array_form_matches_plain_derive() {
@@ -144,7 +144,7 @@ fn mask_deserialize_invalid_length_error_matches_plain_derive() {
 }
 
 /// Wrong-shape input exercises the visitor's `expecting()` text
-/// ("struct DeConfig"), which the masked derive renders at runtime.
+/// ("struct `DeConfig`"), which the masked derive renders at runtime.
 #[test]
 fn mask_deserialize_wrong_type_error_matches_plain_derive() {
     common::init_once();
