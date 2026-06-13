@@ -3,8 +3,8 @@
 //! `init!(provider)` to bootstrap AEAD-strength masking on top.
 //!
 //! Why `weak_mask!` instead of `mask!` for the env-var name: the name
-//! has to be readable BEFORE `init!()` runs (it tells the provider
-//! where to look), and `mask!` needs the AEAD mask key cell to
+//! has to be readable BEFORE `init!(provider)` runs (it tells the
+//! provider where to look), and `mask!` needs the AEAD mask key cell to
 //! already be populated. `weak_mask!` only needs the per-build
 //! wrapper bytes, which are statically present from the start of
 //! `main()`.

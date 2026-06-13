@@ -38,6 +38,12 @@ for src in litmask/examples/*.rs; do
     # `init!()` would fail its tier cross-check at compile time. The
     # `[A-Z]` guard matches a provider-type argument while skipping the
     # no-arg `init!()` and the `init!(bind_to_machine)` keyword form.
+    # NOTE: this greps the whole source, comments included — an Embedded
+    # example whose doc comment happens to show `init!(SomeProvider)`
+    # would be misclassified as External. None do today; if one ever
+    # does, switch to an explicit per-example allow-list. A genuine
+    # form↔tier mismatch is still caught loudly by the build's
+    # cross-check regardless.
     if grep -qE 'init!\([A-Z]' "$src"; then
         # Export the canonical name AND the custom name `weak_mask_demo`
         # reads (`MYAPP_SECRET_KEY`); the extra binding is a harmless
