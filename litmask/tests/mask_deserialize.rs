@@ -501,6 +501,23 @@ struct DeBorrowed<'a> {
     payload: u8,
 }
 
+/// serde also auto-borrows `&[u8]` fields. JSON cannot borrow bytes, so
+/// this round-trips through postcard (zero-copy byte slices); the plain
+/// `Serialize` derive just produces the wire bytes for the test.
+#[derive(MaskDeserialize, serde::Serialize, Debug, PartialEq)]
+struct DeBorrowedBytes<'a> {
+    borrowed_blob: &'a [u8],
+    payload: u8,
+}
+
+/// The borrow detection unwraps `Option`, so an `Option<&str>` field
+/// still contributes its lifetime to the `'de: 'a` bound.
+#[derive(MaskDeserialize, Debug, PartialEq)]
+struct DeOptionBorrowed<'a> {
+    maybe_label: Option<&'a str>,
+    payload: u8,
+}
+
 #[derive(MaskDeserialize, Debug, PartialEq)]
 struct DeRawIdent {
     r#type: String,
@@ -553,6 +570,48 @@ fn mask_deserialize_borrowed_str_field_round_trips() {
     let masked: DeBorrowed<'_> = serde_json::from_str(input).expect("masked failed");
     assert_eq!(masked.borrowed_label, "tag");
     assert_eq!(masked.payload, 9);
+}
+
+#[test]
+fn mask_deserialize_borrowed_bytes_field_round_trips() {
+    common::init_once();
+    // postcard borrows `&[u8]` zero-copy from the input buffer; this
+    // only compiles if the derive adds the `'de: 'a` bound for the
+    // `&[u8]` field (the `is_slice_u8` borrow-detection branch).
+    let blob: &[u8] = &[1, 2, 3];
+    let original = DeBorrowedBytes {
+        borrowed_blob: blob,
+        payload: 9,
+    };
+    let bytes = postcard::to_stdvec(&original).expect("serialization failed");
+    let restored: DeBorrowedBytes<'_> = postcard::from_bytes(&bytes).expect("masked failed");
+    assert_eq!(restored, original);
+}
+
+#[test]
+fn mask_deserialize_option_borrowed_str_field_round_trips() {
+    common::init_once();
+    // Present borrows `&str` through the `Option`; absent resolves the
+    // missing field to `None`. Both rely on the lifetime being detected
+    // through the `Option` wrapper.
+    let present: DeOptionBorrowed<'_> =
+        serde_json::from_str(r#"{"maybe_label":"tag","payload":9}"#).expect("present failed");
+    assert_eq!(
+        present,
+        DeOptionBorrowed {
+            maybe_label: Some("tag"),
+            payload: 9,
+        }
+    );
+    let absent: DeOptionBorrowed<'_> =
+        serde_json::from_str(r#"{"payload":9}"#).expect("absent failed");
+    assert_eq!(
+        absent,
+        DeOptionBorrowed {
+            maybe_label: None,
+            payload: 9,
+        }
+    );
 }
 
 /// Raw identifiers deserialize unraw'd (`r#type` ← `"type"`),
