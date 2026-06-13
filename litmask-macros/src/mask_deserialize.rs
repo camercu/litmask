@@ -51,6 +51,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 }
 
 fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
+    serde_attrs::reject_with_on_generic(input, MACRO_NAME)?;
     let body = deserialize_body(input)?;
     let struct_ident = &input.ident;
     let DeGenerics {
@@ -139,6 +140,7 @@ struct NamedFieldInfo<'a> {
     de_name: (proc_macro2::Span, String),
     default: Option<serde_attrs::DefaultSource>,
     aliases: Vec<String>,
+    deserialize_with: Option<syn::Path>,
 }
 
 /// The value a field takes when absent from the input: its
@@ -149,6 +151,24 @@ fn default_value_expr(default: Option<&serde_attrs::DefaultSource>) -> TokenStre
         quote! { #path() }
     } else {
         quote! { ::core::default::Default::default() }
+    }
+}
+
+/// A local `Deserialize` adapter wrapping `ty`, whose `deserialize`
+/// calls the `deserialize_with` function `path(deserializer)`. Block-
+/// scoped at each use site, so the fixed name never collides. Non-
+/// generic only (a local item cannot name outer generic params).
+fn de_with_wrapper(ty: &syn::Type, path: &syn::Path) -> TokenStream2 {
+    quote! {
+        struct __DeserializeWith(#ty);
+        impl<'de> ::litmask::__serde::Deserialize<'de> for __DeserializeWith {
+            fn deserialize<__D>(__d: __D) -> ::core::result::Result<Self, __D::Error>
+            where
+                __D: ::litmask::__serde::Deserializer<'de>,
+            {
+                ::core::result::Result::Ok(__DeserializeWith(#path(__d)?))
+            }
+        }
     }
 }
 
@@ -172,6 +192,7 @@ fn named_field_infos(
                 de_name: (ident.span(), attrs.deserialize_name(ident, parent)),
                 default: attrs.default,
                 aliases: attrs.aliases,
+                deserialize_with: attrs.deserialize_with,
             })
         })
         .collect()
@@ -898,10 +919,26 @@ fn named_visit_seq(
                     );
                 }
             };
+            let next_element = if let Some(path) = &info.deserialize_with {
+                let wrapper = de_with_wrapper(fty, path);
+                quote! {
+                    {
+                        #wrapper
+                        ::core::option::Option::map(
+                            ::litmask::__serde::de::SeqAccess::next_element::<__DeserializeWith>(
+                                &mut __seq,
+                            )?,
+                            |__w| __w.0,
+                        )
+                    }
+                }
+            } else {
+                quote! {
+                    ::litmask::__serde::de::SeqAccess::next_element::<#fty>(&mut __seq)?
+                }
+            };
             lets.push(quote! {
-                let #local = match ::litmask::__serde::de::SeqAccess::next_element::<#fty>(
-                    &mut __seq,
-                )? {
+                let #local = match #next_element {
                     ::core::option::Option::Some(__value) => __value,
                     ::core::option::Option::None => { #on_missing }
                 };
@@ -960,6 +997,17 @@ fn named_visit_map(
         lets.push(quote! {
             let mut #value: ::core::option::Option<#fty> = ::core::option::Option::None;
         });
+        let next_value = if let Some(path) = &info.deserialize_with {
+            let wrapper = de_with_wrapper(fty, path);
+            quote! {
+                {
+                    #wrapper
+                    ::litmask::__serde::de::MapAccess::next_value::<__DeserializeWith>(&mut __map)?.0
+                }
+            }
+        } else {
+            quote! { ::litmask::__serde::de::MapAccess::next_value::<#fty>(&mut __map)? }
+        };
         arms.push(quote! {
             __Field::#field_variant => {
                 if ::core::option::Option::is_some(&#value) {
@@ -969,9 +1017,7 @@ fn named_visit_map(
                         ),
                     );
                 }
-                #value = ::core::option::Option::Some(
-                    ::litmask::__serde::de::MapAccess::next_value::<#fty>(&mut __map)?,
-                );
+                #value = ::core::option::Option::Some(#next_value);
             }
         });
         let on_missing = if info.default.is_some() {

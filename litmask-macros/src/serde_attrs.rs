@@ -12,7 +12,8 @@
 //! `(serialize = ..., deserialize = ...)` split form) on the container,
 //! variants, and fields as serde allows, plus `skip` /
 //! `skip_serializing` / `skip_deserializing` / `skip_serializing_if` /
-//! `default` (and `default = "path"`) / `alias` on named fields, and
+//! `default` (and `default = "path"`) / `alias` / `with` /
+//! `serialize_with` / `deserialize_with` on named fields, and
 //! `deny_unknown_fields` / `bound` / `transparent` on the container.
 //! Every other key is reject-loud and listed for a later slice.
 
@@ -180,6 +181,12 @@ pub(crate) struct FieldAttrs {
     /// `#[serde(alias = "name")]` (repeatable): extra literal names the
     /// field also accepts on deserialize. Not affected by `rename_all`.
     pub(crate) aliases: Vec<String>,
+    /// `#[serde(serialize_with = "path")]` (or `with`): serialize the
+    /// field by calling `path(&field, serializer)`.
+    pub(crate) serialize_with: Option<syn::Path>,
+    /// `#[serde(deserialize_with = "path")]` (or `with`): deserialize the
+    /// field by calling `path(deserializer)`.
+    pub(crate) deserialize_with: Option<syn::Path>,
 }
 
 /// Where a defaulted field's value comes from when absent from the
@@ -366,6 +373,17 @@ pub(crate) fn parse_field(macro_name: &str, attrs: &[Attribute]) -> syn::Result<
             let lit: LitStr = meta.value()?.parse()?;
             out.aliases.push(lit.value());
             Ok(())
+        } else if meta.path.is_ident("with") {
+            let module: syn::Path = meta.value()?.parse::<LitStr>()?.parse()?;
+            out.serialize_with = Some(syn::parse_quote!(#module::serialize));
+            out.deserialize_with = Some(syn::parse_quote!(#module::deserialize));
+            Ok(())
+        } else if meta.path.is_ident("serialize_with") {
+            out.serialize_with = Some(meta.value()?.parse::<LitStr>()?.parse()?);
+            Ok(())
+        } else if meta.path.is_ident("deserialize_with") {
+            out.deserialize_with = Some(meta.value()?.parse::<LitStr>()?.parse()?);
+            Ok(())
         } else {
             Err(unsupported(macro_name, &meta))
         }
@@ -462,6 +480,41 @@ fn rule_from_lit(macro_name: &str, lit: &LitStr) -> syn::Result<RenameRule> {
             &format!("unknown `rename_all` rule `{}`", lit.value()),
         )
     })
+}
+
+/// Reject-loud a `with` / `serialize_with` / `deserialize_with` field on
+/// a generic type. The generated adapter is a local item, which cannot
+/// name the surrounding impl's generic parameters, so this shape is not
+/// supported yet (a documented limitation).
+pub(crate) fn reject_with_on_generic(
+    input: &syn::DeriveInput,
+    macro_name: &str,
+) -> syn::Result<()> {
+    if input.generics.params.is_empty() {
+        return Ok(());
+    }
+    let fields: Vec<&syn::Field> = match &input.data {
+        syn::Data::Struct(data) => data.fields.iter().collect(),
+        syn::Data::Enum(data) => data
+            .variants
+            .iter()
+            .flat_map(|variant| variant.fields.iter())
+            .collect(),
+        syn::Data::Union(_) => Vec::new(),
+    };
+    for field in fields {
+        let attrs = parse_field(macro_name, &field.attrs)?;
+        if attrs.serialize_with.is_some() || attrs.deserialize_with.is_some() {
+            return Err(compile_error(
+                field.span(),
+                macro_name,
+                FailTag::InvalidArg,
+                "`#[serde(with/serialize_with/deserialize_with)]` is not yet supported on a \
+                 generic type",
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Reject-loud error for a `#[serde(...)]` key not yet honored by the
@@ -663,6 +716,22 @@ mod tests {
         assert_eq!(ser.len(), 1);
         assert_eq!(de.len(), 1);
         assert_eq!(quote!(#(#ser)*).to_string(), quote!(T: Clone).to_string());
+    }
+
+    #[test]
+    fn with_expands_to_serialize_and_deserialize_paths() {
+        let f = field(&quote! { #[serde(with = "my_mod")] x: u8 });
+        let attrs = parse_field("MaskSerialize", &f.attrs).expect("parses");
+        let ser = attrs.serialize_with.expect("serialize_with");
+        let de = attrs.deserialize_with.expect("deserialize_with");
+        assert_eq!(
+            quote!(#ser).to_string(),
+            quote!(my_mod::serialize).to_string()
+        );
+        assert_eq!(
+            quote!(#de).to_string(),
+            quote!(my_mod::deserialize).to_string()
+        );
     }
 
     #[test]

@@ -41,6 +41,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 }
 
 fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
+    serde_attrs::reject_with_on_generic(input, MACRO_NAME)?;
     let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
     let body = serialize_body(input, &container)?;
 
@@ -235,10 +236,14 @@ fn struct_variant_arm(
         pattern_binds.push(quote! { #ident: #binding });
         let value = quote! { #binding };
         serialize_fields.push(serialize_struct_field(
-            &quote! { ::litmask::__serde::ser::SerializeStructVariant },
-            &field_name,
-            &value,
-            attrs.skip_serializing_if.as_ref(),
+            &SerField {
+                trait_path: &quote! { ::litmask::__serde::ser::SerializeStructVariant },
+                field_name: &field_name,
+                value: &value,
+                ty: &field.ty,
+                skip_if: attrs.skip_serializing_if.as_ref(),
+                serialize_with: attrs.serialize_with.as_ref(),
+            },
             &mut len_adjusts,
         ));
     }
@@ -335,10 +340,14 @@ fn named_struct_body(
         let field_name = masked_static_name(ident.span(), &attrs.serialize_name(ident, rename_all));
         let value = quote! { &self.#ident };
         serialize_fields.push(serialize_struct_field(
-            &quote! { ::litmask::__serde::ser::SerializeStruct },
-            &field_name,
-            &value,
-            attrs.skip_serializing_if.as_ref(),
+            &SerField {
+                trait_path: &quote! { ::litmask::__serde::ser::SerializeStruct },
+                field_name: &field_name,
+                value: &value,
+                ty: &field.ty,
+                skip_if: attrs.skip_serializing_if.as_ref(),
+                serialize_with: attrs.serialize_with.as_ref(),
+            },
             &mut len_adjusts,
         ));
     }
@@ -355,19 +364,39 @@ fn named_struct_body(
     })
 }
 
-/// Emit one `serialize_field` statement, wrapping it in an
-/// `if !predicate(value)` guard for `skip_serializing_if` fields and
-/// recording the matching `if predicate(value) { __len -= 1; }`
-/// length adjustment.
-fn serialize_struct_field(
-    trait_path: &TokenStream2,
-    field_name: &TokenStream2,
-    value: &TokenStream2,
-    skip_if: Option<&syn::Path>,
-    len_adjusts: &mut Vec<TokenStream2>,
-) -> TokenStream2 {
+/// A single field to serialize via a `SerializeStruct`-like state.
+struct SerField<'a> {
+    trait_path: &'a TokenStream2,
+    field_name: &'a TokenStream2,
+    /// The borrow of the field (`&self.f` or a struct-variant binding),
+    /// used for the `skip_serializing_if` predicate.
+    value: &'a TokenStream2,
+    ty: &'a syn::Type,
+    skip_if: Option<&'a syn::Path>,
+    serialize_with: Option<&'a syn::Path>,
+}
+
+/// Emit one `serialize_field` statement, routing the value through a
+/// `serialize_with` adapter when present, wrapping it in an
+/// `if !predicate(value)` guard for `skip_serializing_if` fields, and
+/// recording the matching `if predicate(value) { __len -= 1; }` length
+/// adjustment.
+fn serialize_struct_field(field: &SerField, len_adjusts: &mut Vec<TokenStream2>) -> TokenStream2 {
+    let SerField {
+        trait_path,
+        field_name,
+        value,
+        ty,
+        skip_if,
+        serialize_with,
+    } = field;
+    let serialize_value = if let Some(path) = serialize_with {
+        serialize_with_adapter(ty, path, value)
+    } else {
+        quote! { #value }
+    };
     let call = quote! {
-        #trait_path::serialize_field(&mut __state, #field_name, #value)?;
+        #trait_path::serialize_field(&mut __state, #field_name, #serialize_value)?;
     };
     match skip_if {
         Some(pred) => {
@@ -375,6 +404,29 @@ fn serialize_struct_field(
             quote! { if !#pred(#value) { #call } }
         }
         None => call,
+    }
+}
+
+/// A local `Serialize` adapter that serializes `value` (a `&Field`)
+/// through the `serialize_with` function `path(&field, serializer)`.
+/// Non-generic only — a local item cannot name outer generic params.
+fn serialize_with_adapter(ty: &syn::Type, path: &syn::Path, value: &TokenStream2) -> TokenStream2 {
+    quote! {
+        &{
+            struct __SerializeWith<'__l>(&'__l #ty);
+            impl<'__l> ::litmask::__serde::Serialize for __SerializeWith<'__l> {
+                fn serialize<__S>(
+                    &self,
+                    __s: __S,
+                ) -> ::core::result::Result<__S::Ok, __S::Error>
+                where
+                    __S: ::litmask::__serde::Serializer,
+                {
+                    #path(self.0, __s)
+                }
+            }
+            __SerializeWith(#value)
+        }
     }
 }
 
