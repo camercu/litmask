@@ -1,3 +1,13 @@
+## [0.14.0](https://github.com/camercu/litmask/compare/v0.13.0...v0.14.0) (2026-06-13)
+
+### ⚠ BREAKING CHANGES
+
+* **init:** the init_with!(provider) macro is removed. Replace
+init_with!(provider) with init!(provider) on an externally-sealed build,
+or init!() on the Embedded default.
+
+* **init:** remove init_with! macro in favor of init! ([5f9cf8f](https://github.com/camercu/litmask/commit/5f9cf8ff42d54096264ca3f95084788a50098b52))
+
 ## [0.13.0](https://github.com/camercu/litmask/compare/v0.12.0...v0.13.0) (2026-06-13)
 
 ### ⚠ BREAKING CHANGES
