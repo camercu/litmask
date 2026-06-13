@@ -27,9 +27,8 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields};
 
-use crate::common::{
-    FailTag, apply_bounds, compile_error, expand_derive, masked_static_name, transparent_field,
-};
+use crate::common::{FailTag, compile_error, masked_static_name};
+use crate::derive_support::{apply_bounds, expand_derive, transparent_field};
 use crate::serde_attrs::{self, ContainerAttrs, RenameRule};
 
 const MACRO_NAME: &str = "MaskSerialize";

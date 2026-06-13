@@ -18,7 +18,8 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields};
 
-use crate::common::{FailTag, compile_error, expand_derive, mask_ident, with_trait_bounds};
+use crate::common::{FailTag, compile_error, mask_ident};
+use crate::derive_support::{expand_derive, with_trait_bounds};
 
 const MACRO_NAME: &str = "MaskDebug";
 

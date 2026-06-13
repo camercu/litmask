@@ -18,6 +18,7 @@
 use proc_macro::TokenStream;
 
 mod common;
+mod derive_support;
 mod init;
 mod mask;
 mod mask_all;
