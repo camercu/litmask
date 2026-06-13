@@ -1,3 +1,38 @@
+## [0.13.0](https://github.com/camercu/litmask/compare/v0.12.0...v0.13.0) (2026-06-13)
+
+### ⚠ BREAKING CHANGES
+
+* **serde:** `#[derive(MaskedSerialize)]` is now
+`#[derive(MaskSerialize)]`. The derive is experimental and
+semver-exempt, so no version bump required.
+
+* **serde:** rename MaskedSerialize derive to MaskSerialize ([e8ee2a6](https://github.com/camercu/litmask/commit/e8ee2a6fcd8254bc312cc6d3a7dc510bd08b5ad9))
+
+### Features
+
+* **debug:** add MaskDebug derive masking type and field names ([15bfe98](https://github.com/camercu/litmask/commit/15bfe98b4b1b3032d351534c09907220aa50bd21))
+* **debug:** generic bounds, raw idents, uninhabited enums in MaskDebug ([6f3f0d8](https://github.com/camercu/litmask/commit/6f3f0d8408f6961cc0472781d4f6eb9cbb6353ce))
+* **debug:** support enums in MaskDebug ([cbb3b38](https://github.com/camercu/litmask/commit/cbb3b38c9bfbef6f37d00e773de9b5acb14ab361))
+* **debug:** support tuple and unit structs in MaskDebug ([6fa775c](https://github.com/camercu/litmask/commit/6fa775c768cceea050ad3a987c803705f8a929c8))
+* **serde:** add experimental MaskedSerialize derive behind unstable-serde ([65f9666](https://github.com/camercu/litmask/commit/65f96662c2c153861c02c65aacc3792cdebcdf9c))
+* **serde:** add MaskDeserialize derive for named-field structs ([b1bcdc1](https://github.com/camercu/litmask/commit/b1bcdc1e723c26917cd6a125b87c3c3eb822aa66))
+* **serde:** generics, borrowed fields, and hygiene in MaskDeserialize ([fad3482](https://github.com/camercu/litmask/commit/fad3482ef4b0aefc2c571b7581a5b332166b1164))
+* **serde:** reject #[serde(...)] attributes on MaskedSerialize loudly ([58f7443](https://github.com/camercu/litmask/commit/58f74439a4ceedae5ea711197540c5ed7161776a))
+* **serde:** support enums in MaskDeserialize ([9492b2c](https://github.com/camercu/litmask/commit/9492b2cfe6031ab5fb89ed8d3c3c7161b31cc856))
+* **serde:** support enums in MaskSerialize ([53c416f](https://github.com/camercu/litmask/commit/53c416fe72173f00b8eb5a5b2d1968ca95f62273))
+* **serde:** support generic structs in MaskedSerialize ([c33e8f0](https://github.com/camercu/litmask/commit/c33e8f097b015c7692263c74e0d276f4f6581a1a))
+* **serde:** support tuple and newtype structs in MaskSerialize ([e37cb11](https://github.com/camercu/litmask/commit/e37cb11769ac7a087703c7d12b4b797fefbf9bc6))
+* **serde:** support unit structs in MaskSerialize ([6c8ef69](https://github.com/camercu/litmask/commit/6c8ef6977eff892b6b5927d7b90c5c5e49f70d81))
+* **serde:** support unit, newtype, and tuple structs in MaskDeserialize ([665470d](https://github.com/camercu/litmask/commit/665470df8fec3e3eeacd3be354650f2dfe176c9f))
+
+### Bug Fixes
+
+* **debug:** copy packed fields instead of referencing them ([87f983f](https://github.com/camercu/litmask/commit/87f983fddccaa40d6c8168f4b13dde4be921b2a1))
+* **debug:** mangle enum named-variant bindings for hygiene ([8b60d74](https://github.com/camercu/litmask/commit/8b60d74a2ba3a05e2d3b82f62a5817fd10ff06c5))
+* **deps:** drop postcard default features in dev-deps ([f608b63](https://github.com/camercu/litmask/commit/f608b6376ec1fad19cc5c245ec917477876c604d))
+* **runtime:** make mask! const/static diagnostics feature-independent ([ed29ac5](https://github.com/camercu/litmask/commit/ed29ac50f85a47fc9af151ff9ae15276fc039a80))
+* **serde:** silence clippy in MaskDeserialize code under -D warnings ([ff259e8](https://github.com/camercu/litmask/commit/ff259e85e72c927d48e35a4e63265b50de7cd1e6))
+
 ## [0.12.0](https://github.com/camercu/litmask/compare/v0.11.0...v0.12.0) (2026-06-12)
 
 ### ⚠ BREAKING CHANGES
