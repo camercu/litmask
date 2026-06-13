@@ -12,8 +12,9 @@
 //! `(serialize = ..., deserialize = ...)` split form) on the container,
 //! variants, and fields as serde allows, plus `skip` /
 //! `skip_serializing` / `skip_deserializing` / `skip_serializing_if` /
-//! `default` (and `default = "path"`) on named fields. Every other key
-//! is reject-loud and listed for a later slice.
+//! `default` (and `default = "path"`) / `alias` on named fields, and
+//! `deny_unknown_fields` on the container. Every other key is
+//! reject-loud and listed for a later slice.
 
 use syn::ext::IdentExt;
 use syn::meta::ParseNestedMeta;
@@ -140,6 +141,9 @@ pub(crate) struct RenameAll {
 pub(crate) struct ContainerAttrs {
     pub(crate) rename: Rename,
     pub(crate) rename_all: RenameAll,
+    /// `#[serde(deny_unknown_fields)]`: an unknown field key is a hard
+    /// error (`unknown_field`) instead of being skipped.
+    pub(crate) deny_unknown_fields: bool,
 }
 
 /// Field-level serde attributes.
@@ -159,6 +163,9 @@ pub(crate) struct FieldAttrs {
     /// `#[serde(default)]` / `#[serde(default = "path")]`: how a missing
     /// (or `skip_deserializing`) field is filled instead of erroring.
     pub(crate) default: Option<DefaultSource>,
+    /// `#[serde(alias = "name")]` (repeatable): extra literal names the
+    /// field also accepts on deserialize. Not affected by `rename_all`.
+    pub(crate) aliases: Vec<String>,
 }
 
 /// Where a defaulted field's value comes from when absent from the
@@ -262,6 +269,9 @@ pub(crate) fn parse_container(
         } else if meta.path.is_ident("rename_all") {
             out.rename_all = parse_rename_all(macro_name, &meta)?;
             Ok(())
+        } else if meta.path.is_ident("deny_unknown_fields") {
+            out.deny_unknown_fields = true;
+            Ok(())
         } else {
             Err(unsupported(macro_name, &meta))
         }
@@ -297,6 +307,10 @@ pub(crate) fn parse_field(macro_name: &str, attrs: &[Attribute]) -> syn::Result<
             } else {
                 DefaultSource::DefaultTrait
             });
+            Ok(())
+        } else if meta.path.is_ident("alias") {
+            let lit: LitStr = meta.value()?.parse()?;
+            out.aliases.push(lit.value());
             Ok(())
         } else {
             Err(unsupported(macro_name, &meta))
@@ -570,6 +584,40 @@ mod tests {
             }
             _ => panic!("expected a default path"),
         }
+    }
+
+    #[test]
+    fn aliases_accumulate() {
+        let f = field(&quote! { #[serde(alias = "id", alias = "key")] primary: u8 });
+        let attrs = parse_field("MaskDeserialize", &f.attrs).expect("parses");
+        assert_eq!(attrs.aliases, vec!["id".to_string(), "key".to_string()]);
+    }
+
+    #[test]
+    fn deny_unknown_fields_parses_on_container() {
+        let di: syn::DeriveInput = syn::parse2(quote! {
+            #[serde(deny_unknown_fields)]
+            struct S { x: u8 }
+        })
+        .expect("parses");
+        let attrs = parse_container("MaskDeserialize", &di.attrs).expect("parses");
+        assert!(attrs.deny_unknown_fields);
+    }
+
+    #[test]
+    fn variant_alias_is_reject_loud() {
+        let di: syn::DeriveInput = syn::parse2(quote! {
+            enum E {
+                #[serde(alias = "v")]
+                V,
+            }
+        })
+        .expect("parses");
+        let syn::Data::Enum(data) = di.data else {
+            unreachable!()
+        };
+        let variant = &data.variants[0];
+        assert!(parse_variant("MaskDeserialize", &variant.attrs).is_err());
     }
 
     #[test]

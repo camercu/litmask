@@ -114,6 +114,7 @@ struct NamedFieldInfo<'a> {
     skip_de: bool,
     de_name: (proc_macro2::Span, String),
     default: Option<serde_attrs::DefaultSource>,
+    aliases: Vec<String>,
 }
 
 /// The value a field takes when absent from the input: its
@@ -146,6 +147,7 @@ fn named_field_infos(
                 skip_de: attrs.skip_deserializing,
                 de_name: (ident.span(), attrs.deserialize_name(ident, parent)),
                 default: attrs.default,
+                aliases: attrs.aliases,
             })
         })
         .collect()
@@ -159,6 +161,41 @@ fn de_names_of(infos: &[NamedFieldInfo]) -> Vec<(proc_macro2::Span, String)> {
         .filter(|info| !info.skip_de)
         .map(|info| info.de_name.clone())
         .collect()
+}
+
+/// Build the `#[serde(alias)]` match data for a set of named fields: a
+/// (possibly empty) declaration of the masked alias-name function and,
+/// when any aliases exist, the [`AliasMatch`] mapping each alias to its
+/// field's `__Field` variant (indexed among the non-skipped fields, to
+/// align with [`identifier_block`]'s variant numbering).
+fn build_aliases(
+    names_fn: &syn::Ident,
+    infos: &[NamedFieldInfo],
+) -> (TokenStream2, Option<AliasMatch>) {
+    let mut flat: Vec<(proc_macro2::Span, String)> = Vec::new();
+    let mut entries: Vec<(usize, usize)> = Vec::new();
+    let mut field_index = 0usize;
+    for info in infos {
+        if info.skip_de {
+            continue;
+        }
+        for alias in &info.aliases {
+            entries.push((field_index, flat.len()));
+            flat.push((info.de_name.0, alias.clone()));
+        }
+        field_index += 1;
+    }
+    if flat.is_empty() {
+        return (TokenStream2::new(), None);
+    }
+    let decl = names_list_fn(names_fn, &flat);
+    (
+        decl,
+        Some(AliasMatch {
+            names_fn: names_fn.clone(),
+            entries,
+        }),
+    )
 }
 
 /// Resolve each variant's deserialize-side name. `parent` is the
@@ -405,22 +442,55 @@ struct IdentifierFallthrough {
 }
 
 /// Resolve the [`IdentifierKind`]-specific fallthrough behavior:
-/// struct field keys skip to `__ignore`; enum variant tags are hard
-/// errors (`unknown_variant`, or `invalid_value` for an out-of-range
-/// `visit_u64` index).
+/// struct field keys skip to `__ignore` (or, under `deny_unknown`, are
+/// a hard `unknown_field` error for string/byte keys); enum variant
+/// tags are hard errors (`unknown_variant`, or `invalid_value` for an
+/// out-of-range `visit_u64` index).
 fn identifier_fallthrough(
     names_fn: &syn::Ident,
     count: usize,
     kind: &IdentifierKind,
+    deny_unknown: bool,
 ) -> IdentifierFallthrough {
     match kind {
-        IdentifierKind::StructField => IdentifierFallthrough {
-            ignore_variant: Some(quote! { __ignore, }),
-            expecting: "field identifier",
-            u64_arm: quote! { ::core::result::Result::Ok(__Field::__ignore) },
-            str_arm: quote! { ::core::result::Result::Ok(__Field::__ignore) },
-            bytes_arm: quote! { ::core::result::Result::Ok(__Field::__ignore) },
-        },
+        IdentifierKind::StructField => {
+            // `deny_unknown_fields` errors on unknown string/byte keys
+            // (the keys self-describing formats use). A numeric
+            // (`visit_u64`) out-of-range key still routes to `__ignore`,
+            // matching serde for the self-describing path this targets.
+            let (str_arm, bytes_arm) = if deny_unknown {
+                (
+                    quote! {
+                        ::core::result::Result::Err(
+                            ::litmask::__serde::de::Error::unknown_field(__value, #names_fn()),
+                        )
+                    },
+                    quote! {
+                        {
+                            let __value = ::std::string::String::from_utf8_lossy(__value);
+                            ::core::result::Result::Err(
+                                ::litmask::__serde::de::Error::unknown_field(
+                                    &__value,
+                                    #names_fn(),
+                                ),
+                            )
+                        }
+                    },
+                )
+            } else {
+                (
+                    quote! { ::core::result::Result::Ok(__Field::__ignore) },
+                    quote! { ::core::result::Result::Ok(__Field::__ignore) },
+                )
+            };
+            IdentifierFallthrough {
+                ignore_variant: Some(quote! { __ignore, }),
+                expecting: "field identifier",
+                u64_arm: quote! { ::core::result::Result::Ok(__Field::__ignore) },
+                str_arm,
+                bytes_arm,
+            }
+        }
         IdentifierKind::EnumVariant => {
             // The index-range text embeds only the variant count —
             // no schema vocabulary — so a compile-time literal
@@ -458,31 +528,75 @@ fn identifier_fallthrough(
     }
 }
 
+/// Extra `#[serde(alias)]` match arms: a leaked name function plus the
+/// `(field index, alias index)` pairs mapping each alias back to its
+/// field's `__Field` variant.
+struct AliasMatch {
+    names_fn: syn::Ident,
+    entries: Vec<(usize, usize)>,
+}
+
+/// Build the `visit_str` / `visit_bytes` comparison arms for an
+/// identifier visitor: one per primary name, plus one per
+/// `#[serde(alias)]` mapping back to its field's variant.
+fn identifier_match_arms(
+    names_fn: &syn::Ident,
+    variants: &[syn::Ident],
+    aliases: Option<&AliasMatch>,
+) -> (Vec<TokenStream2>, Vec<TokenStream2>) {
+    let mut str_arms = Vec::new();
+    let mut bytes_arms = Vec::new();
+    for (i, variant) in variants.iter().enumerate() {
+        str_arms.push(quote! {
+            if __value == #names_fn()[#i] {
+                return ::core::result::Result::Ok(__Field::#variant);
+            }
+        });
+        bytes_arms.push(quote! {
+            if __value == #names_fn()[#i].as_bytes() {
+                return ::core::result::Result::Ok(__Field::#variant);
+            }
+        });
+    }
+    if let Some(alias) = aliases {
+        let alias_fn = &alias.names_fn;
+        for (field_index, alias_index) in &alias.entries {
+            let variant = &variants[*field_index];
+            str_arms.push(quote! {
+                if __value == #alias_fn()[#alias_index] {
+                    return ::core::result::Result::Ok(__Field::#variant);
+                }
+            });
+            bytes_arms.push(quote! {
+                if __value == #alias_fn()[#alias_index].as_bytes() {
+                    return ::core::result::Result::Ok(__Field::#variant);
+                }
+            });
+        }
+    }
+    (str_arms, bytes_arms)
+}
+
 /// Generate the `__Field` identifier enum, its visitor, and its
 /// `Deserialize` impl — the machinery `MapAccess::next_key` /
 /// `EnumAccess::variant` use to classify each incoming key or tag.
 /// Mirrors serde's expansion with one difference: the
 /// `visit_str`/`visit_bytes` arms compare against decrypted names at
-/// runtime instead of literal match patterns.
-fn identifier_block(names_fn: &syn::Ident, count: usize, kind: &IdentifierKind) -> TokenStream2 {
+/// runtime instead of literal match patterns. `aliases` adds extra
+/// accepted names per field; `deny_unknown` makes unknown string keys a
+/// hard error.
+fn identifier_block(
+    names_fn: &syn::Ident,
+    count: usize,
+    kind: &IdentifierKind,
+    aliases: Option<&AliasMatch>,
+    deny_unknown: bool,
+) -> TokenStream2 {
     let variants: Vec<syn::Ident> = (0..count)
         .map(|i| quote::format_ident!("__field{i}"))
         .collect();
     let indices = 0..count as u64;
-    let str_arms = variants.iter().enumerate().map(|(i, variant)| {
-        quote! {
-            if __value == #names_fn()[#i] {
-                return ::core::result::Result::Ok(__Field::#variant);
-            }
-        }
-    });
-    let bytes_arms = variants.iter().enumerate().map(|(i, variant)| {
-        quote! {
-            if __value == #names_fn()[#i].as_bytes() {
-                return ::core::result::Result::Ok(__Field::#variant);
-            }
-        }
-    });
+    let (str_arms, bytes_arms) = identifier_match_arms(names_fn, &variants, aliases);
 
     let IdentifierFallthrough {
         ignore_variant,
@@ -490,7 +604,7 @@ fn identifier_block(names_fn: &syn::Ident, count: usize, kind: &IdentifierKind) 
         u64_arm: u64_fallthrough,
         str_arm: str_fallthrough,
         bytes_arm: bytes_fallthrough,
-    } = identifier_fallthrough(names_fn, count, kind);
+    } = identifier_fallthrough(names_fn, count, kind, deny_unknown);
 
     quote! {
         #[allow(non_camel_case_types)]
@@ -876,10 +990,17 @@ fn named_struct_body(input: &DeriveInput, fields: &syn::FieldsNamed) -> syn::Res
     let infos = named_field_infos(fields, container.rename_all.deserialize)?;
     let de_names = de_names_of(&infos);
     let names_fn = quote::format_ident!("__litmask_names");
+    let aliases_fn = quote::format_ident!("__litmask_aliases");
     let type_name_fn = type_name_fn(&type_name_tuple(input, &container));
     let names_fn_decl = names_list_fn(&names_fn, &de_names);
-    let field_identifier =
-        identifier_block(&names_fn, de_names.len(), &IdentifierKind::StructField);
+    let (aliases_decl, alias_match) = build_aliases(&aliases_fn, &infos);
+    let field_identifier = identifier_block(
+        &names_fn,
+        de_names.len(),
+        &IdentifierKind::StructField,
+        alias_match.as_ref(),
+        container.deny_unknown_fields,
+    );
     let visitor_ident = quote::format_ident!("__Visitor");
     let visitor = named_fields_visitor(
         input,
@@ -897,6 +1018,7 @@ fn named_struct_body(input: &DeriveInput, fields: &syn::FieldsNamed) -> syn::Res
     Ok(quote! {
         #type_name_fn
         #names_fn_decl
+        #aliases_decl
         #field_identifier
         #visitor
 
@@ -1077,8 +1199,13 @@ fn enum_body(input: &DeriveInput, data: &syn::DataEnum) -> syn::Result<TokenStre
     let names_fn = quote::format_ident!("__litmask_names");
     let type_name_fn = type_name_fn(&type_name_tuple(input, &container));
     let names_fn_decl = names_list_fn(&names_fn, &de_names);
-    let variant_identifier =
-        identifier_block(&names_fn, de_names.len(), &IdentifierKind::EnumVariant);
+    let variant_identifier = identifier_block(
+        &names_fn,
+        de_names.len(),
+        &IdentifierKind::EnumVariant,
+        None,
+        false,
+    );
 
     let match_variant = if data.variants.is_empty() {
         // An uninhabited enum still derives: the identifier enum is
@@ -1208,12 +1335,15 @@ fn variant_arm(
         ),
         Fields::Named(fields) => struct_variant_arm(
             input,
-            vident,
-            &field_variant,
-            &variant_name_fn,
-            &variant_name_call,
             fields,
-            &vattrs,
+            &StructVariantCx {
+                vident,
+                field_variant: &field_variant,
+                variant_name_fn: &variant_name_fn,
+                variant_name_call: &variant_name_call,
+                vattrs: &vattrs,
+                deny_unknown: container.deny_unknown_fields,
+            },
         ),
     }
 }
@@ -1307,25 +1437,45 @@ fn tuple_variant_arm(
 
 /// `visit_enum` arm for a struct variant: an inner field-identifier
 /// enum plus a named-fields visitor, dispatched via `struct_variant`.
+/// The per-variant context a struct-variant arm needs beyond the input
+/// and its fields.
+struct StructVariantCx<'a> {
+    vident: &'a syn::Ident,
+    field_variant: &'a syn::Ident,
+    variant_name_fn: &'a TokenStream2,
+    variant_name_call: &'a TokenStream2,
+    vattrs: &'a VariantAttrs,
+    deny_unknown: bool,
+}
+
 fn struct_variant_arm(
     input: &DeriveInput,
-    vident: &syn::Ident,
-    field_variant: &syn::Ident,
-    variant_name_fn: &TokenStream2,
-    variant_name_call: &TokenStream2,
     fields: &syn::FieldsNamed,
-    vattrs: &VariantAttrs,
+    cx: &StructVariantCx,
 ) -> syn::Result<TokenStream2> {
+    let vident = cx.vident;
+    let field_variant = cx.field_variant;
+    let variant_name_fn = cx.variant_name_fn;
+    let variant_name_call = cx.variant_name_call;
+    let vattrs = cx.vattrs;
+    let deny_unknown = cx.deny_unknown;
     let enum_ident = &input.ident;
     let infos = named_field_infos(fields, vattrs.rename_all.deserialize)?;
     let de_names = de_names_of(&infos);
     let vfields_fn = quote::format_ident!("__litmask_vfields");
+    let valiases_fn = quote::format_ident!("__litmask_valiases");
     let vfields_decl = names_list_fn(&vfields_fn, &de_names);
+    let (valiases_decl, alias_match) = build_aliases(&valiases_fn, &infos);
     // The inner `__Field` shadows the enum-level variant identifier
     // inside this arm's block — intentional, and exactly how serde
     // scopes its per-variant expansion.
-    let field_identifier =
-        identifier_block(&vfields_fn, de_names.len(), &IdentifierKind::StructField);
+    let field_identifier = identifier_block(
+        &vfields_fn,
+        de_names.len(),
+        &IdentifierKind::StructField,
+        alias_match.as_ref(),
+        deny_unknown,
+    );
     let visitor_ident = quote::format_ident!("__VariantVisitor");
     let visitor = named_fields_visitor(
         input,
@@ -1342,6 +1492,7 @@ fn struct_variant_arm(
         (__Field::#field_variant, __variant) => {
             #variant_name_fn
             #vfields_decl
+            #valiases_decl
             #field_identifier
             #visitor
 
