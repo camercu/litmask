@@ -161,17 +161,19 @@ See `examples/mask_debug_demo.rs` and SPECIFICATION.md §2.14.
 
 ## Serde integration (experimental)
 
-`#[derive(serde::Serialize)]` embeds every field name and the struct name as
+The plain serde derives embed every field name and the struct name as
 cleartext in the binary — `strings(1)` reveals your schema vocabulary even
-when every field value is masked. The `unstable-serde` feature adds
-`#[derive(MaskSerialize)]`, which masks the names through the same AEAD
-pipeline as `mask!` while keeping serialized output byte-identical to the
-plain derive for every serde format:
+when every field value is masked (`Deserialize` is the larger leak: `FIELDS`
+arrays, field-matching arms, and `missing field` diagnostics all carry the
+names). The `unstable-serde` feature adds `#[derive(MaskSerialize)]` and
+`#[derive(MaskDeserialize)]`, which mask the names through the same AEAD
+pipeline as `mask!` while keeping behavior identical to the plain derives —
+byte-identical serialized output, same accepted inputs, same error messages:
 
 ```rust
-use litmask::MaskSerialize;
+use litmask::{MaskDeserialize, MaskSerialize};
 
-#[derive(MaskSerialize)]
+#[derive(MaskSerialize, MaskDeserialize)]
 struct LicenseManifest {
     license_server_url: String,   // field name absent from the binary
     activation_token: String,
@@ -179,15 +181,15 @@ struct LicenseManifest {
 ```
 
 Every struct shape (named-field, tuple, newtype, unit) and enums are
-supported, including the variant names self-describing formats print.
+supported, including the variant names self-describing formats print and
+match on.
 
 Current limitations (the `unstable-` prefix means semver-exempt):
 
 - `#[serde(...)]` attributes and unions are compile errors rather than
   silent cleartext fallbacks.
-- `Serialize` only. A plain `#[derive(serde::Deserialize)]` on the same
-  struct re-embeds every name and defeats the masking — same for plain
-  `Debug` (use `#[derive(MaskDebug)]` instead).
+- A plain serde derive or plain `Debug` on the same struct re-embeds every
+  name and defeats the masking (use `#[derive(MaskDebug)]` for `Debug`).
 
 See `examples/mask_serde_demo.rs` and SPECIFICATION.md Appendix E.
 
@@ -285,7 +287,7 @@ LITMASK_UNLOCK_KEY="$(cargo run -q -p litmask-cli -- keygen)" \
 | `aes-gcm`           | no      | AES-256-GCM (takes precedence when enabled)         |
 | `alloc`             | --      | `no_std` + allocator (required for `no_std` builds) |
 | `machine-id`        | no      | `init!(bind_to_machine)` machine-ID binding              |
-| `unstable-serde`    | no      | EXPERIMENTAL `#[derive(MaskSerialize)]` (semver-exempt) |
+| `unstable-serde`    | no      | EXPERIMENTAL `#[derive(MaskSerialize)]` + `#[derive(MaskDeserialize)]` (semver-exempt) |
 
 ## Documentation
 

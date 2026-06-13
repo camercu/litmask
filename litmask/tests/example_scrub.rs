@@ -404,11 +404,13 @@ fn mask_debug_demo_names_and_fixtures_absent_from_binary() {
     );
 }
 
-/// `mask_serde_demo` derives `MaskSerialize` (EXPERIMENTAL,
-/// `unstable-serde`): the struct name and every field name must be
-/// absent from the compiled binary — plain `#[derive(serde::Serialize)]`
-/// would embed each as a cleartext `&'static str` reachable by
-/// `strings(1)`. The `mask!`-ed field values are scrubbed too, same as
+/// `mask_serde_demo` derives `MaskSerialize` + `MaskDeserialize`
+/// (EXPERIMENTAL, `unstable-serde`): the struct name and every field
+/// name must be absent from the compiled binary — the plain serde
+/// derives would embed each as a cleartext `&'static str` reachable by
+/// `strings(1)` (serialize: `serialize_field` names; deserialize:
+/// `FIELDS` arrays, field-matching arms, `missing field` diagnostics).
+/// The `mask!`-ed field values are scrubbed too, same as
 /// every other example. The example sits in `EXCEPTIONS` because its
 /// `required-features = ["unstable-serde"]` makes the default-features
 /// `EXAMPLES` loop unable to build it; this test shells out with the

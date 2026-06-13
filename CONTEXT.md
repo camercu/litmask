@@ -112,6 +112,20 @@ feature stabilizes as `serde`.
 _Avoid_: "serde mask", "masked serde derive" (the derive masks names,
 not serialized data).
 
+**`MaskDeserialize`** (EXPERIMENTAL, `unstable-serde` feature): Derive
+macro generating a `serde::Deserialize` impl whose type, field, and enum
+variant names go through the same AEAD pipeline as `mask!` instead of
+landing as cleartext in the binary. The plain serde derive leaks the
+names more widely than serialize does — `FIELDS`/`VARIANTS` arrays,
+field-visitor match arms, `expecting()` strings, and
+`missing field`/`unknown variant` diagnostics all carry them. Behavior is
+identical to the plain serde derive: same accepted inputs, equal values,
+byte-identical error messages, for every serde format. Names decrypt once
+at first deserialization and stay cached (leaked) for the process
+lifetime. Semver-exempt until the feature stabilizes as `serde`.
+_Avoid_: "serde unmask", "masked deserialize derive" (the derive masks
+names, not deserialized data).
+
 **`init!` / `init_with!`**: Macros that decrypt the **wrapper** with the
 **unlock key** and populate the process-global **mask key** cell. `init!`
 (a proc-macro) has four forms, each cross-checked against the build's

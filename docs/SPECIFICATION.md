@@ -2650,15 +2650,21 @@ feature to `serde` (a breaking change by design).
 
 `#[derive(serde::Serialize)]` embeds the container name and every field name
 as cleartext `&'static str` in `.rodata` (via
-`serialize_struct(name, len)` / `serialize_field(name, value)`). For the
-§1.1.1 target user, serde-derived serialization therefore leaks schema
+`serialize_struct(name, len)` / `serialize_field(name, value)`).
+`#[derive(serde::Deserialize)]` is the larger leak surface: the
+`FIELDS`/`VARIANTS` arrays, the field-visitor match-arm literals, the
+`expecting()` texts (`"struct Config"`), and the
+`missing_field`/`unknown_variant` diagnostics all carry the names. For the
+§1.1.1 target user, serde-derived (de)serialization therefore leaks schema
 vocabulary — field names, internal service terminology, protocol shape — to
-`strings(1)` even when every field *value* is masked. `MaskSerialize`
-closes that channel with the same AEAD pipeline as `mask!`.
+`strings(1)` even when every field *value* is masked. `MaskSerialize` and
+`MaskDeserialize` close both channels with the same AEAD pipeline as
+`mask!`.
 
 ### §E.2 Surface and normative behavior
 
-`#[derive(MaskSerialize)]` generates a `serde::Serialize` impl for any
+`#[derive(MaskSerialize)]` generates a `serde::Serialize` impl, and
+`#[derive(MaskDeserialize)]` a `serde::Deserialize` impl, for any
 struct (named-field, tuple, newtype, unit) or enum.
 
 - **§E.2.1 Wire-format identity.** Serialized output MUST be byte-identical
@@ -2677,37 +2683,60 @@ struct (named-field, tuple, newtype, unit) or enum.
   compiled binary. Raw identifiers serialize unraw'd (`r#type` → `"type"`),
   matching serde.
 - **§E.2.3 Decrypt-once caching.** Each name is decrypted on first use,
-  leaked, and cached in a `std::sync::OnceLock<&'static str>` —
-  `serialize_struct` / `serialize_field` require `&'static str`, which a
-  runtime-decrypted name can only satisfy by leaking. The leak is bounded
-  (one allocation per name per process) and consistent with the §1.1 threat
-  model (binary at rest, not process memory). `unstable-serde` therefore
-  requires `std`.
+  leaked, and cached in a `std::sync::OnceLock` — serde's entry points
+  require `&'static str` (`serialize_struct` / `serialize_field` /
+  `missing_field`) and `&'static [&'static str]` (`deserialize_struct` /
+  `deserialize_enum` `FIELDS`/`VARIANTS`), which runtime-decrypted names
+  can only satisfy by leaking. The leak is bounded (one allocation per name
+  per process, plus one slice per name group) and consistent with the §1.1
+  threat model (binary at rest, not process memory). `unstable-serde`
+  therefore requires `std`.
 - **§E.2.4 Init semantics.** Name decryption follows `mask!`'s runtime
   policy: lazy Embedded-floor initialization, §1.9.5 profile-split panic on
   decrypt failure. On seal tiers above Embedded, `init!` MUST run before the
-  first serialization.
-- **§E.2.5 Reject-loud grammar.** Unions fail with `MaskSerialize! grammar`
-  (§1.9.6), matching the plain derive's refusal. Any `#[serde(...)]`
+  first serialization or deserialization.
+- **§E.2.5 Reject-loud grammar.** Unions fail with `<macro>! grammar`
+  (§1.9.6), matching the plain derives' refusal. Any `#[serde(...)]`
   attribute on the container, a variant, or a field fails with
-  `MaskSerialize! invalid-arg` — silently ignoring
-  `rename`/`rename_all`/`skip` would break §E.2.1 without warning. Generic
-  types are supported; each type parameter receives a `Serialize`
-  where-clause bound, mirroring the plain derive.
+  `<macro>! invalid-arg` — silently ignoring
+  `rename`/`rename_all`/`skip` would break §E.2.1/§E.2.6 without warning.
+  Generic types are supported; each type parameter receives a `Serialize`
+  (resp. `Deserialize<'de>`) where-clause bound, mirroring the plain
+  derives.
+- **§E.2.6 Deserialize behavior identity.** `MaskDeserialize` MUST accept
+  exactly the inputs the plain derive accepts, produce equal values, and
+  produce byte-identical error messages, for every serde format. The
+  expansion mirrors serde's shape dispatch (`deserialize_struct`,
+  `deserialize_tuple_struct`, `deserialize_newtype_struct`,
+  `deserialize_unit_struct`, `deserialize_enum`) and visitor surface:
+  named-field visitors implement both `visit_map` and `visit_seq`
+  (non-self-describing formats deserialize structs positionally), and the
+  identifier visitors implement `visit_u64`/`visit_str`/`visit_bytes`
+  (`visit_u64` is how non-self-describing formats select enum variants by
+  declaration-order index). Unknown fields are skipped, unknown variants
+  fail with `unknown_variant`, duplicate and missing fields fail with the
+  plain derive's diagnostics, and a missing `Option<T>` field deserializes
+  to `None`. Identifier matching compares against runtime-decrypted names,
+  never cleartext match arms. `&str`/`&[u8]` fields (optionally
+  `Option`-wrapped) borrow from the input via a `'de: 'a` bound, mirroring
+  serde's implicit-borrow rule. The expansion MUST NOT reference
+  `serde::__private` (semver-exempt); the pieces of the plain expansion
+  that live there are replicated against public API in the `#[doc(hidden)]`
+  `litmask::__serde_support` module.
 
 ### §E.3 Residual exposure and stabilization criteria
 
 Residuals (documented, not defects):
 
-- A plain `#[derive(serde::Deserialize)]` or `#[derive(Debug)]` on the same
-  type re-embeds every name in the binary and defeats the masking. For
-  `Debug`, pair with `#[derive(MaskDebug)]` (§2.14) instead.
+- A plain serde derive or `#[derive(Debug)]` on the same type re-embeds
+  every name in the binary and defeats the masking. Pair the three masking
+  derives instead (`MaskSerialize`, `MaskDeserialize`, `MaskDebug` §2.14).
 - Self-describing formats print decrypted names in runtime output and
   runtime error messages — at-rest protection only, per §1.1.
 - serde's own crate-internal strings remain in the binary; the masking
   covers user schema vocabulary, not dependency text.
 
-Stabilization (rename to `serde`) requires at minimum: `MaskedDeserialize`
-(the larger leak surface: `FIELDS` arrays, field-visitor match arms,
-`missing_field` diagnostics) and a decision on the supportable
-`#[serde(...)]` attribute subset.
+Stabilization (rename to `serde`) requires at minimum: a decision on the
+supportable `#[serde(...)]` attribute subset. *(Resolved: `MaskDeserialize`
+— previously the open prerequisite — has landed with the §E.2.6 behavior-
+identity contract.)*

@@ -449,15 +449,17 @@ pub fn mask_all(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// first use and caching it for the process lifetime (one leaked
 /// allocation per name).
 ///
+/// Supports every struct shape (named-field, tuple, newtype, unit)
+/// and enums, including uninhabited ones. Generic types are supported
+/// — each type parameter is bounded `Serialize`, mirroring the plain
+/// derive. Pair with [`MaskDeserialize`] and [`MaskDebug`]; a plain
+/// `#[derive(serde::Deserialize)]` or `#[derive(Debug)]` on the same
+/// type re-embeds every name in the binary and defeats this derive's
+/// purpose.
+///
 /// # Limitations (prototype)
 ///
-/// - Named-field structs only; enums, tuple structs, and unit structs
-///   are compile errors. Generic structs are supported — each type
-///   parameter is bounded `Serialize`, mirroring the plain derive.
 /// - `#[serde(...)]` attributes are not honored.
-/// - `Deserialize` is not provided — a plain
-///   `#[derive(serde::Deserialize)]` on the same type re-embeds every
-///   field name in the binary and defeats this derive's purpose.
 ///
 /// # Errors
 ///
@@ -492,9 +494,16 @@ pub fn mask_serialize(input: TokenStream) -> TokenStream {
 /// messages — with each name decrypted on first use and cached for
 /// the process lifetime (one leaked allocation per name).
 ///
+/// Supports every struct shape (named-field, tuple, newtype, unit)
+/// and enums, including uninhabited ones. Generic types are supported
+/// — each type parameter is bounded `Deserialize<'de>` — and `&str` /
+/// `&[u8]` fields borrow from the input, both mirroring the plain
+/// derive. Pair with [`MaskSerialize`] and [`MaskDebug`]; a plain
+/// serde derive or `#[derive(Debug)]` on the same type re-embeds
+/// every name in the binary and defeats this derive's purpose.
+///
 /// # Limitations (prototype)
 ///
-/// - Named-field structs only; other shapes are compile errors.
 /// - `#[serde(...)]` attributes are not honored.
 ///
 /// # Errors
