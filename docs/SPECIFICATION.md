@@ -2693,14 +2693,32 @@ struct (named-field, tuple, newtype, unit) or enum.
   policy: lazy Embedded-floor initialization, §1.9.5 profile-split panic on
   decrypt failure. On seal tiers above Embedded, `init!` MUST run before the
   first serialization or deserialization.
-- **§E.2.5 Reject-loud grammar.** Unions fail with `<macro>! grammar`
-  (§1.9.6), matching the plain derives' refusal. Any `#[serde(...)]`
-  attribute on the container, a variant, or a field fails with
-  `<macro>! invalid-arg` — silently ignoring
-  `rename`/`rename_all`/`skip` would break §E.2.1/§E.2.6 without warning.
-  Generic types are supported; each type parameter receives a `Serialize`
-  (resp. `Deserialize<'de>`) where-clause bound, mirroring the plain
-  derives.
+- **§E.2.5 Supported `#[serde(...)]` subset, reject-loud rest.** Unions
+  fail with `<macro>! grammar` (§1.9.6), matching the plain derives'
+  refusal. The masking derives honor the following attribute subset,
+  staying wire/behavior-identical to the plain derive (§E.2.1/§E.2.6) by
+  applying the same transformation before masking the resolved name:
+
+  | Attribute | Scope | Notes |
+  |---|---|---|
+  | `rename` / `rename(serialize=,deserialize=)` | container, variant, field | masks the renamed string, not the ident |
+  | `rename_all` (+ split) | container, variant | all eight serde case rules, ported byte-for-byte |
+  | `skip` / `skip_serializing` / `skip_deserializing` | named field | skipped-de fields fill from `Default`; reject-loud on tuple fields |
+  | `skip_serializing_if = "path"` | named field | runtime length pre-count |
+  | `default` / `default = "path"` | named field | fills a missing or skipped-de field |
+  | `alias` | named field | extra accepted deserialize names (variant `alias` deferred) |
+  | `deny_unknown_fields` | container | unknown string key → `unknown_field` error |
+  | `bound` / `bound(serialize=,deserialize=)` | container | replaces the default per-param trait bound |
+  | `transparent` | container | single-field struct (de)serializes as that field |
+  | `with` / `serialize_with` / `deserialize_with` | named field | routes through user fns; reject-loud on a generic type |
+
+  Every other key — notably `flatten`, the enum representations `tag` /
+  `untagged` / `content`, container `getter` / `into` / `from` /
+  `try_from`, explicit `borrow`, and variant `alias` — fails with
+  `<macro>! invalid-arg`, naming the key, rather than silently ignoring it
+  (which would break §E.2.1/§E.2.6). Generic types are otherwise
+  supported; each type parameter receives a `Serialize` (resp.
+  `Deserialize<'de>`) where-clause bound unless `bound` overrides it.
 - **§E.2.6 Deserialize behavior identity.** `MaskDeserialize` MUST accept
   exactly the inputs the plain derive accepts, produce equal values, and
   produce byte-identical error messages, for every serde format. The
@@ -2735,6 +2753,10 @@ Residuals (documented, not defects):
   covers user schema vocabulary, not dependency text.
 
 Stabilization (rename to `serde`) requires at minimum: a decision on the
-supportable `#[serde(...)]` attribute subset. *(Resolved: `MaskDeserialize`
-— previously the open prerequisite — has landed with the §E.2.6 behavior-
-identity contract.)*
+supportable `#[serde(...)]` attribute subset. *(Resolved: the subset in
+§E.2.5 has landed; `MaskDeserialize` and the `#[mask_all]` derive-swap
+(§2.13) ship alongside it.)* The remaining deferred attributes —
+`flatten`, the enum representations `tag` / `untagged` / `content`,
+`getter` / `into` / `from` / `try_from`, explicit `borrow`, variant
+`alias`, and `with`-functions on generic types — are tracked for later
+consideration and stay reject-loud until then.

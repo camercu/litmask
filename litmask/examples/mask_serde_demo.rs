@@ -37,9 +37,16 @@ use litmask::{MaskDebug, MaskDeserialize, MaskSerialize, mask};
 // name out of `.rodata`.
 #[derive(MaskSerialize, MaskDeserialize, MaskDebug)]
 struct ClandestineTelemetryManifest {
+    // `#[serde(rename)]` / `#[serde(alias)]` values are masked too: the
+    // wire name (`renamed_marker_qwxz`) and accepted alias
+    // (`alt_endpoint_zzyx`) go through the same AEAD pipeline as the
+    // ident-derived names, so neither lands in `.rodata`.
+    #[serde(alias = "alt_endpoint_zzyx")]
     covert_endpoint_quux: String,
     activation_token_xyzzy: String,
     heartbeat_jitter_millis: u32,
+    #[serde(rename = "renamed_marker_qwxz")]
+    schema_marker: u8,
     uplink_channel_state: UplinkChannelState,
 }
 
@@ -57,6 +64,7 @@ fn main() {
         covert_endpoint_quux: mask!("https://beacon.fabrikam-exfil.example/v1"),
         activation_token_xyzzy: mask!("correct-horse-battery-staple"),
         heartbeat_jitter_millis: 250,
+        schema_marker: 1,
         uplink_channel_state: UplinkChannelState::ActiveRelayWindow {
             relay_handle_quux: mask!("relay-handle-7-zzyzx"),
         },

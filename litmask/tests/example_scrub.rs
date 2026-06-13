@@ -474,6 +474,10 @@ fn mask_serde_demo_names_and_fixtures_absent_from_binary() {
             "heartbeat_jitter_millis",
             "uplink_channel_state",
             "relay_handle_quux",
+            // `#[serde(rename)]` wire name and `#[serde(alias)]` — the
+            // masked-attr surface must be absent from the binary too.
+            "renamed_marker_qwxz",
+            "alt_endpoint_zzyx",
             // Enum variant names — the externally-tagged key in
             // self-describing formats.
             "DormantUntilDawnZzyzx",

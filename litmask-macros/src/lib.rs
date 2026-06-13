@@ -341,6 +341,13 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
 /// formatting / output / panic / assert macros are rewritten to use
 /// [`mask_format!`] for their templates.
 ///
+/// It also swaps each type's plain `#[derive(Debug)]` for [`MaskDebug`]
+/// and — under the `unstable-serde` feature — `#[derive(Serialize)]` /
+/// `#[derive(Deserialize)]` for `MaskSerialize` / `MaskDeserialize`, so
+/// the container / field / variant *names* don't re-enter `.rodata` as
+/// cleartext. Annotate a type with [`macro@unmasked_derive`] to keep its
+/// plain derives.
+///
 /// Recognized macro families:
 ///
 /// - `format!(lit, ...)` → `mask_format!(lit, ...)`
@@ -477,15 +484,22 @@ pub fn unmasked_derive(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// type re-embeds every name in the binary and defeats this derive's
 /// purpose.
 ///
-/// # Limitations (prototype)
+/// # Supported `#[serde(...)]` attributes
 ///
-/// - `#[serde(...)]` attributes are not honored.
+/// `rename` / `rename_all` (with `serialize`/`deserialize` split),
+/// `skip` / `skip_serializing` / `skip_serializing_if`, `serialize_with`
+/// / `with`, `bound`, and `transparent`. Each stays wire-identical to
+/// the plain derive. Any other key (e.g. `flatten`, enum `tag` /
+/// `untagged` / `content`) is reject-loud rather than silently ignored;
+/// `serialize_with` / `with` is not yet supported on a generic type. Use
+/// a plain `#[derive(Serialize)]` (or `#[unmasked_derive]` under
+/// `#[mask_all]`) for those.
 ///
 /// # Errors
 ///
-/// Emits a §1.9.6 `compile_error!` (`MaskSerialize! grammar`) for
-/// any unsupported input shape, rather than silently degrading to
-/// cleartext names.
+/// Emits a §1.9.6 `compile_error!` (`MaskSerialize! grammar` /
+/// `invalid-arg`) for any unsupported input shape or attribute, rather
+/// than silently degrading to cleartext names.
 ///
 /// # Panics
 ///
@@ -496,8 +510,8 @@ pub fn unmasked_derive(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Embedded.
 // `attributes(serde)` registers the helper attribute so rustc parses
 // `#[serde(...)]` on the input instead of erroring "cannot find
-// attribute" — which lets the derive reject it with a §1.9.6
-// diagnostic explaining the actual limitation.
+// attribute" — the derive then honors the supported subset and
+// reject-louds the rest with a §1.9.6 diagnostic.
 #[cfg(feature = "unstable-serde")]
 #[proc_macro_derive(MaskSerialize, attributes(serde))]
 pub fn mask_serialize(input: TokenStream) -> TokenStream {
@@ -522,15 +536,22 @@ pub fn mask_serialize(input: TokenStream) -> TokenStream {
 /// serde derive or `#[derive(Debug)]` on the same type re-embeds
 /// every name in the binary and defeats this derive's purpose.
 ///
-/// # Limitations (prototype)
+/// # Supported `#[serde(...)]` attributes
 ///
-/// - `#[serde(...)]` attributes are not honored.
+/// `rename` / `rename_all` (with `serialize`/`deserialize` split),
+/// `skip` / `skip_deserializing`, `default` (and `default = "path"`),
+/// `alias`, `deserialize_with` / `with`, `deny_unknown_fields`, `bound`,
+/// and `transparent`. Each stays behavior-identical to the plain derive.
+/// Any other key (e.g. `flatten`, enum `tag` / `untagged` / `content`,
+/// variant `alias`) is reject-loud; `deserialize_with` / `with` is not
+/// yet supported on a generic type. Use a plain `#[derive(Deserialize)]`
+/// (or `#[unmasked_derive]` under `#[mask_all]`) for those.
 ///
 /// # Errors
 ///
-/// Emits a §1.9.6 `compile_error!` (`MaskDeserialize! grammar`) for
-/// any unsupported input shape, rather than silently degrading to
-/// cleartext names.
+/// Emits a §1.9.6 `compile_error!` (`MaskDeserialize! grammar` /
+/// `invalid-arg`) for any unsupported input shape or attribute, rather
+/// than silently degrading to cleartext names.
 ///
 /// # Panics
 ///
@@ -541,8 +562,8 @@ pub fn mask_serialize(input: TokenStream) -> TokenStream {
 /// Embedded.
 // `attributes(serde)` registers the helper attribute so rustc parses
 // `#[serde(...)]` on the input instead of erroring "cannot find
-// attribute" — which lets the derive reject it with a §1.9.6
-// diagnostic explaining the actual limitation.
+// attribute" — the derive then honors the supported subset and
+// reject-louds the rest with a §1.9.6 diagnostic.
 #[cfg(feature = "unstable-serde")]
 #[proc_macro_derive(MaskDeserialize, attributes(serde))]
 pub fn mask_deserialize(input: TokenStream) -> TokenStream {

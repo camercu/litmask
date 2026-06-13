@@ -486,3 +486,42 @@ SPECIFICATION default-provider) is already fixed.
       (YAGNI). The `unset` message already names `litmask_build::emit()` in
       `build.rs`, which is the correct fix for the realistic case (missing
       build wiring). Revisit only if/when the crates version independently.
+
+---
+
+## Masked-serde `#[serde(...)]` subset + `#[mask_all]` derive-swap (2026-06-13)
+
+`#[mask_all]` now rewrites a type's plain `#[derive(Serialize)]` /
+`#[derive(Deserialize)]` (under `unstable-serde`) and `#[derive(Debug)]`
+to litmask's masking derives, closing the name-leak the literal rewrite
+couldn't reach. `#[unmasked_derive]` opts a type out. The masking serde
+derives gained the supported `#[serde(...)]` subset documented in spec
+§E.2.5; each attribute ships as its own vertical slice with twin
+wire-identity tests against the plain serde derive.
+
+- [x] `#[mask_all]` derive-swap + `#[unmasked_derive]` opt-out.
+- [x] `rename` / `rename_all` (with serialize/deserialize split; eight
+      case rules ported byte-for-byte).
+- [x] `skip` / `skip_serializing` / `skip_deserializing` /
+      `skip_serializing_if`.
+- [x] `default` / `default = "path"` (+ `skip_deserializing` interaction).
+- [x] `alias` (field) + `deny_unknown_fields`.
+- [x] `bound` (+ split) where-clause override.
+- [x] `transparent`.
+- [x] `with` / `serialize_with` / `deserialize_with`.
+
+### Deferred (reject-loud until landed)
+
+Tracked for later consideration; each currently fails with `<macro>!
+invalid-arg` naming the key rather than diverging silently:
+
+- [ ] `flatten` (map-based wire shape).
+- [ ] enum representations: `tag` / `untagged` / `content`.
+- [ ] container `getter` / `into` / `from` / `try_from`.
+- [ ] explicit `borrow`.
+- [ ] variant-level `alias`.
+- [ ] `with` / `serialize_with` / `deserialize_with` on a **generic**
+      type (the generated adapter is a local item that can't name the
+      impl's type parameters).
+- [ ] `skip` / `skip_serializing_if` on a **tuple** (positional) field
+      (would shift element indices).
