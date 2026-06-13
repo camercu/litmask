@@ -74,7 +74,7 @@ pub(crate) fn lazy_init_wrong_tier(tier: &str) -> ! {
     }
 }
 
-/// Diverge when an `init!` / `init_with!` seam runs AFTER a lazy
+/// Diverge when an `init!` seam runs AFTER a lazy
 /// first-`mask!()` already installed the mask key. Debug-only: on the
 /// Embedded floor (the only tier where the lazy path succeeds) the lazy
 /// key equals the `init!()` key, so release builds keep the silent

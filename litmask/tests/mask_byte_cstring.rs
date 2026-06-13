@@ -1,7 +1,7 @@
 //! Round-trip integration tests for `mask!` against byte string and
-//! C string literals. The tests use `init_with!` + a static
-//! `KeyProvider` so they do not depend on `LITMASK_UNLOCK_KEY` being
-//! set in the test process's environment.
+//! C string literals. The tests use the keyless `init!()` (via
+//! `common::init_once`) so they do not depend on `LITMASK_UNLOCK_KEY`
+//! being set in the test process's environment.
 
 mod common;
 

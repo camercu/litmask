@@ -1,6 +1,6 @@
 //! `weak_mask!` real-world use case: hide a custom env-var name so
 //! `strings(1)` doesn't reveal where the unlock key lives, then use
-//! `init_with!` to bootstrap AEAD-strength masking on top.
+//! `init!(provider)` to bootstrap AEAD-strength masking on top.
 //!
 //! Why `weak_mask!` instead of `mask!` for the env-var name: the name
 //! has to be readable BEFORE `init!()` runs (it tells the provider
@@ -20,14 +20,14 @@
 //! name, hidden by `weak_mask!`) and `the real secret was the friends`
 //! (the payload, hidden by `mask!`).
 
-use litmask::{EnvVarProvider, init_with, mask, weak_mask};
+use litmask::{EnvVarProvider, init, mask, weak_mask};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // weak_mask!() the env-var name so an attacker scanning the
     // binary for env-lookup targets doesn't get a free pointer at
     // where the unlock key lives.
     let env_var_name: &'static str = weak_mask!("MYAPP_SECRET_KEY");
-    init_with!(EnvVarProvider::new(env_var_name))?;
+    init!(EnvVarProvider::new(env_var_name))?;
 
     // Actual sensitive content — masked with the AEAD-strength
     // macro because it's a real secret, not just lookup metadata.

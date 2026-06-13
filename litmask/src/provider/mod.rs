@@ -25,11 +25,6 @@ pub(crate) mod file;
 pub(crate) mod machine_id;
 
 pub use embedded::EmbeddedProvider;
-// Only the no_std test harness reaches for the re-export by path; under
-// std the in-crate users import `TestProvider` directly within their own
-// test modules, so an unconditional re-export would be dead there.
-#[cfg(all(test, not(feature = "std")))]
-pub(crate) use embedded::TestProvider;
 #[cfg(feature = "std")]
 pub use env::EnvVarProvider;
 #[cfg(feature = "std")]
@@ -45,7 +40,7 @@ pub(crate) use machine_id::MachineIdProvider;
 ///
 /// The `&self` receiver permits stateful providers (cached lookups,
 /// network clients). Implementations must be `Send + Sync` so providers
-/// can be passed to [`crate::init_with!`] in multithreaded contexts.
+/// can be passed to [`crate::init!`] in multithreaded contexts.
 ///
 /// # Examples
 ///

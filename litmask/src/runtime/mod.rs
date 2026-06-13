@@ -2,8 +2,8 @@
 //! ([`litmask_internal::decrypt_wrapper`]).
 //!
 //! The process-global mask key lives in a [`cell::OnceCell`] populated
-//! by [`__init_with_wrapper`] (the target of `init!` / `init_with!`) or
-//! lazily by [`__decrypt`] on the first `mask!()` call.
+//! by [`__init_with_wrapper`] (the target of `init!`) or lazily by
+//! [`__decrypt`] on the first `mask!()` call.
 //!
 //! The decryption path must not leak litmask-identifying message text
 //! into a shipped (release) binary: `assert!` / `.expect("…")` and
@@ -50,8 +50,8 @@ fn guard_init_after_lazy() {
 /// Decrypt the embedded `mask_key` wrapper and store the result in the
 /// process-global mask key cell.
 ///
-/// Called by the `init!` and `init_with!` macros after they capture the
-/// wrapper bytes via `include_bytes!`.
+/// Called by the `init!` macro after it captures the wrapper bytes via
+/// `include_bytes!`.
 ///
 /// # Errors
 ///
@@ -90,7 +90,7 @@ fn init_with_unlock_key(
 
 /// Decrypt the embedded `mask_key` wrapper under `unlock_key`, mapping
 /// the [`DecryptError`] surface onto [`InitError`]. The single home for
-/// that mapping: both the `init!`/`init_with!` seams (which forward the
+/// that mapping: both the `init!` seams (which forward the
 /// `InitError`) and the lazy first-`mask!()` path (which panics on
 /// `Err`) decrypt the wrapper through here, so the AEAD-failure and
 /// unknown-format distinction is made once.

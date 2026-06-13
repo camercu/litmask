@@ -230,8 +230,8 @@ macro_rules! mask_println {
 
 /// Internal helper: expand to `include_bytes!(...)` for the embedded
 /// encrypted-`mask_key` wrapper at the caller's `OUT_DIR`. Shared by
-/// [`init!`], [`init_with!`], and the `mask!` proc-macro to avoid
-/// duplicating the path literal at three call sites.
+/// [`init!`] and the `mask!` proc-macro to avoid duplicating the path
+/// literal at both call sites.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __wrapper_bytes {
@@ -255,17 +255,6 @@ macro_rules! __wrapper_bytes {
 macro_rules! __seal_tier {
     () => {
         ::core::env!("LITMASK_SEAL_TIER")
-    };
-}
-
-/// Initialize the runtime using a caller-supplied [`KeyProvider`].
-///
-/// Like [`init!`] but accepts any `KeyProvider` value. Errors flow
-/// through the same `Result<(), InitError>` as `init!`.
-#[macro_export]
-macro_rules! init_with {
-    ($provider:expr) => {
-        $crate::__internal::__init_with_wrapper($provider, $crate::__wrapper_bytes!())
     };
 }
 
@@ -434,19 +423,7 @@ mod no_std_tests {
     fn init_once() {
         static INIT: Once = Once::new();
         INIT.call_once(|| {
-            let out_dir = std::env!("OUT_DIR");
-            let config_path = std::path::Path::new(out_dir)
-                .ancestors()
-                .nth(3)
-                .unwrap()
-                .join("litmask.config");
-            let text = std::fs::read_to_string(&config_path).unwrap();
-            let key_line = text.lines().find(|l| l.starts_with("unlock_key")).unwrap();
-            let key_b64 = key_line.split('"').nth(1).unwrap();
-            let provider = crate::provider::TestProvider::new(
-                crate::UnlockKey::from_base64url(key_b64).unwrap(),
-            );
-            crate::init_with!(provider).unwrap();
+            crate::init!().unwrap();
         });
     }
 

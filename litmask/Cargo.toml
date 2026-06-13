@@ -77,6 +77,12 @@ machine-id = ["std", "dep:machine-uid"]
 # stabilizes as `serde`. `std` is load-bearing — the generated impl
 # caches decrypted names in `std::sync::OnceLock`.
 unstable-serde = ["std", "dep:serde", "litmask-macros/unstable-serde"]
+# Build gate for the `file_provider` / `weak_mask_demo` examples (see
+# their `[[example]]` entries). Carries no code — it exists only so
+# `required-features` can keep those two examples out of the default
+# workspace build, which seals Embedded and would trip `init!`'s
+# form↔tier cross-check on their `init!(provider)` (External form).
+provider-examples = []
 
 [dependencies]
 litmask-internal.workspace = true
@@ -106,6 +112,22 @@ required-features = ["machine-id"]
 [[example]]
 name = "mask_serde_demo"
 required-features = ["unstable-serde"]
+
+# `file_provider` and `weak_mask_demo` pass a runtime `KeyProvider` to
+# `init!` (the External form, `init!(provider)`), which only compiles
+# against an externally-sealed build. The default workspace build seals
+# Embedded, so building them there trips `init!`'s form↔tier
+# cross-check. Gating on the no-op `provider-examples` feature skips
+# them under default `cargo build --all-targets`; `scripts/test-examples.sh`
+# enables the feature with `LITMASK_UNLOCK_KEY` set (which reseals to
+# External, so the tier then matches) to build and run them.
+[[example]]
+name = "file_provider"
+required-features = ["provider-examples"]
+
+[[example]]
+name = "weak_mask_demo"
+required-features = ["provider-examples"]
 
 [dev-dependencies]
 litmask-internal.workspace = true

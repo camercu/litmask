@@ -30,21 +30,27 @@ for src in litmask/examples/*.rs; do
     fi
     # Seal-tier hinges on env presence: setting LITMASK_UNLOCK_KEY at
     # build selects the External tier and reseals the shared wrapper.
-    # So only the runtime-sourced examples (`init_with!` providers) may
-    # run with it set — the build then seals under the same material
-    # the provider reads back. Embedded examples MUST run with it unset:
-    # under an External reseal the keyless lazy path can no longer open
-    # the wrapper, and a no-arg `init!()` would fail its tier
-    # cross-check at compile time.
-    if grep -q 'init_with!' "$src"; then
+    # So only the runtime-sourced examples (those passing a provider to
+    # `init!`, i.e. `init!(SomeProvider...)`) may run with it set — the
+    # build then seals under the same material the provider reads back.
+    # Embedded examples MUST run with it unset: under an External reseal
+    # the keyless lazy path can no longer open the wrapper, and a no-arg
+    # `init!()` would fail its tier cross-check at compile time. The
+    # `[A-Z]` guard matches a provider-type argument while skipping the
+    # no-arg `init!()` and the `init!(bind_to_machine)` keyword form.
+    if grep -qE 'init!\([A-Z]' "$src"; then
         # Export the canonical name AND the custom name `weak_mask_demo`
         # reads (`MYAPP_SECRET_KEY`); the extra binding is a harmless
         # superset for `file_provider`. The example's own scrub asserts
         # the custom name is absent from the binary, so the weak_mask!
-        # hiding stays verifiable end-to-end.
+        # hiding stays verifiable end-to-end. `--features
+        # provider-examples` satisfies the examples' `required-features`
+        # gate (they are skipped by the default build); with
+        # LITMASK_UNLOCK_KEY set the build reseals External, so
+        # `init!(provider)` passes its form↔tier cross-check.
         LITMASK_UNLOCK_KEY="$unlock_key" \
         MYAPP_SECRET_KEY="$unlock_key" \
-            cargo run --quiet --example "$name"
+            cargo run --quiet --features provider-examples --example "$name"
     else
         # Strip any inherited factor env so the build stays Embedded.
         env -u LITMASK_UNLOCK_KEY -u LITMASK_MACHINE_ID \

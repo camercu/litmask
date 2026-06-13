@@ -18,7 +18,7 @@
 //!   expansion time).
 //! - `$OUT_DIR/litmask_wrapper.bin` — encrypted-`mask_key` wrapper
 //!   (consumed by the runtime via `include_bytes!` inside the
-//!   `init!` / `init_with!` / `mask!` macro expansions).
+//!   `init!` / `mask!` macro expansions).
 //! - `target/<profile>/litmask.config` — TOML containing `unlock_key`
 //!   (Embedded tier only; every keyed tier re-sources its key material
 //!   at runtime, so none writes a config).

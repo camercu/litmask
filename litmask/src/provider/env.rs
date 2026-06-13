@@ -11,13 +11,14 @@ use crate::provider::KeyProvider;
 ///
 /// # Examples
 ///
-/// ```no_run
-/// # fn main() -> Result<(), litmask::InitError> {
+/// ```ignore
 /// let provider = litmask::EnvVarProvider::new("MY_APP_KEY");
-/// litmask::init_with!(provider)?;
-/// # Ok(())
-/// # }
+/// litmask::init!(provider)?;
 /// ```
+///
+/// The snippet is `ignore`d rather than compiled: `init!(provider)` is
+/// the External form and only compiles against an externally-sealed
+/// build, whereas litmask's own doctests build at the Embedded tier.
 #[derive(Debug)]
 pub struct EnvVarProvider {
     name: &'static str,

@@ -20,22 +20,23 @@ mod common;
 
 use common::Profile;
 
-/// Examples cleared for the case-insensitive library-identifier
-/// scrub. Add new names here when new examples land under
-/// `litmask/examples/`.
+/// Examples cleared for the case-insensitive library-identifier scrub
+/// under the plain default-features `build_example`. Add new names here
+/// when new examples land under `litmask/examples/`.
 ///
-/// Three examples are intentionally absent because they reference
-/// the canonical published env-var name (`LITMASK_UNLOCK_KEY` /
-/// `LITMASK_UNLOCK_KEY_FILE`) as a plain string literal — by design,
-/// for pedagogical clarity — and that literal contains the
-/// `unlock_key` and `litmask` forbidden substrings. Real-world
-/// deployments would `weak_mask!()` the env-var name (see
-/// `weak_mask_demo`); the identifier-scrub absence is testable
-/// there, while these examples are covered by fixture-absence
-/// checks only:
+/// Examples absent from this loop need a build the default-features,
+/// Embedded-sealed `build_example` cannot produce, so each has a
+/// dedicated test that builds with the right features/seal:
 ///
-/// - `file_provider`: demonstrates `FileProvider`; reads
-///   `LITMASK_UNLOCK_KEY_FILE` to find the key file.
+/// - `file_provider` / `weak_mask_demo`: pass a runtime `KeyProvider`
+///   to `init!` (the External form), so they carry
+///   `required-features = ["provider-examples"]` and only compile
+///   against an externally-sealed build. Their dedicated tests build
+///   with that feature and `LITMASK_UNLOCK_KEY` set (which reseals
+///   External). `file_provider` also references the published
+///   `LITMASK_UNLOCK_KEY_FILE` literal, so it is fixture-scrubbed only;
+///   `weak_mask_demo` `weak_mask!()`s its custom env-var name and so
+///   still runs the full identifier scrub.
 /// - `machine_id_provider`: gated behind `--features machine-id` (see
 ///   [`machine_id_provider_example_masked_fixtures_absent_from_binary`]).
 ///   The BLAKE3 context literal `"machine-v1"` is hidden by
@@ -43,9 +44,9 @@ use common::Profile;
 ///   but the `blake3` crate embeds its own name in internal symbol
 ///   strings (e.g. `blake3_*` function names) that we can't filter
 ///   away. The `machine_id` scrub allow-lists `blake3` specifically.
+/// - `mask_serde_demo`: gated behind `--features unstable-serde`.
 const EXAMPLES: &[&str] = &[
     "hello_world",
-    "weak_mask_demo",
     "byte_cstr_demo",
     "include_str_demo",
     "mask_format_demo",
@@ -55,7 +56,19 @@ const EXAMPLES: &[&str] = &[
     "mask_print_e2e",
 ];
 
-const EXCEPTIONS: &[&str] = &["file_provider", "machine_id_provider", "mask_serde_demo"];
+const EXCEPTIONS: &[&str] = &[
+    "file_provider",
+    "weak_mask_demo",
+    "machine_id_provider",
+    "mask_serde_demo",
+];
+
+/// Arbitrary `LITMASK_UNLOCK_KEY` value for building the provider
+/// examples: its presence at build time selects the External seal tier
+/// so `init!(provider)` passes its form↔tier cross-check. The value is
+/// never used to decrypt — these scrubs inspect bytes and never run the
+/// binary — so any non-empty string works.
+const SCRUB_EXTERNAL_KEY: &str = "litmask-scrub-external-placeholder-key";
 
 #[test]
 fn no_forbidden_substrings_in_any_example_binary() {
@@ -75,15 +88,26 @@ fn no_forbidden_substrings_in_any_example_binary() {
 /// as a lookup target; `the real secret was the friends` is the secret payload.
 #[test]
 fn weak_mask_demo_env_var_name_and_payload_absent_from_binary() {
-    common::build_example("weak_mask_demo", Profile::Release);
+    // `init!(provider)` compiles only against an External seal, so build
+    // with the `provider-examples` feature and `LITMASK_UNLOCK_KEY` set.
+    common::build_example_with_features_and_env(
+        "weak_mask_demo",
+        Profile::Release,
+        &["provider-examples"],
+        &[("LITMASK_UNLOCK_KEY", SCRUB_EXTERNAL_KEY)],
+    );
     let path = common::example_path("weak_mask_demo", Profile::Release);
+    assert!(path.exists(), "example binary missing: {}", path.display());
     // weak_mask!()'d env-var name — visible to `strings(1)` would
     // tell an attacker exactly where the unlock key lives.
     common::assert_substring_absent(&path, "MYAPP_SECRET_KEY");
     // mask!()'d payload — the AEAD layer must hide it even though
     // it's a fixture, since this example doubles as the load-bearing
-    // demo of the `weak_mask! → init_with! → mask!` pattern.
+    // demo of the `weak_mask! → init!(provider) → mask!` pattern.
     common::assert_substring_absent(&path, "the real secret was the friends");
+    // weak_mask_demo masks its custom env-var name, so unlike the other
+    // provider example it still clears the full identifier scrub.
+    common::assert_no_dirty_words(&path);
 }
 
 /// `mask!(b"...")` and `mask!(c"...")` must keep their fixture bytes
@@ -305,9 +329,20 @@ fn mask_format_placeholder_names_absent_from_binary() {
 /// contain it; the former is unique to the Twain quote.
 #[test]
 fn twain_fixture_absent_from_canonical_examples() {
+    // `hello_world` builds under the default Embedded seal; `file_provider`
+    // passes a `FileProvider` to `init!` (External form), so it needs the
+    // `provider-examples` feature and `LITMASK_UNLOCK_KEY` set to seal
+    // External.
+    common::build_example("hello_world", Profile::Release);
+    common::build_example_with_features_and_env(
+        "file_provider",
+        Profile::Release,
+        &["provider-examples"],
+        &[("LITMASK_UNLOCK_KEY", SCRUB_EXTERNAL_KEY)],
+    );
     for name in ["hello_world", "file_provider"] {
-        common::build_example(name, Profile::Release);
         let path = common::example_path(name, Profile::Release);
+        assert!(path.exists(), "example binary missing: {}", path.display());
         common::assert_substring_absent(&path, "The reports of my death");
     }
 }

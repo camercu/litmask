@@ -10,7 +10,7 @@ use core::fmt;
 /// every constructor / matcher.
 pub(crate) type ProviderError = alloc::boxed::Box<dyn core::error::Error + Send + Sync + 'static>;
 
-/// Errors surfaced by [`crate::init!`] / [`crate::init_with!`].
+/// Errors surfaced by [`crate::init!`].
 ///
 /// # Examples
 ///

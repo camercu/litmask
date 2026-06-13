@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, Once, OnceLock};
 
-use litmask::{KeyError, KeyProvider, UnlockKey, init_with};
+use litmask::{KeyError, KeyProvider, UnlockKey, init};
 
 /// Substrings whose presence in any compiled example binary indicates
 /// that internal library identifiers or operational tooling vocabulary
@@ -434,17 +434,16 @@ pub fn unlock_key_from_config() -> UnlockKey {
     UnlockKey::from_base64url(&b64).expect("base64url unlock_key in litmask.config")
 }
 
-/// Idempotently initialize the runtime against the debug-profile
-/// `litmask.config` so integration tests do not depend on
-/// `LITMASK_UNLOCK_KEY` being set in the test process's environment.
-/// Safe to call from every `#[test]` — only the first call performs
-/// initialization.
+/// Idempotently initialize the runtime against the Embedded build seal
+/// so integration tests do not depend on `LITMASK_UNLOCK_KEY` being set
+/// in the test process's environment. The keyless `init!()` recomputes
+/// the `unlock_key` from the embedded wrapper nonce, so no provider or
+/// config read is needed. Safe to call from every `#[test]` — only the
+/// first call performs initialization.
 pub fn init_once() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let key = read_unlock_key(&self_config_path());
-        let provider = TestKeyProvider { key_b64: key };
-        init_with!(provider).expect("init_with succeeded");
+        init!().expect("Embedded init! succeeded");
     });
 }
 
