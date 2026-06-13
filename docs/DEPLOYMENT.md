@@ -38,10 +38,10 @@ Point to a file whose contents are the unlock material — the same value
 the build was sealed with:
 
 ```rust
-use litmask::{FileProvider, init_with};
+use litmask::{FileProvider, init};
 
 let provider = FileProvider::new("/run/secrets/litmask_key");
-init_with!(provider).expect("init");
+init!(provider).expect("init");
 ```
 
 The file holds raw material (any length, no encoding); `FileProvider`

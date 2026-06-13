@@ -71,7 +71,7 @@ decryption runs, any observer with runtime access sees plaintext.
 "Zero-config" means no project configuration beyond `build.rs` and no
 runtime key provisioning — the keyless Embedded default recomputes
 `unlock_key` from the embedded nonce. Sourcing the key at runtime (e.g.
-`LITMASK_UNLOCK_KEY` via `EnvVarProvider`) is opt-in through `init_with!`.
+`LITMASK_UNLOCK_KEY` via `EnvVarProvider`) is opt-in through `init!(provider)`.
 
 ## Explicitly out of scope
 

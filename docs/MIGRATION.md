@@ -46,7 +46,7 @@ is sealed at **build** time (the seal tier):
 
 # litmask, unlock material sourced at runtime: seal the build under
 # LITMASK_UNLOCK_KEY, then re-supply the same material when running
-# (the app calls init_with!(EnvVarProvider::default()))
+# (the app calls init!(EnvVarProvider::default()))
 LITMASK_UNLOCK_KEY='same material the build was sealed with' ./my_app
 ```
 
@@ -159,7 +159,7 @@ let s: &'static str = litmask::weak_mask!("my secret");
 obfstr embeds a compile-time random XOR key — no runtime provisioning.
 litmask's keyless Embedded default also needs no runtime key; sourcing
 `unlock_key` at runtime (env var, file, machine ID) is opt-in via
-`init_with!` (see litcrypt migration above).
+`init!(provider)` (see litcrypt migration above).
 
 ### Key differences
 

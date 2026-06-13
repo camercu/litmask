@@ -79,7 +79,7 @@ The zero-config default is keyless: `init!()` uses `EmbeddedProvider`, so
 a build runs with nothing to provision. That buys `strings(1)` resistance,
 not secrecy — the key is recoverable from the artifact. To keep the
 `unlock_key` out of the binary, source it at runtime with a
-[`KeyProvider`](#key-providers) and `init_with!` (e.g. `EnvVarProvider`
+[`KeyProvider`](#key-providers) and `init!(provider)` (e.g. `EnvVarProvider`
 reading `LITMASK_UNLOCK_KEY`).
 
 ## How it works
@@ -96,7 +96,7 @@ reading `LITMASK_UNLOCK_KEY`).
 3. **Run** — `init!()` unwraps the `mask_key` using an `unlock_key`. The
    default keyless `EmbeddedProvider` recomputes it from the wrapper
    nonce; higher tiers source it at runtime via a
-   [`KeyProvider`](#key-providers) and `init_with!`. `mask!` then decrypts
+   [`KeyProvider`](#key-providers) and `init!(provider)`. `mask!` then decrypts
    each blob on demand.
 
 Above the Embedded floor, the `unlock_key` is the only secret that lives
@@ -203,12 +203,11 @@ See `examples/mask_serde_demo.rs` and SPECIFICATION.md Appendix E.
 | `init!(bind_to_machine)` | Host machine ID + BLAKE3 (build-sealed) | `machine-id` |
 | `impl KeyProvider`  | Anything you write                      | --           |
 
-A runtime provider is sourced explicitly with `init_with!` (or the
-equivalent `init!(provider)`):
+A runtime provider is sourced explicitly with `init!(provider)`:
 
 ```rust
 let provider = litmask::EnvVarProvider::new("LITMASK_UNLOCK_KEY");
-litmask::init_with!(provider)?;
+litmask::init!(provider)?;
 ```
 
 The machine tier is sealed at build time instead — see

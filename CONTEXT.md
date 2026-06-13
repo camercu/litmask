@@ -126,15 +126,14 @@ lifetime. Semver-exempt until the feature stabilizes as `serde`.
 _Avoid_: "serde unmask", "masked deserialize derive" (the derive masks
 names, not deserialized data).
 
-**`init!` / `init_with!`**: Macros that decrypt the **wrapper** with the
-**unlock key** and populate the process-global **mask key** cell. `init!`
-(a proc-macro) has four forms, each cross-checked against the build's
-**seal tier** tag: no-arg `init!()` uses the keyless [`EmbeddedProvider`];
-`init!(<provider>)` unlocks an **external** seal; the `init!(bind_to_machine)`
-keyword form unlocks a **machine** seal; `init!(bind_to_machine + <provider>)`
-unlocks the two-factor **machine_external** seal. Any form↔tier mismatch
-is a `compile_error!`. `init_with!` (declarative) takes any
-[`KeyProvider`] — the External form's equivalent.
+**`init!`**: Proc-macro that decrypts the **wrapper** with the **unlock
+key** and populates the process-global **mask key** cell. It has four
+forms, each cross-checked against the build's **seal tier** tag: no-arg
+`init!()` uses the keyless [`EmbeddedProvider`]; `init!(<provider>)`
+takes any [`KeyProvider`] and unlocks an **external** seal; the
+`init!(bind_to_machine)` keyword form unlocks a **machine** seal;
+`init!(bind_to_machine + <provider>)` unlocks the two-factor
+**machine_external** seal. Any form↔tier mismatch is a `compile_error!`.
 Vocabulary: the build **seals** (fixes the tier and key material at
 compile time); `bind_to_machine` **binds** (re-reads the host machine id
 at runtime and succeeds only on the sealed machine).

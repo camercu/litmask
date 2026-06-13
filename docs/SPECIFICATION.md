@@ -238,18 +238,18 @@ under `no_std`; §2.10.6). Initialization happens via:
 
 ```rust
 litmask::init!()?;                              // Embedded tier: keyless, nonce-derived
-litmask::init_with!(provider)?;                 // Uses provided KeyProvider
+litmask::init!(provider)?;                      // External tier: uses provided KeyProvider
 ```
 
-Neither is a regular function: both expand at the call site so they can
+`init!` is not a regular function: it expands at the call site so it can
 `include_bytes!(concat!(env!("OUT_DIR"), "/litmask_wrapper.bin"))` against
 the **caller's** crate `OUT_DIR` (where the user's `build.rs` ran
 `litmask_build::emit()`). A regular function in the `litmask` runtime crate
-cannot reach a downstream crate's `OUT_DIR`. `init_with!` is a declarative
-macro; `init!` is a proc-macro so it can read the build-authoritative
-`LITMASK_SEAL_TIER` tag and `compile_error!` when the form and the sealed
-tier disagree (the no-arg `init!()` form requires the `embedded` tier).
-Both delegate to a private function
+cannot reach a downstream crate's `OUT_DIR`. `init!` is a proc-macro so it
+can read the build-authoritative `LITMASK_SEAL_TIER` tag and
+`compile_error!` when the form and the sealed tier disagree (the no-arg
+`init!()` form requires the `embedded` tier; `init!(provider)` the
+`external` tier). It delegates to a private function
 `litmask::__internal::__init_with_wrapper(provider, &wrapper_bytes)` that
 contains the actual decryption logic; the no-arg `init!()` constructs an
 `EmbeddedProvider` from the wrapper bytes.
@@ -796,12 +796,11 @@ litmask::init!()?;                    // Embedded tier: keyless, nonce-derived
 litmask::init!(bind_to_machine)?;          // Machine tier: host-id-sealed (machine-id feature)
 litmask::init!(provider)?;            // External tier: any KeyProvider expression
 litmask::init!(bind_to_machine + provider)?; // MachineExternal tier: two-factor (machine-id feature)
-litmask::init_with!(provider)?;       // External tier: declarative form
 ```
 
-`init!` is a proc-macro (form↔tier cross-check); `init_with!` is a
-declarative macro (see §1.4.1 for rationale). The `init!` form is selected by
-its argument: empty → Embedded, the bare keyword `bind_to_machine` → Machine,
+`init!` is a proc-macro (form↔tier cross-check; see §1.4.1 for rationale).
+The form is selected by its argument: empty → Embedded, the bare keyword
+`bind_to_machine` → Machine,
 `bind_to_machine + <expr>` → MachineExternal (two-factor), any other expression →
 External (a provider value). A `bind_to_machine +` with no following provider
 expression is a `grammar` `compile_error!`. Each form unlocks exactly one
@@ -1268,7 +1267,7 @@ Stable surface (semver-protected):
 - `UnlockKey` type
 - `EmbeddedProvider`, `EnvVarProvider`, `FileProvider` (public providers;
   `MachineIdProvider` is `pub(crate)` and NOT part of the stable surface)
-- `init!()`, `init!(bind_to_machine)`, `init!(<provider>)`, `init_with!()` macros
+- `init!()`, `init!(bind_to_machine)`, `init!(<provider>)`, `init!(bind_to_machine + <provider>)` macro forms
 - `InitError::sysexit_code()` method and the sysexits mapping in §1.9.7
 - Error type variants (new variants non-breaking via `#[non_exhaustive]`)
 - `litmask.config` schema (additions allowed; removals breaking)
@@ -1504,7 +1503,7 @@ own substring for this position. See §1.9.6 for rationale.
 §2.1.1.11 — Decryption failure on a `mask!` invocation SHALL panic per the
 policy in §1.9.5.
 
-§2.1.1.12 — Calling `mask!` before `litmask::init!()` or `litmask::init_with!()`
+§2.1.1.12 — Calling `mask!` before `litmask::init!()`
 on an **Embedded**-sealed build SHALL trigger lazy initialization using the
 default keyless `EmbeddedProvider` (`unlock_key` recomputed from the wrapper's
 cleartext nonce). The `mask!` expansion SHALL carry the build-sealed
@@ -1518,7 +1517,7 @@ first `mask!()`). This prevents the wrong-key lazy derive from surfacing as a
 generic wrapper-decryption failure that hides the real cause.
 
 §2.1.1.12b — On an Embedded-sealed **debug** build (`cfg(debug_assertions)`),
-an `init!()` / `init_with!()` call that arrives AFTER a `mask!()` has already
+an `init!()` call that arrives AFTER a `mask!()` has already
 lazily initialized the runtime SHALL panic, naming the init-after-lazy
 ordering cause. Rationale: on the Embedded floor the lazy key equals the
 `init!()` key, so the ordering bug is functionally invisible — until the
@@ -2059,9 +2058,8 @@ Machine (§2.6.1.8), any other argument → External provider expression
 §1.9.6 `init! tier-mismatch` `compile_error!` when the selected form's tier
 does not match the sealed tier (or the tag is absent).
 
-§2.6.1.2 — `litmask::init!(provider)` (and the equivalent
-`litmask::init_with!(provider)`) SHALL initialize the runtime using the
-given External-tier provider expression, returning `Result<(), InitError>`.
+§2.6.1.2 — `litmask::init!(provider)` SHALL initialize the runtime using
+the given External-tier provider expression, returning `Result<(), InitError>`.
 
 §2.6.1.8 — `litmask::init!(bind_to_machine)` SHALL initialize the runtime using
 the `pub(crate)` `MachineIdProvider` (§2.5.4), constructed in-crate from the
@@ -2077,11 +2075,11 @@ bytes via `include_bytes!` from the caller's `OUT_DIR`, then forward to a
 private `__init_with_wrapper(provider, &wrapper_bytes)` function whose
 behavior matches the requirements below verbatim.
 
-§2.6.1.3 — Both init functions SHALL retrieve `unlock_key` via
+§2.6.1.3 — The init seam SHALL retrieve `unlock_key` via
 `provider.unlock_key()`, decrypt the embedded `mask_key` wrapper (format per
 §1.7.3), and store the result in the global `OnceLock`.
 
-§2.6.1.4 — Successive calls to `init!()` or `init_with!()` after successful
+§2.6.1.4 — Successive calls to `init!()` after successful
 **explicit** initialization SHALL return `Ok(())` without re-running the
 provider (idempotent). When the mask key was installed by the LAZY path
 instead, a debug build SHALL panic per §2.1.1.12b; a release build SHALL
@@ -2632,7 +2630,7 @@ a derived locator, and a split init macro). Documents what was removed and why.
 | Derived locator + recorded-locator config | **removed** — runtime finds the wrapper by compile-time address (§1.7.1) |
 | Machine-id | **build-time raw id only** (§1.7.6); no post-build reseal |
 | CLI surface | **`{keygen, show-machine-id}`** — generate/read-only, no binary mutation |
-| Init macro | **single `init!`** with four forms: `()` / `(<expr>)` / `(bind_to_machine)` / `(bind_to_machine + <expr>)`; `init_with!` survives as the declarative equivalent of the External form (§1.8.2) |
+| Init macro | **single `init!`** with four forms: `()` / `(<expr>)` / `(bind_to_machine)` / `(bind_to_machine + <expr>)` (§1.8.2) |
 | Factor selection | external = `impl KeyProvider` **value**; `bind_to_machine` = one-keyword carve-out. No keyword DSL, no general `MultiProvider` (§1.6.2) |
 | Multi-factor | **fixed `bind_to_machine + <external>`** — arity-2, order fixed by construction (§1.7.6) |
 | Build/runtime tier agreement | **tracked `LITMASK_SEAL_TIER` tag, cross-checked at compile time** (§2.6.1); replaces silent runtime AEAD failure on mismatch |
