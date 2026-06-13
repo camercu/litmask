@@ -63,21 +63,24 @@ pub struct ExpectedElements {
     /// Shape prefix exactly as serde words it: `"struct"`,
     /// `"tuple struct"`, `"tuple variant"`, or `"struct variant"`.
     pub shape: &'static str,
-    /// Decrypted container name (for variants: `Enum::Variant`).
+    /// Decrypted container name.
     pub name: &'static str,
+    /// Decrypted variant name, rendered as `Name::Variant` — serde's
+    /// wording for tuple/struct variants.
+    pub variant: Option<&'static str>,
     pub count: usize,
 }
 
 impl Expected for ExpectedElements {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{} {}", self.shape, self.name)?;
+        if let Some(variant) = self.variant {
+            write!(formatter, "::{variant}")?;
+        }
         if self.count == 1 {
-            write!(formatter, "{} {} with 1 element", self.shape, self.name)
+            write!(formatter, " with 1 element")
         } else {
-            write!(
-                formatter,
-                "{} {} with {} elements",
-                self.shape, self.name, self.count
-            )
+            write!(formatter, " with {} elements", self.count)
         }
     }
 }
@@ -104,15 +107,27 @@ mod tests {
         let one = ExpectedElements {
             shape: "struct",
             name: "Config",
+            variant: None,
             count: 1,
         };
         assert_eq!(render(&one), "struct Config with 1 element");
         let two = ExpectedElements {
             shape: "tuple struct",
             name: "Pair",
+            variant: None,
             count: 2,
         };
         assert_eq!(render(&two), "tuple struct Pair with 2 elements");
+        let variant = ExpectedElements {
+            shape: "tuple variant",
+            name: "Channel",
+            variant: Some("Jitter"),
+            count: 2,
+        };
+        assert_eq!(
+            render(&variant),
+            "tuple variant Channel::Jitter with 2 elements"
+        );
     }
 
     #[test]

@@ -279,6 +279,205 @@ fn mask_deserialize_empty_tuple_struct_matches_plain_derive() {
     assert_eq!(plain, plain_shapes::DeEmptyTuple());
 }
 
+#[derive(MaskDeserialize, Debug, PartialEq)]
+enum DeChannelState {
+    DormantUntilDusk,
+    RelayHandle(String),
+    JitterWindow(u32, u32),
+    ActiveBeacon { uplink_url: String, burst_quota: u8 },
+}
+
+/// Empty bracketed variants are NOT unit variants to serde: `V()` is
+/// a zero-arity tuple variant, `V {}` a zero-field struct variant.
+#[derive(MaskDeserialize, Debug, PartialEq)]
+enum DeEmptyVariants {
+    BareDrop,
+    HollowTuple(),
+    HollowStruct {},
+}
+
+/// Uninhabited enums must still derive — the plain serde derive
+/// generates an impl whose `visit_enum` proves unreachability.
+#[derive(MaskDeserialize)]
+enum DeNever {}
+
+mod plain_enums {
+    #[derive(serde::Deserialize, serde::Serialize, Debug, PartialEq)]
+    pub enum DeChannelState {
+        DormantUntilDusk,
+        RelayHandle(String),
+        JitterWindow(u32, u32),
+        ActiveBeacon { uplink_url: String, burst_quota: u8 },
+    }
+
+    #[derive(serde::Deserialize, serde::Serialize, Debug, PartialEq)]
+    pub enum DeEmptyVariants {
+        BareDrop,
+        HollowTuple(),
+        HollowStruct {},
+    }
+}
+
+fn channel_state_json_fixtures() -> Vec<(&'static str, DeChannelState)> {
+    vec![
+        (r#""DormantUntilDusk""#, DeChannelState::DormantUntilDusk),
+        (
+            r#"{"RelayHandle":"relay-9"}"#,
+            DeChannelState::RelayHandle("relay-9".to_string()),
+        ),
+        (
+            r#"{"JitterWindow":[50,250]}"#,
+            DeChannelState::JitterWindow(50, 250),
+        ),
+        (
+            r#"{"ActiveBeacon":{"uplink_url":"wss://uplink.example","burst_quota":4}}"#,
+            DeChannelState::ActiveBeacon {
+                uplink_url: "wss://uplink.example".to_string(),
+                burst_quota: 4,
+            },
+        ),
+    ]
+}
+
+#[test]
+fn mask_deserialize_enum_variants_match_plain_derive_json() {
+    common::init_once();
+    for (input, expected) in channel_state_json_fixtures() {
+        let masked: DeChannelState =
+            serde_json::from_str(input).unwrap_or_else(|e| panic!("masked failed on {input}: {e}"));
+        assert_eq!(masked, expected);
+    }
+}
+
+/// Non-self-describing formats encode the variant *index* — postcard
+/// round-trip proves declaration-order variant indices are preserved.
+#[test]
+fn mask_deserialize_enum_postcard_round_trip() {
+    common::init_once();
+    let plains = [
+        plain_enums::DeChannelState::DormantUntilDusk,
+        plain_enums::DeChannelState::RelayHandle("relay-9".to_string()),
+        plain_enums::DeChannelState::JitterWindow(50, 250),
+        plain_enums::DeChannelState::ActiveBeacon {
+            uplink_url: "wss://uplink.example".to_string(),
+            burst_quota: 4,
+        },
+    ];
+    let expected = channel_state_json_fixtures();
+    for (plain, (_, want)) in plains.iter().zip(expected) {
+        let bytes = postcard::to_stdvec(plain).expect("plain serialization failed");
+        let masked: DeChannelState =
+            postcard::from_bytes(&bytes).expect("masked deserialization failed");
+        assert_eq!(masked, want);
+    }
+}
+
+#[test]
+fn mask_deserialize_unknown_variant_error_matches_plain_derive() {
+    common::init_once();
+    let input = r#"{"NoSuchVariant":1}"#;
+    let masked_err = serde_json::from_str::<DeChannelState>(input)
+        .expect_err("masked must fail")
+        .to_string();
+    let plain_err = serde_json::from_str::<plain_enums::DeChannelState>(input)
+        .expect_err("plain must fail")
+        .to_string();
+    assert_eq!(masked_err, plain_err);
+    assert!(
+        masked_err.contains("unknown variant `NoSuchVariant`")
+            && masked_err.contains("`DormantUntilDusk`"),
+        "unexpected error text: {masked_err}"
+    );
+}
+
+/// Out-of-range variant index (non-self-describing path): postcard
+/// encodes the variant tag as a varint; index 9 exceeds the 4-variant
+/// enum and must produce the plain derive's `invalid_value` text.
+#[test]
+fn mask_deserialize_out_of_range_variant_index_error_matches_plain_derive() {
+    common::init_once();
+    let bytes = [9u8];
+    let masked_err = postcard::from_bytes::<DeChannelState>(&bytes)
+        .expect_err("masked must fail")
+        .to_string();
+    let plain_err = postcard::from_bytes::<plain_enums::DeChannelState>(&bytes)
+        .expect_err("plain must fail")
+        .to_string();
+    assert_eq!(masked_err, plain_err);
+}
+
+#[test]
+fn mask_deserialize_tuple_variant_invalid_length_error_matches_plain_derive() {
+    common::init_once();
+    let input = r#"{"JitterWindow":[50]}"#;
+    let masked_err = serde_json::from_str::<DeChannelState>(input)
+        .expect_err("masked must fail")
+        .to_string();
+    let plain_err = serde_json::from_str::<plain_enums::DeChannelState>(input)
+        .expect_err("plain must fail")
+        .to_string();
+    assert_eq!(masked_err, plain_err);
+    assert!(
+        masked_err.contains("tuple variant DeChannelState::JitterWindow with 2 elements"),
+        "unexpected error text: {masked_err}"
+    );
+}
+
+#[test]
+fn mask_deserialize_struct_variant_missing_field_error_matches_plain_derive() {
+    common::init_once();
+    let input = r#"{"ActiveBeacon":{"burst_quota":4}}"#;
+    let masked_err = serde_json::from_str::<DeChannelState>(input)
+        .expect_err("masked must fail")
+        .to_string();
+    let plain_err = serde_json::from_str::<plain_enums::DeChannelState>(input)
+        .expect_err("plain must fail")
+        .to_string();
+    assert_eq!(masked_err, plain_err);
+    assert!(
+        masked_err.contains("missing field `uplink_url`"),
+        "unexpected error text: {masked_err}"
+    );
+}
+
+#[test]
+fn mask_deserialize_enum_wrong_type_error_matches_plain_derive() {
+    common::init_once();
+    let input = "3";
+    let masked_err = serde_json::from_str::<DeChannelState>(input)
+        .expect_err("masked must fail")
+        .to_string();
+    let plain_err = serde_json::from_str::<plain_enums::DeChannelState>(input)
+        .expect_err("plain must fail")
+        .to_string();
+    assert_eq!(masked_err, plain_err);
+}
+
+#[test]
+fn mask_deserialize_empty_variants_match_plain_derive() {
+    common::init_once();
+    let pairs = [
+        (r#""BareDrop""#, DeEmptyVariants::BareDrop),
+        (r#"{"HollowTuple":[]}"#, DeEmptyVariants::HollowTuple()),
+        (r#"{"HollowStruct":{}}"#, DeEmptyVariants::HollowStruct {}),
+    ];
+    for (input, expected) in pairs {
+        let masked: DeEmptyVariants =
+            serde_json::from_str(input).unwrap_or_else(|e| panic!("masked failed on {input}: {e}"));
+        assert_eq!(masked, expected);
+        // Same input must round-trip through the plain twin too —
+        // guards against fixtures drifting from serde's wire shapes.
+        serde_json::from_str::<plain_enums::DeEmptyVariants>(input)
+            .unwrap_or_else(|e| panic!("plain failed on {input}: {e}"));
+    }
+}
+
+#[test]
+fn mask_deserialize_uninhabited_enum_derives() {
+    fn assert_deserialize<T: for<'de> serde::Deserialize<'de>>() {}
+    assert_deserialize::<DeNever>();
+}
+
 #[test]
 fn mask_deserialize_repeat_calls_are_stable() {
     common::init_once();
