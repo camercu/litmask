@@ -267,25 +267,6 @@ fn type_name_tuple(input: &DeriveInput, container: &ContainerAttrs) -> (proc_mac
     (input.ident.span(), container.deserialize_name(&input.ident))
 }
 
-/// Reject-loud any `#[serde(...)]` on unnamed (tuple) fields. The
-/// masking derives don't yet apply field attributes positionally, so
-/// honoring one silently (e.g. `deserialize_with`, `default`) would
-/// diverge from serde without warning.
-fn check_unnamed_field_attrs(fields: &syn::FieldsUnnamed) -> syn::Result<()> {
-    for field in &fields.unnamed {
-        let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
-        if attrs.is_set() {
-            return Err(compile_error(
-                syn::spanned::Spanned::span(field),
-                MACRO_NAME,
-                FailTag::InvalidArg,
-                "`#[serde(...)]` on a tuple field is not yet supported",
-            ));
-        }
-    }
-    Ok(())
-}
-
 /// The four generics fragments every generated visitor needs, with
 /// the `'de` lifetime threaded ahead of the type's own params and
 /// each type param bounded `Deserialize<'de>` (the plain derive's
@@ -1168,7 +1149,7 @@ fn tuple_struct_body(
     fields: &syn::FieldsUnnamed,
 ) -> syn::Result<TokenStream2> {
     let struct_ident = &input.ident;
-    check_unnamed_field_attrs(fields)?;
+    serde_attrs::reject_tuple_field_attrs(MACRO_NAME, fields)?;
     let type_name_fn = type_name_fn(&container_de_name(input)?);
     let field_tys: Vec<&syn::Type> = fields.unnamed.iter().map(|field| &field.ty).collect();
     let field_count = field_tys.len();
@@ -1396,7 +1377,7 @@ fn variant_arm(
             }
         }),
         Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
-            check_unnamed_field_attrs(fields)?;
+            serde_attrs::reject_tuple_field_attrs(MACRO_NAME, fields)?;
             let fty = &fields.unnamed[0].ty;
             Ok(quote! {
                 (__Field::#field_variant, __variant) => ::core::result::Result::map(
@@ -1439,7 +1420,7 @@ fn tuple_variant_arm(
     variant_name_call: &TokenStream2,
     fields: &syn::FieldsUnnamed,
 ) -> syn::Result<TokenStream2> {
-    check_unnamed_field_attrs(fields)?;
+    serde_attrs::reject_tuple_field_attrs(MACRO_NAME, fields)?;
     let enum_ident = &input.ident;
     let field_tys: Vec<&syn::Type> = fields.unnamed.iter().map(|field| &field.ty).collect();
     let field_count = field_tys.len();

@@ -38,6 +38,15 @@ fn masked_counterpart(last_segment: &str, serde_enabled: bool) -> Option<Path> {
     Some(syn::parse_str(&format!("::litmask::{target}")).expect("static masking path parses"))
 }
 
+/// Swap a struct/enum item's derives unless it opts out: strip an
+/// `#[unmasked_derive]` marker and, when absent, rewrite the recognized
+/// plain derives to their masking counterparts.
+pub(super) fn swap_item_derives(attrs: &mut Vec<Attribute>, serde_enabled: bool) {
+    if !take_opt_out(attrs) {
+        rewrite_derives(attrs, serde_enabled);
+    }
+}
+
 /// Rewrite every `#[derive(...)]` in `attrs` in place, swapping each
 /// recognized plain derive for its litmask masking counterpart while
 /// preserving declaration order and every other derive. Last-segment

@@ -33,15 +33,6 @@ pub(crate) struct Rename {
     pub(crate) deserialize: Option<String>,
 }
 
-impl Rename {
-    fn both(name: String) -> Self {
-        Self {
-            serialize: Some(name.clone()),
-            deserialize: Some(name),
-        }
-    }
-}
-
 /// serde's `rename_all` case conventions. The transforms are ported to
 /// match serde byte-for-byte — the wire-identity contract (§E.2.1/
 /// §E.2.6) depends on it, and the case-matrix twin test pins parity
@@ -318,26 +309,11 @@ pub(crate) fn parse_container(
 /// Parse `bound = "preds"` or `bound(serialize = "...", deserialize =
 /// "...")` into where-clause predicate lists.
 fn parse_bound(meta: &ParseNestedMeta) -> syn::Result<BoundOverride> {
-    if meta.input.peek(syn::Token![=]) {
-        let lit: LitStr = meta.value()?.parse()?;
-        let preds = parse_predicates(&lit)?;
-        return Ok(BoundOverride {
-            serialize: Some(preds.clone()),
-            deserialize: Some(preds),
-        });
-    }
-    let mut bound = BoundOverride::default();
-    meta.parse_nested_meta(|inner| {
-        if inner.path.is_ident("serialize") {
-            bound.serialize = Some(parse_predicates(&inner.value()?.parse::<LitStr>()?)?);
-        } else if inner.path.is_ident("deserialize") {
-            bound.deserialize = Some(parse_predicates(&inner.value()?.parse::<LitStr>()?)?);
-        } else {
-            return Err(inner.error("expected `serialize` or `deserialize`"));
-        }
-        Ok(())
-    })?;
-    Ok(bound)
+    let (serialize, deserialize) = parse_split(meta, parse_predicates)?;
+    Ok(BoundOverride {
+        serialize,
+        deserialize,
+    })
 }
 
 /// Parse a `bound` string literal as a comma-separated list of
@@ -431,51 +407,49 @@ where
     Ok(())
 }
 
-/// Parse `rename = "x"` or `rename(serialize = "s", deserialize = "d")`.
-fn parse_rename(meta: &ParseNestedMeta) -> syn::Result<Rename> {
+/// Parse the shared serde split grammar: `= "value"` (sets both
+/// directions) or `(serialize = "...", deserialize = "...")`.
+/// `parse_one` maps each string literal to the typed value.
+fn parse_split<T: Clone>(
+    meta: &ParseNestedMeta,
+    parse_one: impl Fn(&LitStr) -> syn::Result<T>,
+) -> syn::Result<(Option<T>, Option<T>)> {
     if meta.input.peek(syn::Token![=]) {
-        let lit: LitStr = meta.value()?.parse()?;
-        return Ok(Rename::both(lit.value()));
+        let value = parse_one(&meta.value()?.parse::<LitStr>()?)?;
+        return Ok((Some(value.clone()), Some(value)));
     }
-    let mut rename = Rename::default();
+    let mut serialize = None;
+    let mut deserialize = None;
     meta.parse_nested_meta(|inner| {
         if inner.path.is_ident("serialize") {
-            rename.serialize = Some(inner.value()?.parse::<LitStr>()?.value());
+            serialize = Some(parse_one(&inner.value()?.parse::<LitStr>()?)?);
         } else if inner.path.is_ident("deserialize") {
-            rename.deserialize = Some(inner.value()?.parse::<LitStr>()?.value());
+            deserialize = Some(parse_one(&inner.value()?.parse::<LitStr>()?)?);
         } else {
             return Err(inner.error("expected `serialize` or `deserialize`"));
         }
         Ok(())
     })?;
-    Ok(rename)
+    Ok((serialize, deserialize))
+}
+
+/// Parse `rename = "x"` or `rename(serialize = "s", deserialize = "d")`.
+fn parse_rename(meta: &ParseNestedMeta) -> syn::Result<Rename> {
+    let (serialize, deserialize) = parse_split(meta, |lit| Ok(lit.value()))?;
+    Ok(Rename {
+        serialize,
+        deserialize,
+    })
 }
 
 /// Parse `rename_all = "case"` or `rename_all(serialize = "...",
 /// deserialize = "...")`.
 fn parse_rename_all(macro_name: &str, meta: &ParseNestedMeta) -> syn::Result<RenameAll> {
-    if meta.input.peek(syn::Token![=]) {
-        let lit: LitStr = meta.value()?.parse()?;
-        let rule = rule_from_lit(macro_name, &lit)?;
-        return Ok(RenameAll {
-            serialize: Some(rule),
-            deserialize: Some(rule),
-        });
-    }
-    let mut rename_all = RenameAll::default();
-    meta.parse_nested_meta(|inner| {
-        if inner.path.is_ident("serialize") {
-            let lit: LitStr = inner.value()?.parse()?;
-            rename_all.serialize = Some(rule_from_lit(macro_name, &lit)?);
-        } else if inner.path.is_ident("deserialize") {
-            let lit: LitStr = inner.value()?.parse()?;
-            rename_all.deserialize = Some(rule_from_lit(macro_name, &lit)?);
-        } else {
-            return Err(inner.error("expected `serialize` or `deserialize`"));
-        }
-        Ok(())
-    })?;
-    Ok(rename_all)
+    let (serialize, deserialize) = parse_split(meta, |lit| rule_from_lit(macro_name, lit))?;
+    Ok(RenameAll {
+        serialize,
+        deserialize,
+    })
 }
 
 /// Map a `rename_all` rule literal to a [`RenameRule`], or reject-loud
@@ -520,6 +494,27 @@ pub(crate) fn reject_with_on_generic(
                 FailTag::InvalidArg,
                 "`#[serde(with/serialize_with/deserialize_with)]` is not yet supported on a \
                  generic type",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Reject-loud any `#[serde(...)]` on unnamed (tuple) fields. The
+/// masking derives don't apply field attributes positionally yet, so
+/// honoring one silently (e.g. `serialize_with`, `skip`, `default`)
+/// would diverge from serde's wire format without warning.
+pub(crate) fn reject_tuple_field_attrs(
+    macro_name: &str,
+    fields: &syn::FieldsUnnamed,
+) -> syn::Result<()> {
+    for field in &fields.unnamed {
+        if parse_field(macro_name, &field.attrs)?.is_set() {
+            return Err(compile_error(
+                field.span(),
+                macro_name,
+                FailTag::InvalidArg,
+                "`#[serde(...)]` on a tuple field is not yet supported",
             ));
         }
     }

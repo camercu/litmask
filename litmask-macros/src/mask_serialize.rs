@@ -162,7 +162,7 @@ fn variant_arm(
             ),
         }),
         Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
-            check_unnamed_field_attrs(fields)?;
+            serde_attrs::reject_tuple_field_attrs(MACRO_NAME, fields)?;
             Ok(quote! {
                 Self::#vident(__field0) =>
                     ::litmask::__serde::Serializer::serialize_newtype_variant(
@@ -175,7 +175,7 @@ fn variant_arm(
             })
         }
         Fields::Unnamed(fields) => {
-            check_unnamed_field_attrs(fields)?;
+            serde_attrs::reject_tuple_field_attrs(MACRO_NAME, fields)?;
             let field_count = fields.unnamed.len();
             let serialize_fields = bindings.iter().map(|binding| {
                 quote! {
@@ -274,7 +274,7 @@ fn tuple_struct_body(
     name: &TokenStream2,
     fields: &syn::FieldsUnnamed,
 ) -> syn::Result<TokenStream2> {
-    check_unnamed_field_attrs(fields)?;
+    serde_attrs::reject_tuple_field_attrs(MACRO_NAME, fields)?;
     let field_count = fields.unnamed.len();
     if field_count == 1 {
         return Ok(quote! {
@@ -299,25 +299,6 @@ fn tuple_struct_body(
         #(#serialize_fields)*
         ::litmask::__serde::ser::SerializeTupleStruct::end(__state)
     })
-}
-
-/// Reject-loud any `#[serde(...)]` on unnamed (tuple) fields. The
-/// masking derives don't yet apply field attributes positionally, so
-/// honoring one silently (e.g. `serialize_with`, `skip`) would diverge
-/// from serde's wire format without warning.
-fn check_unnamed_field_attrs(fields: &syn::FieldsUnnamed) -> syn::Result<()> {
-    for field in &fields.unnamed {
-        let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
-        if attrs.is_set() {
-            return Err(compile_error(
-                syn::spanned::Spanned::span(field),
-                MACRO_NAME,
-                FailTag::InvalidArg,
-                "`#[serde(...)]` on a tuple field is not yet supported",
-            ));
-        }
-    }
-    Ok(())
 }
 
 fn named_struct_body(

@@ -387,16 +387,8 @@ impl VisitMut for MaskAllWalker {
         // descends into the item afterward, opt-out or not.
         let serde_enabled = cfg!(feature = "unstable-serde");
         match item {
-            Item::Struct(s) => {
-                if !derives::take_opt_out(&mut s.attrs) {
-                    derives::rewrite_derives(&mut s.attrs, serde_enabled);
-                }
-            }
-            Item::Enum(e) => {
-                if !derives::take_opt_out(&mut e.attrs) {
-                    derives::rewrite_derives(&mut e.attrs, serde_enabled);
-                }
-            }
+            Item::Struct(s) => derives::swap_item_derives(&mut s.attrs, serde_enabled),
+            Item::Enum(e) => derives::swap_item_derives(&mut e.attrs, serde_enabled),
             _ => {}
         }
         visit_mut::visit_item_mut(self, item);
