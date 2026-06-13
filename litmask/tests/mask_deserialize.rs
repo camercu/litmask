@@ -175,6 +175,110 @@ fn mask_deserialize_missing_option_field_is_none() {
     assert_eq!(plain.retry_budget, None);
 }
 
+#[derive(MaskDeserialize, Debug, PartialEq)]
+struct DeUnitBeacon;
+
+#[derive(MaskDeserialize, Debug, PartialEq)]
+struct DeToken(String);
+
+#[derive(MaskDeserialize, Debug, PartialEq)]
+struct DeBeaconPair(String, u32);
+
+#[derive(MaskDeserialize, Debug, PartialEq)]
+struct DeEmptyTuple();
+
+mod plain_shapes {
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    pub struct DeUnitBeacon;
+
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    pub struct DeToken(pub String);
+
+    #[derive(serde::Deserialize, serde::Serialize, Debug, PartialEq)]
+    pub struct DeBeaconPair(pub String, pub u32);
+
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    pub struct DeEmptyTuple();
+}
+
+#[test]
+fn mask_deserialize_unit_struct_matches_plain_derive() {
+    common::init_once();
+    let masked: DeUnitBeacon = serde_json::from_str("null").expect("masked failed");
+    assert_eq!(masked, DeUnitBeacon);
+    let masked_err = serde_json::from_str::<DeUnitBeacon>("3")
+        .expect_err("masked must fail")
+        .to_string();
+    let plain_err = serde_json::from_str::<plain_shapes::DeUnitBeacon>("3")
+        .expect_err("plain must fail")
+        .to_string();
+    assert_eq!(masked_err, plain_err);
+    assert!(
+        masked_err.contains("expected unit struct DeUnitBeacon"),
+        "unexpected error text: {masked_err}"
+    );
+}
+
+#[test]
+fn mask_deserialize_newtype_struct_matches_plain_derive() {
+    common::init_once();
+    let masked: DeToken = serde_json::from_str(r#""opaque-handle""#).expect("masked failed");
+    assert_eq!(masked, DeToken("opaque-handle".to_string()));
+    // serde_json's `deserialize_newtype_struct` delegates straight to
+    // the inner type, so the error text comes from `String`'s visitor
+    // ("expected a string") for plain and masked alike — parity is the
+    // assertion, not any particular wording.
+    let masked_err = serde_json::from_str::<DeToken>("{}")
+        .expect_err("masked must fail")
+        .to_string();
+    let plain_err = serde_json::from_str::<plain_shapes::DeToken>("{}")
+        .expect_err("plain must fail")
+        .to_string();
+    assert_eq!(masked_err, plain_err);
+}
+
+#[test]
+fn mask_deserialize_tuple_struct_matches_plain_derive() {
+    common::init_once();
+    let masked: DeBeaconPair = serde_json::from_str(r#"["relay-7",31]"#).expect("masked failed");
+    assert_eq!(masked, DeBeaconPair("relay-7".to_string(), 31));
+}
+
+#[test]
+fn mask_deserialize_tuple_struct_postcard_round_trip() {
+    common::init_once();
+    let bytes = postcard::to_stdvec(&plain_shapes::DeBeaconPair("relay-7".to_string(), 31))
+        .expect("plain serialization failed");
+    let masked: DeBeaconPair = postcard::from_bytes(&bytes).expect("masked failed");
+    assert_eq!(masked, DeBeaconPair("relay-7".to_string(), 31));
+}
+
+#[test]
+fn mask_deserialize_tuple_struct_invalid_length_error_matches_plain_derive() {
+    common::init_once();
+    let input = r#"["relay-7"]"#;
+    let masked_err = serde_json::from_str::<DeBeaconPair>(input)
+        .expect_err("masked must fail")
+        .to_string();
+    let plain_err = serde_json::from_str::<plain_shapes::DeBeaconPair>(input)
+        .expect_err("plain must fail")
+        .to_string();
+    assert_eq!(masked_err, plain_err);
+    assert!(
+        masked_err.contains("tuple struct DeBeaconPair with 2 elements"),
+        "unexpected error text: {masked_err}"
+    );
+}
+
+#[test]
+fn mask_deserialize_empty_tuple_struct_matches_plain_derive() {
+    common::init_once();
+    let masked: DeEmptyTuple = serde_json::from_str("[]").expect("masked failed");
+    assert_eq!(masked, DeEmptyTuple());
+    let plain: plain_shapes::DeEmptyTuple = serde_json::from_str("[]").expect("plain failed");
+    assert_eq!(plain, plain_shapes::DeEmptyTuple());
+}
+
 #[test]
 fn mask_deserialize_repeat_calls_are_stable() {
     common::init_once();

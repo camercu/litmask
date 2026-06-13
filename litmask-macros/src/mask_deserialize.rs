@@ -93,20 +93,266 @@ fn deserialize_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
             reject_serde_attrs(MACRO_NAME, input.attrs.iter().chain(field_attrs))?;
             match &data.fields {
                 Fields::Named(fields) => Ok(named_struct_body(input, fields)),
-                _ => Err(compile_error(
-                    input.ident.span(),
-                    MACRO_NAME,
-                    FailTag::Grammar,
-                    "supports named-field structs only (prototype)",
-                )),
+                Fields::Unit => Ok(unit_struct_body(input)),
+                Fields::Unnamed(fields) => Ok(tuple_struct_body(input, fields)),
             }
         }
         _ => Err(compile_error(
             input.ident.span(),
             MACRO_NAME,
             FailTag::Grammar,
-            "supports named-field structs only (prototype)",
+            "supports structs only (prototype)",
         )),
+    }
+}
+
+/// The four generics fragments every generated visitor needs, with
+/// the `'de` lifetime threaded ahead of the type's own params and
+/// each type param bounded `Deserialize<'de>` (the plain derive's
+/// bound model). Token streams rather than `syn` borrows so body
+/// builders can own them without lifetime plumbing.
+struct DeGenerics {
+    /// `<'de, T>` — impl-position generics including `'de`.
+    de_impl: TokenStream2,
+    /// `<'de, T>` — type-position generics for `__Visitor`.
+    de_ty: TokenStream2,
+    /// `<T>` — the input type's own type-position generics.
+    ty: TokenStream2,
+    /// `where T: Deserialize<'de>` (empty when no type params).
+    where_clause: TokenStream2,
+}
+
+fn split_de_generics(input: &DeriveInput) -> DeGenerics {
+    let generics = with_trait_bounds(
+        input.generics.clone(),
+        &syn::parse_quote!(::litmask::__serde::Deserialize<'de>),
+    );
+    let mut de_generics = generics.clone();
+    de_generics.params.insert(0, syn::parse_quote!('de));
+    let (de_impl, de_ty, _) = de_generics.split_for_impl();
+    let (de_impl, de_ty) = (quote!(#de_impl), quote!(#de_ty));
+    let (_, ty, where_clause) = generics.split_for_impl();
+    DeGenerics {
+        de_impl,
+        de_ty,
+        ty: quote!(#ty),
+        where_clause: quote!(#where_clause),
+    }
+}
+
+/// `__Visitor` carrier struct declaration — the `PhantomData` pair
+/// mirrors serde's expansion (`marker` pins the output type so the
+/// impl's generics are used; `lifetime` pins `'de`).
+fn visitor_decl(input: &DeriveInput, generics: &DeGenerics) -> TokenStream2 {
+    let struct_ident = &input.ident;
+    let DeGenerics {
+        de_impl,
+        ty,
+        where_clause,
+        ..
+    } = generics;
+    quote! {
+        struct __Visitor #de_impl #where_clause {
+            marker: ::core::marker::PhantomData<#struct_ident #ty>,
+            lifetime: ::core::marker::PhantomData<&'de ()>,
+        }
+    }
+}
+
+fn visitor_expr() -> TokenStream2 {
+    quote! {
+        __Visitor {
+            marker: ::core::marker::PhantomData,
+            lifetime: ::core::marker::PhantomData,
+        }
+    }
+}
+
+/// Per-field `let` statements for a `visit_seq` body: each pulls the
+/// next element or fails with the plain derive's `invalid_length`
+/// message (`"<shape> <Name> with N element(s)"`, composed at runtime
+/// from the decrypted name).
+fn seq_field_lets<'a>(
+    bindings: &'a [syn::Ident],
+    field_tys: &'a [&'a syn::Type],
+    shape: &'a str,
+    field_count: usize,
+) -> impl Iterator<Item = TokenStream2> + 'a {
+    bindings.iter().enumerate().map(move |(i, binding)| {
+        let fty = field_tys[i];
+        quote! {
+            let #binding = match ::litmask::__serde::de::SeqAccess::next_element::<#fty>(
+                &mut __seq,
+            )? {
+                ::core::option::Option::Some(__value) => __value,
+                ::core::option::Option::None => {
+                    return ::core::result::Result::Err(
+                        ::litmask::__serde::de::Error::invalid_length(
+                            #i,
+                            &::litmask::__serde_support::ExpectedElements {
+                                shape: #shape,
+                                name: __litmask_type_name(),
+                                count: #field_count,
+                            },
+                        ),
+                    );
+                }
+            };
+        }
+    })
+}
+
+fn unit_struct_body(input: &DeriveInput) -> TokenStream2 {
+    let struct_ident = &input.ident;
+    let type_name = masked_name_expr(struct_ident);
+    let generics = split_de_generics(input);
+    let visitor = visitor_decl(input, &generics);
+    let visitor_expr = visitor_expr();
+    let DeGenerics {
+        de_impl,
+        de_ty,
+        ty,
+        where_clause,
+    } = &generics;
+    quote! {
+        fn __litmask_type_name() -> &'static str {
+            #type_name
+        }
+
+        #visitor
+
+        #[automatically_derived]
+        impl #de_impl ::litmask::__serde::de::Visitor<'de>
+            for __Visitor #de_ty #where_clause
+        {
+            type Value = #struct_ident #ty;
+
+            fn expecting(
+                &self,
+                __formatter: &mut ::core::fmt::Formatter,
+            ) -> ::core::fmt::Result {
+                ::core::write!(__formatter, "unit struct {}", __litmask_type_name())
+            }
+
+            #[inline]
+            fn visit_unit<__E>(self) -> ::core::result::Result<Self::Value, __E>
+            where
+                __E: ::litmask::__serde::de::Error,
+            {
+                ::core::result::Result::Ok(#struct_ident)
+            }
+        }
+
+        ::litmask::__serde::Deserializer::deserialize_unit_struct(
+            __deserializer,
+            __litmask_type_name(),
+            #visitor_expr,
+        )
+    }
+}
+
+/// Tuple-struct dispatch mirrors serde's: exactly one field is a
+/// newtype (`deserialize_newtype_struct` + a `visit_newtype_struct`
+/// method), any other arity — including zero — goes through
+/// `deserialize_tuple_struct`. Both visitors share the `visit_seq`
+/// path, which is what non-self-describing formats call.
+fn tuple_struct_body(input: &DeriveInput, fields: &syn::FieldsUnnamed) -> TokenStream2 {
+    let struct_ident = &input.ident;
+    let type_name = masked_name_expr(struct_ident);
+    let field_tys: Vec<&syn::Type> = fields.unnamed.iter().map(|field| &field.ty).collect();
+    let field_count = field_tys.len();
+    let bindings: Vec<syn::Ident> = (0..field_count)
+        .map(|i| quote::format_ident!("__field{i}"))
+        .collect();
+
+    let seq_lets = seq_field_lets(&bindings, &field_tys, "tuple struct", field_count);
+    let seq_binding = if field_count == 0 {
+        quote! { _ }
+    } else {
+        quote! { mut __seq }
+    };
+
+    let visit_newtype = (field_count == 1).then(|| {
+        let fty = field_tys[0];
+        quote! {
+            #[inline]
+            fn visit_newtype_struct<__E>(
+                self,
+                __e: __E,
+            ) -> ::core::result::Result<Self::Value, __E::Error>
+            where
+                __E: ::litmask::__serde::Deserializer<'de>,
+            {
+                let __field0: #fty = <#fty as ::litmask::__serde::Deserialize>::deserialize(__e)?;
+                ::core::result::Result::Ok(#struct_ident(__field0))
+            }
+        }
+    });
+
+    let visitor_expr = visitor_expr();
+    let dispatch = if field_count == 1 {
+        quote! {
+            ::litmask::__serde::Deserializer::deserialize_newtype_struct(
+                __deserializer,
+                __litmask_type_name(),
+                #visitor_expr,
+            )
+        }
+    } else {
+        quote! {
+            ::litmask::__serde::Deserializer::deserialize_tuple_struct(
+                __deserializer,
+                __litmask_type_name(),
+                #field_count,
+                #visitor_expr,
+            )
+        }
+    };
+
+    let generics = split_de_generics(input);
+    let visitor = visitor_decl(input, &generics);
+    let DeGenerics {
+        de_impl,
+        de_ty,
+        ty,
+        where_clause,
+    } = &generics;
+    quote! {
+        fn __litmask_type_name() -> &'static str {
+            #type_name
+        }
+
+        #visitor
+
+        #[automatically_derived]
+        impl #de_impl ::litmask::__serde::de::Visitor<'de>
+            for __Visitor #de_ty #where_clause
+        {
+            type Value = #struct_ident #ty;
+
+            fn expecting(
+                &self,
+                __formatter: &mut ::core::fmt::Formatter,
+            ) -> ::core::fmt::Result {
+                ::core::write!(__formatter, "tuple struct {}", __litmask_type_name())
+            }
+
+            #visit_newtype
+
+            #[inline]
+            fn visit_seq<__A>(
+                self,
+                #seq_binding: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error>
+            where
+                __A: ::litmask::__serde::de::SeqAccess<'de>,
+            {
+                #(#seq_lets)*
+                ::core::result::Result::Ok(#struct_ident( #(#bindings),* ))
+            }
+        }
+
+        #dispatch
     }
 }
 
@@ -256,28 +502,7 @@ fn named_struct_body(input: &DeriveInput, fields: &syn::FieldsNamed) -> TokenStr
     let name_fns = name_fns(struct_ident, &field_idents);
     let field_identifier = field_identifier_block(field_count);
 
-    let seq_lets = bindings.iter().enumerate().map(|(i, binding)| {
-        let fty = field_tys[i];
-        quote! {
-            let #binding = match ::litmask::__serde::de::SeqAccess::next_element::<#fty>(
-                &mut __seq,
-            )? {
-                ::core::option::Option::Some(__value) => __value,
-                ::core::option::Option::None => {
-                    return ::core::result::Result::Err(
-                        ::litmask::__serde::de::Error::invalid_length(
-                            #i,
-                            &::litmask::__serde_support::ExpectedElements {
-                                shape: "struct",
-                                name: __litmask_type_name(),
-                                count: #field_count,
-                            },
-                        ),
-                    );
-                }
-            };
-        }
-    });
+    let seq_lets = seq_field_lets(&bindings, &field_tys, "struct", field_count);
 
     let map_lets = bindings.iter().enumerate().map(|(i, binding)| {
         let fty = field_tys[i];
@@ -321,29 +546,27 @@ fn named_struct_body(input: &DeriveInput, fields: &syn::FieldsNamed) -> TokenStr
         quote! { mut __seq }
     };
 
-    let generics = with_trait_bounds(
-        input.generics.clone(),
-        &syn::parse_quote!(::litmask::__serde::Deserialize<'de>),
-    );
-    let mut de_generics = generics.clone();
-    de_generics.params.insert(0, syn::parse_quote!('de));
-    let (de_impl_generics, de_ty_generics, _) = de_generics.split_for_impl();
-    let (_, ty_generics, where_clause) = generics.split_for_impl();
+    let generics = split_de_generics(input);
+    let visitor = visitor_decl(input, &generics);
+    let visitor_expr = visitor_expr();
+    let DeGenerics {
+        de_impl,
+        de_ty,
+        ty,
+        where_clause,
+    } = &generics;
 
     quote! {
         #name_fns
         #field_identifier
 
-        struct __Visitor #de_impl_generics #where_clause {
-            marker: ::core::marker::PhantomData<#struct_ident #ty_generics>,
-            lifetime: ::core::marker::PhantomData<&'de ()>,
-        }
+        #visitor
 
         #[automatically_derived]
-        impl #de_impl_generics ::litmask::__serde::de::Visitor<'de>
-            for __Visitor #de_ty_generics #where_clause
+        impl #de_impl ::litmask::__serde::de::Visitor<'de>
+            for __Visitor #de_ty #where_clause
         {
-            type Value = #struct_ident #ty_generics;
+            type Value = #struct_ident #ty;
 
             fn expecting(
                 &self,
@@ -398,10 +621,7 @@ fn named_struct_body(input: &DeriveInput, fields: &syn::FieldsNamed) -> TokenStr
             __deserializer,
             __litmask_type_name(),
             __litmask_names(),
-            __Visitor {
-                marker: ::core::marker::PhantomData,
-                lifetime: ::core::marker::PhantomData,
-            },
+            #visitor_expr,
         )
     }
 }
