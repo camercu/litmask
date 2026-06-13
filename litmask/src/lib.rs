@@ -129,7 +129,7 @@ pub use provider::{EnvVarProvider, FileProvider};
 
 pub use litmask_macros::{
     MaskDebug, init, mask, mask_all, mask_concat, mask_env, mask_file, mask_format,
-    mask_include_bytes, mask_include_str, mask_option_env, unmasked, weak_mask,
+    mask_include_bytes, mask_include_str, mask_option_env, unmasked, unmasked_derive, weak_mask,
 };
 
 #[cfg(feature = "unstable-serde")]

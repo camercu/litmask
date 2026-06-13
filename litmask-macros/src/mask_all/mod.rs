@@ -32,6 +32,7 @@ use syn::{Expr, ExprLit, Item, ItemConst, ItemStatic, Lit, Pat, Stmt, parse_macr
 use crate::common::{FailTag, compile_error};
 
 mod classify;
+mod derives;
 mod skip;
 
 use classify::{MacroFamily, classify_macro};
@@ -374,6 +375,33 @@ fn mixed_site_s() -> syn::Ident {
 }
 
 impl VisitMut for MaskAllWalker {
+    fn visit_item_mut(&mut self, item: &mut Item) {
+        // Swap a type's plain `#[derive(Serialize/Deserialize/Debug)]`
+        // for litmask's masking derives so the container / field /
+        // variant names don't re-enter `.rodata` as cleartext — the
+        // leak the literal-rewrite pass cannot reach. A type carrying
+        // the `#[unmasked_derive]` opt-out keeps its plain derives;
+        // the marker is stripped either way. Serde swapping is gated
+        // on `unstable-serde` because the masking serde derives only
+        // exist under that feature. Recursion (literal masking) still
+        // descends into the item afterward, opt-out or not.
+        let serde_enabled = cfg!(feature = "unstable-serde");
+        match item {
+            Item::Struct(s) => {
+                if !derives::take_opt_out(&mut s.attrs) {
+                    derives::rewrite_derives(&mut s.attrs, serde_enabled);
+                }
+            }
+            Item::Enum(e) => {
+                if !derives::take_opt_out(&mut e.attrs) {
+                    derives::rewrite_derives(&mut e.attrs, serde_enabled);
+                }
+            }
+            _ => {}
+        }
+        visit_mut::visit_item_mut(self, item);
+    }
+
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
         // Recurse first so inner expressions are processed bottom-up.
         visit_mut::visit_expr_mut(self, expr);

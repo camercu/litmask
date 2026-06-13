@@ -438,6 +438,24 @@ pub fn mask_all(attr: TokenStream, item: TokenStream) -> TokenStream {
     mask_all::expand(attr, item)
 }
 
+/// Opt a single struct or enum out of `#[mask_all]`'s derive-swapping.
+///
+/// `#[mask_all]` rewrites a type's plain `#[derive(Serialize)]` /
+/// `#[derive(Deserialize)]` (under `unstable-serde`) and
+/// `#[derive(Debug)]` to litmask's masking derives so the type's names
+/// don't land in `.rodata` as cleartext. Annotate a type with
+/// `#[unmasked_derive]` to keep its plain derives instead — useful when
+/// the type relies on a `#[serde(...)]` attribute the masking derives
+/// don't yet support, or when a plain `Debug` is intentionally wanted.
+///
+/// `#[mask_all]` consumes the marker, so it leaves no trace in the
+/// expansion. Outside a `#[mask_all]` module the attribute is an
+/// identity no-op, so it is always valid to write.
+#[proc_macro_attribute]
+pub fn unmasked_derive(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
 /// **EXPERIMENTAL** (`unstable-serde` feature, semver-exempt): derive
 /// a `serde::Serialize` impl whose struct and field names are
 /// AEAD-masked at compile time instead of embedded as cleartext
