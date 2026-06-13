@@ -278,6 +278,50 @@ pub(crate) fn mask_ident(ident: &syn::Ident) -> TokenStream {
     mask_str(ident.span(), ident.unraw().to_string().into_bytes())
 }
 
+/// Emit a `&'static str` expression yielding the masked identifier's
+/// name at runtime: decrypt the AEAD blob once, leak the `String`,
+/// cache in a `OnceLock`. The serde derives need `&'static str` names
+/// (`serialize_field`, `Error::missing_field`, ...), which a
+/// runtime-decrypted name can only satisfy by leaking; the cache
+/// bounds the leak to one allocation per use site. (`MaskDebug` uses
+/// bare `mask_ident` instead — the `Formatter` API takes `&str`, so
+/// it never needs the leak.)
+pub(crate) fn masked_name_expr(ident: &syn::Ident) -> TokenStream {
+    let decrypt = mask_ident(ident);
+    quote! {
+        {
+            static __LITMASK_NAME: ::std::sync::OnceLock<&'static str> =
+                ::std::sync::OnceLock::new();
+            *__LITMASK_NAME.get_or_init(|| ::std::boxed::Box::leak(
+                (#decrypt).into_boxed_str(),
+            ))
+        }
+    }
+}
+
+/// Reject any `#[serde(...)]` attribute on the container, a variant,
+/// or a field of a masking serde derive. The derives honor none of
+/// them; silently ignoring `rename` / `rename_all` / `skip` would
+/// serialize or deserialize under different names (or a different
+/// shape) than the plain derive — the behavior-identity contract
+/// (§E.2.1) would break without warning.
+pub(crate) fn reject_serde_attrs<'a>(
+    macro_name: &str,
+    attrs: impl Iterator<Item = &'a syn::Attribute>,
+) -> syn::Result<()> {
+    for attr in attrs {
+        if attr.path().is_ident("serde") {
+            return Err(compile_error(
+                syn::spanned::Spanned::span(attr),
+                macro_name,
+                FailTag::InvalidArg,
+                "`#[serde(...)]` attributes are not supported",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Emit a byte slice as a byte-string literal token (`b"..."`), typed
 /// `&'static [u8; N]`. Used by the `mask!` and `weak_mask!` expansions
 /// to inline the encrypted / obfuscated bytes as a `const` in the

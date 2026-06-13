@@ -133,14 +133,21 @@ pub use litmask_macros::{
 };
 
 #[cfg(feature = "unstable-serde")]
-pub use litmask_macros::MaskSerialize;
+pub use litmask_macros::{MaskDeserialize, MaskSerialize};
 
-// The `MaskSerialize` expansion references serde's traits through
-// `::litmask::__serde::...` so consumers don't need a direct serde
-// dependency for the generated code to resolve.
+// The `MaskSerialize`/`MaskDeserialize` expansions reference serde's
+// traits through `::litmask::__serde::...` so consumers don't need a
+// direct serde dependency for the generated code to resolve.
 #[cfg(feature = "unstable-serde")]
 #[doc(hidden)]
 pub use serde as __serde;
+
+// The double-underscore module name marks it as macro-plumbing in
+// consumer-facing paths; the source file keeps the conventional name.
+#[cfg(feature = "unstable-serde")]
+#[doc(hidden)]
+#[path = "serde_support.rs"]
+pub mod __serde_support;
 
 /// Write a `mask_format!`-encrypted format string to a destination.
 ///

@@ -23,6 +23,8 @@ mod mask;
 mod mask_all;
 mod mask_concat;
 mod mask_debug;
+#[cfg(feature = "unstable-serde")]
+mod mask_deserialize;
 mod mask_env;
 mod mask_file;
 mod mask_format;
@@ -478,6 +480,44 @@ pub fn mask_all(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_derive(MaskSerialize, attributes(serde))]
 pub fn mask_serialize(input: TokenStream) -> TokenStream {
     mask_serialize::expand(input)
+}
+
+/// Derive a `serde::Deserialize` impl whose type and field names are
+/// AEAD-masked at compile time instead of embedded as cleartext
+/// `&'static str` data in the binary (`FIELDS` arrays, field-visitor
+/// match arms, `expecting()` texts, `missing_field` diagnostics).
+///
+/// Behavior is identical to plain `#[derive(serde::Deserialize)]` for
+/// every serde format — same accepted inputs, same values, same error
+/// messages — with each name decrypted on first use and cached for
+/// the process lifetime (one leaked allocation per name).
+///
+/// # Limitations (prototype)
+///
+/// - Named-field structs only; other shapes are compile errors.
+/// - `#[serde(...)]` attributes are not honored.
+///
+/// # Errors
+///
+/// Emits a §1.9.6 `compile_error!` (`MaskDeserialize! grammar`) for
+/// any unsupported input shape, rather than silently degrading to
+/// cleartext names.
+///
+/// # Panics
+///
+/// Inherits [`mask!`]'s expansion-time panic policy (missing
+/// `OUT_DIR`, unreadable build artifact, AEAD failure). At runtime,
+/// the first deserialization panics if decryption fails — same policy
+/// as [`mask!`], so run `init!` before deserializing on tiers above
+/// Embedded.
+// `attributes(serde)` registers the helper attribute so rustc parses
+// `#[serde(...)]` on the input instead of erroring "cannot find
+// attribute" — which lets the derive reject it with a §1.9.6
+// diagnostic explaining the actual limitation.
+#[cfg(feature = "unstable-serde")]
+#[proc_macro_derive(MaskDeserialize, attributes(serde))]
+pub fn mask_deserialize(input: TokenStream) -> TokenStream {
+    mask_deserialize::expand(input)
 }
 
 /// Derive a `core::fmt::Debug` impl whose type and field names are

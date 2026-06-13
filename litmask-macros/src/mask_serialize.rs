@@ -25,10 +25,11 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::spanned::Spanned;
 use syn::{Data, DeriveInput, Fields};
 
-use crate::common::{FailTag, compile_error, expand_derive, mask_ident, with_trait_bounds};
+use crate::common::{
+    FailTag, compile_error, expand_derive, masked_name_expr, reject_serde_attrs, with_trait_bounds,
+};
 
 const MACRO_NAME: &str = "MaskSerialize";
 
@@ -78,7 +79,7 @@ fn serialize_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
     match &input.data {
         Data::Struct(data) => {
             let field_attrs = data.fields.iter().flat_map(|field| field.attrs.iter());
-            reject_serde_attrs(input.attrs.iter().chain(field_attrs))?;
+            reject_serde_attrs(MACRO_NAME, input.attrs.iter().chain(field_attrs))?;
             match &data.fields {
                 Fields::Named(fields) => Ok(named_struct_body(&name, fields)),
                 Fields::Unit => Ok(quote! {
@@ -94,7 +95,7 @@ fn serialize_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
                     .iter()
                     .chain(variant.fields.iter().flat_map(|field| field.attrs.iter()))
             });
-            reject_serde_attrs(input.attrs.iter().chain(variant_attrs))?;
+            reject_serde_attrs(MACRO_NAME, input.attrs.iter().chain(variant_attrs))?;
             Ok(enum_body(&name, data))
         }
         Data::Union(_) => Err(compile_error(
@@ -270,44 +271,5 @@ fn named_struct_body(name: &TokenStream2, fields: &syn::FieldsNamed) -> TokenStr
         )?;
         #(#serialize_fields)*
         ::litmask::__serde::ser::SerializeStruct::end(__state)
-    }
-}
-
-/// Reject any `#[serde(...)]` attribute on the container, a variant,
-/// or a field. The derive honors none of them; silently ignoring
-/// `rename` / `rename_all` / `skip` would serialize under different
-/// names (or a different shape) than the plain derive — the
-/// wire-format-identity contract would break without warning.
-fn reject_serde_attrs<'a>(attrs: impl Iterator<Item = &'a syn::Attribute>) -> syn::Result<()> {
-    for attr in attrs {
-        if attr.path().is_ident("serde") {
-            return Err(compile_error(
-                attr.span(),
-                MACRO_NAME,
-                FailTag::InvalidArg,
-                "`#[serde(...)]` attributes are not supported",
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// Emit a `&'static str` expression yielding the masked identifier's
-/// name at runtime: decrypt the AEAD blob once, leak the `String`,
-/// cache in a `OnceLock`. serde's `serialize_struct` /
-/// `serialize_field` take `&'static str`, which a runtime-decrypted
-/// name can only satisfy by leaking; the cache bounds the leak to one
-/// allocation per name. (`MaskDebug` uses bare `mask_ident` instead —
-/// the `Formatter` API takes `&str`, so it never needs the leak.)
-fn masked_name_expr(ident: &syn::Ident) -> TokenStream2 {
-    let decrypt = mask_ident(ident);
-    quote! {
-        {
-            static __LITMASK_NAME: ::std::sync::OnceLock<&'static str> =
-                ::std::sync::OnceLock::new();
-            *__LITMASK_NAME.get_or_init(|| ::std::boxed::Box::leak(
-                (#decrypt).into_boxed_str(),
-            ))
-        }
     }
 }
