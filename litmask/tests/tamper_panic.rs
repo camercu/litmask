@@ -118,6 +118,10 @@ fn no_custom_panic_messages_in_decryption_path() {
                 r#".expect("AEAD encryption failed during litmask macro expansion")"#,
                 r#"panic!("{macro_name}!: CARGO_MANIFEST_DIR not set")"#,
                 "litmask: failed to read {name} from OUT_DIR",
+                // `transparent_field` validates a `#[serde(transparent)]`
+                // struct at expansion time; the invariant message never
+                // reaches emitted tokens or the user binary.
+                r#".expect("named field has an ident")"#,
             ],
         ),
     ];

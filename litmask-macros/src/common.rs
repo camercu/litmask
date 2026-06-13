@@ -270,6 +270,54 @@ pub(crate) fn with_trait_bounds(mut generics: syn::Generics, bound: &syn::Path) 
     generics
 }
 
+/// The single contained field of a `#[serde(transparent)]` struct: how
+/// to access it on `self` (`#access` in `self.#access`), its type (for
+/// the delegating deserialize), and its ident when the struct is named.
+#[cfg(feature = "unstable-serde")]
+pub(crate) struct TransparentField<'a> {
+    pub(crate) access: TokenStream,
+    pub(crate) ty: &'a syn::Type,
+    pub(crate) named_ident: Option<&'a syn::Ident>,
+}
+
+/// Validate and extract the single field of a `#[serde(transparent)]`
+/// struct. Errors loud if the input is not a struct with exactly one
+/// field (the shape serde's `transparent` requires).
+#[cfg(feature = "unstable-serde")]
+pub(crate) fn transparent_field<'a>(
+    input: &'a syn::DeriveInput,
+    macro_name: &str,
+) -> syn::Result<TransparentField<'a>> {
+    let reject = || {
+        compile_error(
+            input.ident.span(),
+            macro_name,
+            FailTag::InvalidArg,
+            "`#[serde(transparent)]` requires a struct with exactly one field",
+        )
+    };
+    let syn::Data::Struct(data) = &input.data else {
+        return Err(reject());
+    };
+    match &data.fields {
+        syn::Fields::Named(fields) if fields.named.len() == 1 => {
+            let field = &fields.named[0];
+            let ident = field.ident.as_ref().expect("named field has an ident");
+            Ok(TransparentField {
+                access: quote! { #ident },
+                ty: &field.ty,
+                named_ident: Some(ident),
+            })
+        }
+        syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => Ok(TransparentField {
+            access: quote! { 0 },
+            ty: &fields.unnamed[0].ty,
+            named_ident: None,
+        }),
+        _ => Err(reject()),
+    }
+}
+
 /// Apply trait bounds to `generics`: with no `#[serde(bound = "...")]`
 /// override, fall back to [`with_trait_bounds`] (the default per-param
 /// `T: Bound`); with an override, add exactly the user's predicates and

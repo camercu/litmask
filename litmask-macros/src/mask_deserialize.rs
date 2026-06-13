@@ -38,6 +38,7 @@ use syn::{Data, DeriveInput, Fields};
 
 use crate::common::{
     FailTag, apply_bounds, compile_error, expand_derive, mask_name, masked_static_name,
+    transparent_field,
 };
 use crate::serde_attrs::{self, ContainerAttrs, RenameRule, VariantAttrs};
 
@@ -81,6 +82,10 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
 /// entry point the plain derive would call, which is what keeps
 /// accepted inputs and wire shapes identical.
 fn deserialize_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
+    let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
+    if container.transparent {
+        return transparent_deserialize_body(input);
+    }
     match &input.data {
         Data::Struct(data) => match &data.fields {
             Fields::Named(fields) => named_struct_body(input, fields),
@@ -95,6 +100,25 @@ fn deserialize_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
             "supports structs and enums only",
         )),
     }
+}
+
+/// `#[serde(transparent)]`: delegate to the single field's `Deserialize`
+/// and wrap the result in the struct — no field names on the wire.
+fn transparent_deserialize_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
+    let struct_ident = &input.ident;
+    let field = transparent_field(input, MACRO_NAME)?;
+    let ty = field.ty;
+    let decode = quote! {
+        <#ty as ::litmask::__serde::Deserialize<'de>>::deserialize(__deserializer)?
+    };
+    let construct = if let Some(ident) = field.named_ident {
+        quote! { #struct_ident { #ident: #decode } }
+    } else {
+        quote! { #struct_ident(#decode) }
+    };
+    Ok(quote! {
+        ::core::result::Result::Ok(#construct)
+    })
 }
 
 /// Resolve the container's deserialize-side name (after `#[serde(rename

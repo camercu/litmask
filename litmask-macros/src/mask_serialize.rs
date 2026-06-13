@@ -27,7 +27,9 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields};
 
-use crate::common::{FailTag, apply_bounds, compile_error, expand_derive, masked_static_name};
+use crate::common::{
+    FailTag, apply_bounds, compile_error, expand_derive, masked_static_name, transparent_field,
+};
 use crate::serde_attrs::{self, ContainerAttrs, RenameRule};
 
 const MACRO_NAME: &str = "MaskSerialize";
@@ -76,6 +78,12 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
 /// entry point the plain derive would call, which is what keeps the
 /// wire format byte-identical (§E.2.1).
 fn serialize_body(input: &DeriveInput, container: &ContainerAttrs) -> syn::Result<TokenStream2> {
+    if container.transparent {
+        let access = transparent_field(input, MACRO_NAME)?.access;
+        return Ok(quote! {
+            ::litmask::__serde::Serialize::serialize(&self.#access, serializer)
+        });
+    }
     let name = masked_static_name(input.ident.span(), &container.serialize_name(&input.ident));
     match &input.data {
         Data::Struct(data) => match &data.fields {

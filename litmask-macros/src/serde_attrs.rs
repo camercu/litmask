@@ -13,8 +13,8 @@
 //! variants, and fields as serde allows, plus `skip` /
 //! `skip_serializing` / `skip_deserializing` / `skip_serializing_if` /
 //! `default` (and `default = "path"`) / `alias` on named fields, and
-//! `deny_unknown_fields` / `bound` on the container. Every other key is
-//! reject-loud and listed for a later slice.
+//! `deny_unknown_fields` / `bound` / `transparent` on the container.
+//! Every other key is reject-loud and listed for a later slice.
 
 use syn::ext::IdentExt;
 use syn::meta::ParseNestedMeta;
@@ -155,6 +155,9 @@ pub(crate) struct ContainerAttrs {
     pub(crate) deny_unknown_fields: bool,
     /// `#[serde(bound = "...")]` where-clause override.
     pub(crate) bound: BoundOverride,
+    /// `#[serde(transparent)]`: (de)serialize as the single contained
+    /// field, with no struct wrapper on the wire.
+    pub(crate) transparent: bool,
 }
 
 /// Field-level serde attributes.
@@ -285,6 +288,9 @@ pub(crate) fn parse_container(
             Ok(())
         } else if meta.path.is_ident("bound") {
             out.bound = parse_bound(&meta)?;
+            Ok(())
+        } else if meta.path.is_ident("transparent") {
+            out.transparent = true;
             Ok(())
         } else {
             Err(unsupported(macro_name, &meta))

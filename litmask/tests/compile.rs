@@ -74,6 +74,7 @@ fn mask_serialize_compile_fixtures() {
     t.compile_fail("tests/compile/mask_serialize_serde_attr_field.rs");
     t.compile_fail("tests/compile/mask_serialize_serde_attr_variant.rs");
     t.compile_fail("tests/compile/mask_serialize_skip_tuple_field.rs");
+    t.compile_fail("tests/compile/mask_serialize_transparent_multi_field.rs");
 }
 
 /// Rejection fixtures for `#[derive(MaskDeserialize)]` (EXPERIMENTAL,

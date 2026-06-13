@@ -1,0 +1,5 @@
+error: MaskSerialize! invalid-arg: `#[serde(transparent)]` requires a struct with exactly one field
+ --> tests/compile/mask_serialize_transparent_multi_field.rs:8:8
+  |
+8 | struct ExfilManifest {
+  |        ^^^^^^^^^^^^^
