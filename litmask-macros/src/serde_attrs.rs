@@ -198,12 +198,21 @@ pub(crate) enum DefaultSource {
 }
 
 impl FieldAttrs {
-    /// True when a `skip` flag or `skip_serializing_if` is set — used to
-    /// reject-loud on shapes the masking derives don't yet support skip
-    /// on (tuple fields), where silently honoring it would shift element
-    /// indices and diverge from serde.
-    pub(crate) fn skips_a_tuple_field(&self) -> bool {
-        self.skip_serializing || self.skip_deserializing || self.skip_serializing_if.is_some()
+    /// True when any supported `#[serde(...)]` key is set on the field.
+    /// Tuple (positional) fields don't yet get attribute support, so an
+    /// attribute there is reject-loud rather than silently honored —
+    /// otherwise `serialize_with` / `default` / `skip` and friends would
+    /// be dropped (changing the wire format) without warning.
+    pub(crate) fn is_set(&self) -> bool {
+        self.rename.serialize.is_some()
+            || self.rename.deserialize.is_some()
+            || self.skip_serializing
+            || self.skip_deserializing
+            || self.skip_serializing_if.is_some()
+            || self.default.is_some()
+            || !self.aliases.is_empty()
+            || self.serialize_with.is_some()
+            || self.deserialize_with.is_some()
     }
 }
 
@@ -650,12 +659,40 @@ mod tests {
     }
 
     #[test]
+    fn is_set_detects_any_supported_key() {
+        // Drives the tuple-field reject: a positional field carrying any
+        // supported attr must be caught (it would otherwise be silently
+        // dropped). A bare field is not flagged.
+        for src in [
+            quote! { #[serde(serialize_with = "p")] x: u8 },
+            quote! { #[serde(default)] x: u8 },
+            quote! { #[serde(skip)] x: u8 },
+            quote! { #[serde(rename = "y")] x: u8 },
+            quote! { #[serde(alias = "y")] x: u8 },
+        ] {
+            let f = field(&src);
+            assert!(
+                parse_field("MaskSerialize", &f.attrs)
+                    .expect("parses")
+                    .is_set(),
+                "expected is_set for {src}",
+            );
+        }
+        let bare = field(&quote! { x: u8 });
+        assert!(
+            !parse_field("MaskSerialize", &bare.attrs)
+                .expect("parses")
+                .is_set()
+        );
+    }
+
+    #[test]
     fn skip_sets_both_directions() {
         let f = field(&quote! { #[serde(skip)] internal: u8 });
         let attrs = parse_field("MaskSerialize", &f.attrs).expect("parses");
         assert!(attrs.skip_serializing);
         assert!(attrs.skip_deserializing);
-        assert!(attrs.skips_a_tuple_field());
+        assert!(attrs.is_set());
     }
 
     #[test]

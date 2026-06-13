@@ -267,19 +267,19 @@ fn type_name_tuple(input: &DeriveInput, container: &ContainerAttrs) -> (proc_mac
     (input.ident.span(), container.deserialize_name(&input.ident))
 }
 
-/// Reject-loud any unsupported `#[serde(...)]` on unnamed (tuple)
-/// fields — they have no names to mask but still take the subset.
-/// `skip` on a positional field would shift the remaining indices, a
-/// shape the masking derives don't handle yet — reject it loud.
+/// Reject-loud any `#[serde(...)]` on unnamed (tuple) fields. The
+/// masking derives don't yet apply field attributes positionally, so
+/// honoring one silently (e.g. `deserialize_with`, `default`) would
+/// diverge from serde without warning.
 fn check_unnamed_field_attrs(fields: &syn::FieldsUnnamed) -> syn::Result<()> {
     for field in &fields.unnamed {
         let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
-        if attrs.skips_a_tuple_field() {
+        if attrs.is_set() {
             return Err(compile_error(
                 syn::spanned::Spanned::span(field),
                 MACRO_NAME,
                 FailTag::InvalidArg,
-                "`#[serde(skip)]` on a tuple field is not yet supported",
+                "`#[serde(...)]` on a tuple field is not yet supported",
             ));
         }
     }

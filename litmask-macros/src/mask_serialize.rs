@@ -301,21 +301,19 @@ fn tuple_struct_body(
     })
 }
 
-/// Reject-loud any unsupported `#[serde(...)]` on unnamed (tuple)
-/// fields. Tuple fields have no names to mask, but they can still carry
-/// serde attributes; parsing enforces the same subset boundary so an
-/// unsupported key fails instead of silently diverging from serde.
-/// `skip` on a positional field would shift the remaining indices, a
-/// shape the masking derives don't handle yet — reject it loud.
+/// Reject-loud any `#[serde(...)]` on unnamed (tuple) fields. The
+/// masking derives don't yet apply field attributes positionally, so
+/// honoring one silently (e.g. `serialize_with`, `skip`) would diverge
+/// from serde's wire format without warning.
 fn check_unnamed_field_attrs(fields: &syn::FieldsUnnamed) -> syn::Result<()> {
     for field in &fields.unnamed {
         let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
-        if attrs.skips_a_tuple_field() {
+        if attrs.is_set() {
             return Err(compile_error(
                 syn::spanned::Spanned::span(field),
                 MACRO_NAME,
                 FailTag::InvalidArg,
-                "`#[serde(skip)]` on a tuple field is not yet supported",
+                "`#[serde(...)]` on a tuple field is not yet supported",
             ));
         }
     }
