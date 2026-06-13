@@ -74,3 +74,16 @@ fn mask_serialize_compile_fixtures() {
     t.compile_fail("tests/compile/mask_serialize_serde_attr_field.rs");
     t.compile_fail("tests/compile/mask_serialize_serde_attr_variant.rs");
 }
+
+/// Rejection fixtures for `#[derive(MaskDeserialize)]` (EXPERIMENTAL,
+/// `unstable-serde`). Same feature gate rationale as the
+/// `MaskSerialize` fixtures above.
+#[cfg(feature = "unstable-serde")]
+#[test]
+fn mask_deserialize_compile_fixtures() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/compile/mask_deserialize_union.rs");
+    t.compile_fail("tests/compile/mask_deserialize_serde_attr_container.rs");
+    t.compile_fail("tests/compile/mask_deserialize_serde_attr_field.rs");
+    t.compile_fail("tests/compile/mask_deserialize_serde_attr_variant.rs");
+}

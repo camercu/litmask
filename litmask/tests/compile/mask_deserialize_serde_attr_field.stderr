@@ -1,0 +1,5 @@
+error: MaskDeserialize! invalid-arg: `#[serde(...)]` attributes are not supported
+ --> tests/compile/mask_deserialize_serde_attr_field.rs:9:5
+  |
+9 |     #[serde(rename = "url")]
+  |     ^
