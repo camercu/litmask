@@ -478,6 +478,139 @@ fn mask_deserialize_uninhabited_enum_derives() {
     assert_deserialize::<DeNever>();
 }
 
+#[derive(MaskDeserialize, Debug, PartialEq)]
+struct DeEnvelope<T> {
+    sequence_marker: u64,
+    payload: T,
+}
+
+#[derive(MaskDeserialize, Debug, PartialEq)]
+struct DeGenericWrapper<T>(T);
+
+#[derive(MaskDeserialize, Debug, PartialEq)]
+enum DeGenericEvent<T> {
+    Payload(T),
+}
+
+/// serde auto-borrows `&str` / `&[u8]` fields, bounding `'de` by the
+/// field's lifetime — the masked derive must mirror that bound or
+/// borrowed structs won't compile at all.
+#[derive(MaskDeserialize, Debug, PartialEq)]
+struct DeBorrowed<'a> {
+    borrowed_label: &'a str,
+    payload: u8,
+}
+
+#[derive(MaskDeserialize, Debug, PartialEq)]
+struct DeRawIdent {
+    r#type: String,
+}
+
+#[derive(MaskDeserialize, Debug, PartialEq)]
+enum DeRawVariant {
+    r#Loop { r#fn: u8 },
+}
+
+/// Hygiene: user field names that collide with the expansion's
+/// internal vocabulary must not shadow generated locals.
+#[derive(MaskDeserialize, Debug, PartialEq)]
+struct DeHygiene {
+    __seq: u8,
+    __map: u8,
+    __value: u8,
+    __field0: u8,
+    deserializer: u8,
+}
+
+#[test]
+fn mask_deserialize_generic_struct_round_trips() {
+    common::init_once();
+    let input = r#"{"sequence_marker":42,"payload":["a","b"]}"#;
+    let masked: DeEnvelope<Vec<String>> = serde_json::from_str(input).expect("masked failed");
+    assert_eq!(masked.sequence_marker, 42);
+    assert_eq!(masked.payload, vec!["a".to_string(), "b".to_string()]);
+}
+
+#[test]
+fn mask_deserialize_generic_newtype_round_trips() {
+    common::init_once();
+    let masked: DeGenericWrapper<Vec<u8>> = serde_json::from_str("[1,2]").expect("masked failed");
+    assert_eq!(masked, DeGenericWrapper(vec![1u8, 2]));
+}
+
+#[test]
+fn mask_deserialize_generic_enum_round_trips() {
+    common::init_once();
+    let masked: DeGenericEvent<Vec<u8>> =
+        serde_json::from_str(r#"{"Payload":[7]}"#).expect("masked failed");
+    assert_eq!(masked, DeGenericEvent::Payload(vec![7u8]));
+}
+
+#[test]
+fn mask_deserialize_borrowed_str_field_round_trips() {
+    common::init_once();
+    let input = r#"{"borrowed_label":"tag","payload":9}"#;
+    let masked: DeBorrowed<'_> = serde_json::from_str(input).expect("masked failed");
+    assert_eq!(masked.borrowed_label, "tag");
+    assert_eq!(masked.payload, 9);
+}
+
+/// Raw identifiers deserialize unraw'd (`r#type` ← `"type"`),
+/// matching the plain derive.
+#[test]
+fn mask_deserialize_raw_ident_field_unraws_like_plain_derive() {
+    common::init_once();
+    let masked: DeRawIdent = serde_json::from_str(r#"{"type":"beacon"}"#).expect("masked failed");
+    assert_eq!(masked.r#type, "beacon");
+}
+
+#[test]
+fn mask_deserialize_raw_ident_variant_unraws_like_plain_derive() {
+    common::init_once();
+    let masked: DeRawVariant = serde_json::from_str(r#"{"Loop":{"fn":1}}"#).expect("masked failed");
+    assert_eq!(masked, DeRawVariant::r#Loop { r#fn: 1 });
+}
+
+#[test]
+fn mask_deserialize_hygiene_against_user_field_names() {
+    common::init_once();
+    let input = r#"{"__seq":1,"__map":2,"__value":3,"__field0":4,"deserializer":5}"#;
+    let masked: DeHygiene = serde_json::from_str(input).expect("masked failed");
+    assert_eq!(
+        masked,
+        DeHygiene {
+            __seq: 1,
+            __map: 2,
+            __value: 3,
+            __field0: 4,
+            deserializer: 5,
+        }
+    );
+}
+
+/// The docs recommend pairing all three masking derives; they must
+/// expand cleanly on one type and round-trip through each other.
+#[derive(litmask::MaskSerialize, MaskDeserialize, litmask::MaskDebug, PartialEq)]
+struct DeCombined {
+    relay_endpoint: String,
+    retry_budget: u32,
+}
+
+#[test]
+fn mask_deserialize_round_trips_mask_serialize_output() {
+    common::init_once();
+    let original = DeCombined {
+        relay_endpoint: "wss://relay.example".to_string(),
+        retry_budget: 3,
+    };
+    let json = serde_json::to_string(&original).expect("masked serialization failed");
+    let restored: DeCombined = serde_json::from_str(&json).expect("masked deserialization failed");
+    assert!(restored == original);
+    let bytes = postcard::to_stdvec(&original).expect("masked serialization failed");
+    let restored: DeCombined = postcard::from_bytes(&bytes).expect("masked deserialization failed");
+    assert!(restored == original);
+}
+
 #[test]
 fn mask_deserialize_repeat_calls_are_stable() {
     common::init_once();
