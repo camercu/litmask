@@ -7,7 +7,7 @@
 //! `.rodata`, never the deserialization behavior.
 //!
 //! Plain-derive twins live in `mod plain` under the SAME type idents,
-//! so `expecting()` texts ("struct DeConfig") and error strings match
+//! so `expecting()` texts ("struct `DeConfig`") and error strings match
 //! exactly and any divergence is the derive's fault, not the fixture's.
 
 #![cfg(feature = "unstable-serde")]

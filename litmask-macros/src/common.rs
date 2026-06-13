@@ -286,6 +286,7 @@ pub(crate) fn mask_ident(ident: &syn::Ident) -> TokenStream {
 /// bounds the leak to one allocation per use site. (`MaskDebug` uses
 /// bare `mask_ident` instead — the `Formatter` API takes `&str`, so
 /// it never needs the leak.)
+#[cfg(feature = "unstable-serde")]
 pub(crate) fn masked_name_expr(ident: &syn::Ident) -> TokenStream {
     let decrypt = mask_ident(ident);
     quote! {
@@ -305,6 +306,7 @@ pub(crate) fn masked_name_expr(ident: &syn::Ident) -> TokenStream {
 /// serialize or deserialize under different names (or a different
 /// shape) than the plain derive — the behavior-identity contract
 /// (§E.2.1) would break without warning.
+#[cfg(feature = "unstable-serde")]
 pub(crate) fn reject_serde_attrs<'a>(
     macro_name: &str,
     attrs: impl Iterator<Item = &'a syn::Attribute>,
