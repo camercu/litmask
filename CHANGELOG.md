@@ -1,3 +1,22 @@
+## [0.15.0](https://github.com/camercu/litmask/compare/v0.14.0...v0.15.0) (2026-06-13)
+
+### Features
+
+* **mask_all:** swap plain serde/Debug derives for masking derives ([0bb0ffb](https://github.com/camercu/litmask/commit/0bb0ffb7d7c84c0e59385445f7ab2c3d520866b1))
+* **serde:** support #[serde(alias)] and deny_unknown_fields ([b1e11b0](https://github.com/camercu/litmask/commit/b1e11b053ce944a42586fe851dab0118720bb39f))
+* **serde:** support #[serde(bound)] in masking derives ([71bd149](https://github.com/camercu/litmask/commit/71bd1492049cc5f1354c869f096b4f7131157189))
+* **serde:** support #[serde(default)] in MaskDeserialize ([93bc1c2](https://github.com/camercu/litmask/commit/93bc1c26634b01fb5fd71d060d572a90f48b8d93))
+* **serde:** support #[serde(rename_all)] in masking derives ([73c0583](https://github.com/camercu/litmask/commit/73c0583a5de8ff7efec26ca81e78c28dfaf82f43))
+* **serde:** support #[serde(rename)] in masking derives ([2a2fcbd](https://github.com/camercu/litmask/commit/2a2fcbdbb7d8098ca519552df77e7c85192b9d4a))
+* **serde:** support #[serde(skip_serializing_if)] in MaskSerialize ([0530a5e](https://github.com/camercu/litmask/commit/0530a5e70e6aa0f7d2ce1e9681e553fcf599da7e))
+* **serde:** support #[serde(skip)] family in masking derives ([54e36ea](https://github.com/camercu/litmask/commit/54e36eac3009638ec86bb6caa17f47fd040f477f))
+* **serde:** support #[serde(transparent)] in masking derives ([5d0b407](https://github.com/camercu/litmask/commit/5d0b407fce1cd8fd269bf96b129ba271aa61bda2))
+* **serde:** support #[serde(with/serialize_with/deserialize_with)] ([4a9145c](https://github.com/camercu/litmask/commit/4a9145c9b655c26535854740567dd3f938c507f2))
+
+### Bug Fixes
+
+* **serde:** reject-loud any #[serde(...)] on a tuple field ([add8c27](https://github.com/camercu/litmask/commit/add8c27b2b8be8b59e94950c78bcd7f0635639b6))
+
 ## [0.14.0](https://github.com/camercu/litmask/compare/v0.13.0...v0.14.0) (2026-06-13)
 
 ### ⚠ BREAKING CHANGES
