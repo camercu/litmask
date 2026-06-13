@@ -11,9 +11,9 @@
 //! Supported so far: `rename` and `rename_all` (each with the
 //! `(serialize = ..., deserialize = ...)` split form) on the container,
 //! variants, and fields as serde allows, plus `skip` /
-//! `skip_serializing` / `skip_deserializing` / `skip_serializing_if` on
-//! named fields. Every other key is reject-loud and listed for a later
-//! slice.
+//! `skip_serializing` / `skip_deserializing` / `skip_serializing_if` /
+//! `default` (and `default = "path"`) on named fields. Every other key
+//! is reject-loud and listed for a later slice.
 
 use syn::ext::IdentExt;
 use syn::meta::ParseNestedMeta;
@@ -156,6 +156,17 @@ pub(crate) struct FieldAttrs {
     /// `&field` at serialize time; when it returns `true` the field is
     /// omitted and the struct length shrinks by one.
     pub(crate) skip_serializing_if: Option<syn::Path>,
+    /// `#[serde(default)]` / `#[serde(default = "path")]`: how a missing
+    /// (or `skip_deserializing`) field is filled instead of erroring.
+    pub(crate) default: Option<DefaultSource>,
+}
+
+/// Where a defaulted field's value comes from when absent from the
+/// input: the `Default` trait (`#[serde(default)]`) or a named function
+/// (`#[serde(default = "path")]`).
+pub(crate) enum DefaultSource {
+    DefaultTrait,
+    Path(syn::Path),
 }
 
 impl FieldAttrs {
@@ -278,6 +289,14 @@ pub(crate) fn parse_field(macro_name: &str, attrs: &[Attribute]) -> syn::Result<
         } else if meta.path.is_ident("skip_serializing_if") {
             let lit: LitStr = meta.value()?.parse()?;
             out.skip_serializing_if = Some(lit.parse()?);
+            Ok(())
+        } else if meta.path.is_ident("default") {
+            out.default = Some(if meta.input.peek(syn::Token![=]) {
+                let lit: LitStr = meta.value()?.parse()?;
+                DefaultSource::Path(lit.parse()?)
+            } else {
+                DefaultSource::DefaultTrait
+            });
             Ok(())
         } else {
             Err(unsupported(macro_name, &meta))
@@ -535,6 +554,22 @@ mod tests {
             quote!(#path).to_string(),
             quote!(Option::is_none).to_string()
         );
+    }
+
+    #[test]
+    fn default_parses_trait_and_path_forms() {
+        let bare = field(&quote! { #[serde(default)] a: u8 });
+        let bare = parse_field("MaskDeserialize", &bare.attrs).expect("parses");
+        assert!(matches!(bare.default, Some(DefaultSource::DefaultTrait)));
+
+        let path = field(&quote! { #[serde(default = "make_default")] a: u8 });
+        let path = parse_field("MaskDeserialize", &path.attrs).expect("parses");
+        match path.default {
+            Some(DefaultSource::Path(p)) => {
+                assert_eq!(quote!(#p).to_string(), quote!(make_default).to_string());
+            }
+            _ => panic!("expected a default path"),
+        }
     }
 
     #[test]

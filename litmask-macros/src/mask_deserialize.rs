@@ -113,6 +113,18 @@ struct NamedFieldInfo<'a> {
     ty: &'a syn::Type,
     skip_de: bool,
     de_name: (proc_macro2::Span, String),
+    default: Option<serde_attrs::DefaultSource>,
+}
+
+/// The value a field takes when absent from the input: its
+/// `#[serde(default)]` source, or `Default::default()` as the implicit
+/// fallback for a `skip_deserializing` field with no explicit default.
+fn default_value_expr(default: Option<&serde_attrs::DefaultSource>) -> TokenStream2 {
+    if let Some(serde_attrs::DefaultSource::Path(path)) = default {
+        quote! { #path() }
+    } else {
+        quote! { ::core::default::Default::default() }
+    }
 }
 
 /// Parse every named field into a [`NamedFieldInfo`] (reject-loud on
@@ -133,6 +145,7 @@ fn named_field_infos(
                 ty: &field.ty,
                 skip_de: attrs.skip_deserializing,
                 de_name: (ident.span(), attrs.deserialize_name(ident, parent)),
+                default: attrs.default,
             })
         })
         .collect()
@@ -714,27 +727,35 @@ fn named_visit_seq(
         let ident = info.ident;
         let local = quote::format_ident!("__seqf{decl}");
         if info.skip_de {
-            lets.push(quote! { let #local = ::core::default::Default::default(); });
+            let default = default_value_expr(info.default.as_ref());
+            lets.push(quote! { let #local = #default; });
         } else {
             let fty = info.ty;
+            // A defaulted field uses its default when the sequence runs
+            // out instead of erroring with `invalid_length`.
+            let on_missing = if info.default.is_some() {
+                default_value_expr(info.default.as_ref())
+            } else {
+                quote! {
+                    return ::core::result::Result::Err(
+                        ::litmask::__serde::de::Error::invalid_length(
+                            #read_index,
+                            &::litmask::__serde_support::ExpectedElements {
+                                shape: #shape,
+                                name: __litmask_type_name(),
+                                variant: #variant,
+                                count: #de_count,
+                            },
+                        ),
+                    );
+                }
+            };
             lets.push(quote! {
                 let #local = match ::litmask::__serde::de::SeqAccess::next_element::<#fty>(
                     &mut __seq,
                 )? {
                     ::core::option::Option::Some(__value) => __value,
-                    ::core::option::Option::None => {
-                        return ::core::result::Result::Err(
-                            ::litmask::__serde::de::Error::invalid_length(
-                                #read_index,
-                                &::litmask::__serde_support::ExpectedElements {
-                                    shape: #shape,
-                                    name: __litmask_type_name(),
-                                    variant: #variant,
-                                    count: #de_count,
-                                },
-                            ),
-                        );
-                    }
+                    ::core::option::Option::None => { #on_missing }
                 };
             });
             read_index += 1;
@@ -781,7 +802,8 @@ fn named_visit_map(
     for info in infos {
         let ident = info.ident;
         if info.skip_de {
-            field_inits.push(quote! { #ident: ::core::default::Default::default() });
+            let default = default_value_expr(info.default.as_ref());
+            field_inits.push(quote! { #ident: #default });
             continue;
         }
         let fty = info.ty;
@@ -804,12 +826,15 @@ fn named_visit_map(
                 );
             }
         });
+        let on_missing = if info.default.is_some() {
+            default_value_expr(info.default.as_ref())
+        } else {
+            quote! { ::litmask::__serde_support::missing_field(#names_fn()[#read_index])? }
+        };
         extracts.push(quote! {
             let #value = match #value {
                 ::core::option::Option::Some(#value) => #value,
-                ::core::option::Option::None => {
-                    ::litmask::__serde_support::missing_field(#names_fn()[#read_index])?
-                }
+                ::core::option::Option::None => { #on_missing }
             };
         });
         field_inits.push(quote! { #ident: #value });
