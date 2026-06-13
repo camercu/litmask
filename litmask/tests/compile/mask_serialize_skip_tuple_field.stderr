@@ -1,0 +1,5 @@
+error: MaskSerialize! invalid-arg: `#[serde(skip)]` on a tuple field is not yet supported
+ --> tests/compile/mask_serialize_skip_tuple_field.rs:8:19
+  |
+8 | struct ExfilTuple(#[serde(skip)] String, u32);
+  |                   ^

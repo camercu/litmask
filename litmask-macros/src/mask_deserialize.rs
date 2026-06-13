@@ -104,22 +104,47 @@ fn container_de_name(input: &DeriveInput) -> syn::Result<(proc_macro2::Span, Str
     Ok((input.ident.span(), container.deserialize_name(&input.ident)))
 }
 
-/// Resolve each named field's deserialize-side name (parsing + reject-
-/// loud on unsupported `#[serde(...)]` keys along the way). `parent` is
-/// the applicable `rename_all` rule (container's for a struct, variant's
-/// for a struct variant), applied unless the field has its own `rename`.
-fn field_de_names(
+/// Per-named-field deserialize info: the construction ident/type plus
+/// whether the field is `skip_deserializing` (filled from `Default`
+/// instead of read) and its resolved deserialize name (meaningful only
+/// when not skipped — skipped fields are absent from the wire).
+struct NamedFieldInfo<'a> {
+    ident: &'a syn::Ident,
+    ty: &'a syn::Type,
+    skip_de: bool,
+    de_name: (proc_macro2::Span, String),
+}
+
+/// Parse every named field into a [`NamedFieldInfo`] (reject-loud on
+/// unsupported `#[serde(...)]` keys). `parent` is the applicable
+/// `rename_all` rule, applied unless the field has its own `rename`.
+fn named_field_infos(
     fields: &syn::FieldsNamed,
     parent: Option<RenameRule>,
-) -> syn::Result<Vec<(proc_macro2::Span, String)>> {
+) -> syn::Result<Vec<NamedFieldInfo<'_>>> {
     fields
         .named
         .iter()
         .map(|field| {
             let ident = field.ident.as_ref().expect("named field has an ident");
             let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
-            Ok((ident.span(), attrs.deserialize_name(ident, parent)))
+            Ok(NamedFieldInfo {
+                ident,
+                ty: &field.ty,
+                skip_de: attrs.skip_deserializing,
+                de_name: (ident.span(), attrs.deserialize_name(ident, parent)),
+            })
         })
+        .collect()
+}
+
+/// The masked-name list for the fields actually read from the wire
+/// (`skip_deserializing` fields are absent from the identifier set).
+fn de_names_of(infos: &[NamedFieldInfo]) -> Vec<(proc_macro2::Span, String)> {
+    infos
+        .iter()
+        .filter(|info| !info.skip_de)
+        .map(|info| info.de_name.clone())
         .collect()
 }
 
@@ -149,9 +174,19 @@ fn type_name_tuple(input: &DeriveInput, container: &ContainerAttrs) -> (proc_mac
 
 /// Reject-loud any unsupported `#[serde(...)]` on unnamed (tuple)
 /// fields — they have no names to mask but still take the subset.
+/// `skip` on a positional field would shift the remaining indices, a
+/// shape the masking derives don't handle yet — reject it loud.
 fn check_unnamed_field_attrs(fields: &syn::FieldsUnnamed) -> syn::Result<()> {
     for field in &fields.unnamed {
-        serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
+        let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
+        if attrs.has_skip() {
+            return Err(compile_error(
+                syn::spanned::Spanned::span(field),
+                MACRO_NAME,
+                FailTag::InvalidArg,
+                "`#[serde(skip)]` on a tuple field is not yet supported",
+            ));
+        }
     }
     Ok(())
 }
@@ -607,26 +642,14 @@ fn seq_field_lets<'a>(
 /// (top-level struct or struct variant): `visit_map` with
 /// duplicate/missing-field handling and unknown-field skipping, plus
 /// `visit_seq` for positional formats. The caller emits the matching
-/// identifier block and dispatch call.
+/// identifier block and dispatch call. `skip_deserializing` fields are
+/// absent from the wire and filled with `Default::default()`.
 fn named_fields_visitor(
     input: &DeriveInput,
-    fields: &syn::FieldsNamed,
+    infos: &[NamedFieldInfo],
     cx: &NamedFieldsCx,
 ) -> TokenStream2 {
     let struct_ident = &input.ident;
-    let field_idents: Vec<&syn::Ident> = fields
-        .named
-        .iter()
-        .map(|field| field.ident.as_ref().expect("named field has an ident"))
-        .collect();
-    let field_tys: Vec<&syn::Type> = fields.named.iter().map(|field| &field.ty).collect();
-    // Bindings are mangled, never the user's field idents: a field
-    // named `__map` or `__seq` would otherwise shadow the generated
-    // locals and break compilation.
-    let bindings: Vec<syn::Ident> = (0..field_idents.len())
-        .map(|i| quote::format_ident!("__field{i}"))
-        .collect();
-
     let NamedFieldsCx {
         construct,
         names_fn,
@@ -636,15 +659,8 @@ fn named_fields_visitor(
     } = cx;
 
     let expecting = expecting_body(shape, variant_name.as_ref());
-    let visit_seq = named_visit_seq(
-        &field_idents,
-        &field_tys,
-        &bindings,
-        construct,
-        shape,
-        variant_name.as_ref(),
-    );
-    let visit_map = named_visit_map(&field_idents, &field_tys, &bindings, names_fn, construct);
+    let visit_seq = named_visit_seq(infos, construct, shape, variant_name.as_ref());
+    let visit_map = named_visit_map(infos, names_fn, construct);
 
     let generics = split_de_generics(input);
     let DeGenerics {
@@ -679,21 +695,55 @@ fn named_fields_visitor(
     }
 }
 
-/// The `visit_seq` method of a named-fields visitor: pull each field
-/// positionally (the path non-self-describing formats take).
+/// The `visit_seq` method of a named-fields visitor: pull each
+/// non-skipped field positionally; `skip_deserializing` fields consume
+/// no element and take `Default::default()`. The `invalid_length`
+/// index/count count only the fields actually read, matching serde.
 fn named_visit_seq(
-    field_idents: &[&syn::Ident],
-    field_tys: &[&syn::Type],
-    bindings: &[syn::Ident],
+    infos: &[NamedFieldInfo],
     construct: &TokenStream2,
     shape: &str,
     variant_name: Option<&TokenStream2>,
 ) -> TokenStream2 {
-    let field_count = bindings.len();
-    let seq_lets = seq_field_lets(bindings, field_tys, shape, variant_name, field_count);
-    // A zero-field struct never touches its SeqAccess; binding it
-    // `mut` would warn, binding it `_` mirrors serde's expansion.
-    let seq_binding = if field_count == 0 {
+    let de_count = infos.iter().filter(|info| !info.skip_de).count();
+    let variant = variant_option(variant_name);
+    let mut lets = Vec::with_capacity(infos.len());
+    let mut field_inits = Vec::with_capacity(infos.len());
+    let mut read_index = 0usize;
+    for (decl, info) in infos.iter().enumerate() {
+        let ident = info.ident;
+        let local = quote::format_ident!("__seqf{decl}");
+        if info.skip_de {
+            lets.push(quote! { let #local = ::core::default::Default::default(); });
+        } else {
+            let fty = info.ty;
+            lets.push(quote! {
+                let #local = match ::litmask::__serde::de::SeqAccess::next_element::<#fty>(
+                    &mut __seq,
+                )? {
+                    ::core::option::Option::Some(__value) => __value,
+                    ::core::option::Option::None => {
+                        return ::core::result::Result::Err(
+                            ::litmask::__serde::de::Error::invalid_length(
+                                #read_index,
+                                &::litmask::__serde_support::ExpectedElements {
+                                    shape: #shape,
+                                    name: __litmask_type_name(),
+                                    variant: #variant,
+                                    count: #de_count,
+                                },
+                            ),
+                        );
+                    }
+                };
+            });
+            read_index += 1;
+        }
+        field_inits.push(quote! { #ident: #local });
+    }
+    // A struct with no readable fields never touches its SeqAccess;
+    // binding it `mut` would warn, `_` mirrors serde's expansion.
+    let seq_binding = if de_count == 0 {
         quote! { _ }
     } else {
         quote! { mut __seq }
@@ -707,9 +757,9 @@ fn named_visit_seq(
         where
             __A: ::litmask::__serde::de::SeqAccess<'de>,
         {
-            #(#seq_lets)*
+            #(#lets)*
             ::core::result::Result::Ok(#construct {
-                #(#field_idents: #bindings),*
+                #(#field_inits),*
             })
         }
     }
@@ -717,46 +767,54 @@ fn named_visit_seq(
 
 /// The `visit_map` method of a named-fields visitor: duplicate-field
 /// detection, unknown-field skipping, and missing-field resolution.
+/// `skip_deserializing` fields are never keyed and take `Default`.
 fn named_visit_map(
-    field_idents: &[&syn::Ident],
-    field_tys: &[&syn::Type],
-    bindings: &[syn::Ident],
+    infos: &[NamedFieldInfo],
     names_fn: &syn::Ident,
     construct: &TokenStream2,
 ) -> TokenStream2 {
-    let map_lets = bindings.iter().enumerate().map(|(i, binding)| {
-        let fty = field_tys[i];
-        quote! {
-            let mut #binding: ::core::option::Option<#fty> = ::core::option::Option::None;
+    let mut lets = Vec::new();
+    let mut arms = Vec::new();
+    let mut extracts = Vec::new();
+    let mut field_inits = Vec::with_capacity(infos.len());
+    let mut read_index = 0usize;
+    for info in infos {
+        let ident = info.ident;
+        if info.skip_de {
+            field_inits.push(quote! { #ident: ::core::default::Default::default() });
+            continue;
         }
-    });
-    let map_arms = bindings.iter().enumerate().map(|(i, binding)| {
-        let fty = field_tys[i];
-        quote! {
-            __Field::#binding => {
-                if ::core::option::Option::is_some(&#binding) {
+        let fty = info.ty;
+        let value = quote::format_ident!("__v{read_index}");
+        let field_variant = quote::format_ident!("__field{read_index}");
+        lets.push(quote! {
+            let mut #value: ::core::option::Option<#fty> = ::core::option::Option::None;
+        });
+        arms.push(quote! {
+            __Field::#field_variant => {
+                if ::core::option::Option::is_some(&#value) {
                     return ::core::result::Result::Err(
                         <__A::Error as ::litmask::__serde::de::Error>::duplicate_field(
-                            #names_fn()[#i],
+                            #names_fn()[#read_index],
                         ),
                     );
                 }
-                #binding = ::core::option::Option::Some(
+                #value = ::core::option::Option::Some(
                     ::litmask::__serde::de::MapAccess::next_value::<#fty>(&mut __map)?,
                 );
             }
-        }
-    });
-    let map_extracts = bindings.iter().enumerate().map(|(i, binding)| {
-        quote! {
-            let #binding = match #binding {
-                ::core::option::Option::Some(#binding) => #binding,
+        });
+        extracts.push(quote! {
+            let #value = match #value {
+                ::core::option::Option::Some(#value) => #value,
                 ::core::option::Option::None => {
-                    ::litmask::__serde_support::missing_field(#names_fn()[#i])?
+                    ::litmask::__serde_support::missing_field(#names_fn()[#read_index])?
                 }
             };
-        }
-    });
+        });
+        field_inits.push(quote! { #ident: #value });
+        read_index += 1;
+    }
     quote! {
         #[inline]
         fn visit_map<__A>(
@@ -766,12 +824,12 @@ fn named_visit_map(
         where
             __A: ::litmask::__serde::de::MapAccess<'de>,
         {
-            #(#map_lets)*
+            #(#lets)*
             while let ::core::option::Option::Some(__key) =
                 ::litmask::__serde::de::MapAccess::next_key::<__Field>(&mut __map)?
             {
                 match __key {
-                    #(#map_arms)*
+                    #(#arms)*
                     _ => {
                         let _ = ::litmask::__serde::de::MapAccess::next_value::<
                             ::litmask::__serde::de::IgnoredAny,
@@ -779,9 +837,9 @@ fn named_visit_map(
                     }
                 }
             }
-            #(#map_extracts)*
+            #(#extracts)*
             ::core::result::Result::Ok(#construct {
-                #(#field_idents: #bindings),*
+                #(#field_inits),*
             })
         }
     }
@@ -790,7 +848,8 @@ fn named_visit_map(
 fn named_struct_body(input: &DeriveInput, fields: &syn::FieldsNamed) -> syn::Result<TokenStream2> {
     let struct_ident = &input.ident;
     let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
-    let de_names = field_de_names(fields, container.rename_all.deserialize)?;
+    let infos = named_field_infos(fields, container.rename_all.deserialize)?;
+    let de_names = de_names_of(&infos);
     let names_fn = quote::format_ident!("__litmask_names");
     let type_name_fn = type_name_fn(&type_name_tuple(input, &container));
     let names_fn_decl = names_list_fn(&names_fn, &de_names);
@@ -799,7 +858,7 @@ fn named_struct_body(input: &DeriveInput, fields: &syn::FieldsNamed) -> syn::Res
     let visitor_ident = quote::format_ident!("__Visitor");
     let visitor = named_fields_visitor(
         input,
-        fields,
+        &infos,
         &NamedFieldsCx {
             construct: quote! { #struct_ident },
             names_fn,
@@ -1233,7 +1292,8 @@ fn struct_variant_arm(
     vattrs: &VariantAttrs,
 ) -> syn::Result<TokenStream2> {
     let enum_ident = &input.ident;
-    let de_names = field_de_names(fields, vattrs.rename_all.deserialize)?;
+    let infos = named_field_infos(fields, vattrs.rename_all.deserialize)?;
+    let de_names = de_names_of(&infos);
     let vfields_fn = quote::format_ident!("__litmask_vfields");
     let vfields_decl = names_list_fn(&vfields_fn, &de_names);
     // The inner `__Field` shadows the enum-level variant identifier
@@ -1244,7 +1304,7 @@ fn struct_variant_arm(
     let visitor_ident = quote::format_ident!("__VariantVisitor");
     let visitor = named_fields_visitor(
         input,
-        fields,
+        &infos,
         &NamedFieldsCx {
             construct: quote! { #enum_ident::#vident },
             names_fn: vfields_fn.clone(),

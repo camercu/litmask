@@ -10,8 +10,9 @@
 //!
 //! Supported so far: `rename` and `rename_all` (each with the
 //! `(serialize = ..., deserialize = ...)` split form) on the container,
-//! variants, and fields as serde allows. Every other key is reject-loud
-//! and listed for a later slice.
+//! variants, and fields as serde allows, plus `skip` /
+//! `skip_serializing` / `skip_deserializing` on named fields. Every
+//! other key is reject-loud and listed for a later slice.
 
 use syn::ext::IdentExt;
 use syn::meta::ParseNestedMeta;
@@ -144,6 +145,21 @@ pub(crate) struct ContainerAttrs {
 #[derive(Default, Debug)]
 pub(crate) struct FieldAttrs {
     pub(crate) rename: Rename,
+    /// `#[serde(skip_serializing)]` (or `skip`): omit from the
+    /// serialized output and from the serialize field count.
+    pub(crate) skip_serializing: bool,
+    /// `#[serde(skip_deserializing)]` (or `skip`): never read from the
+    /// input; the field is filled with `Default::default()` instead.
+    pub(crate) skip_deserializing: bool,
+}
+
+impl FieldAttrs {
+    /// True when any `skip` flag is set — used to reject-loud `skip` on
+    /// shapes the masking derives don't yet support it on (tuple
+    /// fields), where silently honoring it would diverge from serde.
+    pub(crate) fn has_skip(&self) -> bool {
+        self.skip_serializing || self.skip_deserializing
+    }
 }
 
 /// Enum-variant-level serde attributes.
@@ -242,6 +258,16 @@ pub(crate) fn parse_field(macro_name: &str, attrs: &[Attribute]) -> syn::Result<
     parse_serde(attrs, |meta| {
         if meta.path.is_ident("rename") {
             out.rename = parse_rename(&meta)?;
+            Ok(())
+        } else if meta.path.is_ident("skip") {
+            out.skip_serializing = true;
+            out.skip_deserializing = true;
+            Ok(())
+        } else if meta.path.is_ident("skip_serializing") {
+            out.skip_serializing = true;
+            Ok(())
+        } else if meta.path.is_ident("skip_deserializing") {
+            out.skip_deserializing = true;
             Ok(())
         } else {
             Err(unsupported(macro_name, &meta))
@@ -465,6 +491,26 @@ mod tests {
                 .contains("unknown `rename_all` rule `bogus`"),
             "got: {err}",
         );
+    }
+
+    #[test]
+    fn skip_sets_both_directions() {
+        let f = field(&quote! { #[serde(skip)] internal: u8 });
+        let attrs = parse_field("MaskSerialize", &f.attrs).expect("parses");
+        assert!(attrs.skip_serializing);
+        assert!(attrs.skip_deserializing);
+        assert!(attrs.has_skip());
+    }
+
+    #[test]
+    fn skip_serializing_and_deserializing_are_independent() {
+        let ser = field(&quote! { #[serde(skip_serializing)] a: u8 });
+        let ser = parse_field("MaskSerialize", &ser.attrs).expect("parses");
+        assert!(ser.skip_serializing && !ser.skip_deserializing);
+
+        let de = field(&quote! { #[serde(skip_deserializing)] a: u8 });
+        let de = parse_field("MaskSerialize", &de.attrs).expect("parses");
+        assert!(de.skip_deserializing && !de.skip_serializing);
     }
 
     #[test]

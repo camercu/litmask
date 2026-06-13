@@ -191,20 +191,25 @@ fn variant_arm(
             })
         }
         Fields::Named(fields) => {
-            let field_count = fields.named.len();
-            let field_idents: Vec<&syn::Ident> = fields
-                .named
-                .iter()
-                .map(|field| field.ident.as_ref().expect("named field has an ident"))
-                .collect();
-            let mut serialize_fields = Vec::with_capacity(field_count);
-            for (field, binding) in fields.named.iter().zip(&bindings) {
+            // Pattern-bind every field (skipped ones to `_`), but only
+            // serialize and count the non-`skip_serializing` ones.
+            let mut pattern_binds = Vec::with_capacity(fields.named.len());
+            let mut serialize_fields = Vec::new();
+            let mut field_count = 0usize;
+            for field in &fields.named {
                 let ident = field.ident.as_ref().expect("named field has an ident");
                 let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
+                if attrs.skip_serializing {
+                    pattern_binds.push(quote! { #ident: _ });
+                    continue;
+                }
+                let binding = quote::format_ident!("__field{field_count}");
+                field_count += 1;
                 let field_name = masked_static_name(
                     ident.span(),
                     &attrs.serialize_name(ident, vattrs.rename_all.serialize),
                 );
+                pattern_binds.push(quote! { #ident: #binding });
                 serialize_fields.push(quote! {
                     ::litmask::__serde::ser::SerializeStructVariant::serialize_field(
                         &mut __state,
@@ -214,7 +219,7 @@ fn variant_arm(
                 });
             }
             Ok(quote! {
-                Self::#vident { #(#field_idents: #bindings),* } => {
+                Self::#vident { #(#pattern_binds),* } => {
                     let mut __state =
                         ::litmask::__serde::Serializer::serialize_struct_variant(
                             serializer,
@@ -271,9 +276,19 @@ fn tuple_struct_body(
 /// fields. Tuple fields have no names to mask, but they can still carry
 /// serde attributes; parsing enforces the same subset boundary so an
 /// unsupported key fails instead of silently diverging from serde.
+/// `skip` on a positional field would shift the remaining indices, a
+/// shape the masking derives don't handle yet — reject it loud.
 fn check_unnamed_field_attrs(fields: &syn::FieldsUnnamed) -> syn::Result<()> {
     for field in &fields.unnamed {
-        serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
+        let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
+        if attrs.has_skip() {
+            return Err(compile_error(
+                syn::spanned::Spanned::span(field),
+                MACRO_NAME,
+                FailTag::InvalidArg,
+                "`#[serde(skip)]` on a tuple field is not yet supported",
+            ));
+        }
     }
     Ok(())
 }
@@ -283,11 +298,15 @@ fn named_struct_body(
     fields: &syn::FieldsNamed,
     rename_all: Option<RenameRule>,
 ) -> syn::Result<TokenStream2> {
-    let field_count = fields.named.len();
-    let mut serialize_fields = Vec::with_capacity(field_count);
+    let mut serialize_fields = Vec::with_capacity(fields.named.len());
+    let mut field_count = 0usize;
     for field in &fields.named {
         let ident = field.ident.as_ref().expect("named field has an ident");
         let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
+        if attrs.skip_serializing {
+            continue;
+        }
+        field_count += 1;
         let field_name = masked_static_name(ident.span(), &attrs.serialize_name(ident, rename_all));
         serialize_fields.push(quote! {
             ::litmask::__serde::ser::SerializeStruct::serialize_field(
