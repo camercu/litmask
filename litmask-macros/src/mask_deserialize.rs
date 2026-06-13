@@ -179,7 +179,7 @@ fn type_name_tuple(input: &DeriveInput, container: &ContainerAttrs) -> (proc_mac
 fn check_unnamed_field_attrs(fields: &syn::FieldsUnnamed) -> syn::Result<()> {
     for field in &fields.unnamed {
         let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
-        if attrs.has_skip() {
+        if attrs.skips_a_tuple_field() {
             return Err(compile_error(
                 syn::spanned::Spanned::span(field),
                 MACRO_NAME,

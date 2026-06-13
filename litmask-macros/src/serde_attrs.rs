@@ -11,8 +11,9 @@
 //! Supported so far: `rename` and `rename_all` (each with the
 //! `(serialize = ..., deserialize = ...)` split form) on the container,
 //! variants, and fields as serde allows, plus `skip` /
-//! `skip_serializing` / `skip_deserializing` on named fields. Every
-//! other key is reject-loud and listed for a later slice.
+//! `skip_serializing` / `skip_deserializing` / `skip_serializing_if` on
+//! named fields. Every other key is reject-loud and listed for a later
+//! slice.
 
 use syn::ext::IdentExt;
 use syn::meta::ParseNestedMeta;
@@ -142,7 +143,7 @@ pub(crate) struct ContainerAttrs {
 }
 
 /// Field-level serde attributes.
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub(crate) struct FieldAttrs {
     pub(crate) rename: Rename,
     /// `#[serde(skip_serializing)]` (or `skip`): omit from the
@@ -151,14 +152,19 @@ pub(crate) struct FieldAttrs {
     /// `#[serde(skip_deserializing)]` (or `skip`): never read from the
     /// input; the field is filled with `Default::default()` instead.
     pub(crate) skip_deserializing: bool,
+    /// `#[serde(skip_serializing_if = "path")]`: a predicate called with
+    /// `&field` at serialize time; when it returns `true` the field is
+    /// omitted and the struct length shrinks by one.
+    pub(crate) skip_serializing_if: Option<syn::Path>,
 }
 
 impl FieldAttrs {
-    /// True when any `skip` flag is set — used to reject-loud `skip` on
-    /// shapes the masking derives don't yet support it on (tuple
-    /// fields), where silently honoring it would diverge from serde.
-    pub(crate) fn has_skip(&self) -> bool {
-        self.skip_serializing || self.skip_deserializing
+    /// True when a `skip` flag or `skip_serializing_if` is set — used to
+    /// reject-loud on shapes the masking derives don't yet support skip
+    /// on (tuple fields), where silently honoring it would shift element
+    /// indices and diverge from serde.
+    pub(crate) fn skips_a_tuple_field(&self) -> bool {
+        self.skip_serializing || self.skip_deserializing || self.skip_serializing_if.is_some()
     }
 }
 
@@ -268,6 +274,10 @@ pub(crate) fn parse_field(macro_name: &str, attrs: &[Attribute]) -> syn::Result<
             Ok(())
         } else if meta.path.is_ident("skip_deserializing") {
             out.skip_deserializing = true;
+            Ok(())
+        } else if meta.path.is_ident("skip_serializing_if") {
+            let lit: LitStr = meta.value()?.parse()?;
+            out.skip_serializing_if = Some(lit.parse()?);
             Ok(())
         } else {
             Err(unsupported(macro_name, &meta))
@@ -432,7 +442,10 @@ mod tests {
     #[test]
     fn unsupported_key_is_reject_loud() {
         let f = field(&quote! { #[serde(flatten)] inner: String });
-        let err = parse_field("MaskSerialize", &f.attrs).expect_err("must reject");
+        let err = match parse_field("MaskSerialize", &f.attrs) {
+            Ok(_) => panic!("expected flatten to be reject-loud"),
+            Err(err) => err,
+        };
         let msg = err.to_string();
         assert!(msg.contains("MaskSerialize! invalid-arg"), "got: {msg}");
         assert!(msg.contains("`#[serde(flatten)]`"), "got: {msg}");
@@ -499,7 +512,7 @@ mod tests {
         let attrs = parse_field("MaskSerialize", &f.attrs).expect("parses");
         assert!(attrs.skip_serializing);
         assert!(attrs.skip_deserializing);
-        assert!(attrs.has_skip());
+        assert!(attrs.skips_a_tuple_field());
     }
 
     #[test]
@@ -511,6 +524,17 @@ mod tests {
         let de = field(&quote! { #[serde(skip_deserializing)] a: u8 });
         let de = parse_field("MaskSerialize", &de.attrs).expect("parses");
         assert!(de.skip_deserializing && !de.skip_serializing);
+    }
+
+    #[test]
+    fn skip_serializing_if_parses_a_path() {
+        let f = field(&quote! { #[serde(skip_serializing_if = "Option::is_none")] a: Option<u8> });
+        let attrs = parse_field("MaskSerialize", &f.attrs).expect("parses");
+        let path = attrs.skip_serializing_if.expect("path present");
+        assert_eq!(
+            quote!(#path).to_string(),
+            quote!(Option::is_none).to_string()
+        );
     }
 
     #[test]

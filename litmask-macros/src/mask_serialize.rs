@@ -190,50 +190,65 @@ fn variant_arm(
                 }
             })
         }
-        Fields::Named(fields) => {
-            // Pattern-bind every field (skipped ones to `_`), but only
-            // serialize and count the non-`skip_serializing` ones.
-            let mut pattern_binds = Vec::with_capacity(fields.named.len());
-            let mut serialize_fields = Vec::new();
-            let mut field_count = 0usize;
-            for field in &fields.named {
-                let ident = field.ident.as_ref().expect("named field has an ident");
-                let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
-                if attrs.skip_serializing {
-                    pattern_binds.push(quote! { #ident: _ });
-                    continue;
-                }
-                let binding = quote::format_ident!("__field{field_count}");
-                field_count += 1;
-                let field_name = masked_static_name(
-                    ident.span(),
-                    &attrs.serialize_name(ident, vattrs.rename_all.serialize),
-                );
-                pattern_binds.push(quote! { #ident: #binding });
-                serialize_fields.push(quote! {
-                    ::litmask::__serde::ser::SerializeStructVariant::serialize_field(
-                        &mut __state,
-                        #field_name,
-                        #binding,
-                    )?;
-                });
-            }
-            Ok(quote! {
-                Self::#vident { #(#pattern_binds),* } => {
-                    let mut __state =
-                        ::litmask::__serde::Serializer::serialize_struct_variant(
-                            serializer,
-                            #name,
-                            #vindex,
-                            #vname,
-                            #field_count,
-                        )?;
-                    #(#serialize_fields)*
-                    ::litmask::__serde::ser::SerializeStructVariant::end(__state)
-                }
-            })
-        }
+        Fields::Named(fields) => struct_variant_arm(name, vident, vindex, &vname, &vattrs, fields),
     }
+}
+
+/// Serialize-arm for a struct variant: pattern-bind every field
+/// (skipped ones to `_`), then call `serialize_struct_variant` with the
+/// dynamic length and serialize each retained field (honoring
+/// `skip_serializing_if`).
+fn struct_variant_arm(
+    name: &TokenStream2,
+    vident: &syn::Ident,
+    vindex: u32,
+    vname: &TokenStream2,
+    vattrs: &serde_attrs::VariantAttrs,
+    fields: &syn::FieldsNamed,
+) -> syn::Result<TokenStream2> {
+    let mut pattern_binds = Vec::with_capacity(fields.named.len());
+    let mut serialize_fields = Vec::new();
+    let mut len_adjusts = Vec::new();
+    let mut base_count = 0usize;
+    for field in &fields.named {
+        let ident = field.ident.as_ref().expect("named field has an ident");
+        let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
+        if attrs.skip_serializing {
+            pattern_binds.push(quote! { #ident: _ });
+            continue;
+        }
+        let binding = quote::format_ident!("__field{base_count}");
+        base_count += 1;
+        let field_name = masked_static_name(
+            ident.span(),
+            &attrs.serialize_name(ident, vattrs.rename_all.serialize),
+        );
+        pattern_binds.push(quote! { #ident: #binding });
+        let value = quote! { #binding };
+        serialize_fields.push(serialize_struct_field(
+            &quote! { ::litmask::__serde::ser::SerializeStructVariant },
+            &field_name,
+            &value,
+            attrs.skip_serializing_if.as_ref(),
+            &mut len_adjusts,
+        ));
+    }
+    let (len_setup, count) = serialize_len(base_count, &len_adjusts);
+    Ok(quote! {
+        Self::#vident { #(#pattern_binds),* } => {
+            #len_setup
+            let mut __state =
+                ::litmask::__serde::Serializer::serialize_struct_variant(
+                    serializer,
+                    #name,
+                    #vindex,
+                    #vname,
+                    #count,
+                )?;
+            #(#serialize_fields)*
+            ::litmask::__serde::ser::SerializeStructVariant::end(__state)
+        }
+    })
 }
 
 /// Tuple-struct dispatch mirrors serde's: exactly one field is a
@@ -281,7 +296,7 @@ fn tuple_struct_body(
 fn check_unnamed_field_attrs(fields: &syn::FieldsUnnamed) -> syn::Result<()> {
     for field in &fields.unnamed {
         let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
-        if attrs.has_skip() {
+        if attrs.skips_a_tuple_field() {
             return Err(compile_error(
                 syn::spanned::Spanned::span(field),
                 MACRO_NAME,
@@ -299,30 +314,72 @@ fn named_struct_body(
     rename_all: Option<RenameRule>,
 ) -> syn::Result<TokenStream2> {
     let mut serialize_fields = Vec::with_capacity(fields.named.len());
-    let mut field_count = 0usize;
+    let mut len_adjusts = Vec::new();
+    let mut base_count = 0usize;
     for field in &fields.named {
         let ident = field.ident.as_ref().expect("named field has an ident");
         let attrs = serde_attrs::parse_field(MACRO_NAME, &field.attrs)?;
         if attrs.skip_serializing {
             continue;
         }
-        field_count += 1;
+        base_count += 1;
         let field_name = masked_static_name(ident.span(), &attrs.serialize_name(ident, rename_all));
-        serialize_fields.push(quote! {
-            ::litmask::__serde::ser::SerializeStruct::serialize_field(
-                &mut __state,
-                #field_name,
-                &self.#ident,
-            )?;
-        });
+        let value = quote! { &self.#ident };
+        serialize_fields.push(serialize_struct_field(
+            &quote! { ::litmask::__serde::ser::SerializeStruct },
+            &field_name,
+            &value,
+            attrs.skip_serializing_if.as_ref(),
+            &mut len_adjusts,
+        ));
     }
+    let (len_setup, count) = serialize_len(base_count, &len_adjusts);
     Ok(quote! {
+        #len_setup
         let mut __state = ::litmask::__serde::Serializer::serialize_struct(
             serializer,
             #name,
-            #field_count,
+            #count,
         )?;
         #(#serialize_fields)*
         ::litmask::__serde::ser::SerializeStruct::end(__state)
     })
+}
+
+/// Emit one `serialize_field` statement, wrapping it in an
+/// `if !predicate(value)` guard for `skip_serializing_if` fields and
+/// recording the matching `if predicate(value) { __len -= 1; }`
+/// length adjustment.
+fn serialize_struct_field(
+    trait_path: &TokenStream2,
+    field_name: &TokenStream2,
+    value: &TokenStream2,
+    skip_if: Option<&syn::Path>,
+    len_adjusts: &mut Vec<TokenStream2>,
+) -> TokenStream2 {
+    let call = quote! {
+        #trait_path::serialize_field(&mut __state, #field_name, #value)?;
+    };
+    match skip_if {
+        Some(pred) => {
+            len_adjusts.push(quote! { if #pred(#value) { __len -= 1; } });
+            quote! { if !#pred(#value) { #call } }
+        }
+        None => call,
+    }
+}
+
+/// Build the `(length setup, count expression)` for a `serialize_struct`
+/// / `serialize_struct_variant` call. With no `skip_serializing_if`
+/// fields the count is a constant; otherwise it is a runtime `__len`
+/// adjusted by each predicate (serde's dynamic-length approach).
+fn serialize_len(base_count: usize, len_adjusts: &[TokenStream2]) -> (TokenStream2, TokenStream2) {
+    if len_adjusts.is_empty() {
+        (quote! {}, quote! { #base_count })
+    } else {
+        (
+            quote! { let mut __len = #base_count; #(#len_adjusts)* },
+            quote! { __len },
+        )
+    }
 }
