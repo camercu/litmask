@@ -24,7 +24,10 @@
 //! `unsafe` is forbidden workspace-wide (ruling out a lock-free map) and
 //! a `no_std` mutex is a dependency not yet justified by a real embedded
 //! multi-masking-crate need (YAGNI). Lifting it later is a localized
-//! change here (a `spin`/`critical-section` `Mutex<BTreeMap>`).
+//! change here (a `spin`/`critical-section` `Mutex<BTreeMap>`). A second
+//! masking crate (distinct wrapper nonce) is detected and refused with a
+//! debug diagnostic ([`crate::diagnostics::extra_masking_crate_no_std`])
+//! rather than silently fed the first crate's key.
 
 use crate::internal::{NONCE_LEN, WRAPPER_LEN, parse_wrapper};
 use crate::key::MaskKey;
@@ -40,8 +43,12 @@ static CACHE: std::sync::OnceLock<
     std::sync::Mutex<std::collections::HashMap<[u8; NONCE_LEN], &'static MaskKey>>,
 > = std::sync::OnceLock::new();
 
+// The `no_std` cell also remembers the first wrapper's nonce, so a
+// second masking crate's distinct wrapper is detectable (see the
+// mismatch check in [`get_or_init`]) rather than silently handed the
+// first crate's key.
 #[cfg(not(feature = "std"))]
-static CACHE: super::cell::OnceCell<MaskKey> = super::cell::OnceCell::new();
+static CACHE: super::cell::OnceCell<([u8; NONCE_LEN], MaskKey)> = super::cell::OnceCell::new();
 
 /// The cached mask key for `nonce`, deriving and inserting it via
 /// `derive` on first use. The returned reference is process-lifetime
@@ -67,8 +74,17 @@ pub(super) fn get_or_init(
     }
     #[cfg(not(feature = "std"))]
     {
-        let _ = nonce;
-        CACHE.get_or_init(derive)
+        let entry = CACHE.get_or_init(|| (nonce, derive()));
+        // Single-cell store: one masking crate per no_std binary. If a
+        // second crate's wrapper nonce differs from the one that won the
+        // cell, returning this key would fail the AEAD tag with a generic
+        // error — name the real constraint in debug instead. Release stays
+        // opaque (the diagnostic and this check are debug-only).
+        #[cfg(debug_assertions)]
+        if entry.0 != nonce {
+            crate::diagnostics::extra_masking_crate_no_std();
+        }
+        &entry.1
     }
 }
 

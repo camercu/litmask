@@ -96,6 +96,29 @@ pub(crate) fn init_after_lazy() -> ! {
     );
 }
 
+/// Refuse a second masking crate in a `no_std` binary. The `no_std`
+/// mask-key store is a single set-once cell (one masking crate per
+/// binary — `unsafe` is forbidden and a `no_std` mutex map is not yet
+/// justified; see `runtime::mask_key_store`). A second crate's distinct
+/// wrapper would otherwise read the first crate's key and fail the AEAD
+/// tag with a generic decrypt error; name the real constraint and the
+/// fix (enable `std`) instead. Compiled only in `no_std` (where it is
+/// reachable) and `test` builds (where the message is locked); the call
+/// site is itself debug-gated, so release `no_std` keeps the opaque
+/// generic failure.
+#[cfg(all(debug_assertions, any(test, not(feature = "std"))))]
+pub(crate) fn extra_masking_crate_no_std() -> ! {
+    // The line-level cfg is redundant with the fn-level one but
+    // load-bearing for the `tamper_panic` scan, which exempts a
+    // message-bearing panic only when the gate sits directly above it.
+    #[cfg(debug_assertions)]
+    panic!(
+        "litmask: a second masking crate tried to unlock a different wrapper, but no_std \
+         builds support only one masking crate per binary — enable litmask's `std` feature \
+         to allow several"
+    );
+}
+
 /// Diverge on a per-string `mask!()` blob decrypt failure.
 pub(crate) fn blob_failure() -> ! {
     #[cfg(debug_assertions)]
@@ -195,6 +218,18 @@ mod tests {
         assert!(panic_message(|| weak_cstr_failure()).contains("litmask:"));
         assert!(panic_message(|| lazy_init_wrong_tier("external")).contains("litmask:"));
         assert!(panic_message(|| init_after_lazy()).contains("litmask:"));
+        assert!(panic_message(|| extra_masking_crate_no_std()).contains("litmask:"));
+    }
+
+    /// The `no_std` single-crate refusal must name the constraint (one
+    /// masking crate per `no_std` binary) and the fix (enable `std`), so a
+    /// developer hitting it doesn't read it as a generic decrypt failure.
+    #[test]
+    fn extra_masking_crate_no_std_names_constraint_and_fix() {
+        let msg = panic_message(|| extra_masking_crate_no_std());
+        assert!(msg.contains("one masking crate"));
+        assert!(msg.contains("no_std"));
+        assert!(msg.contains("std"));
     }
 
     /// The init-after-lazy refusal must name the ordering cause and the
