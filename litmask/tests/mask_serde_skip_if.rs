@@ -25,7 +25,6 @@ struct PlainOpt {
 
 #[test]
 fn skip_serializing_if_none_omits_field() {
-    common::init_once();
     let masked = MaskedOpt {
         always: 1,
         maybe: None,
@@ -52,7 +51,6 @@ fn skip_serializing_if_none_omits_field() {
 
 #[test]
 fn skip_serializing_if_some_keeps_field() {
-    common::init_once();
     let masked = MaskedOpt {
         always: 2,
         maybe: Some(9),
@@ -96,7 +94,6 @@ struct PlainAllOptional {
 
 #[test]
 fn skip_serializing_if_all_skipped_is_empty() {
-    common::init_once();
     let masked = MaskedAllOptional { a: None, b: None };
     let json = serde_json::to_string(&masked).expect("serialize");
     assert_eq!(json, "{}");
@@ -127,7 +124,6 @@ enum PlainEnum {
 
 #[test]
 fn skip_serializing_if_in_struct_variant() {
-    common::init_once();
     for (m, p) in [
         (
             MaskedEnum::Beacon { id: 1, nonce: None },

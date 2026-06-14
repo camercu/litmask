@@ -23,7 +23,6 @@ struct PlainNamed {
 
 #[test]
 fn transparent_named_serializes_as_inner() {
-    common::init_once();
     let masked = MaskedNamed { inner: 42 };
     let json = serde_json::to_string(&masked).expect("serialize");
     // No struct wrapper — just the inner value.
@@ -46,7 +45,6 @@ struct PlainTuple(String);
 
 #[test]
 fn transparent_tuple_serializes_as_inner() {
-    common::init_once();
     let masked = MaskedTuple("hello".to_string());
     let json = serde_json::to_string(&masked).expect("serialize");
     assert_eq!(json, r#""hello""#);

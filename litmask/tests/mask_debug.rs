@@ -151,7 +151,6 @@ mod plain {
 
 #[test]
 fn mask_debug_named_struct_matches_plain_derive() {
-    common::init_once();
     let masked = MaskedConfig {
         license_server_url: "https://license.example.com".to_string(),
         activation_count: 7,
@@ -170,7 +169,6 @@ fn mask_debug_named_struct_matches_plain_derive() {
 
 #[test]
 fn mask_debug_tuple_struct_matches_plain_derive() {
-    common::init_once();
     let masked = MaskedPair("beacon".to_string(), 3);
     let plain = plain::MaskedPair("beacon".to_string(), 3);
     assert_eq!(format!("{masked:?}"), format!("{plain:?}"));
@@ -180,7 +178,6 @@ fn mask_debug_tuple_struct_matches_plain_derive() {
 
 #[test]
 fn mask_debug_unit_struct_matches_plain_derive() {
-    common::init_once();
     assert_eq!(
         format!("{MaskedMarker:?}"),
         format!("{:?}", plain::MaskedMarker)
@@ -194,7 +191,6 @@ fn mask_debug_unit_struct_matches_plain_derive() {
 
 #[test]
 fn mask_debug_enum_variants_match_plain_derive() {
-    common::init_once();
     let cases = [
         (MaskedMode::Idle, plain::MaskedMode::Idle),
         (
@@ -218,7 +214,6 @@ fn mask_debug_enum_variants_match_plain_derive() {
 
 #[test]
 fn mask_debug_generic_struct_matches_plain_derive() {
-    common::init_once();
     let masked = MaskedEnvelope {
         sequence_marker_zzyzx: 42,
         borrowed_label_qwxz: "tag",
@@ -235,7 +230,6 @@ fn mask_debug_generic_struct_matches_plain_derive() {
 
 #[test]
 fn mask_debug_raw_idents_unraw_like_plain_derive() {
-    common::init_once();
     let masked = MaskedRawIdent {
         r#type: "beacon".to_string(),
     };
@@ -256,7 +250,6 @@ fn mask_debug_raw_idents_unraw_like_plain_derive() {
 
 #[test]
 fn mask_debug_empty_struct_matches_plain_derive() {
-    common::init_once();
     assert_eq!(
         format!("{:?}", MaskedEmpty {}),
         format!("{:?}", plain::MaskedEmpty {})
@@ -265,7 +258,6 @@ fn mask_debug_empty_struct_matches_plain_derive() {
 
 #[test]
 fn mask_debug_shadowing_field_names_match_plain_derive() {
-    common::init_once();
     let masked = MaskedShadow::Clash {
         __f: 1,
         __builder: 2,
@@ -280,7 +272,6 @@ fn mask_debug_shadowing_field_names_match_plain_derive() {
 
 #[test]
 fn mask_debug_packed_struct_matches_plain_derive() {
-    common::init_once();
     let masked = MaskedPacked {
         tag_qwxz: 7,
         count_zzyzx: 99,
@@ -299,7 +290,6 @@ fn mask_debug_packed_struct_matches_plain_derive() {
 
 #[test]
 fn mask_debug_generic_enum_matches_plain_derive() {
-    common::init_once();
     assert_eq!(
         format!("{:?}", MaskedCarrier::Holding(vec![1u8, 2])),
         format!("{:?}", plain::MaskedCarrier::Holding(vec![1u8, 2])),

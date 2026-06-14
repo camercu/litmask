@@ -35,7 +35,6 @@ struct PlainWrapper<T> {
 
 #[test]
 fn empty_bound_drops_default_and_matches_plain() {
-    common::init_once();
     let masked: Wrapper<Unconstrained> = Wrapper {
         value: 7,
         marker: PhantomData,
@@ -65,7 +64,6 @@ struct SplitWrapper<T> {
 
 #[test]
 fn split_bound_compiles_and_round_trips() {
-    common::init_once();
     let masked: SplitWrapper<Unconstrained> = SplitWrapper {
         tag: 42,
         marker: PhantomData,

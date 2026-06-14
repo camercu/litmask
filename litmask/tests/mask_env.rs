@@ -7,7 +7,6 @@ use litmask::mask_env;
 
 #[test]
 fn mask_env_cargo_pkg_name_round_trips() {
-    common::init_once();
     // `CARGO_PKG_NAME` is always set by cargo at build time, so the
     // proc-macro can resolve it and emit a masked blob.
     let s: String = mask_env!("CARGO_PKG_NAME");
@@ -16,7 +15,6 @@ fn mask_env_cargo_pkg_name_round_trips() {
 
 #[test]
 fn mask_env_accepts_optional_custom_error_message() {
-    common::init_once();
     // Stdlib `env!("FOO", "custom message")` is legal; the second
     // arg is only consulted if the env var is unset (it becomes
     // the compile-error text). When the var IS set, the second

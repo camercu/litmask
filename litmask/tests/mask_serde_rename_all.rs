@@ -30,7 +30,6 @@ macro_rules! rename_all_case {
                 second_field: u8,
             }
 
-            common::init_once();
             let masked = Masked {
                 first_field: 1,
                 second_field: 2,
@@ -92,7 +91,6 @@ enum PlainEnum {
 
 #[test]
 fn rename_all_on_enum_variants_and_variant_fields() {
-    common::init_once();
     for (masked, plain) in [
         (MaskedEnum::DormantBeacon, PlainEnum::DormantBeacon),
         (
@@ -128,7 +126,6 @@ fn rename_all_split_serialize_deserialize() {
         first_field: u8,
     }
 
-    common::init_once();
     let masked = Masked { first_field: 5 };
     let json = serde_json::to_string(&masked).expect("serialize");
     assert_eq!(

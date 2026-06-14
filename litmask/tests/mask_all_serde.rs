@@ -23,7 +23,6 @@ mod swapped {
 
 #[test]
 fn mask_all_swaps_serde_derives_round_trip() {
-    common::init_once();
     let config = swapped::Config {
         license_server_url: "https://license.example.com".to_string(),
         activation_count: 7,
@@ -39,7 +38,6 @@ fn mask_all_swaps_serde_derives_round_trip() {
 
 #[test]
 fn mask_all_swaps_debug_derive_output_identical() {
-    common::init_once();
     let config = swapped::Config {
         license_server_url: "https://license.example.com".to_string(),
         activation_count: 7,
@@ -62,7 +60,6 @@ mod swapped_enum {
 
 #[test]
 fn mask_all_swaps_derives_on_enum_round_trip() {
-    common::init_once();
     for value in [
         swapped_enum::Tier::Embedded,
         swapped_enum::Tier::Machine(9),
@@ -90,7 +87,6 @@ mod opted_out {
 
 #[test]
 fn mask_all_opt_out_keeps_plain_derives_working() {
-    common::init_once();
     let plain = opted_out::PlainConfig { field_one: 5 };
     assert_eq!(
         serde_json::to_string(&plain).expect("serialize"),

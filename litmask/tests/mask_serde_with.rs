@@ -60,7 +60,6 @@ struct PlainWith {
 
 #[test]
 fn with_functions_match_plain_derive_serialize() {
-    common::init_once();
     let masked = MaskedWith {
         flag: true,
         label: "hi".to_string(),
@@ -79,7 +78,6 @@ fn with_functions_match_plain_derive_serialize() {
 
 #[test]
 fn with_functions_match_plain_derive_deserialize() {
-    common::init_once();
     let input = r#"{"flag":0,"label":"WORLD"}"#;
     let masked: MaskedWith = serde_json::from_str(input).expect("masked de");
     let plain: PlainWith = serde_json::from_str(input).expect("plain de");

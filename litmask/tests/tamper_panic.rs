@@ -18,8 +18,6 @@ const MIN_BLOB_LEN: usize = NONCE_LEN + TAG_LEN;
 /// unwinds.
 #[test]
 fn decrypt_panics_on_tampered_blob() {
-    common::init_once();
-
     let _ = common::assert_panic_msg(|| {
         let blob = [0u8; MIN_BLOB_LEN];
         let _ = ::litmask::__internal::__decrypt(
@@ -38,8 +36,6 @@ fn decrypt_panics_on_tampered_blob() {
 /// half matches the profile it was compiled under.
 #[test]
 fn tampered_blob_panic_message_is_profile_split() {
-    common::init_once();
-
     let msg = common::assert_panic_msg(|| {
         let blob = [0u8; MIN_BLOB_LEN];
         let _ = ::litmask::__internal::__decrypt(

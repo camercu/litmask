@@ -11,7 +11,6 @@ use litmask::mask_format;
 
 #[test]
 fn mask_format_basic_positional_round_trips() {
-    common::init_once();
     let s = mask_format!("x={}, y={:.2}", 1, 2.5);
     assert_eq!(s, format!("x={}, y={:.2}", 1, 2.5));
     assert_eq!(s, "x=1, y=2.50");
@@ -19,7 +18,6 @@ fn mask_format_basic_positional_round_trips() {
 
 #[test]
 fn mask_format_debug_specifier_matches_format() {
-    common::init_once();
     let v = vec![1, 2, 3];
     let plain = mask_format!("v={:?}", v);
     assert_eq!(plain, format!("v={:?}", vec![1, 2, 3]));
@@ -30,7 +28,6 @@ fn mask_format_debug_specifier_matches_format() {
 
 #[test]
 fn mask_format_hex_specifiers_match_format() {
-    common::init_once();
     let s = mask_format!("hex={:#x} bin={:#b} oct={:#o}", 255u32, 255u32, 255u32);
     assert_eq!(
         s,
@@ -40,21 +37,18 @@ fn mask_format_hex_specifiers_match_format() {
 
 #[test]
 fn mask_format_padded_specifier_matches_format() {
-    common::init_once();
     let s = mask_format!("[{:>10}] [{:<10}] [{:^10}]", "rt", "lt", "ctr");
     assert_eq!(s, format!("[{:>10}] [{:<10}] [{:^10}]", "rt", "lt", "ctr"));
 }
 
 #[test]
 fn mask_format_precision_specifier_matches_format() {
-    common::init_once();
     let s = mask_format!("pi={:.5}", std::f64::consts::PI);
     assert_eq!(s, format!("pi={:.5}", std::f64::consts::PI));
 }
 
 #[test]
 fn mask_format_explicit_positional_indices_match_format() {
-    common::init_once();
     let s = mask_format!("{1} {0} {1}", "a", "b");
     assert_eq!(s, format!("{1} {0} {1}", "a", "b"));
     assert_eq!(s, "b a b");
@@ -62,7 +56,6 @@ fn mask_format_explicit_positional_indices_match_format() {
 
 #[test]
 fn mask_format_literal_braces_round_trip() {
-    common::init_once();
     let s = mask_format!("{{escaped}} and {} live together", "real");
     assert_eq!(s, format!("{{escaped}} and {} live together", "real"));
     assert_eq!(s, "{escaped} and real live together");
@@ -70,21 +63,18 @@ fn mask_format_literal_braces_round_trip() {
 
 #[test]
 fn mask_format_no_args_returns_template_text() {
-    common::init_once();
     let s = mask_format!("static text only");
     assert_eq!(s, "static text only");
 }
 
 #[test]
 fn mask_format_empty_template_returns_empty_string() {
-    common::init_once();
     let s = mask_format!("");
     assert!(s.is_empty());
 }
 
 #[test]
 fn mask_format_evaluates_each_argument_exactly_once() {
-    common::init_once();
     let calls = std::cell::Cell::new(0u32);
     let bump = || {
         calls.set(calls.get() + 1);
@@ -103,7 +93,6 @@ fn mask_format_evaluates_each_argument_exactly_once() {
 /// single-evaluation guarantee for named args.
 #[test]
 fn mask_format_named_arg_evaluates_exactly_once() {
-    common::init_once();
     let calls = std::cell::Cell::new(0u32);
     let bump = || {
         calls.set(calls.get() + 1);
@@ -122,7 +111,6 @@ fn mask_format_named_arg_evaluates_exactly_once() {
 /// to the local `var` already in scope at the call site.
 #[test]
 fn mask_format_implicit_capture_reads_local() {
-    common::init_once();
     let var = 7;
     let s = mask_format!("{var}");
     assert_eq!(s, "7");
@@ -133,7 +121,6 @@ fn mask_format_implicit_capture_reads_local() {
 /// the same name, producing identical output to `format!`.
 #[test]
 fn mask_format_dynamic_width_matches_format() {
-    common::init_once();
     let s = mask_format!("{:>w$}", "hi", w = 5);
     assert_eq!(s, format!("{:>w$}", "hi", w = 5));
     assert_eq!(s, "   hi");
@@ -143,7 +130,6 @@ fn mask_format_dynamic_width_matches_format() {
 /// with the same name, producing identical output to `format!`.
 #[test]
 fn mask_format_dynamic_precision_matches_format() {
-    common::init_once();
     let pi = std::f64::consts::PI;
     let s = mask_format!("{:.p$}", pi, p = 3);
     assert_eq!(s, format!("{:.p$}", pi, p = 3));
@@ -154,7 +140,6 @@ fn mask_format_dynamic_precision_matches_format() {
 /// `w` is a local in scope).
 #[test]
 fn mask_format_dynamic_width_implicit_capture_matches_format() {
-    common::init_once();
     let w = 8;
     let s = mask_format!("{:>w$}", "x");
     assert_eq!(s, format!("{:>w$}", "x"));
@@ -165,7 +150,6 @@ fn mask_format_dynamic_width_implicit_capture_matches_format() {
 /// to `format!` for the same input.
 #[test]
 fn mask_format_named_and_positional_mix_matches_format() {
-    common::init_once();
     let s = mask_format!("{x} {} {y}", "pos", x = 1, y = 2);
     assert_eq!(s, format!("{x} {} {y}", "pos", x = 1, y = 2));
     assert_eq!(s, "1 pos 2");
@@ -176,7 +160,6 @@ fn mask_format_named_and_positional_mix_matches_format() {
 /// after the call.
 #[test]
 fn mask_format_implicit_capture_borrows_non_copy() {
-    common::init_once();
     let var = String::from("hello");
     let s = mask_format!("{var}!");
     assert_eq!(s, "hello!");

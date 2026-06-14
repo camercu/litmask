@@ -27,7 +27,6 @@ struct PlainField {
 
 #[test]
 fn field_rename_matches_plain_derive() {
-    common::init_once();
     let masked = MaskedField {
         endpoint: "https://x".to_string(),
         activation_count: 4,
@@ -60,7 +59,6 @@ struct PlainContainer {
 
 #[test]
 fn container_rename_matches_plain_derive() {
-    common::init_once();
     let masked = MaskedContainer { value: 9 };
     let plain = PlainContainer { value: 9 };
     // The container name is invisible in JSON output, but its
@@ -87,7 +85,6 @@ struct PlainSplit {
 
 #[test]
 fn split_rename_matches_plain_derive() {
-    common::init_once();
     let masked = MaskedSplit { field: 1 };
     let masked_json = serde_json::to_string(&masked).expect("serialize");
     assert_eq!(
@@ -124,7 +121,6 @@ enum PlainEnum {
 
 #[test]
 fn variant_and_variant_field_rename_match_plain_derive() {
-    common::init_once();
     for (masked, plain) in [
         (
             MaskedEnum::Dns {

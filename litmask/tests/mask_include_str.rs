@@ -13,14 +13,12 @@ use litmask::mask_include_str;
 
 #[test]
 fn mask_include_str_round_trips_to_string() {
-    common::init_once();
     let s: String = mask_include_str!("../examples/fixtures/noc_list.txt");
     assert!(s.contains("Non-Official Cover (NOC) List"));
 }
 
 #[test]
 fn mask_include_str_two_call_sites_decode_independently() {
-    common::init_once();
     let a: String = mask_include_str!("../examples/fixtures/noc_list.txt");
     let b: String = mask_include_str!("../examples/fixtures/noc_list.txt");
     assert_eq!(a, b);
@@ -28,7 +26,6 @@ fn mask_include_str_two_call_sites_decode_independently() {
 
 #[test]
 fn mask_include_str_resolves_like_stdlib_include_str() {
-    common::init_once();
     // Same path literal, same call-site file: the masked result MUST
     // equal what stdlib `include_str!` produces, proving file-relative
     // resolution parity.

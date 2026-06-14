@@ -37,7 +37,6 @@ mod strict_all_covered {
 
 #[test]
 fn strict_module_compiles_when_pattern_literal_is_opted_out_via_unmasked() {
-    common::init_once();
     assert_eq!(strict_all_covered::classify("alpha"), 1);
     assert_eq!(strict_all_covered::classify("beta"), 2);
     assert_eq!(strict_all_covered::classify("zzz"), 0);
@@ -45,7 +44,6 @@ fn strict_module_compiles_when_pattern_literal_is_opted_out_via_unmasked() {
 
 #[test]
 fn strict_module_rewrites_eligible_literals_to_mask() {
-    common::init_once();
     let s = strict_all_covered::greet();
     assert!(s.contains("iridium-falcon-7a2c9b"));
 }

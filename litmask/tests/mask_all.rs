@@ -33,7 +33,6 @@ mod simple_bare_literal {
 
 #[test]
 fn bare_string_literal_round_trips_through_mask_all() {
-    common::init_once();
     assert_eq!(simple_bare_literal::fixture(), "iridium-falcon-7a2c9b");
 }
 
@@ -52,7 +51,6 @@ mod nested_function_with_block_and_closure {
 
 #[test]
 fn mask_all_recurses_into_blocks_and_closures() {
-    common::init_once();
     let s = nested_function_with_block_and_closure::outer();
     assert!(s.contains("platinum-koala-3e8f12"));
     assert!(s.contains("cinnabar-otter-6d4a91"));
@@ -71,7 +69,6 @@ mod nested_module {
 
 #[test]
 fn mask_all_recurses_into_nested_modules() {
-    common::init_once();
     assert_eq!(nested_module::inner::lookup(), "graphite-toucan-4c7d28");
 }
 
@@ -87,7 +84,6 @@ mod respects_explicit_mask {
 
 #[test]
 fn mask_all_does_not_double_mask_explicit_mask_invocation() {
-    common::init_once();
     let s = respects_explicit_mask::fixture();
     assert!(s.contains("titanium-finch-2a6c40"));
     assert!(s.contains("tungsten-ibis-1f9d63"));
@@ -108,7 +104,6 @@ mod pattern_position_left_unchanged {
 
 #[test]
 fn mask_all_skips_pattern_literals_match_arm() {
-    common::init_once();
     // The pattern literals "alpha"/"beta" must NOT have been
     // rewritten — patterns can't accept `mask!()` expressions. RHS
     // values are integers so no rewriting risk on the arms.
@@ -129,7 +124,6 @@ mod if_let_pattern_left_unchanged {
 
 #[test]
 fn mask_all_skips_pattern_literals_if_let() {
-    common::init_once();
     assert!(if_let_pattern_left_unchanged::detect(Some("trigger")));
     assert!(!if_let_pattern_left_unchanged::detect(Some("other")));
     assert!(!if_let_pattern_left_unchanged::detect(None));
@@ -150,7 +144,6 @@ mod while_let_pattern_left_unchanged {
 
 #[test]
 fn mask_all_skips_pattern_literals_while_let() {
-    common::init_once();
     let items = vec!["STOP", "STOP", "go"];
     assert_eq!(
         while_let_pattern_left_unchanged::count_until_sentinel(items.into_iter()),
@@ -172,7 +165,6 @@ mod include_str_wrapped {
 
 #[test]
 fn mask_all_wraps_include_str_in_mask() {
-    common::init_once();
     let contents = include_str_wrapped::fixture();
     // The fixture file content (minus trailing newline normalization)
     // must round-trip through mask!() correctly.
@@ -188,7 +180,6 @@ mod concat_wrapped {
 
 #[test]
 fn mask_all_wraps_concat_in_mask() {
-    common::init_once();
     assert_eq!(
         concat_wrapped::fixture(),
         "rhodium-lemur-5c2a93-mask-all-macro"
@@ -207,7 +198,6 @@ mod format_macro_rewritten {
 
 #[test]
 fn mask_all_rewrites_format_with_literal_template() {
-    common::init_once();
     assert_eq!(format_macro_rewritten::fixture(), "x=42");
 }
 
@@ -220,7 +210,6 @@ mod format_macro_named_args {
 
 #[test]
 fn mask_all_rewrites_format_with_named_args() {
-    common::init_once();
     assert_eq!(format_macro_named_args::fixture(), "a=1 b=2");
 }
 
@@ -235,7 +224,6 @@ mod panic_message_rewritten {
 
 #[test]
 fn mask_all_panic_message_round_trips() {
-    common::init_once();
     let msg = common::catch_panic_msg(panic_message_rewritten::fixture).expect("expected panic");
     assert!(
         msg.contains("titanium-yak-3a8e57-mask-all-macro"),
@@ -263,7 +251,6 @@ mod user_macro_left_alone {
 
 #[test]
 fn mask_all_leaves_user_macro_literal_args_intact() {
-    common::init_once();
     assert_eq!(
         user_macro_left_alone::fixture(),
         "hafnium-quokka-4d3e72-mask-all-macro",
@@ -284,7 +271,6 @@ mod write_macro_rewritten {
 
 #[test]
 fn mask_all_rewrites_write_with_literal_template() {
-    common::init_once();
     assert_eq!(write_macro_rewritten::fixture(), "x=7");
 }
 
@@ -300,7 +286,6 @@ mod writeln_macro_rewritten {
 
 #[test]
 fn mask_all_rewrites_writeln_with_literal_template() {
-    common::init_once();
     assert_eq!(writeln_macro_rewritten::fixture(), "tag=value\n");
 }
 
@@ -322,14 +307,12 @@ mod assert_with_message_rewritten {
 
 #[test]
 fn mask_all_assert_with_message_round_trips_passing() {
-    common::init_once();
     // No panic expected — assert!'s condition holds.
     assert_with_message_rewritten::fixture_passing();
 }
 
 #[test]
 fn mask_all_assert_eq_with_message_panics_with_message() {
-    common::init_once();
     let msg = common::catch_panic_msg(assert_with_message_rewritten::fixture_failing)
         .expect("expected panic");
     assert!(
@@ -352,7 +335,6 @@ mod qualified_macro_path_recognized {
 
 #[test]
 fn mask_all_recognizes_qualified_format_path() {
-    common::init_once();
     assert_eq!(
         qualified_macro_path_recognized::fixture(),
         "ytterbium-pika-2f9c83=11",
@@ -373,7 +355,6 @@ mod const_and_static_initializers {
 
 #[test]
 fn mask_all_skips_const_and_static_initializers() {
-    common::init_once();
     let (slug, greeting) = const_and_static_initializers::fixture();
     // const/static round-trip unchanged (would not even compile if
     // `mask!()` had been substituted — `mask!()` is not const).
@@ -397,7 +378,6 @@ mod byte_string_literal_round_trip {
 
 #[test]
 fn mask_all_rewrites_byte_string_literals() {
-    common::init_once();
     assert_eq!(
         byte_string_literal_round_trip::fixture(),
         b"chromium-bobcat-1c5e92".to_vec(),
@@ -417,7 +397,6 @@ mod c_string_literal_round_trip {
 
 #[test]
 fn mask_all_rewrites_c_string_literals() {
-    common::init_once();
     let s = c_string_literal_round_trip::fixture();
     assert_eq!(s.to_bytes(), b"radium-quetzal-8e3a51");
 }
@@ -435,7 +414,6 @@ mod assert_ne_with_message_rewritten {
 
 #[test]
 fn mask_all_assert_ne_with_message_panics_with_message() {
-    common::init_once();
     let msg = common::catch_panic_msg(assert_ne_with_message_rewritten::fixture_failing)
         .expect("expected panic");
     assert!(
@@ -457,7 +435,6 @@ mod eprintln_macro_rewritten {
 // example_scrub::mask_all_eprintln_print_eprint_templates_absent_from_binary.
 #[test]
 fn mask_all_rewrites_eprintln_with_literal_template() {
-    common::init_once();
     eprintln_macro_rewritten::fixture();
 }
 
@@ -472,7 +449,6 @@ mod print_macro_rewritten {
 // example_scrub::mask_all_eprintln_print_eprint_templates_absent_from_binary.
 #[test]
 fn mask_all_rewrites_print_with_literal_template() {
-    common::init_once();
     print_macro_rewritten::fixture();
 }
 
@@ -487,7 +463,6 @@ mod eprint_macro_rewritten {
 // example_scrub::mask_all_eprintln_print_eprint_templates_absent_from_binary.
 #[test]
 fn mask_all_rewrites_eprint_with_literal_template() {
-    common::init_once();
     eprint_macro_rewritten::fixture();
 }
 
@@ -502,7 +477,6 @@ mod todo_macro_rewritten {
 
 #[test]
 fn mask_all_todo_message_round_trips() {
-    common::init_once();
     let msg = common::catch_panic_msg(todo_macro_rewritten::fixture).expect("expected panic");
     assert!(
         msg.contains("hafnium-aardvark-8d4e62"),
@@ -519,7 +493,6 @@ mod unimplemented_macro_rewritten {
 
 #[test]
 fn mask_all_unimplemented_message_round_trips() {
-    common::init_once();
     let msg =
         common::catch_panic_msg(unimplemented_macro_rewritten::fixture).expect("expected panic");
     assert!(
@@ -540,7 +513,6 @@ mod unreachable_macro_rewritten {
 
 #[test]
 fn mask_all_unreachable_message_round_trips() {
-    common::init_once();
     // Direct call with x != 0 trips the unreachable! and panics
     // with the masked message.
     let msg = common::catch_panic_msg(|| {
@@ -640,7 +612,6 @@ mod include_bytes_rewritten {
 
 #[test]
 fn mask_all_rewrites_include_bytes_to_mask_include_bytes() {
-    common::init_once();
     let bytes = include_bytes_rewritten::fixture();
     let s = std::str::from_utf8(&bytes).expect("fixture is UTF-8");
     assert!(s.contains("raw-bytes-on-the-lam"));
@@ -656,7 +627,6 @@ mod env_rewritten {
 
 #[test]
 fn mask_all_rewrites_env_to_mask_env() {
-    common::init_once();
     assert_eq!(env_rewritten::fixture(), "litmask");
 }
 
@@ -673,7 +643,6 @@ mod option_env_rewritten {
 
 #[test]
 fn mask_all_rewrites_option_env_to_mask_option_env() {
-    common::init_once();
     assert_eq!(
         option_env_rewritten::fixture_set(),
         Some("litmask".to_string())
@@ -691,7 +660,6 @@ mod file_rewritten {
 
 #[test]
 fn mask_all_rewrites_file_to_mask_file() {
-    common::init_once();
     let s = file_rewritten::fixture();
     assert!(
         s.ends_with("tests/mask_all.rs"),

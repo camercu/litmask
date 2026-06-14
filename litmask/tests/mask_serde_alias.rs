@@ -22,7 +22,6 @@ struct PlainAlias {
 
 #[test]
 fn alias_accepts_each_name() {
-    common::init_once();
     for input in [r#"{"primary_key":5}"#, r#"{"id":5}"#, r#"{"identifier":5}"#] {
         let masked: MaskedAlias = serde_json::from_str(input).expect("masked de");
         let plain: PlainAlias = serde_json::from_str(input).expect("plain de");
@@ -48,14 +47,12 @@ struct PlainDeny {
 
 #[test]
 fn deny_unknown_fields_accepts_known() {
-    common::init_once();
     let masked: MaskedDeny = serde_json::from_str(r#"{"known":3}"#).expect("masked de");
     assert_eq!(masked, MaskedDeny { known: 3 });
 }
 
 #[test]
 fn deny_unknown_fields_rejects_unknown_like_plain() {
-    common::init_once();
     let input = r#"{"known":3,"surprise":9}"#;
     let masked_err = serde_json::from_str::<MaskedDeny>(input).expect_err("masked must reject");
     let plain_err = serde_json::from_str::<PlainDeny>(input).expect_err("plain must reject");
@@ -85,7 +82,6 @@ enum PlainEnum {
 
 #[test]
 fn alias_in_struct_variant() {
-    common::init_once();
     for input in [
         r#"{"Channel":{"endpoint":"e"}}"#,
         r#"{"Channel":{"host":"e"}}"#,

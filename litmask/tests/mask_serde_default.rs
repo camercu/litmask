@@ -33,7 +33,6 @@ struct PlainDefaults {
 
 #[test]
 fn missing_fields_use_defaults_like_plain_derive() {
-    common::init_once();
     // Only `host` present: `retries` -> Default (0), `port` -> path (8443).
     let input = r#"{"host":"h"}"#;
     let masked: MaskedDefaults = serde_json::from_str(input).expect("masked de");
@@ -47,7 +46,6 @@ fn missing_fields_use_defaults_like_plain_derive() {
 
 #[test]
 fn present_fields_override_defaults() {
-    common::init_once();
     let input = r#"{"host":"h","retries":5,"port":1234}"#;
     let masked: MaskedDefaults = serde_json::from_str(input).expect("masked de");
     assert_eq!(
@@ -62,7 +60,6 @@ fn present_fields_override_defaults() {
 
 #[test]
 fn default_missing_via_seq() {
-    common::init_once();
     // Positional (seq) input shorter than the struct: trailing
     // defaulted fields fill in rather than erroring on length.
     let masked: MaskedDefaults = serde_json::from_str(r#"["h"]"#).expect("masked seq de");
@@ -90,7 +87,6 @@ struct PlainSkipDefault {
 
 #[test]
 fn skip_deserializing_uses_default_path() {
-    common::init_once();
     let input = r#"{"kept":3,"port":999}"#;
     let masked: MaskedSkipDefault = serde_json::from_str(input).expect("masked de");
     let plain: PlainSkipDefault = serde_json::from_str(input).expect("plain de");

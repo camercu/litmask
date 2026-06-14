@@ -26,7 +26,6 @@ struct PlainSkip {
 
 #[test]
 fn skip_both_matches_plain_derive() {
-    common::init_once();
     let masked = MaskedSkip {
         kept: 7,
         internal: "secret".to_string(),
@@ -73,7 +72,6 @@ struct PlainSplitSkip {
 
 #[test]
 fn skip_serializing_and_deserializing_split() {
-    common::init_once();
     let masked = MaskedSplitSkip {
         always: 1,
         de_only: 2,
@@ -123,7 +121,6 @@ enum PlainEnum {
 
 #[test]
 fn skip_in_struct_variant_matches_plain_derive() {
-    common::init_once();
     let masked = MaskedEnum::Channel {
         endpoint: "e".to_string(),
         cached: 99,

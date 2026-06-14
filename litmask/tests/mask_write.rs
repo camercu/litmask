@@ -16,7 +16,6 @@ use litmask::{mask_write, mask_writeln};
 
 #[test]
 fn mask_writeln_fmt_no_args() {
-    common::init_once();
     let mut buf = String::new();
     mask_writeln!(buf).unwrap();
     assert_eq!(buf, "\n");
@@ -24,7 +23,6 @@ fn mask_writeln_fmt_no_args() {
 
 #[test]
 fn mask_writeln_fmt_static_text() {
-    common::init_once();
     let mut buf = String::new();
     mask_writeln!(buf, "hello world").unwrap();
     assert_eq!(buf, "hello world\n");
@@ -32,7 +30,6 @@ fn mask_writeln_fmt_static_text() {
 
 #[test]
 fn mask_writeln_fmt_positional_args() {
-    common::init_once();
     let mut buf = String::new();
     mask_writeln!(buf, "x={}, y={:.2}", 1, 2.5).unwrap();
 
@@ -43,7 +40,6 @@ fn mask_writeln_fmt_positional_args() {
 
 #[test]
 fn mask_writeln_fmt_named_args() {
-    common::init_once();
     let mut buf = String::new();
     mask_writeln!(buf, "{x} {y}", x = 1, y = 2).unwrap();
     assert_eq!(buf, "1 2\n");
@@ -51,7 +47,6 @@ fn mask_writeln_fmt_named_args() {
 
 #[test]
 fn mask_writeln_fmt_implicit_capture() {
-    common::init_once();
     let var = 42;
     let mut buf = String::new();
     mask_writeln!(buf, "{var}").unwrap();
@@ -60,7 +55,6 @@ fn mask_writeln_fmt_implicit_capture() {
 
 #[test]
 fn mask_writeln_fmt_debug_specifier() {
-    common::init_once();
     let mut buf = String::new();
     mask_writeln!(buf, "v={:?}", vec![1, 2, 3]).unwrap();
 
@@ -73,7 +67,6 @@ fn mask_writeln_fmt_debug_specifier() {
 
 #[test]
 fn mask_write_fmt_static_text() {
-    common::init_once();
     let mut buf = String::new();
     mask_write!(buf, "hello").unwrap();
     assert_eq!(buf, "hello");
@@ -81,7 +74,6 @@ fn mask_write_fmt_static_text() {
 
 #[test]
 fn mask_write_fmt_positional_args() {
-    common::init_once();
     let mut buf = String::new();
     mask_write!(buf, "x={}, y={}", 1, 2).unwrap();
     assert_eq!(buf, "x=1, y=2");
@@ -89,7 +81,6 @@ fn mask_write_fmt_positional_args() {
 
 #[test]
 fn mask_write_fmt_named_args() {
-    common::init_once();
     let mut buf = String::new();
     mask_write!(buf, "{name}", name = "test").unwrap();
     assert_eq!(buf, "test");
@@ -97,7 +88,6 @@ fn mask_write_fmt_named_args() {
 
 #[test]
 fn mask_write_fmt_mixed_positional_and_named() {
-    common::init_once();
     let mut buf = String::new();
     mask_write!(buf, "{x} {} {y}", "pos", x = 1, y = 2).unwrap();
     assert_eq!(buf, "1 pos 2");
@@ -105,7 +95,6 @@ fn mask_write_fmt_mixed_positional_and_named() {
 
 #[test]
 fn mask_write_fmt_empty_template() {
-    common::init_once();
     let mut buf = String::new();
     mask_write!(buf, "").unwrap();
     assert_eq!(buf, "");
@@ -116,7 +105,6 @@ fn mask_write_fmt_empty_template() {
 #[test]
 fn mask_write_io_vec_buffer() {
     use std::io::Write as _;
-    common::init_once();
     let mut buf: Vec<u8> = Vec::new();
     mask_write!(buf, "bytes={}", 42).unwrap();
     assert_eq!(buf, b"bytes=42");
@@ -125,7 +113,6 @@ fn mask_write_io_vec_buffer() {
 #[test]
 fn mask_writeln_io_vec_buffer() {
     use std::io::Write as _;
-    common::init_once();
     let mut buf: Vec<u8> = Vec::new();
     mask_writeln!(buf, "line={}", 1).unwrap();
     assert_eq!(buf, b"line=1\n");
@@ -134,7 +121,6 @@ fn mask_writeln_io_vec_buffer() {
 #[test]
 fn mask_writeln_io_no_args() {
     use std::io::Write as _;
-    common::init_once();
     let mut buf: Vec<u8> = Vec::new();
     mask_writeln!(buf).unwrap();
     assert_eq!(buf, b"\n");
@@ -144,7 +130,6 @@ fn mask_writeln_io_no_args() {
 
 #[test]
 fn mask_writeln_fmt_empty_template() {
-    common::init_once();
     let mut buf = String::new();
     mask_writeln!(buf, "").unwrap();
     assert_eq!(buf, "\n");
@@ -160,14 +145,12 @@ impl std::fmt::Write for FailWriter {
 
 #[test]
 fn mask_write_fmt_fail_writer_propagates_error() {
-    common::init_once();
     let result = mask_write!(FailWriter, "hello");
     assert!(result.is_err());
 }
 
 #[test]
 fn mask_writeln_fmt_fail_writer_propagates_error() {
-    common::init_once();
     let result = mask_writeln!(FailWriter, "hello");
     assert!(result.is_err());
 }

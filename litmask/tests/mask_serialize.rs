@@ -25,7 +25,6 @@ struct PlainConfig {
 
 #[test]
 fn mask_serialize_json_matches_plain_derive() {
-    common::init_once();
     let masked = MaskedConfig {
         license_server_url: "https://license.example.com".to_string(),
         activation_count: 7,
@@ -57,7 +56,6 @@ struct PlainEnvelope<T> {
 
 #[test]
 fn mask_serialize_generic_struct_matches_plain_derive() {
-    common::init_once();
     let masked = MaskedEnvelope {
         sequence_marker_zzyzx: 42,
         payload: vec!["a".to_string(), "b".to_string()],
@@ -80,7 +78,6 @@ struct MaskedBorrowed<'a, T> {
 
 #[test]
 fn mask_serialize_lifetime_and_type_params() {
-    common::init_once();
     let masked = MaskedBorrowed {
         borrowed_label_qwxz: "tag",
         payload: 9u8,
@@ -103,7 +100,6 @@ struct PlainRawIdent {
 
 #[test]
 fn mask_serialize_raw_ident_field_unraws_like_plain_derive() {
-    common::init_once();
     let masked = MaskedRawIdent {
         r#type: "beacon".to_string(),
     };
@@ -126,7 +122,6 @@ struct PlainUnitBeacon;
 
 #[test]
 fn mask_serialize_unit_struct_matches_plain_derive() {
-    common::init_once();
     let masked_json =
         serde_json::to_string(&MaskedUnitBeacon).expect("masked serialization failed");
     assert_eq!(
@@ -144,7 +139,6 @@ struct PlainToken(String);
 
 #[test]
 fn mask_serialize_newtype_struct_matches_plain_derive() {
-    common::init_once();
     let masked_json = serde_json::to_string(&MaskedToken("opaque-handle".to_string()))
         .expect("masked serialization failed");
     assert_eq!(
@@ -163,7 +157,6 @@ struct PlainBeaconPair(String, u32);
 
 #[test]
 fn mask_serialize_tuple_struct_matches_plain_derive() {
-    common::init_once();
     let masked_json = serde_json::to_string(&MaskedBeaconPair("relay-7".to_string(), 31))
         .expect("masked serialization failed");
     assert_eq!(
@@ -182,7 +175,6 @@ struct PlainEmptyTuple();
 
 #[test]
 fn mask_serialize_empty_tuple_struct_matches_plain_derive() {
-    common::init_once();
     assert_eq!(
         serde_json::to_string(&MaskedEmptyTuple()).expect("masked serialization failed"),
         serde_json::to_string(&PlainEmptyTuple()).expect("plain serialization failed"),
@@ -194,7 +186,6 @@ struct MaskedGenericWrapper<T>(T);
 
 #[test]
 fn mask_serialize_generic_newtype_struct() {
-    common::init_once();
     assert_eq!(
         serde_json::to_string(&MaskedGenericWrapper(vec![1u8, 2]))
             .expect("masked serialization failed"),
@@ -207,7 +198,6 @@ struct MaskedEmpty {}
 
 #[test]
 fn mask_serialize_empty_struct_serializes_as_empty_object() {
-    common::init_once();
     assert_eq!(
         serde_json::to_string(&MaskedEmpty {}).expect("masked serialization failed"),
         "{}"
@@ -265,7 +255,6 @@ fn channel_state_pairs() -> Vec<(MaskedChannelState, PlainChannelState)> {
 
 #[test]
 fn mask_serialize_enum_variants_match_plain_derive_json() {
-    common::init_once();
     for (masked, plain) in channel_state_pairs() {
         assert_eq!(
             serde_json::to_string(&masked).expect("masked serialization failed"),
@@ -279,7 +268,6 @@ fn mask_serialize_enum_variants_match_plain_derive_json() {
 /// declaration-order variant indices (§E.2.1).
 #[test]
 fn mask_serialize_enum_variants_match_plain_derive_postcard() {
-    common::init_once();
     for (masked, plain) in channel_state_pairs() {
         assert_eq!(
             postcard::to_stdvec(&masked).expect("masked serialization failed"),
@@ -307,7 +295,6 @@ enum PlainEmptyVariants {
 
 #[test]
 fn mask_serialize_empty_variants_match_plain_derive() {
-    common::init_once();
     let pairs = [
         (MaskedEmptyVariants::BareDrop, PlainEmptyVariants::BareDrop),
         (
@@ -343,7 +330,6 @@ enum PlainRawVariant {
 
 #[test]
 fn mask_serialize_raw_ident_variant_unraws_like_plain_derive() {
-    common::init_once();
     let masked_json = serde_json::to_string(&MaskedRawVariant::r#Loop { r#fn: 1 })
         .expect("masked serialization failed");
     assert_eq!(
@@ -361,7 +347,6 @@ enum MaskedGenericEvent<T> {
 
 #[test]
 fn mask_serialize_generic_enum() {
-    common::init_once();
     assert_eq!(
         serde_json::to_string(&MaskedGenericEvent::Payload(vec![7u8]))
             .expect("masked serialization failed"),
@@ -382,7 +367,6 @@ fn mask_serialize_uninhabited_enum_derives() {
 
 #[test]
 fn mask_serialize_repeat_calls_are_stable() {
-    common::init_once();
     let masked = MaskedConfig {
         license_server_url: "u".to_string(),
         activation_count: 1,
@@ -412,7 +396,6 @@ mod plain {
 
 #[test]
 fn mask_serialize_combines_with_mask_debug_on_one_type() {
-    common::init_once();
     let masked = MaskedCombined {
         relay_endpoint_qwxz: "wss://relay.example".to_string(),
         retry_budget: 3,

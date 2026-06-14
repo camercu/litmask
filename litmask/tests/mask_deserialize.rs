@@ -44,7 +44,6 @@ mod plain {
 
 #[test]
 fn mask_deserialize_json_matches_plain_derive() {
-    common::init_once();
     let input = r#"{"license_server_url":"https://license.example.com","activation_count":7}"#;
     let masked: DeConfig = serde_json::from_str(input).expect("masked deserialization failed");
     let plain: plain::DeConfig = serde_json::from_str(input).expect("plain deserialization failed");
@@ -56,7 +55,6 @@ fn mask_deserialize_json_matches_plain_derive() {
 /// — same entry point non-self-describing formats use.
 #[test]
 fn mask_deserialize_json_array_form_matches_plain_derive() {
-    common::init_once();
     let input = r#"["https://license.example.com",7]"#;
     let masked: DeConfig = serde_json::from_str(input).expect("masked deserialization failed");
     assert_eq!(masked.license_server_url, "https://license.example.com");
@@ -68,7 +66,6 @@ fn mask_deserialize_json_array_form_matches_plain_derive() {
 /// path preserves field declaration order.
 #[test]
 fn mask_deserialize_postcard_round_trip() {
-    common::init_once();
     let plain = plain::DeConfig {
         license_server_url: "https://license.example.com".to_string(),
         activation_count: 7,
@@ -82,7 +79,6 @@ fn mask_deserialize_postcard_round_trip() {
 /// Default serde behavior: unknown fields are skipped, not errors.
 #[test]
 fn mask_deserialize_ignores_unknown_fields_like_plain_derive() {
-    common::init_once();
     let input = r#"{"license_server_url":"u","unknown_extra":[1,2],"activation_count":1}"#;
     let masked: DeConfig = serde_json::from_str(input).expect("masked deserialization failed");
     let plain: plain::DeConfig = serde_json::from_str(input).expect("plain deserialization failed");
@@ -91,7 +87,6 @@ fn mask_deserialize_ignores_unknown_fields_like_plain_derive() {
 
 #[test]
 fn mask_deserialize_missing_field_error_matches_plain_derive() {
-    common::init_once();
     let input = r#"{"activation_count":1}"#;
     let masked_err = serde_json::from_str::<DeConfig>(input)
         .expect_err("masked deserialization must fail")
@@ -108,7 +103,6 @@ fn mask_deserialize_missing_field_error_matches_plain_derive() {
 
 #[test]
 fn mask_deserialize_duplicate_field_error_matches_plain_derive() {
-    common::init_once();
     let input = r#"{"license_server_url":"a","license_server_url":"b","activation_count":1}"#;
     let masked_err = serde_json::from_str::<DeConfig>(input)
         .expect_err("masked deserialization must fail")
@@ -128,7 +122,6 @@ fn mask_deserialize_duplicate_field_error_matches_plain_derive() {
 /// reproduce the type name in the message at runtime.
 #[test]
 fn mask_deserialize_invalid_length_error_matches_plain_derive() {
-    common::init_once();
     let input = r#"["https://license.example.com"]"#;
     let masked_err = serde_json::from_str::<DeConfig>(input)
         .expect_err("masked deserialization must fail")
@@ -147,7 +140,6 @@ fn mask_deserialize_invalid_length_error_matches_plain_derive() {
 /// ("struct `DeConfig`"), which the masked derive renders at runtime.
 #[test]
 fn mask_deserialize_wrong_type_error_matches_plain_derive() {
-    common::init_once();
     let input = "3";
     let masked_err = serde_json::from_str::<DeConfig>(input)
         .expect_err("masked deserialization must fail")
@@ -166,7 +158,6 @@ fn mask_deserialize_wrong_type_error_matches_plain_derive() {
 /// `None`, not a `missing field` error.
 #[test]
 fn mask_deserialize_missing_option_field_is_none() {
-    common::init_once();
     let input = r#"{"relay_endpoint":"wss://relay.example"}"#;
     let masked: DeOptional = serde_json::from_str(input).expect("masked deserialization failed");
     let plain: plain::DeOptional =
@@ -203,7 +194,6 @@ mod plain_shapes {
 
 #[test]
 fn mask_deserialize_unit_struct_matches_plain_derive() {
-    common::init_once();
     let masked: DeUnitBeacon = serde_json::from_str("null").expect("masked failed");
     assert_eq!(masked, DeUnitBeacon);
     let masked_err = serde_json::from_str::<DeUnitBeacon>("3")
@@ -221,7 +211,6 @@ fn mask_deserialize_unit_struct_matches_plain_derive() {
 
 #[test]
 fn mask_deserialize_newtype_struct_matches_plain_derive() {
-    common::init_once();
     let masked: DeToken = serde_json::from_str(r#""opaque-handle""#).expect("masked failed");
     assert_eq!(masked, DeToken("opaque-handle".to_string()));
     // serde_json's `deserialize_newtype_struct` delegates straight to
@@ -239,14 +228,12 @@ fn mask_deserialize_newtype_struct_matches_plain_derive() {
 
 #[test]
 fn mask_deserialize_tuple_struct_matches_plain_derive() {
-    common::init_once();
     let masked: DeBeaconPair = serde_json::from_str(r#"["relay-7",31]"#).expect("masked failed");
     assert_eq!(masked, DeBeaconPair("relay-7".to_string(), 31));
 }
 
 #[test]
 fn mask_deserialize_tuple_struct_postcard_round_trip() {
-    common::init_once();
     let bytes = postcard::to_stdvec(&plain_shapes::DeBeaconPair("relay-7".to_string(), 31))
         .expect("plain serialization failed");
     let masked: DeBeaconPair = postcard::from_bytes(&bytes).expect("masked failed");
@@ -255,7 +242,6 @@ fn mask_deserialize_tuple_struct_postcard_round_trip() {
 
 #[test]
 fn mask_deserialize_tuple_struct_invalid_length_error_matches_plain_derive() {
-    common::init_once();
     let input = r#"["relay-7"]"#;
     let masked_err = serde_json::from_str::<DeBeaconPair>(input)
         .expect_err("masked must fail")
@@ -272,7 +258,6 @@ fn mask_deserialize_tuple_struct_invalid_length_error_matches_plain_derive() {
 
 #[test]
 fn mask_deserialize_empty_tuple_struct_matches_plain_derive() {
-    common::init_once();
     let masked: DeEmptyTuple = serde_json::from_str("[]").expect("masked failed");
     assert_eq!(masked, DeEmptyTuple());
     let plain: plain_shapes::DeEmptyTuple = serde_json::from_str("[]").expect("plain failed");
@@ -341,7 +326,6 @@ fn channel_state_json_fixtures() -> Vec<(&'static str, DeChannelState)> {
 
 #[test]
 fn mask_deserialize_enum_variants_match_plain_derive_json() {
-    common::init_once();
     for (input, expected) in channel_state_json_fixtures() {
         let masked: DeChannelState =
             serde_json::from_str(input).unwrap_or_else(|e| panic!("masked failed on {input}: {e}"));
@@ -353,7 +337,6 @@ fn mask_deserialize_enum_variants_match_plain_derive_json() {
 /// round-trip proves declaration-order variant indices are preserved.
 #[test]
 fn mask_deserialize_enum_postcard_round_trip() {
-    common::init_once();
     let plains = [
         plain_enums::DeChannelState::DormantUntilDusk,
         plain_enums::DeChannelState::RelayHandle("relay-9".to_string()),
@@ -374,7 +357,6 @@ fn mask_deserialize_enum_postcard_round_trip() {
 
 #[test]
 fn mask_deserialize_unknown_variant_error_matches_plain_derive() {
-    common::init_once();
     let input = r#"{"NoSuchVariant":1}"#;
     let masked_err = serde_json::from_str::<DeChannelState>(input)
         .expect_err("masked must fail")
@@ -395,7 +377,6 @@ fn mask_deserialize_unknown_variant_error_matches_plain_derive() {
 /// enum and must produce the plain derive's `invalid_value` text.
 #[test]
 fn mask_deserialize_out_of_range_variant_index_error_matches_plain_derive() {
-    common::init_once();
     let bytes = [9u8];
     let masked_err = postcard::from_bytes::<DeChannelState>(&bytes)
         .expect_err("masked must fail")
@@ -408,7 +389,6 @@ fn mask_deserialize_out_of_range_variant_index_error_matches_plain_derive() {
 
 #[test]
 fn mask_deserialize_tuple_variant_invalid_length_error_matches_plain_derive() {
-    common::init_once();
     let input = r#"{"JitterWindow":[50]}"#;
     let masked_err = serde_json::from_str::<DeChannelState>(input)
         .expect_err("masked must fail")
@@ -425,7 +405,6 @@ fn mask_deserialize_tuple_variant_invalid_length_error_matches_plain_derive() {
 
 #[test]
 fn mask_deserialize_struct_variant_missing_field_error_matches_plain_derive() {
-    common::init_once();
     let input = r#"{"ActiveBeacon":{"burst_quota":4}}"#;
     let masked_err = serde_json::from_str::<DeChannelState>(input)
         .expect_err("masked must fail")
@@ -442,7 +421,6 @@ fn mask_deserialize_struct_variant_missing_field_error_matches_plain_derive() {
 
 #[test]
 fn mask_deserialize_enum_wrong_type_error_matches_plain_derive() {
-    common::init_once();
     let input = "3";
     let masked_err = serde_json::from_str::<DeChannelState>(input)
         .expect_err("masked must fail")
@@ -455,7 +433,6 @@ fn mask_deserialize_enum_wrong_type_error_matches_plain_derive() {
 
 #[test]
 fn mask_deserialize_empty_variants_match_plain_derive() {
-    common::init_once();
     let pairs = [
         (r#""BareDrop""#, DeEmptyVariants::BareDrop),
         (r#"{"HollowTuple":[]}"#, DeEmptyVariants::HollowTuple()),
@@ -541,7 +518,6 @@ struct DeHygiene {
 
 #[test]
 fn mask_deserialize_generic_struct_round_trips() {
-    common::init_once();
     let input = r#"{"sequence_marker":42,"payload":["a","b"]}"#;
     let masked: DeEnvelope<Vec<String>> = serde_json::from_str(input).expect("masked failed");
     assert_eq!(masked.sequence_marker, 42);
@@ -550,14 +526,12 @@ fn mask_deserialize_generic_struct_round_trips() {
 
 #[test]
 fn mask_deserialize_generic_newtype_round_trips() {
-    common::init_once();
     let masked: DeGenericWrapper<Vec<u8>> = serde_json::from_str("[1,2]").expect("masked failed");
     assert_eq!(masked, DeGenericWrapper(vec![1u8, 2]));
 }
 
 #[test]
 fn mask_deserialize_generic_enum_round_trips() {
-    common::init_once();
     let masked: DeGenericEvent<Vec<u8>> =
         serde_json::from_str(r#"{"Payload":[7]}"#).expect("masked failed");
     assert_eq!(masked, DeGenericEvent::Payload(vec![7u8]));
@@ -565,7 +539,6 @@ fn mask_deserialize_generic_enum_round_trips() {
 
 #[test]
 fn mask_deserialize_borrowed_str_field_round_trips() {
-    common::init_once();
     let input = r#"{"borrowed_label":"tag","payload":9}"#;
     let masked: DeBorrowed<'_> = serde_json::from_str(input).expect("masked failed");
     assert_eq!(masked.borrowed_label, "tag");
@@ -574,7 +547,6 @@ fn mask_deserialize_borrowed_str_field_round_trips() {
 
 #[test]
 fn mask_deserialize_borrowed_bytes_field_round_trips() {
-    common::init_once();
     // postcard borrows `&[u8]` zero-copy from the input buffer; this
     // only compiles if the derive adds the `'de: 'a` bound for the
     // `&[u8]` field (the `is_slice_u8` borrow-detection branch).
@@ -590,7 +562,6 @@ fn mask_deserialize_borrowed_bytes_field_round_trips() {
 
 #[test]
 fn mask_deserialize_option_borrowed_str_field_round_trips() {
-    common::init_once();
     // Present borrows `&str` through the `Option`; absent resolves the
     // missing field to `None`. Both rely on the lifetime being detected
     // through the `Option` wrapper.
@@ -618,21 +589,18 @@ fn mask_deserialize_option_borrowed_str_field_round_trips() {
 /// matching the plain derive.
 #[test]
 fn mask_deserialize_raw_ident_field_unraws_like_plain_derive() {
-    common::init_once();
     let masked: DeRawIdent = serde_json::from_str(r#"{"type":"beacon"}"#).expect("masked failed");
     assert_eq!(masked.r#type, "beacon");
 }
 
 #[test]
 fn mask_deserialize_raw_ident_variant_unraws_like_plain_derive() {
-    common::init_once();
     let masked: DeRawVariant = serde_json::from_str(r#"{"Loop":{"fn":1}}"#).expect("masked failed");
     assert_eq!(masked, DeRawVariant::r#Loop { r#fn: 1 });
 }
 
 #[test]
 fn mask_deserialize_hygiene_against_user_field_names() {
-    common::init_once();
     let input = r#"{"__seq":1,"__map":2,"__value":3,"__field0":4,"deserializer":5}"#;
     let masked: DeHygiene = serde_json::from_str(input).expect("masked failed");
     assert_eq!(
@@ -657,7 +625,6 @@ struct DeCombined {
 
 #[test]
 fn mask_deserialize_round_trips_mask_serialize_output() {
-    common::init_once();
     let original = DeCombined {
         relay_endpoint: "wss://relay.example".to_string(),
         retry_budget: 3,
@@ -672,7 +639,6 @@ fn mask_deserialize_round_trips_mask_serialize_output() {
 
 #[test]
 fn mask_deserialize_repeat_calls_are_stable() {
-    common::init_once();
     let input = r#"{"license_server_url":"u","activation_count":1}"#;
     // Second call exercises the cached-name path (OnceLock hit).
     let first: DeConfig = serde_json::from_str(input).expect("first deserialization failed");

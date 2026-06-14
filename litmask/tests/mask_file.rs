@@ -10,7 +10,6 @@ use litmask::mask_file;
 
 #[test]
 fn mask_file_matches_stdlib_file() {
-    common::init_once();
     let s: String = mask_file!();
     assert_eq!(s, file!());
 }
