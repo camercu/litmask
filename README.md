@@ -13,12 +13,10 @@ macros, layered key management, `no_std` ready.
 ```rust
 use litmask::{mask, mask_println};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    litmask::init!()?; // call once before any mask!
+fn main() {
     // proprietary LLM system prompt — present at runtime, absent from the binary's `strings`
     let system_prompt = mask!("You're ACME's pricing oracle; channel Warren Buffett.");
     mask_println!("prompt loaded: {system_prompt}"); // mask_println! hides its input too
-    Ok(())
 }
 ```
 
@@ -61,12 +59,11 @@ fn main() { litmask_build::emit(); }
 // src/main.rs
 use litmask::mask;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    litmask::init!()?; // call once before any mask!
+fn main() {
     // `mask!` returns an owned String; the literal never lands in the binary.
+    // The keyless Embedded tier self-initializes on this first `mask!`.
     let secret_sauce = mask!("smoked paprika + maple + 18h sous-vide");
     println!("{secret_sauce}");
-    Ok(())
 }
 ```
 
@@ -75,12 +72,15 @@ cargo build
 cargo run    # no key to deliver — the default Embedded tier is keyless
 ```
 
-The zero-config default is keyless: `init!()` uses `EmbeddedProvider`, so
-a build runs with nothing to provision. That buys `strings(1)` resistance,
-not secrecy — the key is recoverable from the artifact. To keep the
-`unlock_key` out of the binary, source it at runtime with a
-[`KeyProvider`](#key-providers) and `init!(provider)` (e.g. `EnvVarProvider`
-reading `LITMASK_UNLOCK_KEY`).
+The zero-config default is keyless: the Embedded tier self-initializes on
+the first `mask!()` (deriving the key from the wrapper nonce via
+`EmbeddedProvider`), so a build runs with nothing to provision. That buys
+`strings(1)` resistance, not secrecy — the key is recoverable from the
+artifact. To keep the `unlock_key` out of the binary, source it at runtime
+with a [`KeyProvider`](#key-providers) and `init!(provider)` (e.g.
+`EnvVarProvider` reading `LITMASK_UNLOCK_KEY`). That same `init!(provider)`
+also **governs** every transitive masking crate under a uniform seal — one
+key opens the whole dependency graph.
 
 ## How it works
 
@@ -93,11 +93,11 @@ reading `LITMASK_UNLOCK_KEY`).
 2. **Compile** — each `mask!` literal is AEAD-encrypted during macro
    expansion and the ciphertext is embedded in the binary as `&[u8]`. The
    plaintext never appears in the output binary.
-3. **Run** — `init!()` unwraps the `mask_key` using an `unlock_key`. The
-   default keyless `EmbeddedProvider` recomputes it from the wrapper
-   nonce; higher tiers source it at runtime via a
-   [`KeyProvider`](#key-providers) and `init!(provider)`. `mask!` then decrypts
-   each blob on demand.
+3. **Run** — the `mask_key` is unwrapped using an `unlock_key`. The default
+   keyless `EmbeddedProvider` recomputes it from the wrapper nonce on the
+   first `mask!()` (no `init!` needed); higher tiers source it at runtime
+   via a [`KeyProvider`](#key-providers) and a governing `init!(provider)`.
+   `mask!` then decrypts each blob on demand.
 
 Above the Embedded floor, the `unlock_key` is the only secret that lives
 outside the binary, so key management reduces to _how you deliver the

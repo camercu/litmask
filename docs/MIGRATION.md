@@ -185,12 +185,14 @@ litmask's keyless Embedded default also needs no runtime key; sourcing
    seal under `LITMASK_UNLOCK_KEY` (or `LITMASK_MACHINE_ID`) at build
    time and re-supply that factor at runtime.
 
-3. **Call `init!()` before `mask!()`** — on an Embedded-sealed build
-   litmask lazily initializes on first `mask!` call (higher tiers
-   require explicit init), but explicit init surfaces errors early:
+3. **Initialize the runtime** — an Embedded-sealed build needs no `init!`
+   (it lazily initializes on the first `mask!` call). Higher tiers require
+   a governing `init!(provider)` (or `init!(bind_to_machine)`) before the
+   first `mask!`; it also surfaces unlock errors early and governs every
+   transitive masking crate under a uniform seal:
 
    ```rust
-   litmask::init!().expect("litmask init");
+   litmask::init!(litmask::EnvVarProvider::default()).expect("litmask init");
    ```
 
 4. **`mask!` returns owned types** — `String`, `Vec<u8>`, or `CString`.

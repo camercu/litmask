@@ -39,11 +39,15 @@ Tool versions pinned in `.tool-versions` — single source of truth.
 - `litmask-macros` reads the key/seed artifacts from the caller's
   `OUT_DIR` at macro expansion time, encrypts each literal, embeds
   ciphertext as `&[u8]` in the output.
-- `litmask` runtime: `init!()` / `init!(provider)` / `init!(bind_to_machine)` /
-  `init!(bind_to_machine + provider)` decrypt `mask_key` from the embedded
-  wrapper using `unlock_key` from the tier's `KeyProvider`; the form is
-  cross-checked against the sealed tier at compile time. `mask!()`
-  decrypts individual blobs using `mask_key`.
+- `litmask` runtime (ADR-0001 governing model): `init!(provider)` /
+  `init!(bind_to_machine)` / `init!(bind_to_machine + provider)` install a
+  process-global _governing provider_ (`runtime/governor.rs`) and eagerly
+  unlock the host's own wrapper through it; the lazy path then unlocks every
+  other crate's wrapper through the same governor (Rule X), while the keyless
+  Embedded tier self-initializes on the first `mask!()` (no bare `init!()`).
+  The form is cross-checked against the sealed tier at compile time.
+  Decrypted `mask_key`s live in the per-wrapper `runtime/mask_key_store.rs`
+  cache; `mask!()` decrypts individual blobs using the wrapper's `mask_key`.
 - `litmask-cli`: `keygen` mints unlock material; `show-machine-id` prints
   the host machine-id token used to build-seal the Machine tier. There is
   no post-build rebind step.

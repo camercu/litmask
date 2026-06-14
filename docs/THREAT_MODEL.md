@@ -91,10 +91,11 @@ prefer honesty over false confidence.
 
 ## Init-failure plaintext limitation
 
-After `litmask::init!()` fails, `mask!()` cannot be used because
-`mask_key` is undecrypted. Any error message the application displays
-about the failure must use plaintext strings, opaque error codes, or
-sysexits.
+After a governing `litmask::init!(provider)` fails, `mask!()` cannot be
+used because `mask_key` is undecrypted. Any error message the application
+displays about the failure must use plaintext strings, opaque error codes,
+or sysexits. (The keyless Embedded tier has no fallible init — it lazily
+self-initializes — so this applies to the External / Machine tiers.)
 
 This is an inherent property: any decryption mechanism for init-failure
 messages would require a second always-available key, which would itself
@@ -103,7 +104,7 @@ be embedded as plaintext — defeating the purpose.
 The recommended pattern for minimal plaintext:
 
 ```rust
-if let Err(e) = litmask::init!() {
+if let Err(e) = litmask::init!(litmask::EnvVarProvider::default()) {
     std::process::exit(e.sysexit_code());
 }
 ```
