@@ -45,4 +45,13 @@ fn governor_unlocks_a_second_crates_wrapper() {
         __decrypt(&lib_blob, &lib_wrapper, "external"),
         b"transitive-secret"
     );
+
+    // Repeat governing init is idempotent: the first governor wins and the
+    // host wrapper is already cached, so a second call (even with a wrong
+    // key) returns Ok without re-deriving or replacing the governor.
+    __govern_external(FixedKey([0xFFu8; KEY_LEN]), &host_wrapper).expect("repeat govern is Ok");
+    assert_eq!(
+        __decrypt(&lib_blob, &lib_wrapper, "external"),
+        b"transitive-secret"
+    );
 }
