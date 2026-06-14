@@ -148,14 +148,10 @@ _Avoid_: "lock to machine", "machine_id form".
 **Build helper** (`litmask_build::emit()`): Invoked from the
 downstream user's `build.rs`. Generates the **seed**, derives the
 **mask key** and **nonces** from it and the **unlock key** from the
-wrapper **nonce**, encrypts the **mask key** into the **wrapper**, writes
-artifacts to `OUT_DIR` (and, Embedded tier only, `litmask.config`).
-
-**`litmask.config`**: TOML diagnostic artifact written at build time by
-the **Embedded** tier only. Contains that tier's nonce-derived
-**unlock key**; the runtime recomputes the same key from the public
-wrapper nonce, so the file is a tooling convenience, not a runtime
-input. Still secret; do not commit.
+wrapper **nonce**, encrypts the **mask key** into the **wrapper**, and
+writes the key/seed/wrapper artifacts to `OUT_DIR`. No **unlock key** is
+written to disk — the runtime re-derives (Embedded) or re-sources (keyed
+tiers) it.
 
 **Seal tier**: How the **unlock key** is sourced for a build, in
 ascending strength: **Embedded** (default — nonce-derived, keyless
@@ -331,10 +327,7 @@ fixes the key regime) and **bind** (machine factor).
   implementation that proves the architecture. It is **not** a litmask
   domain term and carries no meaning for a future reader. The file
   was renamed to `mask_round_trip.rs`, anchoring on the **mask**
-  domain verb and the standard testing concept of a round-trip. The
-  two auxiliary tests in the same file (`litmask.config` schema,
-  `KeyProvider` object-safety) remain there until a third test in
-  either category justifies splitting.
+  domain verb and the standard testing concept of a round-trip.
 
 - **"Key"** — used for the **mask key**, the **unlock key**, the
   **seed**, and even for the AEAD-internal `Key` type. Always

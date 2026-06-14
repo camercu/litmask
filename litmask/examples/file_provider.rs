@@ -2,19 +2,21 @@
 //! filesystem path instead of an environment variable.
 //!
 //! ```sh
-//! cargo build --release --example file_provider
-//! # 1. Materialize a key file holding the build's unlock_key.
-//! awk -F'"' '/^unlock_key/ {print $2}' target/release/litmask.config \
-//!     > /tmp/litmask_unlock.key
-//! # 2. Run, pointing the example at that file.
+//! # 1. Mint unlock material and seal the build under it (External tier).
+//! KEY=$(cargo run -q -p litmask-cli -- keygen)
+//! LITMASK_UNLOCK_KEY="$KEY" \
+//!     cargo build --release --features provider-examples --example file_provider
+//! # 2. Write the SAME material to a key file and run against it.
+//! printf '%s' "$KEY" > /tmp/litmask_unlock.key
 //! LITMASK_UNLOCK_KEY_FILE=/tmp/litmask_unlock.key \
 //!     ./target/release/examples/file_provider
 //! # prints the decrypted Wilde quote at runtime
 //! ```
 //!
-//! Run the prebuilt binary directly, not `cargo run` — under the
-//! release profile that reruns `build.rs`, regenerating the seed and
-//! desyncing `litmask.config` from the binary. See `hello_world.rs`.
+//! Run the prebuilt binary directly, not `cargo run` — under the release
+//! profile that reruns `build.rs`, regenerating the seed and resealing the
+//! wrapper, so a fresh build no longer matches the key you sealed under.
+//! See `hello_world.rs`.
 //!
 //! Verify the masked plaintext is absent from `.rodata` the same way
 //! `hello_world.rs` does:
@@ -35,15 +37,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `FileProvider::new(path)` reads the file bytes as raw key
     // material of any length and derives the `unlock_key` via the
     // shared KDF — the same normalization the env channel applies, so
-    // the recipe above can write the build's `unlock_key` straight out
-    // of `litmask.config` with no encoding step.
-    // The justfile's `test-examples` recipe sources the key from
-    // `target/<profile>/litmask.config` and exports
-    // `LITMASK_UNLOCK_KEY` to the example's environment. To keep
-    // this example self-contained when run via `cargo run
-    // --example file_provider` without explicit setup, fall back
-    // to writing that env-var value into a temp file and
-    // pointing the provider at it.
+    // the key file just holds the same material the build was sealed
+    // under, with no encoding step.
+    // The `test-examples` script mints material with `litmask keygen`
+    // and exports `LITMASK_UNLOCK_KEY` to the example's environment. To
+    // keep this example self-contained when run via `cargo run
+    // --example file_provider`, fall back to writing that env-var value
+    // into a temp file and pointing the provider at it.
     let path = if let Ok(p) = std::env::var("LITMASK_UNLOCK_KEY_FILE") {
         p
     } else {

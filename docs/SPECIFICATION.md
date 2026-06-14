@@ -129,7 +129,7 @@ else is operational maturity (key management, deployment story, tooling).
 | Crate | Type | Purpose |
 |---|---|---|
 | `litmask` | library | Runtime, proc-macro re-exports, key provider trait and built-ins |
-| `litmask-build` | library (build-dep) | `build.rs` helper for compile-time key generation and tier sealing; writes `litmask.config` (Embedded tier only, §1.7.4) |
+| `litmask-build` | library (build-dep) | `build.rs` helper for compile-time key generation and tier sealing; writes the seed/key/wrapper blobs to `$OUT_DIR` |
 | `litmask-cli` | binary | `keygen` (random unlock key / seed) and `show-machine-id` (self-checking host-id token) — generate/read-only tools for build-time sealing |
 
 The user-facing API ships as a single `litmask` crate. Internally, Rust
@@ -180,8 +180,7 @@ constants and utilities used by both the runtime and CLI crates.
        whitelisted onto `rustc-env`; no secret is ever emitted this way.
      - `cargo:rerun-if-env-changed` for the tier's key-source env vars
        (`LITMASK_UNLOCK_KEY`, `LITMASK_MACHINE_ID`).
-   - Writes `litmask.config` (schema in §1.7.4) to the build profile
-     directory (Embedded tier only, §1.7.4).
+   - Never writes the derived `unlock_key` to disk (§1.7.4).
    - In debug profile, writes `target/<profile>/litmask_seed.bin` for
      incremental build stability.
    - Never prints the seed, `unlock_key`, `mask_key`, or any secret to the
@@ -533,12 +532,12 @@ see §2.5.4.
 
 #### §1.6.3 Key encoding
 
-`unlock_key` and `mask_key` are 32 raw bytes internally. The derived key at
-rest in `litmask.config` (the Embedded-tier `unlock_key`) uses **base64url
+`unlock_key` and `mask_key` are 32 raw bytes internally. Where a key is
+encoded for transport — `litmask keygen`'s output and the canonical
+high-entropy form of `LITMASK_UNLOCK_KEY` material — it uses **base64url
 without padding** (RFC 4648 §5); 32 bytes encodes to 43 characters, which
-is what `UnlockKey::from_base64url` parses. Only the Embedded tier writes
-this file, and the Embedded runtime recomputes the same key from the public
-nonce, so the config is a diagnostic artifact, not a runtime input (§1.7.4).
+is what `UnlockKey::from_base64url` parses. No derived key is written to
+disk (§1.7.4).
 
 External-tier unlock **material** is different: the `EnvVarProvider` /
 `FileProvider` value is **arbitrary-length raw bytes**, not an encoded
@@ -645,32 +644,23 @@ wrapper_nonce = first_12_bytes(BLAKE3-keyed-hash(
 ))
 ```
 
-#### §1.7.4 litmask.config schema
+#### §1.7.4 Unlock-key persistence
 
-```toml
-# Build artifact — secret, do not commit
-unlock_key = "<base64url>"        # 32 bytes, the Embedded-tier unlock_key
-```
-
-Because the wrapper is embedded at a fixed address (§1.7.1), the config records
-no locator or wrapper length. Only the **Embedded** tier writes this file, and
-it carries that tier's nonce-derived `unlock_key`. The Embedded runtime
-recomputes the same key from the public nonce, so the config is a diagnostic
-artifact (and a convenience for tooling/tests), not a runtime input. The
-External and Machine tiers write no config: their key material is re-sourced at
-runtime (operator channel / host machine id), so persisting a derived key would
-write a secret to an artifact nothing consumes (§D.1.2).
+The derived `unlock_key` is **never written to disk**. The Embedded tier
+recomputes it from the public wrapper nonce at runtime; the External and
+Machine tiers re-source their material (operator channel / host machine id)
+and re-run the KDF. Persisting a derived key would write a secret to an
+artifact nothing consumes (§D.1.2). Callers needing arbitrary unlock
+material (tests, demos) mint it with `litmask keygen`.
 
 #### §1.7.5 Build artifact location
 
-`litmask-build::emit()` writes `litmask.config` to the per-package build
-directory: `target/<profile>/litmask.config` for the package being built. In
-multi-package workspaces, each package that uses `litmask-build` gets its own
-`litmask.config`; the file lives next to the binary it pertains to.
-
-`build.rs` determines this path via `CARGO_TARGET_DIR` (if set) combined with
-the build profile, falling back to `target/<profile>/` relative to
-`CARGO_MANIFEST_DIR`.
+`litmask-build::emit()` writes the seed/key/wrapper blobs to `$OUT_DIR`
+(`litmask_seed.bin`, `litmask_key.bin`, `litmask_wrapper.bin`), consumed by
+the proc-macro at expansion and the runtime via `include_bytes!`. Under the
+debug profile it also persists the seed to `target/<profile>/litmask_seed.bin`
+for reproducible incremental builds. `build.rs` derives the profile directory
+from `OUT_DIR` (`target/<profile>/` three ancestors up).
 
 #### §1.7.6 Keying workflow
 
@@ -1232,7 +1222,7 @@ matrix — they may work but are not validated.
 | `README.md` | Project overview, security level table, "what does NOT protect against" callout, value proposition table from §1.1.6, quick start |
 | `lib.rs` crate docs | API overview, security level table, value proposition table |
 | `THREAT_MODEL.md` | Formal threat model including in-scope and out-of-scope attacker capabilities and the init-failure plaintext limitation from §1.9.4 |
-| `DEPLOYMENT.md` | Operational guide per keying tier, recommended release profile, build-time `machine`-tier sealing workflow, `litmask.config` handling, sysexits.h code reference |
+| `DEPLOYMENT.md` | Operational guide per keying tier, recommended release profile, build-time `machine`-tier sealing workflow, sysexits.h code reference |
 | Per-API rustdoc | Standard rustdoc on every public item with examples |
 | `MIGRATION.md` | Coverage of moving from `litcrypt` (v1 and v2) and `obfstr`, with side-by-side API comparisons |
 
@@ -1279,7 +1269,6 @@ Stable surface (semver-protected):
 - `init!(<provider>)`, `init!(bind_to_machine)`, `init!(bind_to_machine + <provider>)` macro forms
 - `InitError::sysexit_code()` method and the sysexits mapping in §1.9.7
 - Error type variants (new variants non-breaking via `#[non_exhaustive]`)
-- `litmask.config` schema (additions allowed; removals breaking)
 - Default cipher (ChaCha20-Poly1305)
 - Keyless Embedded floor as the no-`init!` default (backed internally by
   the `pub(crate)` `EmbeddedProvider`)
@@ -1360,7 +1349,6 @@ Build crate (`litmask-build`):
 - `base64ct`
 - `rand_chacha` (seedable RNG)
 - `blake3`
-- `toml` (write `litmask.config`)
 
 CLI crate (`litmask-cli`):
 
@@ -1935,12 +1923,10 @@ deterministically from `RNG_SEED` using `rand_chacha::ChaCha20Rng`.
   rustc-env value, §1.3.1)
 - (release Embedded tier only) the `cargo:warning=` floor notice per §1.3.2
 
-§2.4.1.10 — `emit()` SHALL write `litmask.config` to the location specified
-in §1.7.5 with the schema specified in §1.7.4.
-
-§2.4.1.11 — `emit()` SHALL write a deployer-facing comment block at the top
-of `litmask.config` describing the file's purpose and warning that it is
-secret.
+§2.4.1.10 — `emit()` SHALL NOT write the derived `unlock_key` (or any
+secret key material) to disk; only the seed/key/wrapper blobs go to
+`$OUT_DIR` and, under the debug profile, the persisted seed (§1.7.4,
+§1.7.5).
 
 #### §2.4.2 Configuration validation
 
@@ -2161,18 +2147,11 @@ be embedded similarly as ordinary statics with no identifying markers, no
 fixed header bytes, and no symbol naming convention attributable to
 `litmask`.
 
-#### §2.8.2 litmask.config
+#### §2.8.2 No persisted key material
 
-§2.8.2.1 — `litmask.config` SHALL be a TOML file conforming to the schema
-in §1.7.4, carrying a single `unlock_key` field and no locator or length
-field.
-
-§2.8.2.2 — The `unlock_key` field SHALL be base64url-encoded without
-padding.
-
-§2.8.2.3 — Only the **Embedded** tier SHALL write `litmask.config`; the
-External and Machine tiers write no config (§1.7.4). The file is a
-diagnostic artifact, not a runtime input.
+§2.8.2.1 — No build SHALL persist the derived `unlock_key` (or any secret
+key) to disk for any tier (§1.7.4). The Embedded tier recomputes it from
+the wrapper nonce; the keyed tiers re-source their material at runtime.
 
 ### §2.9 Iteration 9 — CLI tooling
 

@@ -141,22 +141,6 @@ impl KeyProvider for VaultProvider {
 }
 ```
 
-## `litmask.config` handling
-
-Only the **Embedded** tier writes `litmask.config` (to the Cargo target
-directory at compile time); it contains a single `unlock_key` field. The
-Embedded runtime recomputes that key from the wrapper's public nonce, so
-the file is a diagnostic/tooling convenience, not a runtime input. The
-External and Machine tiers write no config — their key material is
-re-sourced at runtime (operator channel / host machine id).
-
-The `unlock_key` it records is still secret. **Do not commit
-`litmask.config` to version control.** Add it to `.gitignore`:
-
-```gitignore
-litmask.config
-```
-
 ## Recommended release profile
 
 ```toml

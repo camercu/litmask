@@ -392,8 +392,8 @@ where
 
 /// `KeyProvider` that returns a base64url-encoded unlock key from an
 /// in-process `String`. Used by integration tests that want
-/// deterministic init against the build's `litmask.config` without
-/// depending on `LITMASK_UNLOCK_KEY` in the test environment.
+/// deterministic init from a hardcoded key without depending on
+/// `LITMASK_UNLOCK_KEY` in the test environment.
 pub struct TestKeyProvider {
     pub key_b64: String,
 }

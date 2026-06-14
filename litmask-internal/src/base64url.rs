@@ -6,7 +6,7 @@
 //!
 //! Padding is rejected on decode to keep the wire format unambiguous;
 //! padded and unpadded forms differ visibly, and accepting both would
-//! mask configuration errors in `litmask.config` and key files.
+//! mask configuration errors in key files and `litmask keygen` output.
 //!
 //! Callers that need zero-on-drop semantics for decoded secret bytes
 //! (the unlock-key parse path, the `LITMASK_RNG_SEED` decoder) wrap

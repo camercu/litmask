@@ -101,7 +101,6 @@ Tone conforms to deliberate understatement policy.
 | `base64ct` | Base64url encoding | Constant-time, RustCrypto |
 | `machine-uid` | Machine ID (CLI + runtime `machine-id` feature) | Small crate, reads `/etc/machine-id` or equivalent |
 | `clap` | CLI argument parsing | Standard, CLI-only |
-| `toml` | `litmask.config` writing | Standard, build-time only (`litmask-build`) |
 
 No unexpected transitive dependencies. All crypto dependencies are from
 the RustCrypto ecosystem. `deny.toml` enforces: no advisories, no

@@ -11,18 +11,17 @@
 //! strings target/release/examples/hello_world | grep "if two of them are dead"
 //! # (no output — the plaintext is absent from the binary)
 //!
-//! LITMASK_UNLOCK_KEY=$(awk -F'"' '/^unlock_key/ {print $2}' target/release/litmask.config) \
-//!     ./target/release/examples/hello_world
-//! # prints the decrypted quotation at runtime
+//! ./target/release/examples/hello_world
+//! # prints the decrypted quotation at runtime — the keyless Embedded
+//! # tier self-initializes on the first mask!(), so nothing is supplied
 //! ```
 //!
-//! Run the prebuilt binary directly — not `cargo run`. A release
-//! build mints a fresh RNG seed each time `build.rs` runs (the seed
-//! persists only under the debug profile), so re-invoking cargo
-//! rewrites `litmask.config` with an `unlock_key` that no longer
-//! matches the wrapper already compiled into the binary. Pin
-//! `LITMASK_RNG_SEED` if you need a reproducible build that survives
-//! repeated `cargo run`.
+//! Run the prebuilt binary you just inspected, not `cargo run`: a
+//! release `cargo run` reruns `build.rs`, minting a fresh RNG seed (the
+//! seed persists only under the debug profile) and resealing the wrapper,
+//! so you'd be running a different binary than the one you grep'd. Pin
+//! `LITMASK_RNG_SEED` if you need a reproducible build across repeated
+//! `cargo run`.
 //!
 //! The fixture is Benjamin Franklin (d. 1790, US public domain),
 //! chosen so the `strings` grep above can't false-positive against std

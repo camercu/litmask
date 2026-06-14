@@ -429,13 +429,15 @@ anywhere (and no public `MachineIdProvider` reference — it is now
       explicitly documenting their removal. `MachineIdProvider` survives
       only as `pub(crate)` (seam-only) in `litmask` source; scrubbed from
       THREAT_MODEL.md / DEPLOYMENT.md (now the machine tier framing).
-      **Decision (2026-06-10):** `litmask.config` is NOT retired — the
-      implementation keeps it as the Embedded-tier diagnostic artifact
-      (`emit()` writes it, tests assert it, DEPLOYMENT documents it), so
-      the original "remove the config entirely" premise was superseded;
-      its references are live, not stale. `bind`/`inspect` as retired
-      _commands_ are gone; remaining `bind`/`inspect` hits are ordinary
-      English ("bind a `&str`", "inspect text").
+      **Decision (2026-06-10, superseded):** at the time `litmask.config`
+      was kept as the Embedded-tier diagnostic artifact. **Removed
+      (2026-06-14):** a later audit found it unused — no shipped crate read
+      it, the examples ignored it or reused its value as an arbitrary key
+      string, and every test reader no-op'd on it or only asserted its
+      existence — so `emit()` no longer writes it and arbitrary key material
+      now comes from `litmask keygen`. `bind`/`inspect` as retired _commands_
+      are gone; remaining `bind`/`inspect` hits are ordinary English ("bind a
+      `&str`", "inspect text").
 - [x] Every internal doc cross-reference (§ links, file links, CONTEXT
       glossary terms) resolves to a real target. The seven dangling
       §3/§5/§6/§7 refs into the old DevEx numbering now point at §D.x.

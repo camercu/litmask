@@ -34,8 +34,8 @@ Tool versions pinned in `.tool-versions` — single source of truth.
   keys, and selects the seal tier from which key channels are present
   (`LITMASK_UNLOCK_KEY` → External, `LITMASK_MACHINE_ID` → Machine, both
   → MachineExternal, else Embedded). It writes key/seed/wrapper artifacts
-  to `OUT_DIR` and publishes the `LITMASK_SEAL_TIER` tag via rustc-env;
-  only the Embedded tier writes the `litmask.config` diagnostic artifact.
+  to `OUT_DIR` and publishes the `LITMASK_SEAL_TIER` tag via rustc-env. No
+  `unlock_key` is written to disk (the runtime re-derives/re-sources it).
 - `litmask-macros` reads the key/seed artifacts from the caller's
   `OUT_DIR` at macro expansion time, encrypts each literal, embeds
   ciphertext as `&[u8]` in the output.

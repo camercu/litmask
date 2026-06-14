@@ -118,10 +118,10 @@ test-stable:
     cargo {{stable_toolchain}} nextest run --workspace -E 'not test(compile_fixtures)'
     cargo {{stable_toolchain}} test --workspace --doc
 
-# Build and run every in-repo example end-to-end. Sources
-# LITMASK_UNLOCK_KEY from the build's litmask.config. Examples are
-# discovered by globbing `litmask/examples/*.rs` so adding a new
-# example file is the only step needed to wire it in.
+# Build and run every in-repo example end-to-end. Mints
+# LITMASK_UNLOCK_KEY material with `litmask keygen` for the External-tier
+# examples. Examples are discovered by globbing `litmask/examples/*.rs` so
+# adding a new example file is the only step needed to wire it in.
 test-examples:
     ./scripts/test-examples.sh
 
