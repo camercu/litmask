@@ -14,13 +14,13 @@ use litmask_internal::{CipherId, FormatVersion, KEY_LEN, NONCE_LEN, aead_decrypt
 
 #[test]
 fn format_version_v1_byte_is_0x01() {
-    // The wrapper's version byte is load-bearing for every reader
-    // (the runtime crate's wrapper-cipher check, litmask-cli's
-    // dispatcher, every future cross-version migration). A discriminant
-    // swap on `FormatVersion::V1` would break wire compatibility silently;
-    // the unit test in lib.rs covers it inside the crate, this one
-    // covers it across the public boundary so a renamed-or-deleted
-    // re-export also surfaces here.
+    // The wrapper's version byte is on the wire and load-bearing: the
+    // runtime validates it after decrypting the wrapper, and every future
+    // cross-version migration keys off it. A discriminant swap on
+    // `FormatVersion::V1` would break wire compatibility silently; the
+    // unit test in lib.rs covers it inside the crate, this one covers it
+    // across the public boundary so a renamed-or-deleted re-export also
+    // surfaces here.
     assert_eq!(FormatVersion::V1.to_byte(), 0x01);
     assert_eq!(FormatVersion::CURRENT.to_byte(), 0x01);
 }
@@ -29,21 +29,16 @@ fn format_version_v1_byte_is_0x01() {
 #[cfg(all(feature = "chacha20-poly1305", not(feature = "aes-gcm")))]
 fn current_cipher_default_is_chacha20_poly1305() {
     assert_eq!(CURRENT_CIPHER, CipherId::ChaCha20Poly1305);
-    assert_eq!(CURRENT_CIPHER.to_byte(), 0x01);
 }
 
 #[test]
 #[cfg(all(feature = "aes-gcm", not(feature = "chacha20-poly1305")))]
-fn current_cipher_aes_gcm_byte_is_0x02() {
+fn current_cipher_aes_gcm_selects_aes256gcm() {
     assert_eq!(CURRENT_CIPHER, CipherId::Aes256Gcm);
-    assert_eq!(CURRENT_CIPHER.to_byte(), 0x02);
 }
 
 #[test]
-#[cfg_attr(
-    not(any(feature = "aes-gcm", feature = "all-ciphers")),
-    ignore = "requires aes-gcm feature"
-)]
+#[cfg_attr(not(feature = "aes-gcm"), ignore = "requires aes-gcm feature")]
 fn aes_gcm_aead_round_trips() {
     let key = [0x11u8; KEY_LEN];
     let nonce = [0x22u8; NONCE_LEN];
@@ -54,10 +49,7 @@ fn aes_gcm_aead_round_trips() {
 }
 
 #[test]
-#[cfg_attr(
-    not(any(feature = "aes-gcm", feature = "all-ciphers")),
-    ignore = "requires aes-gcm feature"
-)]
+#[cfg_attr(not(feature = "aes-gcm"), ignore = "requires aes-gcm feature")]
 fn aes_gcm_rejects_wrong_key() {
     let key = [0x11u8; KEY_LEN];
     let nonce = [0x22u8; NONCE_LEN];
@@ -68,27 +60,17 @@ fn aes_gcm_rejects_wrong_key() {
 
 #[test]
 #[cfg_attr(
-    not(any(
-        all(feature = "chacha20-poly1305", feature = "aes-gcm"),
-        feature = "all-ciphers",
-    )),
-    ignore = "requires both cipher features (dual-cipher CLI build)"
+    not(all(feature = "chacha20-poly1305", feature = "aes-gcm")),
+    ignore = "requires both cipher features"
 )]
-fn both_ciphers_compile_simultaneously_for_cli_dispatch() {
-    // litmask-cli enables both ciphers and dispatches at runtime
-    // based on the wrapper's cipher-id byte. Pin that the helpers
-    // accept either CipherId without re-compilation AND that the
-    // on-the-wire discriminants stay locked. The single-cipher
-    // tests above each cover one direction (0x01 OR 0x02); a
-    // swap of the discriminants would pass both of those but
-    // break the CLI's dispatch — this dual-feature test is the
-    // only place that catches it.
-    assert_eq!(CipherId::ChaCha20Poly1305.to_byte(), 0x01);
-    assert_eq!(CipherId::Aes256Gcm.to_byte(), 0x02);
-
+fn both_aead_helpers_round_trip_when_both_ciphers_compiled() {
+    // When both backends are compiled in (feature unification, or
+    // `--all-features`), the dispatch must handle either CipherId. The
+    // cipher is fixed per build and never appears on the wire — this
+    // only pins that both arms work when both are present.
     let key = [0x55u8; KEY_LEN];
     let nonce = [0x66u8; NONCE_LEN];
-    let plaintext = b"dual-cipher CLI mode";
+    let plaintext = b"dual-cipher build";
     let chacha = aead_encrypt(CipherId::ChaCha20Poly1305, &key, &nonce, plaintext).unwrap();
     let aes = aead_encrypt(CipherId::Aes256Gcm, &key, &nonce, plaintext).unwrap();
     assert_ne!(

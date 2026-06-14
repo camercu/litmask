@@ -18,14 +18,10 @@ extern crate alloc;
 // would have nothing to dispatch to. Catching this at the crate
 // level produces a single readable error instead of a forest of
 // missing-symbol errors downstream.
-#[cfg(not(any(
-    feature = "chacha20-poly1305",
-    feature = "aes-gcm",
-    feature = "all-ciphers",
-)))]
+#[cfg(not(any(feature = "chacha20-poly1305", feature = "aes-gcm")))]
 compile_error!(
-    "litmask-internal requires at least one cipher feature: \
-     enable `chacha20-poly1305` (default), `aes-gcm`, or `all-ciphers`."
+    "litmask-internal requires a cipher feature: \
+     enable `chacha20-poly1305` (default) or `aes-gcm`."
 );
 
 mod aead;

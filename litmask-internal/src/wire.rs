@@ -100,24 +100,16 @@ impl TryFrom<u8> for FormatVersion {
 /// would be recognizable string signatures in user binaries.
 ///
 /// Marked `#[non_exhaustive]` so adding a future cipher is non-breaking
-/// for downstream exhaustive matches.
-#[repr(u8)]
+/// for downstream exhaustive matches. The cipher is fixed at build time
+/// ([`CURRENT_CIPHER`](crate::CURRENT_CIPHER)) and is not recorded on the
+/// wire, so the enum is an in-memory dispatch tag only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CipherId {
     /// ChaCha20-Poly1305 AEAD, RFC 8439.
-    ChaCha20Poly1305 = 0x01,
+    ChaCha20Poly1305,
     /// AES-256-GCM AEAD, NIST SP 800-38D.
-    Aes256Gcm = 0x02,
-}
-
-impl CipherId {
-    /// Encode as a byte. Used for stable identification in tooling and
-    /// tests; not part of the wire format.
-    #[must_use]
-    pub fn to_byte(self) -> u8 {
-        self as u8
-    }
+    Aes256Gcm,
 }
 
 /// A parsed wrapper, decomposed into its cleartext nonce and the

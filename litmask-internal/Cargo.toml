@@ -16,18 +16,10 @@ include = ["src/**/*", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 [features]
 # Both cipher backends are opt-in deps so the runtime crate
 # (`litmask`) can pull in exactly one — the property §1.5.1 calls
-# out as "exactly one cipher per build". `litmask-cli` enables both
-# (per the §1.5.1 amendment) and dispatches at runtime based on the
-# wrapper's cipher-id byte.
+# out as "exactly one cipher per build".
 default = ["chacha20-poly1305"]
 chacha20-poly1305 = ["dep:chacha20poly1305"]
 aes-gcm = ["dep:aes-gcm"]
-# Compile both cipher backends without selecting either as
-# `CURRENT_CIPHER`. The CLI uses this for runtime dispatch on the
-# wrapper's cipher-id byte. Because neither `chacha20-poly1305`
-# nor `aes-gcm` features are implied, workspace feature-unification
-# cannot flip `CURRENT_CIPHER` in dependent crates.
-all-ciphers = ["dep:chacha20poly1305", "dep:aes-gcm"]
 # In-memory wrapper/blob builders (`test_util`) for cross-crate tests.
 # Test-only surface; needs a selected cipher (`CURRENT_CIPHER`).
 test-util = []

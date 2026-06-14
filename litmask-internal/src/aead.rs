@@ -11,10 +11,9 @@
 //! with no `chacha20poly1305` crate in the dep tree, use
 //! `--no-default-features --features std,aes-gcm`.
 //!
-//! [`CURRENT_CIPHER`] governs only [`aead_encrypt`] and the
-//! blob-decrypt path; it is absent under `all-ciphers` alone. The
-//! dual-cipher consumer (`litmask-cli`) ignores it entirely and
-//! dispatches on the wrapper's cipher-id byte at runtime.
+//! There is no cipher-id byte on the wire (§1.7.3): each build seals and
+//! opens with its one [`CURRENT_CIPHER`], so the `cipher_id` the dispatch
+//! takes is always that cipher and the other arm is unreachable.
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -25,28 +24,20 @@ use crate::{CipherId, KEY_LEN, NONCE_LEN};
 //
 //  chacha only (default)    → traits from chacha20poly1305, ChaCha20Poly1305 cipher
 //  aes-gcm only             → traits from aes-gcm,          Aes256Gcm cipher
-//  both / all-ciphers       → traits from chacha20poly1305,  both ciphers
+//  both features active     → traits from chacha20poly1305, both ciphers
 //
 // `Aead`, `KeyInit`, and `GenericArray` are re-exported identically by
 // both backend crates; importing from either path is sufficient.
-#[cfg(all(
-    feature = "aes-gcm",
-    not(feature = "chacha20-poly1305"),
-    not(feature = "all-ciphers"),
-))]
+#[cfg(all(feature = "aes-gcm", not(feature = "chacha20-poly1305")))]
 use aes_gcm::aead::{Aead, generic_array::GenericArray};
-#[cfg(any(feature = "chacha20-poly1305", feature = "all-ciphers"))]
+#[cfg(feature = "chacha20-poly1305")]
 use chacha20poly1305::aead::{Aead, generic_array::GenericArray};
 
-#[cfg(any(feature = "aes-gcm", feature = "all-ciphers"))]
+#[cfg(feature = "aes-gcm")]
 use aes_gcm::Aes256Gcm;
-#[cfg(all(
-    feature = "aes-gcm",
-    not(feature = "chacha20-poly1305"),
-    not(feature = "all-ciphers"),
-))]
+#[cfg(all(feature = "aes-gcm", not(feature = "chacha20-poly1305")))]
 use aes_gcm::KeyInit as _;
-#[cfg(any(feature = "chacha20-poly1305", feature = "all-ciphers"))]
+#[cfg(feature = "chacha20-poly1305")]
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit as _};
 
 /// The single cipher this build encrypts and blob-decrypts with. See
@@ -85,17 +76,17 @@ impl fmt::Display for AeadError {
 macro_rules! dispatch_cipher {
     ($cipher_id:expr, $key:expr, $nonce:expr, $data:expr, $method:ident) => {{
         match $cipher_id {
-            #[cfg(any(feature = "chacha20-poly1305", feature = "all-ciphers"))]
+            #[cfg(feature = "chacha20-poly1305")]
             CipherId::ChaCha20Poly1305 => ChaCha20Poly1305::new(GenericArray::from_slice($key))
                 .$method(GenericArray::from_slice($nonce), $data)
                 .map_err(|_| AeadError::AuthenticationFailed),
-            #[cfg(any(feature = "aes-gcm", feature = "all-ciphers"))]
+            #[cfg(feature = "aes-gcm")]
             CipherId::Aes256Gcm => Aes256Gcm::new(GenericArray::from_slice($key))
                 .$method(GenericArray::from_slice($nonce), $data)
                 .map_err(|_| AeadError::AuthenticationFailed),
-            #[cfg(not(any(feature = "chacha20-poly1305", feature = "all-ciphers")))]
+            #[cfg(not(feature = "chacha20-poly1305"))]
             CipherId::ChaCha20Poly1305 => unreachable!(),
-            #[cfg(not(any(feature = "aes-gcm", feature = "all-ciphers")))]
+            #[cfg(not(feature = "aes-gcm"))]
             CipherId::Aes256Gcm => unreachable!(),
         }
     }};

@@ -97,9 +97,6 @@ pub fn decrypt_wrapper(
 /// in a binary uses the same cipher as the wrapper, fixed at build
 /// time to the value [`crate::CURRENT_CIPHER`] resolves to.
 ///
-/// Not available under `all-ciphers` alone — that feature compiles
-/// both backends without selecting `CURRENT_CIPHER`.
-///
 /// # Errors
 ///
 /// Returns [`DecryptError::BlobTooShort`] when `blob` is shorter than
