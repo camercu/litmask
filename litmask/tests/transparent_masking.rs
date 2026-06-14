@@ -1,8 +1,8 @@
-//! Transparent-masking spike (ADR-0001): two **masking crates** —
-//! each built with its own **mask key** and **wrapper** — must decrypt
-//! their own blobs independently in one process. The former single
-//! set-once mask-key cell made the first wrapper win and the second
-//! panic; the per-wrapper **mask-key cache** lets them coexist.
+//! Transparent masking (ADR-0001): two **masking crates** — each built
+//! with its own **mask key** and **wrapper** — must decrypt their own
+//! blobs independently in one process. A single set-once mask-key cell
+//! would make the first wrapper win and the second panic; the per-wrapper
+//! **mask-key cache** lets them coexist.
 //!
 //! The test builds two Embedded wrappers + blobs purely in memory
 //! (mirroring `litmask_build::emit()`), then drives the runtime decrypt

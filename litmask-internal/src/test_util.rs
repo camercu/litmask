@@ -4,10 +4,10 @@
 //! These let a test assemble the exact wire shapes (`wrapper`, per-string
 //! `blob`) the build script would emit, but purely in memory — no
 //! `OUT_DIR`, no `build.rs`. Exposed under the `test-util` feature so
-//! downstream test targets (the transparent-masking spike, the runtime
-//! init-ordering guard tests) can drive the runtime decrypt path against
-//! wrappers they construct directly, rather than only the ones a real
-//! build produced.
+//! downstream test targets (the transparent- and governed-masking
+//! integration tests) can drive the runtime decrypt path against wrappers
+//! they construct directly, rather than only the ones a real build
+//! produced.
 //!
 //! Building these requires a selected cipher (`CURRENT_CIPHER`); enable
 //! `test-util` alongside a cipher feature.

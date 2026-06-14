@@ -20,7 +20,7 @@ use crate::provider::KeyProvider;
 /// The installed governor's keying. Each variant resolves an unlock key
 /// for a given wrapper; the External variant ignores the wrapper (its key
 /// is material-derived), while the machine-bearing variants re-derive the
-/// machine factor from each wrapper's own embedded nonce (Slice 2).
+/// machine factor from each wrapper's own embedded nonce.
 pub(super) enum Governor {
     /// `init!(<provider>)` — one external provider governs every wrapper.
     External(alloc::boxed::Box<dyn KeyProvider>),
