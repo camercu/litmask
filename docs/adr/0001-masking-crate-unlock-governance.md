@@ -1,5 +1,5 @@
 ---
-status: accepted (implementation pending)
+status: accepted (implemented)
 ---
 
 # Masking-crate unlock governance: libraries lazy-unlock, host governs
@@ -62,7 +62,12 @@ it, which is what makes governed masking feasible.)
 
 ## Implementation status
 
-Not yet built. The runtime still has the single set-once mask-key cell and
-bare `init!()`. This ADR records the agreed direction; the **mask-key
-cache**, **governing provider**, uniform-seal handling, and removal of bare
-`init!()` are pending work.
+Implemented. The single set-once mask-key cell is now a per-wrapper
+**mask-key cache** (`runtime/mask_key_store.rs`); `init!(...)` installs a
+process-global **governing provider** (`runtime/governor.rs`) that the lazy
+path consults for every wrapper (Rule X: governor key for any tier, else
+the keyless Embedded floor); and bare `init!()` is removed — the Embedded
+tier self-initializes on the first `mask!()`. Uniform-seal handling is
+inherent: a crate's seal tier comes from the shared build environment, so a
+dependency graph is uniformly Embedded, External, or Machine, and the
+governor's key matches every wrapper it opens.

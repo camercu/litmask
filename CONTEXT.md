@@ -89,8 +89,9 @@ bit rotation + BLAKE3 keyed hash; see **weak key** below). Both
 the obfuscated bytes and the nonce they derive from live in the
 same binary, so a disassembler-equipped attacker recovers the
 plaintext trivially. Reserved for strings that must be readable
-before `init!()` runs (env-var names, default file paths). The
-derivation uses only the nonce.
+before the runtime is unlocked — e.g. the env-var names or file paths a
+governing `init!(<provider>)` itself needs. The derivation uses only the
+nonce.
 _Avoid_: "soft mask", "light mask".
 
 **`MaskDebug`**: Derive macro generating a `core::fmt::Debug` impl
@@ -126,17 +127,20 @@ lifetime. Semver-exempt until the feature stabilizes as `serde`.
 _Avoid_: "serde unmask", "masked deserialize derive" (the derive masks
 names, not deserialized data).
 
-**`init!`**: Proc-macro that decrypts the **wrapper** with the **unlock
-key** and populates the process-global **mask key** cell. It has four
-forms, each cross-checked against the build's **seal tier** tag: no-arg
-`init!()` uses the keyless [`EmbeddedProvider`]; `init!(<provider>)`
-takes any [`KeyProvider`] and unlocks an **external** seal; the
-`init!(bind_to_machine)` keyword form unlocks a **machine** seal;
+**`init!`**: Proc-macro that installs a process-global **governing
+provider** and eagerly unlocks the host's own **wrapper** through it. It
+has three forms, each cross-checked against the build's **seal tier** tag:
+`init!(<provider>)` takes any [`KeyProvider`] and unlocks an **external**
+seal; the `init!(bind_to_machine)` keyword form unlocks a **machine** seal;
 `init!(bind_to_machine + <provider>)` unlocks the two-factor
-**machine_external** seal. Any form↔tier mismatch is a `compile_error!`.
+**machine_external** seal. There is no bare `init!()` — the keyless
+**embedded** seal self-initializes on the first `mask!()`. Any form↔tier
+mismatch is a `compile_error!`.
 Vocabulary: the build **seals** (fixes the tier and key material at
 compile time); `bind_to_machine` **binds** (re-reads the host machine id
-at runtime and succeeds only on the sealed machine).
+at runtime and succeeds only on the sealed machine); the host **governs**
+(installs the **governing provider** for the graph). The verb triad is
+**seal** · **bind** · **govern**.
 _Avoid_: "lock to machine", "machine_id form".
 
 ### Build pipeline
@@ -190,10 +194,10 @@ _Avoid_: "machine-id checksum", "fingerprint".
 
 ### Usage patterns
 
-How litmask is consumed across a dependency graph. **Transparent
-masking**, **governed masking**, the **mask-key cache**, the **governing
-provider**, **uniform seal**, and the **govern** verb name the _target_
-model (ADR-0001); the runtime today supports only **self-masking**.
+How litmask is consumed across a dependency graph. **Self-masking**,
+**transparent masking**, and **governed masking** — backed by the
+**mask-key cache**, the **governing provider**, the **uniform seal**, and
+the **govern** verb — are all implemented (ADR-0001).
 
 **Masking crate**:
 Any crate (lib or bin) with `mask!()` call sites and its own build
@@ -214,32 +218,33 @@ _Avoid_: "consumer binary" (overloads the general "consumer crate").
 
 **Self-masking**:
 The **host binary** is itself the sole **masking crate**, masking its own
-strings — the only pattern the runtime supports today.
+strings.
 
-**Transparent masking** (target — ADR-0001):
+**Transparent masking**:
 A **host binary** links **masking libraries** and is unaware litmask is a
 transitive dependency; each masking crate unlocks itself at the keyless
 Embedded floor via lazy init.
 _Avoid_: "autonomous masking" (considered, rejected — see flagged ambiguities).
 
-**Governed masking** (target — ADR-0001):
+**Governed masking**:
 A **host binary** installs one **governing provider** that opens every
 masking crate's **wrapper** across the graph, overriding their default
 Embedded lazy unlock; requires a **uniform seal**.
 
-**Mask-key cache** (target — ADR-0001):
+**Mask-key cache**:
 The process-global store of decrypted **mask keys**, one entry per
 **masking crate** keyed by its **wrapper** — replacing the single
 set-once mask-key cell so multiple masking crates coexist in one binary.
 _Avoid_: "key registry".
 
-**Governing provider** (target — ADR-0001):
+**Governing provider**:
 A **key provider** the **host binary** installs process-globally; the lazy
-unlock path consults it for every **wrapper** before falling back to the
-keyless `EmbeddedProvider`. The mechanism behind **governed masking**.
+unlock path consults it for every non-Embedded **wrapper** (Rule X), while
+Embedded wrappers self-unlock keyless. The mechanism behind **governed
+masking**.
 _Avoid_: "ambient provider", "host provider".
 
-**Uniform seal** (target — ADR-0001):
+**Uniform seal**:
 A build in which every **masking crate** in the graph is sealed under the
 same external **unlock key** (one `LITMASK_UNLOCK_KEY` in the build
 environment reaches every crate's `emit()`), so one **governing provider**
@@ -261,16 +266,16 @@ fixes the key regime) and **bind** (machine factor).
   key**.
 - The **unlock key** lives outside the binary; the **wrapper** lives
   inside it, sealed under the **unlock key** at build time.
-- A **key provider** supplies the **unlock key** at runtime; the
-  user's `init!()` — or, on an Embedded-sealed build only, the first
+- A **key provider** supplies the **unlock key** at runtime; the host's
+  governing `init!(...)` — or, on an Embedded-sealed build, the first
   `mask!()` call (lazy init) — invokes it.
 - A **host binary** links zero or more **masking libraries**; in
   **self-masking** it is itself the sole **masking crate**. Each masking
   crate carries its own **seed → mask key → wrapper**.
-- _(Target, ADR-0001)_ The **mask-key cache** holds one decrypted **mask
-  key** per masking crate. **Transparent masking**: each self-unlocks at
-  the Embedded floor. **Governed masking**: one **governing provider** +
-  **uniform seal** open every **wrapper** in the graph.
+- The **mask-key cache** holds one decrypted **mask key** per masking
+  crate. **Transparent masking**: each self-unlocks at the Embedded floor.
+  **Governed masking**: one **governing provider** + **uniform seal** open
+  every **wrapper** in the graph.
 
 ## Example dialogue
 
@@ -286,17 +291,18 @@ fixes the key regime) and **bind** (machine factor).
 > **Dev:** "How does the runtime find the **wrapper** in the binary?"
 >
 > **Maintainer:** "It doesn't search — the **wrapper** is embedded at a
-> fixed address via `include_bytes!`, so `init!()` reads it by
+> fixed address via `include_bytes!`, so the runtime reads it by
 > reference. The only cleartext field is the 12-byte **nonce** at the
 > front; there's no stored locator and no byte scan."
 >
 > **Dev:** "Why have both `mask!` and `weak_mask!`?"
 >
-> **Maintainer:** "`mask!` needs the **mask key**, which doesn't
-> exist until `init!()` runs. But `init!()` itself needs to know
-> which env var to read for the **unlock key**. So that one string —
-> the default `LITMASK_UNLOCK_KEY` literal — has to be readable
-> before `init!()`. `weak_mask!` covers that bootstrap window: XOR
+> **Maintainer:** "`mask!` needs the **mask key**, which isn't
+> unlocked until a governing `init!(<provider>)` runs (or, on the
+> Embedded floor, the first `mask!()` itself). But the provider needs
+> to know which env var to read for the **unlock key**. So that one
+> string — the default `LITMASK_UNLOCK_KEY` literal — has to be readable
+> before `init!(<provider>)`. `weak_mask!` covers that bootstrap window: XOR
 > the literal against the **weak key** (derived from the wrapper
 > **nonce**), recover at first access. The 'weak' is because the
 > **nonce** is right there in the binary; anyone with a disassembler
