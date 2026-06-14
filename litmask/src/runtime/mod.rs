@@ -69,24 +69,27 @@ pub fn __init_with_wrapper<P: KeyProvider>(
     provider: P,
     wrapper: &[u8; WRAPPER_LEN],
 ) -> Result<(), InitError> {
+    ensure_cached(wrapper, || {
+        provider.unlock_key().map_err(InitError::KeyProvider)
+    })
+}
+
+/// Shared tail of every eager `init!` seam: cache this wrapper's mask
+/// key if it isn't already, deriving the `unlock_key` via `derive_unlock`
+/// (the only thing that differs between tiers — provider, machine id, or
+/// two-factor composition). A wrapper already cached (a repeat `init!`,
+/// or a prior lazy first-`mask!()`) is an idempotent no-op past the
+/// init-after-lazy guard.
+fn ensure_cached(
+    wrapper: &[u8; WRAPPER_LEN],
+    derive_unlock: impl FnOnce() -> Result<crate::key::UnlockKey, InitError>,
+) -> Result<(), InitError> {
     if mask_key_store::contains(&mask_key_store::key_for(wrapper)) {
         guard_init_after_lazy();
         return Ok(());
     }
-    let unlock_key = provider.unlock_key()?;
-    init_with_unlock_key(&unlock_key, wrapper)
-}
-
-/// Decrypt the embedded `mask_key` wrapper under an already-finished
-/// `unlock_key` and store the result in the process-global cell. Shared
-/// tail of every `init!` seam: the tiers differ only in how they obtain
-/// the `unlock_key` (provider, machine id, or two-factor composition),
-/// so the wrapper decrypt + cell-set logic lives here once.
-fn init_with_unlock_key(
-    unlock_key: &crate::key::UnlockKey,
-    wrapper: &[u8; WRAPPER_LEN],
-) -> Result<(), InitError> {
-    let mask_key_bytes = decrypt_mask_key(unlock_key, wrapper)?;
+    let unlock_key = derive_unlock()?;
+    let mask_key_bytes = decrypt_mask_key(&unlock_key, wrapper)?;
     mask_key_store::get_or_init(mask_key_store::key_for(wrapper), || {
         MaskKey::new(mask_key_bytes)
     });
@@ -152,14 +155,11 @@ pub fn __init_machine_id_external<P: KeyProvider>(
     wrapper: &[u8; WRAPPER_LEN],
     external: P,
 ) -> Result<(), InitError> {
-    if mask_key_store::contains(&mask_key_store::key_for(wrapper)) {
-        guard_init_after_lazy();
-        return Ok(());
-    }
-    let machine_key = crate::provider::MachineIdProvider::new(wrapper).unlock_key()?;
-    let external_key = external.unlock_key()?;
-    let unlock_key = crate::key::UnlockKey::compose(&machine_key, &external_key);
-    init_with_unlock_key(&unlock_key, wrapper)
+    ensure_cached(wrapper, || {
+        let machine_key = crate::provider::MachineIdProvider::new(wrapper).unlock_key()?;
+        let external_key = external.unlock_key()?;
+        Ok(crate::key::UnlockKey::compose(&machine_key, &external_key))
+    })
 }
 
 /// Decrypt a per-string blob to raw bytes. Called by every `mask!()`
