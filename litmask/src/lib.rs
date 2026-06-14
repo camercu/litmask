@@ -15,50 +15,10 @@
 //! println!("{}", litmask::mask!("sensitive data"));
 //! ```
 //!
-//! ## Security levels
-//!
-//! | Configuration | Defeats |
-//! |---|---|
-//! | Zero-config build (keyless Embedded tier) | `strings`, casual binary inspection (Level 1) only — the key is recoverable from the artifact |
-//! | `EnvVarProvider` | Above, key sourced from an env var, kept out of the binary |
-//! | `FileProvider` | Above, key sourced from a file path |
-//! | `init!(bind_to_machine)` (build-sealed) | Above + binary moved to a different machine |
-//! | `init!(bind_to_machine + provider)` (two-factor) | Above + the external factor the binary alone never carries |
-//! | Custom `KeyProvider` (network call, vault) | Above + offline attackers |
-//!
-//! The "zero-config" descriptor refers to absence of project
-//! configuration, not to absence of runtime key provisioning.
-//! Providers that source `unlock_key` from external runtime state
-//! require the deployer to provision that state.
-//!
-//! ## What litmask does NOT protect against
-//!
-//! - Runtime memory inspection
-//! - Debugger attachment after key derivation
-//! - Compromised runtime environments
-//! - Side-channel attacks (timing, power analysis)
-//! - Control-flow obfuscation or anti-debugging
-//! - Protection of dynamically generated strings
-//! - Perfect secrecy under any threat model
-//!
-//! ## Comparison with existing crates
-//!
-//! | Property | `obfstr` | `litcrypt`/`litcrypt2` | `litmask` |
-//! |---|---|---|---|
-//! | Cipher | XOR | XOR | ChaCha20-Poly1305 (AEAD) or AES-256-GCM |
-//! | Tamper detection | No | No | Yes (AEAD authentication) |
-//! | Per-string nonces | Compile-time random (no auth) | None | Per-build deterministic, authenticated |
-//! | Key model | Compile-time random per build | Single env var | Layered: `mask_key` + `unlock_key`, multiple providers |
-//! | Format string masking | Separate `fmtools` crate | None | Built-in [`mask_format!`] with single-evaluation semantics |
-//! | Module-level masking | None | None | [`macro@mask_all`] with deep substitution |
-//! | Machine-ID binding | None | None | Yes (build-time seal via `init!(bind_to_machine)`) |
-//! | Multiple literal types (str/bytes/cstr) | str only | str only | All three |
-//! | `no_std` support | Limited | No | Yes (with `alloc`) |
-//! | Threat model documented | Minimal | Minimal | Explicit security ladder, honest scope |
-//! | Reproducible builds | No | No | Yes (with `LITMASK_RNG_SEED`) |
-//! | Fuzzing | No | No | Yes |
-//!
-//! The cipher upgrade (XOR to AEAD) is the primary technical advance.
+//! For the project overview, the security-level ladder, the threat
+//! scope, and how litmask compares to `obfstr` / `litcrypt`, see the
+//! project README and `docs/ARCHITECTURE.md`. This module doc is the API
+//! reference.
 //!
 //! ## Two-phase masking
 //!

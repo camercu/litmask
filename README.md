@@ -224,10 +224,10 @@ See `examples/mask_serde_demo.rs` and SPECIFICATION.md Appendix E.
 
 ## Key providers
 
-| Provider            | Source                                  | Feature      |
-| ------------------- | --------------------------------------- | ------------ |
-| `EmbeddedProvider`  | Wrapper nonce (keyless default)         | always       |
-| `EnvVarProvider`    | Environment variable                    | default      |
+| Provider                 | Source                                  | Feature      |
+| ------------------------ | --------------------------------------- | ------------ |
+| _Keyless default_        | Wrapper nonce (Embedded tier, no `init!`) | always     |
+| `EnvVarProvider`         | Environment variable                    | default      |
 | `FileProvider`      | Filesystem path                         | default      |
 | `init!(bind_to_machine)` | Host machine ID + BLAKE3 (build-sealed) | `machine-id` |
 | `impl KeyProvider`  | Anything you write                      | --           |
@@ -249,7 +249,7 @@ the sealed host _and_ with the sealed material.
 
 | Configuration                        | Defeats                                                      |
 | ------------------------------------ | ------------------------------------------------------------ |
-| Default (keyless `EmbeddedProvider`) | `strings`, casual inspection (key recoverable from artifact) |
+| Default (keyless Embedded tier)      | `strings`, casual inspection (key recoverable from artifact) |
 | `EnvVarProvider`                     | Above, key sourced from an env var, kept out of the binary   |
 | `FileProvider`                       | Above, key sourced from a file path                          |
 | `init!(bind_to_machine)`                  | Above + binary redistribution                                |
