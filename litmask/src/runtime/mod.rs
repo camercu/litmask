@@ -227,15 +227,12 @@ pub fn __decrypt_string(
     }
 }
 
-// The `match … { Ok => …, Err(_) => panic!() }` shape is deliberate
-// (see the module header): `let…else` / `if let` alternatives or an
-// `.expect()` would inject identifier text into the unwind path and
-// fingerprint user binaries as litmask-built.
-#[allow(
-    clippy::single_match_else,
-    clippy::match_wild_err_arm,
-    clippy::manual_let_else
-)]
+// The explicit `match` arms (tier selection and the Ok/Err decrypt
+// result) are deliberate over clippy's `if let … else` / `let … else`
+// rewrites: they keep the diverging arms uniform with the rest of the
+// decrypt path, where `.expect()` / `if let` would inject identifier text
+// into the unwind path and fingerprint user binaries.
+#[allow(clippy::single_match_else, clippy::manual_let_else)]
 fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN], tier: &str) -> &'static MaskKey {
     let nonce = mask_key_store::key_for(wrapper);
     mask_key_store::get_or_init(nonce, move || {
