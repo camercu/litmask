@@ -16,7 +16,7 @@ cell (`runtime/mod.rs`), so a second masking crate's blobs fail the AEAD
 tag; and the lazy unlock path hardcodes `EmbeddedProvider`, so a host
 cannot override a transitive library's unlock. (The external **unlock key**
 is material-only — `BLAKE3::derive_key("litmask-unlock-v1", material)`, no
-per-build salt — so one external key *can* open every wrapper sealed under
+per-build salt — so one external key _can_ open every wrapper sealed under
 it, which is what makes governed masking feasible.)
 
 ## Decision
@@ -27,22 +27,22 @@ it, which is what makes governed masking feasible.)
    keyed by **wrapper**, so each masking crate self-unlocks independently
    (transparent masking).
 3. `init!(provider)` / `init!(bind_to_machine)` install a process-global
-   **governing provider** that the lazy path consults for *every* wrapper
+   **governing provider** that the lazy path consults for _every_ wrapper
    before falling back to the per-crate keyless `EmbeddedProvider`.
    Governed masking additionally requires a **uniform seal** (one
    `LITMASK_UNLOCK_KEY` in the build environment, reaching every crate's
    `emit()`).
 4. **Drop bare `init!()`.** The Embedded tier is keyless and self-derived,
    so it has no early-failure mode worth catching eagerly; lazy init
-   already covers it. Surviving forms all *govern*. New verb triad:
+   already covers it. Surviving forms all _govern_. New verb triad:
    **seal** (build) · **bind** (machine) · **govern** (host installs the
    provider).
 
 ## Considered options
 
-- *Keep bare `init!()` + the single mask-key cell.* Rejected: two masking
+- _Keep bare `init!()` + the single mask-key cell._ Rejected: two masking
   crates in one binary collide, blocking transparent and governed masking.
-- *Per-crate runtime configuration (each library exposes its own init).*
+- _Per-crate runtime configuration (each library exposes its own init)._
   Rejected: forces the host to know and wire every transitive masking
   dependency, defeating transparency.
 

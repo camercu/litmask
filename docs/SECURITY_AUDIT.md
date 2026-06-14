@@ -152,7 +152,7 @@ behavior, not a vulnerability.
 **Status:** pass
 
 `litmask-internal/src/decrypt.rs` authenticates before it trusts: the
-wrapper's format-version byte lives *inside* the AEAD plaintext and is
+wrapper's format-version byte lives _inside_ the AEAD plaintext and is
 validated only after the tag verifies (decrypt-then-check):
 
 - Unknown authenticated format version → `InitError::UnsupportedFormat`

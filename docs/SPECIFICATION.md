@@ -202,7 +202,7 @@ constants and utilities used by both the runtime and CLI crates.
 seed itself is never echoed to the build log (§D.1.2). The one sanctioned
 release-profile `cargo:warning=` is the **Embedded-floor notice**: when a
 release build resolves to the keyless Embedded tier — a deliberately bare
-`init!()` *or* an omitted `init!` — `emit()` warns that the wrapper key is
+`init!()` _or_ an omitted `init!` — `emit()` warns that the wrapper key is
 recoverable from the artifact and points at `LITMASK_UNLOCK_KEY` /
 `LITMASK_MACHINE_ID` for a stronger tier. The notice is presence-driven
 (keyed off the resolved tier, not the `init!` form), carries no secret,
@@ -351,7 +351,7 @@ field.
 `(key, nonce)` pair to be unique per **distinct plaintext** under a
 given key. Encrypting the same plaintext twice with the same
 `(key, nonce)` is harmless (produces identical ciphertext); encrypting
-two *different* plaintexts with the same `(key, nonce)` is the
+two _different_ plaintexts with the same `(key, nonce)` is the
 security failure — their XOR leaks the plaintext XOR. Therefore the
 invariant the derivation must preserve is **nonce uniqueness across
 distinct plaintexts within a single rustc invocation that encrypts
@@ -361,7 +361,7 @@ That scope is narrower than it looks. Each crate that uses `mask!`
 must have its own `build.rs` calling `litmask_build::emit()` (§1.4),
 which writes a fresh `litmask_key.bin` into that crate's `OUT_DIR`.
 Two crates that both depend on `litmask` therefore encrypt under two
-*different* `mask_key` values, so a nonce collision across crates is
+_different_ `mask_key` values, so a nonce collision across crates is
 harmless — collisions only matter inside the set of blobs sharing one
 `mask_key`, i.e., the blobs produced by one rustc process expanding
 one crate.
@@ -619,7 +619,7 @@ Total length: 61 bytes (`nonce 12 ‖ ciphertext 33 ‖ tag 16`).
 
 - Nonce: the only cleartext field, at offset 0. Derived deterministically
   (see below).
-- Format version: the first byte of the AEAD *plaintext* (`version_byte ‖
+- Format version: the first byte of the AEAD _plaintext_ (`version_byte ‖
   mask_key`). It is authenticated, never carried in cleartext, and validated
   only after the AEAD tag verifies. The runtime rejects unknown versions per
   §1.9.2 (`InitError::UnsupportedFormat`). Current version is `0x01`.
@@ -2373,7 +2373,7 @@ the `cross-platform-actions/action` `run:` block for VM platforms.
 enum variant name as cleartext `&'static str` in `.rodata` (via
 `Formatter::debug_struct(name)` / `.field(name, value)` /
 `write_str(name)`). For the §1.1.1 target user this leaks type
-vocabulary to `strings(1)` even when every field *value* is masked.
+vocabulary to `strings(1)` even when every field _value_ is masked.
 `MaskDebug` closes that channel with the same AEAD pipeline as
 `mask!`.
 
@@ -2498,7 +2498,7 @@ requirements live in Parts I and II.
   (`build_artifacts_wrapper_round_trips_under_unlock_key`, via
   `decrypt_wrapper`), not a per-consumer-build runtime assertion in `emit()`.
   This drops the per-build cost and avoids a tautology: for the machine tier a
-  build-time round-trip only proves `emit()` can reopen with the *same* id it
+  build-time round-trip only proves `emit()` can reopen with the _same_ id it
   just sealed under — it says nothing about whether the deploy host emits that
   id (the case that actually matters; see §D.3 I-R2).
 - **§D.1.2 — No secret echo.** `emit()` MUST NOT print the seed, unlock key,
@@ -2506,19 +2506,19 @@ requirements live in Parts I and II.
   only sanctioned release `cargo:warning=` from `emit()` is the §1.3.2
   Embedded-floor notice, which carries no secret value. Reproducible rebuild
   relies on the operator pinning the seed up front via `keygen` (§1.3.3);
-  there is no post-hoc seed-recovery channel. *(Resolved: the former
+  there is no post-hoc seed-recovery channel. _(Resolved: the former
   `LITMASK_RNG_SEED=<seed>` build-warning echo has been removed from
-  `emit()`.)*
+  `emit()`.)_
 
 ### §D.2 Threat-model deltas
 
 `THREAT_MODEL.md` is canonical for the trust boundaries; this records the
 deltas the build-sealed model introduced.
 
-- **§D.2.1 — Debug self-decrypts *and* diagnoses.** Debug builds seal like
+- **§D.2.1 — Debug self-decrypts _and_ diagnoses.** Debug builds seal like
   release (no pass-through plaintext) but **fail loud**: init failures carry
   actionable, identifying messages (§1.9.5). A debug binary is self-decrypting
-  at the Embedded floor *and* prints litmask-identifying diagnostics, so it
+  at the Embedded floor _and_ prints litmask-identifying diagnostics, so it
   **MUST NOT be distributed** — the accepted trust boundary belongs in
   `THREAT_MODEL.md`.
 - **§D.2.2 — Opacity unchanged or improved.** The build-sealed model stores no
@@ -2532,7 +2532,7 @@ deltas the build-sealed model introduced.
 ### §D.3 Honest residuals
 
 - **I-R1 (no self-service rebind).** Machine changes require a builder
-  rebuild. Accepted; the builder owns provisioning anyway. Honest cost: *every*
+  rebuild. Accepted; the builder owns provisioning anyway. Honest cost: _every_
   drift = a full per-customer rebuild + re-sign + notarize cycle. Machine-id is
   documented as a **stable-host** factor; churning fleets (VMs, cloud, hardware
   swaps) are directed to an external orchestrator-delivered factor instead. The
@@ -2582,7 +2582,7 @@ deltas the build-sealed model introduced.
 The build-sealed model removes a catalogue of friction observed live in the
 pre-spec codebase (not theorized). Each entry notes where the spec addresses it.
 
-1. **F1 — Opaque runtime death.** A missing *or* wrong `unlock_key` both
+1. **F1 — Opaque runtime death.** A missing _or_ wrong `unlock_key` both
    aborted with the same opaque `explicit panic` and no hint. **Addressed:**
    profile-split diagnostics (§1.9.5) make debug builds fail loud and
    actionable while release stays bare/opaque.
@@ -2655,7 +2655,7 @@ as cleartext `&'static str` in `.rodata` (via
 `missing_field`/`unknown_variant` diagnostics all carry the names. For the
 §1.1.1 target user, serde-derived (de)serialization therefore leaks schema
 vocabulary — field names, internal service terminology, protocol shape — to
-`strings(1)` even when every field *value* is masked. `MaskSerialize` and
+`strings(1)` even when every field _value_ is masked. `MaskSerialize` and
 `MaskDeserialize` close both channels with the same AEAD pipeline as
 `mask!`.
 
@@ -2753,9 +2753,9 @@ Residuals (documented, not defects):
   covers user schema vocabulary, not dependency text.
 
 Stabilization (rename to `serde`) requires at minimum: a decision on the
-supportable `#[serde(...)]` attribute subset. *(Resolved: the subset in
+supportable `#[serde(...)]` attribute subset. _(Resolved: the subset in
 §E.2.5 has landed; `MaskDeserialize` and the `#[mask_all]` derive-swap
-(§2.13) ship alongside it.)* The remaining deferred attributes —
+(§2.13) ship alongside it.)_ The remaining deferred attributes —
 `flatten`, the enum representations `tag` / `untagged` / `content`,
 `getter` / `into` / `from` / `try_from`, explicit `borrow`, variant
 `alias`, and `with`-functions on generic types — are tracked for later

@@ -25,7 +25,7 @@ SPECIFICATION §1.7.1/§1.7.3/§1.7.4/§1.7.6–7, §2.9, CONTEXT.md
 
 Two coupled moves in one slice. The wire reformat drops the plaintext
 cipher-id byte, which is exactly what dual-cipher `bind`/`inspect`
-dispatch on — so the locator/bind teardown must land *with* the
+dispatch on — so the locator/bind teardown must land _with_ the
 reformat, not after it.
 
 **Part A — teardown (prep):** delete the locator scan + config-render
@@ -35,7 +35,7 @@ the CLI `bind` + `inspect` subcommands (their only consumers).
 
 **Part B — reformat:** wrapper becomes `nonce(12) ‖ AEAD(version_byte ‖
 mask_key) ‖ tag(16)` (~61 B): nonce at offset 0, cipher byte gone,
-format version authenticated *inside* the AEAD. Keying stays
+format version authenticated _inside_ the AEAD. Keying stays
 seed-derived (no tier behavior yet); cipher dispatch comes from the
 compiled `CURRENT_CIPHER`, not a wire byte.
 
@@ -311,7 +311,7 @@ single-factor key). The compose primitive lives in
 - [x] Full 4-way matrix holds: each of the four `init!` forms compiles
       only against its matching tag; all 12 mismatches →
       `compile_error!`
-- [x] e2e: correct only when *both* factors match at runtime; either
+- [x] e2e: correct only when _both_ factors match at runtime; either
       factor wrong → decrypt failure
 - [x] SPECIFICATION §2.3 documents two-factor composition
 
@@ -397,7 +397,7 @@ preserve opacity. Add the §1.1 build-time Embedded floor warning
 - **Stale seed-echo doc removed.** SPECIFICATION §1.3.2 still claimed the
   release profile prints the seed via `cargo:warning=` (the echo was
   removed in Task 2); corrected while adding the floor-warning note, so
-  the floor notice is now the *only* sanctioned release `cargo:warning=`.
+  the floor notice is now the _only_ sanctioned release `cargo:warning=`.
 
 ---
 
@@ -434,7 +434,7 @@ anywhere (and no public `MachineIdProvider` reference — it is now
       (`emit()` writes it, tests assert it, DEPLOYMENT documents it), so
       the original "remove the config entirely" premise was superseded;
       its references are live, not stale. `bind`/`inspect` as retired
-      *commands* are gone; remaining `bind`/`inspect` hits are ordinary
+      _commands_ are gone; remaining `bind`/`inspect` hits are ordinary
       English ("bind a `&str`", "inspect text").
 - [x] Every internal doc cross-reference (§ links, file links, CONTEXT
       glossary terms) resolves to a real target. The seven dangling

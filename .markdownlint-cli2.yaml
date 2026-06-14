@@ -13,6 +13,15 @@ config:
   # only forbid duplicates among direct siblings.
   MD024:
     siblings_only: true
+  # Pin emphasis styles repo-wide so they're consistent across files,
+  # not only within each file (the "consistent" default lets one file
+  # use `_x_` and another `*x*`). Italic = underscore (matches the
+  # pervasive `_Avoid_` convention in CONTEXT.md); bold = asterisk
+  # (matches the universal `**term**`).
+  MD049:
+    style: underscore
+  MD050:
+    style: asterisk
 globs:
   - "**/*.md"
 ignores:
