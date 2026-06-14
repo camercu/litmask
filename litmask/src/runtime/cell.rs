@@ -46,6 +46,10 @@ impl<T> OnceCell<T> {
         self.inner.get().is_some()
     }
 
+    pub fn get(&self) -> Option<&T> {
+        self.inner.get()
+    }
+
     pub fn get_or_init<F: FnOnce() -> T>(&self, f: F) -> &T {
         #[cfg(feature = "std")]
         {

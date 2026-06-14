@@ -23,6 +23,7 @@ use crate::key::MaskKey;
 use crate::provider::KeyProvider;
 
 pub(crate) mod cell;
+mod governor;
 mod mask_key_store;
 pub(crate) mod weak;
 
@@ -65,6 +66,34 @@ pub fn __init_with_wrapper<P: KeyProvider>(
 ) -> Result<(), InitError> {
     ensure_cached(wrapper, || {
         provider.unlock_key().map_err(InitError::KeyProvider)
+    })
+}
+
+/// `init!(<provider>)` seam: install `provider` as the process-global
+/// **governing provider** (ADR-0001), then eagerly unlock the host's own
+/// `wrapper` through it for early-failure (the `Result` contract). Once
+/// installed, the lazy path unlocks every other masking crate's wrapper
+/// through the same provider — governed masking across the dependency
+/// graph under a uniform seal.
+///
+/// # Errors
+///
+/// Forwards provider errors via [`InitError::KeyProvider`]; AEAD failure
+/// on the host wrapper (wrong material or tamper) → [`InitError::Decryption`];
+/// an unrecognized format-version byte → [`InitError::UnsupportedFormat`].
+#[doc(hidden)]
+#[allow(clippy::needless_pass_by_value)]
+pub fn __govern_external<P: KeyProvider + 'static>(
+    provider: P,
+    wrapper: &[u8; WRAPPER_LEN],
+) -> Result<(), InitError> {
+    let governor = governor::install(governor::Governor::External(alloc::boxed::Box::new(
+        provider,
+    )));
+    ensure_cached(wrapper, || {
+        governor
+            .unlock_key_for(wrapper)
+            .map_err(InitError::KeyProvider)
     })
 }
 
@@ -225,27 +254,32 @@ fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN], tier: &str) -> &'static Ma
     mask_key_store::get_or_init(nonce, move || {
         #[cfg(debug_assertions)]
         mask_key_store::record_lazy(nonce);
-        // No explicit `init!` ran. The lazy fallback derives the
-        // Embedded-tier unlock_key from the wrapper's public nonce, which
-        // is correct ONLY at the Embedded floor. On a higher-tier seal
-        // this would silently derive the wrong key and fail the wrapper
-        // AEAD check, masking the real cause (a missing/late `init!`) as a
-        // generic decryption error. Refuse instead, naming the
-        // init-ordering bug. The cell is set-once: a build that called
-        // `init!` first never reaches this closure, so a correctly
-        // ordered higher-tier program is unaffected.
-        if crate::internal::SealTierTag::parse(tier) != Some(crate::internal::SealTierTag::Embedded)
-        {
-            crate::diagnostics::lazy_init_wrong_tier(tier);
-        }
-        // Derive the keyless Embedded unlock_key (works in both std and
-        // no_std), then decrypt the wrapper through the same path the
-        // explicit seams use. Any failure (provider or decrypt) panics
-        // with no message to avoid leaking litmask-identifying plaintext;
-        // the eager seams forward the equivalent `InitError`.
-        let provider = crate::EmbeddedProvider::new(wrapper);
-        let bytes = match provider
-            .unlock_key()
+        // Rule X (ADR-0001): a governing provider, if one was installed by
+        // an `init!` form, supplies the unlock key for EVERY wrapper
+        // regardless of tier (governed masking under a uniform seal).
+        // Absent a governor, only the keyless Embedded floor self-unlocks:
+        // a higher-tier seal here would derive the wrong key and fail the
+        // wrapper AEAD check, masking the real cause (a missing/late
+        // governing `init!`) as a generic decryption error — refuse
+        // instead, naming the ordering bug. Seal tier is uniform across a
+        // dependency graph (set by the shared build env), so the governor
+        // key matches every wrapper it is asked to open.
+        let unlock_key = match governor::current() {
+            Some(governor) => governor.unlock_key_for(wrapper),
+            None => {
+                if crate::internal::SealTierTag::parse(tier)
+                    != Some(crate::internal::SealTierTag::Embedded)
+                {
+                    crate::diagnostics::lazy_init_wrong_tier(tier);
+                }
+                crate::EmbeddedProvider::new(wrapper).unlock_key()
+            }
+        };
+        // Decrypt the wrapper through the same path the explicit seams use.
+        // Any failure (provider or decrypt) panics with no message to avoid
+        // leaking litmask-identifying plaintext; the eager seams forward
+        // the equivalent `InitError`.
+        let bytes = match unlock_key
             .map_err(InitError::KeyProvider)
             .and_then(|unlock_key| decrypt_mask_key(&unlock_key, wrapper))
         {

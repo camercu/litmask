@@ -179,13 +179,14 @@ pub(crate) fn expand(input: &TokenStream) -> TokenStream {
             )
         }}
         .into(),
-        // The external provider supplies the unlock material; the
-        // wrapper bytes are still the embedded ones (only the key
-        // source differs between tiers).
+        // The external provider becomes the process-global governing
+        // provider (ADR-0001): it unlocks the host's own wrapper eagerly
+        // and every transitive crate's wrapper lazily. The wrapper bytes
+        // are still the embedded ones (only the key source differs).
         Form::External => {
             let provider = provider.expect("External form carries a provider expression");
             quote! {{
-                ::litmask::__internal::__init_with_wrapper(
+                ::litmask::__internal::__govern_external(
                     #provider,
                     ::litmask::__wrapper_bytes!(),
                 )
