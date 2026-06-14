@@ -1,9 +1,9 @@
 //! End-to-end integration test for the `hello_world` example.
 //!
 //! Builds the example, scans its binary with `strings` for absence of
-//! the masked Franklin fixture, then runs it with `LITMASK_UNLOCK_KEY`
-//! sourced from the build's `litmask.config` and asserts the
-//! decrypted output matches the fixture.
+//! the masked Franklin fixture, then runs it (the keyless Embedded tier
+//! self-initializes, so no key is supplied) and asserts the decrypted
+//! output matches the fixture.
 
 mod common;
 
@@ -33,11 +33,9 @@ fn end_to_end_round_trip() {
     // substring is absent from compiled plaintext.
     common::assert_substring_absent(&example_bin, FIXTURE_SUBSTRING);
 
-    // End-to-end runtime check: the example, given the build's
-    // unlock_key, recovers the fixture and prints it to stdout.
-    let unlock_key = common::read_unlock_key(&common::config_path(Profile::Debug));
+    // End-to-end runtime check: the Embedded example self-initializes on
+    // its first mask!() and prints the recovered fixture to stdout.
     let run_output = Command::new(&example_bin)
-        .env("LITMASK_UNLOCK_KEY", &unlock_key)
         .output()
         .expect("example invocation failed");
     assert!(
@@ -48,16 +46,4 @@ fn end_to_end_round_trip() {
     );
     let stdout = String::from_utf8(run_output.stdout).expect("example stdout is UTF-8");
     assert_eq!(stdout, format!("{FIXTURE}\n"));
-}
-
-#[test]
-fn litmask_config_present_with_required_fields() {
-    let config = common::config_path(Profile::Debug);
-    assert!(
-        config.exists(),
-        "litmask.config missing at {}",
-        config.display()
-    );
-    let body = std::fs::read_to_string(&config).expect("read litmask.config");
-    assert!(body.contains("unlock_key ="), "unlock_key field missing");
 }

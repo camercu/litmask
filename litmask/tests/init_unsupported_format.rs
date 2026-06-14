@@ -19,29 +19,35 @@
 mod common;
 
 use litmask::__internal::__init_with_wrapper;
-use litmask::{__wrapper_bytes, InitError};
+use litmask::InitError;
 use litmask_internal::{
-    CURRENT_CIPHER, KEY_LEN, NONCE_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN, WRAPPER_PLAINTEXT_LEN,
-    aead_encrypt, assemble_wrapper, base64url,
+    CURRENT_CIPHER, FormatVersion, KEY_LEN, NONCE_LEN, WRAPPER_BODY_LEN, WRAPPER_LEN,
+    WRAPPER_PLAINTEXT_LEN, aead_encrypt, assemble_wrapper, base64url,
 };
 
-/// Forge a wrapper that AEAD-authenticates under the build's
-/// `unlock_key` but seals `version_byte || mask_key` with an arbitrary
-/// `version_byte`. Used to exercise the post-decrypt version check in
-/// isolation from tag verification.
-fn forge_wrapper_with_version(version_byte: u8) -> [u8; WRAPPER_LEN] {
-    let key_b64 = common::read_unlock_key(&common::self_config_path());
-    let unlock_key: [u8; KEY_LEN] = base64url::decode(&key_b64)
-        .expect("unlock_key is base64url")
-        .try_into()
-        .expect("unlock_key is KEY_LEN bytes");
+/// Arbitrary, self-contained test unlock key — the error paths only need
+/// the forged wrapper and the provider to agree on *a* key, not the
+/// build's. (`litmask keygen` is the way to mint material in shell
+/// contexts; an in-process test just hardcodes one.)
+const TEST_UNLOCK_KEY: [u8; KEY_LEN] = [0x5Au8; KEY_LEN];
 
+fn test_provider() -> common::TestKeyProvider {
+    common::TestKeyProvider {
+        key_b64: base64url::encode(&TEST_UNLOCK_KEY),
+    }
+}
+
+/// Forge a wrapper that AEAD-authenticates under [`TEST_UNLOCK_KEY`] but
+/// seals `version_byte || mask_key` with the given `version_byte`. Used
+/// to exercise the post-decrypt version check in isolation from tag
+/// verification.
+fn forge_wrapper_with_version(version_byte: u8) -> [u8; WRAPPER_LEN] {
     let nonce = [0x42u8; NONCE_LEN];
     let mut plaintext = [0u8; WRAPPER_PLAINTEXT_LEN];
     plaintext[0] = version_byte;
     // The masked-key payload is irrelevant to the version check.
 
-    let body_vec = aead_encrypt(CURRENT_CIPHER, &unlock_key, &nonce, &plaintext)
+    let body_vec = aead_encrypt(CURRENT_CIPHER, &TEST_UNLOCK_KEY, &nonce, &plaintext)
         .expect("aead_encrypt under unlock_key");
     let body: &[u8; WRAPPER_BODY_LEN] = body_vec.as_slice().try_into().expect("body length");
     assemble_wrapper(&nonce, body)
@@ -50,9 +56,7 @@ fn forge_wrapper_with_version(version_byte: u8) -> [u8; WRAPPER_LEN] {
 #[test]
 fn init_returns_unsupported_format_for_authenticated_unknown_version_0x99() {
     let fabricated = forge_wrapper_with_version(0x99);
-    let key = common::read_unlock_key(&common::self_config_path());
-    let provider = common::TestKeyProvider { key_b64: key };
-    let result = __init_with_wrapper(provider, &fabricated);
+    let result = __init_with_wrapper(test_provider(), &fabricated);
     assert!(
         matches!(result, Err(InitError::UnsupportedFormat)),
         "expected Err(InitError::UnsupportedFormat), got {result:?}",
@@ -63,22 +67,19 @@ fn init_returns_unsupported_format_for_authenticated_unknown_version_0x99() {
 fn init_returns_unsupported_format_for_authenticated_unknown_version_0xfe() {
     // A second unknown value pins the whole byte space, not one value.
     let fabricated = forge_wrapper_with_version(0xFE);
-    let key = common::read_unlock_key(&common::self_config_path());
-    let provider = common::TestKeyProvider { key_b64: key };
-    let result = __init_with_wrapper(provider, &fabricated);
+    let result = __init_with_wrapper(test_provider(), &fabricated);
     assert!(matches!(result, Err(InitError::UnsupportedFormat)));
 }
 
 #[test]
 fn init_returns_decryption_for_tampered_nonce() {
-    // Flipping the cleartext nonce breaks AEAD authentication, so the
-    // version byte is never reached — this is the generic `Decryption`
-    // path, distinct from `UnsupportedFormat`.
-    let mut fabricated = *__wrapper_bytes!();
+    // A valid wrapper (correct version, correct key) whose cleartext
+    // nonce is then flipped: AEAD authentication breaks, so the version
+    // byte is never reached — the generic `Decryption` path, distinct
+    // from `UnsupportedFormat`.
+    let mut fabricated = forge_wrapper_with_version(FormatVersion::CURRENT.to_byte());
     fabricated[0] ^= 0xFF;
-    let key = common::read_unlock_key(&common::self_config_path());
-    let provider = common::TestKeyProvider { key_b64: key };
-    let result = __init_with_wrapper(provider, &fabricated);
+    let result = __init_with_wrapper(test_provider(), &fabricated);
     assert!(
         matches!(result, Err(InitError::Decryption)),
         "expected Err(InitError::Decryption), got {result:?}",

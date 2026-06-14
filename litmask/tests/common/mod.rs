@@ -85,28 +85,6 @@ pub fn example_path(name: &str, profile: Profile) -> PathBuf {
         .join(name)
 }
 
-/// Path to `litmask.config` for a subprocess build under the standard
-/// target directory. Use [`self_config_path`] when reading the config
-/// that matches the *running* test binary.
-pub fn config_path(profile: Profile) -> PathBuf {
-    workspace_root()
-        .join("target")
-        .join(profile.dir())
-        .join("litmask.config")
-}
-
-/// Path to `litmask.config` matching the build that produced the
-/// running test binary. Derived from `current_exe()` so it works
-/// under `cargo llvm-cov` (which redirects `--target-dir`).
-pub fn self_config_path() -> PathBuf {
-    let exe = std::env::current_exe().expect("current_exe");
-    // Test binary lives at <target_dir>/<profile>/deps/<binary>.
-    exe.parent()
-        .and_then(Path::parent)
-        .expect("exe path has <profile>/deps/ ancestors")
-        .join("litmask.config")
-}
-
 /// Build one example by name in the given profile, panicking with a
 /// useful message on failure.
 ///
@@ -374,21 +352,6 @@ pub fn assert_substring_absent(binary: &Path, needle: &str) {
     );
 }
 
-/// Parse the `unlock_key` field out of `litmask.config` and return its
-/// base64url-encoded value (without surrounding quotes).
-pub fn read_unlock_key(config_path: &Path) -> String {
-    let body = std::fs::read_to_string(config_path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", config_path.display()));
-    for line in body.lines() {
-        if let Some(rest) = line.strip_prefix("unlock_key = \"") {
-            if let Some(value) = rest.strip_suffix('"') {
-                return value.to_string();
-            }
-        }
-    }
-    panic!("unlock_key not found in {}", config_path.display());
-}
-
 fn env_var(key: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| panic!("{key} not set"))
 }
@@ -425,13 +388,6 @@ where
     F: FnOnce() + std::panic::UnwindSafe,
 {
     catch_panic_msg(f).expect("expected closure to panic, but it returned normally")
-}
-
-/// Parse the unlock key from the `litmask.config` that matches the
-/// running test binary and return a ready-to-use [`UnlockKey`].
-pub fn unlock_key_from_config() -> UnlockKey {
-    let b64 = read_unlock_key(&self_config_path());
-    UnlockKey::from_base64url(&b64).expect("base64url unlock_key in litmask.config")
 }
 
 /// `KeyProvider` that returns a base64url-encoded unlock key from an

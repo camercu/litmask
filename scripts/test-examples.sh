@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Build first so the canonical `litmask.config` exists before any
-# example runs (the build script writes it).
+# Build first so the `litmask` CLI exists for `keygen` below.
 cargo build --workspace --examples
-unlock_key=$(awk -F'"' '/^unlock_key/ {print $2}' target/debug/litmask.config)
+# The External-tier examples just need *some* unlock material at build and
+# run time; mint a fresh key the sanctioned way rather than scraping a
+# build artifact. (Embedded examples ignore it entirely — see below.)
+unlock_key=$(target/debug/litmask keygen)
 found=0
 for src in litmask/examples/*.rs; do
     name=$(basename "$src" .rs)

@@ -1,6 +1,6 @@
 [package]
 name = "litmask-build"
-description = "Build-script helper for the litmask crate; generates compile-time keys and writes litmask.config."
+description = "Build-script helper for the litmask crate; generates compile-time keys and seals the runtime wrapper."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

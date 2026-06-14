@@ -83,9 +83,8 @@ fn mask_print_named_args() {
 fn run_mask_print_e2e() -> String {
     common::build_example("mask_print_e2e", Profile::Debug);
     let bin = common::example_path("mask_print_e2e", Profile::Debug);
-    let key = common::read_unlock_key(&common::config_path(Profile::Debug));
+    // The Embedded example self-initializes on its first mask_print!.
     let output = Command::new(&bin)
-        .env("LITMASK_UNLOCK_KEY", &key)
         .output()
         .expect("mask_print_e2e invocation failed");
     assert!(

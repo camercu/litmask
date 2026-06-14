@@ -19,9 +19,10 @@
 //! - `$OUT_DIR/litmask_wrapper.bin` — encrypted-`mask_key` wrapper
 //!   (consumed by the runtime via `include_bytes!` inside the
 //!   `init!` / `mask!` macro expansions).
-//! - `target/<profile>/litmask.config` — TOML containing `unlock_key`
-//!   (Embedded tier only; every keyed tier re-sources its key material
-//!   at runtime, so none writes a config).
+//!
+//! No `unlock_key` is written to disk: the Embedded floor recomputes it
+//! from the wrapper nonce, and the keyed tiers re-source their material
+//! at runtime.
 
 use std::ffi::OsString;
 use std::fs;
@@ -114,13 +115,6 @@ impl SealTier {
     }
 }
 
-const CONFIG_HEADER: &str = "\
-# litmask.config — build artifact.
-# SECRET: contains the runtime `unlock_key` for this build. Do not commit.
-# This file is written by litmask-build::emit() at compile time and consumed by
-# the litmask runtime (env var).
-";
-
 /// Run the build-time mask-key + unlock-key generation pipeline.
 ///
 /// # Panics
@@ -161,7 +155,7 @@ pub fn emit() {
 
     let artifacts = BuildArtifacts::derive(&seed, &tier);
     seed.zeroize();
-    artifacts.write_to(&out_dir, &profile_dir, &tier);
+    artifacts.write_to(&out_dir);
     // artifacts' Drop zeroizes mask_key, unlock_key, and the in-memory
     // copy of the seed.
 }
@@ -190,9 +184,9 @@ struct BuildArtifacts {
     mask_key: [u8; KEY_LEN],
     /// 32-byte ChaCha20-Poly1305 key that encrypts the wrapper. Its
     /// origin is tier-dependent (nonce-derived for Embedded, a KDF of
-    /// re-sourced material for the keyed tiers). Written into
-    /// `litmask.config` only for the Embedded tier; keyed tiers
-    /// re-derive it at runtime and never read the config.
+    /// re-sourced material for the keyed tiers). Used only to seal the
+    /// wrapper at build time; never persisted — the runtime re-derives
+    /// or re-sources it.
     unlock_key: [u8; KEY_LEN],
     /// Assembled wrapper bytes — cleartext nonce followed by the AEAD
     /// sealing of `version_byte || mask_key` under `unlock_key`.
@@ -335,25 +329,15 @@ impl BuildArtifacts {
         }
     }
 
-    /// Persist artifacts to disk. `out_dir` receives the three binary
+    /// Persist artifacts to disk: `out_dir` receives the three binary
     /// blobs the proc-macro and runtime `include_bytes!` at expansion
-    /// time; `profile_dir` receives `litmask.config` only for the
-    /// Embedded tier.
-    ///
-    /// Only the Embedded tier writes a config: its `unlock_key` is the
-    /// nonce-derived floor key, recomputed identically at runtime. The
-    /// External and Machine tiers re-source their key material at runtime
-    /// (operator channel / host machine id), so their derived `unlock_key`
-    /// is neither needed nor reusable as material — emitting it would be a
-    /// footgun and would write a secret to an artifact nothing consumes
-    /// (§3.1).
-    fn write_to(&self, out_dir: &Path, profile_dir: &Path, tier: &SealTier) {
+    /// time. The derived `unlock_key` is never written — the Embedded
+    /// floor recomputes it from the wrapper nonce, and the keyed tiers
+    /// re-source their material at runtime.
+    fn write_to(&self, out_dir: &Path) {
         write_secret(&out_dir.join("litmask_seed.bin"), &self.seed);
         write_secret(&out_dir.join("litmask_key.bin"), &self.mask_key);
         write_secret(&out_dir.join("litmask_wrapper.bin"), &self.wrapper);
-        if matches!(tier, SealTier::Embedded) {
-            write_config(&profile_dir.join("litmask.config"), &self.unlock_key);
-        }
     }
 }
 
@@ -476,8 +460,8 @@ fn write_secret(path: &Path, contents: &[u8]) {
 
 fn profile_dir_of(out_dir: &Path) -> PathBuf {
     // OUT_DIR looks like target/<profile>/build/<pkg>-<hash>/out.
-    // Three ancestors up is target/<profile>/, where litmask.config
-    // and the persisted seed live.
+    // Three ancestors up is target/<profile>/, where the persisted
+    // debug-profile seed lives.
     out_dir
         .ancestors()
         .nth(3)
@@ -503,14 +487,6 @@ fn seal_tier_directives(tier: &SealTier) -> [String; 3] {
         "cargo:rerun-if-env-changed=LITMASK_MACHINE_ID".to_string(),
         "cargo:rerun-if-env-changed=LITMASK_UNLOCK_KEY".to_string(),
     ]
-}
-
-fn write_config(path: &Path, unlock_key: &[u8; KEY_LEN]) {
-    let body = format!(
-        "{CONFIG_HEADER}\nunlock_key = \"{}\"\n",
-        base64url::encode(unlock_key),
-    );
-    fs::write(path, body).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
 
 #[cfg(test)]
@@ -854,33 +830,6 @@ mod tests {
         assert_eq!(recovered, artifacts.mask_key);
     }
 
-    /// AC5: `litmask.config` MUST begin with a `#`-prefixed comment
-    /// block describing the file's purpose and warning that it
-    /// contains a secret. Operators read this file in the deployment
-    /// pipeline; the header is their first line of defense against
-    /// accidental commit / log exposure.
-    #[test]
-    fn litmask_config_starts_with_hash_comment_block_warning_about_secret() {
-        let dir = TempDir::new().expect("tempdir");
-        let config_path = dir.path().join("litmask.config");
-        write_config(&config_path, &[0u8; KEY_LEN]);
-        let body = fs::read_to_string(&config_path).expect("read");
-        let first_line = body.lines().next().expect("non-empty config");
-        assert!(
-            first_line.starts_with('#'),
-            "first line must begin with `#`, got: {first_line:?}",
-        );
-        // The block must explicitly warn that the file holds a
-        // secret — without that warning, operators reading just the
-        // first line might miss the implication.
-        assert!(
-            body.lines()
-                .take_while(|l| l.starts_with('#'))
-                .any(|l| l.to_ascii_lowercase().contains("secret")),
-            "comment block must mention 'secret' (case-insensitive); got:\n{body}",
-        );
-    }
-
     /// AC1: identical source + toolchain + deps + `LITMASK_RNG_SEED`
     /// → byte-identical per-string ciphertext. The build crate's
     /// `derive` was already pinned for byte-identical wrapper output
@@ -1058,29 +1007,6 @@ mod tests {
         assert_eq!(clean.wrapper, newlined.wrapper);
     }
 
-    /// The `MachineExternal` tier writes no `litmask.config`: both factors
-    /// are re-sourced at runtime (host id + operator channel), so the
-    /// composed key is neither needed nor reusable as material. Only
-    /// Embedded writes a config.
-    #[test]
-    fn write_to_omits_config_for_machine_external_tier() {
-        let seed = [0x71u8; KEY_LEN];
-        let out = TempDir::new().expect("out dir");
-        let profile = TempDir::new().expect("profile dir");
-        let config = profile.path().join("litmask.config");
-
-        BuildArtifacts::derive(&seed, &machine_external("host-id-abc", "secret")).write_to(
-            out.path(),
-            profile.path(),
-            &machine_external("host-id-abc", "secret"),
-        );
-        assert!(
-            !config.exists(),
-            "machine_external tier must not write litmask.config",
-        );
-        assert!(out.path().join("litmask_wrapper.bin").exists());
-    }
-
     /// A Machine build publishes the `machine` seal tag over rustc-env
     /// (the `init!(bind_to_machine)` form cross-checks against it).
     #[test]
@@ -1145,27 +1071,6 @@ mod tests {
         );
     }
 
-    /// The Machine tier writes no `litmask.config` (its key is re-sourced
-    /// from the host at runtime, like External). Only Embedded writes one.
-    #[test]
-    fn write_to_omits_config_for_machine_tier() {
-        let seed = [0x71u8; KEY_LEN];
-        let out = TempDir::new().expect("out dir");
-        let profile = TempDir::new().expect("profile dir");
-        let config = profile.path().join("litmask.config");
-
-        BuildArtifacts::derive(&seed, &machine("host-id-abc")).write_to(
-            out.path(),
-            profile.path(),
-            &machine("host-id-abc"),
-        );
-        assert!(
-            !config.exists(),
-            "machine tier must not write litmask.config"
-        );
-        assert!(out.path().join("litmask_wrapper.bin").exists());
-    }
-
     /// An External build publishes the `external` seal tag over
     /// rustc-env (the `init!(<provider>)` form cross-checks against it).
     #[test]
@@ -1215,34 +1120,21 @@ mod tests {
         assert_eq!(bare.wrapper, newlined.wrapper);
     }
 
-    /// The External tier writes no `litmask.config`: its derived key is
-    /// neither consumed nor reusable as material, so emitting it would
-    /// be a footgun and a needless secret-to-artifact write (§3.1). The
-    /// Embedded tier still writes the config.
+    /// Every tier writes the wrapper blob the runtime embeds via
+    /// `include_bytes!` — no key material is ever written to disk.
     #[test]
-    fn write_to_omits_config_for_external_tier() {
+    fn write_to_emits_only_the_wrapper_blobs() {
         let seed = [0x71u8; KEY_LEN];
         let out = TempDir::new().expect("out dir");
-        let profile = TempDir::new().expect("profile dir");
-        let config = profile.path().join("litmask.config");
 
-        BuildArtifacts::derive(&seed, &external("operator secret")).write_to(
-            out.path(),
-            profile.path(),
-            &external("operator secret"),
-        );
-        assert!(
-            !config.exists(),
-            "external tier must not write litmask.config",
-        );
-        // The wrapper blob is still emitted for the runtime to embed.
+        BuildArtifacts::derive(&seed, &external("operator secret")).write_to(out.path());
+
         assert!(out.path().join("litmask_wrapper.bin").exists());
-
-        BuildArtifacts::derive(&seed, &SealTier::Embedded).write_to(
-            out.path(),
-            profile.path(),
-            &SealTier::Embedded,
+        assert!(out.path().join("litmask_key.bin").exists());
+        assert!(out.path().join("litmask_seed.bin").exists());
+        assert!(
+            !out.path().join("litmask.config").exists(),
+            "no litmask.config is written for any tier",
         );
-        assert!(config.exists(), "embedded tier must write litmask.config",);
     }
 }
