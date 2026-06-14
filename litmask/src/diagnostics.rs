@@ -33,7 +33,8 @@ fn init_hint(err: &InitError) -> &'static str {
         InitError::Decryption => {
             "the runtime-sourced key did not open the build-sealed wrapper — provider \
              material, machine id, or init! form disagrees with the tier this build \
-             was sealed under"
+             was sealed under; under a governing init!() this also means a transitive \
+             masking crate was sealed under different material (a non-uniform seal)"
         }
         InitError::UnsupportedFormat => {
             "the wrapper's format-version byte is unrecognized — litmask build/runtime \
