@@ -104,6 +104,35 @@ outside the binary, so key management reduces to _how you deliver the
 unlock_key_ — environment variable, file, machine ID, or a provider you
 write.
 
+## Libraries and governed masking
+
+litmask composes across a dependency graph. The rule for **library
+authors** is one line:
+
+> **If your crate uses litmask internally, never call `init!()` — only
+> `mask!()`.** Unlocking is the _host binary's_ job, not the library's.
+
+A library just `mask!()`s its own strings. Whoever links the final binary
+decides how the whole graph is unlocked:
+
+- **Transparent masking** (default): the host does nothing. Every masking
+  crate — yours and its dependencies — self-unlocks at the keyless
+  **Embedded floor** on first use (`strings(1)`-resistance only).
+- **Governed masking**: the host sets one unlock key in the _build_
+  environment (`LITMASK_UNLOCK_KEY`, which reaches every crate's
+  `build.rs`) and calls a single governing `init!(provider)` at startup.
+  That one key unlocks the entire graph — the host's strings and every
+  transitive library's — with real secrecy.
+
+Because the seal tier is fixed by the shared build environment, there is
+no per-library configuration: the binary owner governs deployment
+security for the whole graph. There is no bare `init!()`; the governing
+forms are `init!(provider)`, `init!(bind_to_machine)`, and
+`init!(bind_to_machine + provider)`.
+
+See [ADR-0001](docs/adr/0001-masking-crate-unlock-governance.md) for the
+rationale and the [Deployment Guide](docs/DEPLOYMENT.md) for host setup.
+
 ## Macros
 
 | Macro                         | Returns          | Replaces                                |

@@ -72,6 +72,31 @@
 //! anti-`strings(1)` obfuscation only; real secrets always go through
 //! [`mask!`].
 //!
+//! ## Library authors and governed masking
+//!
+//! litmask composes across a dependency graph. The rule for **library
+//! authors** is one line:
+//!
+//! > **If your crate uses litmask internally, never call [`init!`] — only
+//! > [`mask!`].** Unlocking is the *host binary's* job, not the library's.
+//!
+//! A library just masks its own strings; whoever links the final binary
+//! decides how the whole graph is unlocked:
+//!
+//! - **Transparent masking** (default): the host does nothing — every
+//!   masking crate self-unlocks at the keyless Embedded floor on first
+//!   use (`strings(1)`-resistance only).
+//! - **Governed masking**: the host sets one unlock key in the *build*
+//!   environment (`LITMASK_UNLOCK_KEY`, reaching every crate's
+//!   `build.rs`) and calls a single governing [`init!`] at startup; that
+//!   one key unlocks the entire graph with real secrecy.
+//!
+//! The seal tier is fixed by the shared build environment, so the binary
+//! owner governs the whole graph and libraries need no configuration.
+//! There is no bare `init!()`; the governing forms are `init!(provider)`,
+//! `init!(bind_to_machine)`, and `init!(bind_to_machine + provider)`. See
+//! `docs/adr/0001-masking-crate-unlock-governance.md`.
+//!
 //! ## Return types
 //!
 //! [`mask!`] returns [`String`](alloc::string::String), not

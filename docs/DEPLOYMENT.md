@@ -1,5 +1,36 @@
 # Deployment Guide
 
+## Governing a dependency graph
+
+litmask is governed by the **host binary**, not by the libraries it links.
+By convention, **masking libraries never call `init!()`** — they only
+`mask!()`, and rely on lazy unlock. You, the binary owner, choose how the
+whole graph (your crate plus every transitive masking dependency) is
+unlocked:
+
+- **Transparent masking** — do nothing. Every masking crate self-unlocks
+  at the keyless **Embedded floor** on first use. No provisioning, but
+  `strings(1)`-resistance only; the key is recoverable from the artifact.
+- **Governed masking** — put one unlock key in the **build** environment
+  so it reaches every crate's `build.rs`/`emit()`, then call a single
+  governing `init!(provider)` (or `init!(bind_to_machine[ + provider]`)
+  at startup. That one key unlocks the entire graph with real secrecy.
+
+```sh
+# Uniform seal: this key reaches every masking crate's emit() in the graph.
+LITMASK_UNLOCK_KEY='…' cargo build --release
+# Runtime: one governing init! unlocks the whole graph.
+LITMASK_UNLOCK_KEY='…' ./my_app
+```
+
+The seal tier is uniform by construction — it is fixed by the shared build
+environment, so a dependency graph is uniformly Embedded, External, or
+Machine. There is no per-library configuration, and there is no bare
+`init!()`. A masking library that calls `init!()` (or masks in a
+`static`/constructor before the host's governing init! runs) seizes
+governance from the host and must be treated as a bug. See
+[ADR-0001](adr/0001-masking-crate-unlock-governance.md).
+
 ## Key providers
 
 ### `EnvVarProvider` (External tier)
