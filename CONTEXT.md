@@ -6,6 +6,9 @@ recover plaintext from a compiled program (`strings(1)`, disassemblers,
 hex editors). The bounded goal is to raise the cost of static binary
 analysis from minutes to hours; it is not a credential vault.
 
+For how the pieces fit together, read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+first — this file is the **glossary** that pins the canonical terms.
+
 ## Language
 
 ### Keys

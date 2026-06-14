@@ -2,6 +2,7 @@
 
 ## Project context
 
+See `docs/ARCHITECTURE.md` for the one-page mental model (read first).
 See `CLAUDE.md` for dev workflow and architecture overview.
 See `CONTEXT.md` for domain glossary (ubiquitous language).
 See `docs/SPECIFICATION.md` for the full spec with section numbers.

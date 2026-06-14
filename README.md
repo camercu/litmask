@@ -319,6 +319,7 @@ LITMASK_UNLOCK_KEY="$(cargo run -q -p litmask-cli -- keygen)" \
 
 ## Documentation
 
+- [Architecture (start here)](docs/ARCHITECTURE.md) — the one-page mental model
 - [API docs (docs.rs)](https://docs.rs/litmask)
 - [Threat model](docs/THREAT_MODEL.md)
 - [Deployment guide](docs/DEPLOYMENT.md)

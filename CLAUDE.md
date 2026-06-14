@@ -22,6 +22,7 @@ Tool versions pinned in `.tool-versions` — single source of truth.
 
 ## Key files
 
+- `docs/ARCHITECTURE.md` — one-page mental model (read first)
 - `CONTEXT.md` — domain glossary (ubiquitous language)
 - `docs/SPECIFICATION.md` — full spec, section-numbered
 - `docs/TASKS.md` — implementation tasks with acceptance criteria
