@@ -79,37 +79,31 @@ pub fn mask(input: TokenStream) -> TokenStream {
     mask::expand(input)
 }
 
-/// Initialize the runtime under the default **Embedded** seal tier:
-/// derive the `unlock_key` from the embedded wrapper's cleartext nonce
-/// and decrypt the `mask_key` with it (no external key material).
+/// Install a process-global **governing provider** (ADR-0001) and eagerly
+/// unlock the host's own wrapper through it. Once installed, the lazy path
+/// unlocks every other masking crate's wrapper through the same provider —
+/// governed masking across the dependency graph under a uniform seal.
 ///
-/// Two forms select the keying tier:
+/// There is no bare `init!()`: the keyless **Embedded** tier
+/// self-initializes on the first `mask!()`. The governing forms select the
+/// keying tier:
 ///
-/// - `init!()` — keyless **Embedded** default.
-/// - `init!(<provider-expr>)` — **External** tier, taking any
+/// - `init!(<provider-expr>)` — `External`, taking any
 ///   `litmask::KeyProvider` value.
+/// - `init!(bind_to_machine)` — `Machine`.
+/// - `init!(bind_to_machine + <provider-expr>)` — `MachineExternal`.
 ///
-/// Both expand at the call site so they can `include_bytes!` the
-/// embedded `mask_key` wrapper from the calling crate's `OUT_DIR`, and
-/// both return `Result<(), litmask::InitError>`; calling
-/// `litmask::init!()?` at startup surfaces initialization failures as a
-/// `Result` rather than a panic deep in the first `mask!()` call.
+/// Each expands at the call site so it can `include_bytes!` the embedded
+/// `mask_key` wrapper from the calling crate's `OUT_DIR`, and returns
+/// `Result<(), litmask::InitError>`; calling `litmask::init!(provider)?`
+/// at startup surfaces initialization failures as a `Result` rather than a
+/// panic deep in the first `mask!()` call.
 ///
 /// A proc-macro (not `macro_rules!`) so it can read the
 /// build-authoritative `LITMASK_SEAL_TIER` tag and cross-check the
 /// form against the sealed tier.
 ///
-/// Repeat calls after a successful explicit `init!` are idempotent
-/// (`Ok(())` without re-running the provider).
-///
-/// # Panics
-///
-/// In **debug** builds, panics when called after a `mask!()` already
-/// lazily initialized the runtime (Embedded floor only) — the lazy key
-/// equals the `init!()` key today, but the ordering refuses to decrypt
-/// at runtime the moment the build is resealed above the floor. Move
-/// `init!` ahead of the first `mask!()`. Release builds keep the silent
-/// idempotent `Ok(())`.
+/// Repeat calls are idempotent (`Ok(())`; the first governor wins).
 ///
 /// # Errors
 ///

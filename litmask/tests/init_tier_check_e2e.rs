@@ -63,9 +63,9 @@ fn build_fixture(manifest_rel: &str, env: &[(&str, &str)]) -> Output {
 const EXTERNAL_MATERIAL: &str = "init-tier-check external seal material";
 
 #[test]
-fn init_embedded_form_against_external_seal_fails_to_compile() {
+fn init_machine_form_against_external_seal_fails_to_compile() {
     // Sealing the fixture `external` (via LITMASK_UNLOCK_KEY) while its
-    // source calls the no-arg `init!()` (the Embedded form) makes the
+    // source calls `init!(bind_to_machine)` (the Machine form) makes the
     // build-sealed tier disagree with the form.
     let out = build_fixture(
         "litmask/tests/init_mismatch_fixture/Cargo.toml",
@@ -74,7 +74,7 @@ fn init_embedded_form_against_external_seal_fails_to_compile() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         !out.status.success(),
-        "init!() against an external seal must fail to compile; stderr was {stderr:?}"
+        "init!(bind_to_machine) against an external seal must fail to compile; stderr was {stderr:?}"
     );
     assert!(
         stderr.contains("init! tier-mismatch"),
@@ -95,7 +95,7 @@ fn init_form_without_emit_fails_with_unset_tier() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         !out.status.success(),
-        "init!() with no litmask_build::emit() must fail to compile; stderr was {stderr:?}"
+        "init!(bind_to_machine) with no litmask_build::emit() must fail to compile; stderr was {stderr:?}"
     );
     assert!(
         stderr.contains("LITMASK_SEAL_TIER is unset"),

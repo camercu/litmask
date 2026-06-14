@@ -1,0 +1,7 @@
+error: init! grammar: bare init!() was removed: the Embedded tier self-initializes on the first mask!() — drop the call, or use init!(provider) / init!(bind_to_machine) to govern the graph
+ --> tests/compile/init_bare_removed.rs:9:13
+  |
+9 |     let _ = init!();
+  |             ^^^^^^^
+  |
+  = note: this error originates in the macro `init` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,20 +1,21 @@
-//! `init!` proc-macro: runtime initialization with a
+//! `init!` proc-macro: install a governing provider, with a
 //! build-authoritative form↔tier cross-check.
 //!
-//! Two forms, each valid only against the matching sealed tier:
+//! Every form *governs* (ADR-0001) — there is no bare `init!()`; the
+//! Embedded tier self-initializes lazily on the first `mask!()`. Each
+//! form is valid only against the matching sealed tier:
 //!
-//! - `init!()` — no-argument **Embedded** form (keyless default).
-//! - `init!(<provider-expr>)` — **External** form taking a
-//!   [`KeyProvider`] value (env, file, custom).
+//! - `init!(<provider-expr>)` — `External`, taking a [`KeyProvider`].
+//! - `init!(bind_to_machine)` — `Machine`.
+//! - `init!(bind_to_machine + <provider-expr>)` — `MachineExternal`.
 //!
 //! `litmask_build::emit` records the sealed tier in the
 //! `LITMASK_SEAL_TIER` rustc-env var; this macro reads it at expansion
 //! time and emits a §1.9.6 `compile_error!` when the form and the
-//! sealed tier disagree — catching, at compile time, an `init!()`
-//! against an externally-sealed binary (or vice-versa), or a build with
-//! no litmask wiring at all. A `macro_rules!` form cannot read an env
-//! var and branch to `compile_error!`, which is why `init!` is a
-//! proc-macro.
+//! sealed tier disagree — catching, at compile time, an `init!(provider)`
+//! against a machine-sealed binary (or vice-versa), or a build with no
+//! litmask wiring at all. A `macro_rules!` form cannot read an env var
+//! and branch to `compile_error!`, which is why `init!` is a proc-macro.
 //!
 //! [`KeyProvider`]: litmask::KeyProvider
 
@@ -39,8 +40,6 @@ const BIND_TO_MACHINE_KEYWORD: &str = "bind_to_machine";
 /// unlocks exactly one sealed tier.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Form {
-    /// `init!()` — keyless Embedded default.
-    Embedded,
     /// `init!(<provider-expr>)` — External tier.
     External,
     /// `init!(bind_to_machine)` — Machine tier (bare keyword, not a
@@ -57,7 +56,6 @@ impl Form {
     /// The sealed tier this form is allowed to unlock.
     fn tier(self) -> SealTierTag {
         match self {
-            Self::Embedded => SealTierTag::Embedded,
             Self::External => SealTierTag::External,
             Self::Machine => SealTierTag::Machine,
             Self::MachineExternal => SealTierTag::MachineExternal,
@@ -67,7 +65,6 @@ impl Form {
     /// Human-readable call syntax for the form↔tier mismatch message.
     fn syntax(self) -> &'static str {
         match self {
-            Self::Embedded => "init!()",
             Self::External => "init!(provider)",
             Self::Machine => "init!(bind_to_machine)",
             Self::MachineExternal => "init!(bind_to_machine + provider)",
@@ -79,7 +76,8 @@ impl Form {
 /// two provider-bearing forms — the external provider expression tokens.
 ///
 /// Grammar:
-/// - empty → [`Form::Embedded`].
+/// - empty → error: bare `init!()` was removed (the Embedded tier
+///   self-initializes lazily on the first `mask!()`).
 /// - a bare `bind_to_machine` keyword (single ident) → [`Form::Machine`].
 /// - a leading `bind_to_machine` keyword followed by a lone `+` → the
 ///   two-factor [`Form::MachineExternal`]; the tokens after `+` are the
@@ -100,7 +98,11 @@ fn classify(
     input: &proc_macro2::TokenStream,
 ) -> Result<(Form, Option<proc_macro2::TokenStream>), String> {
     if input.is_empty() {
-        return Ok((Form::Embedded, None));
+        return Err(
+            "bare init!() was removed: the Embedded tier self-initializes on the first mask!() — \
+             drop the call, or use init!(provider) / init!(bind_to_machine) to govern the graph"
+                .to_string(),
+        );
     }
     let mut tokens = input.clone().into_iter();
     let leading_bind_to_machine = matches!(
@@ -169,16 +171,6 @@ pub(crate) fn expand(input: &TokenStream) -> TokenStream {
             .into();
     }
     match form {
-        // Bind the embedded wrapper once: `EmbeddedProvider` reads its
-        // cleartext nonce, then the runtime decrypts the same bytes.
-        Form::Embedded => quote! {{
-            let __litmask_wrapper = ::litmask::__wrapper_bytes!();
-            ::litmask::__internal::__init_with_wrapper(
-                ::litmask::EmbeddedProvider::new(__litmask_wrapper),
-                __litmask_wrapper,
-            )
-        }}
-        .into(),
         // The external provider becomes the process-global governing
         // provider (ADR-0001): it unlocks the host's own wrapper eagerly
         // and every transitive crate's wrapper lazily. The wrapper bytes
@@ -233,11 +225,6 @@ mod tests {
     const MACHINE_EXTERNAL_TIER: &str = SealTierTag::MachineExternal.as_str();
 
     #[test]
-    fn embedded_form_accepts_embedded_seal() {
-        assert!(check_tier(Form::Embedded, Some(EMBEDDED_TIER)).is_ok());
-    }
-
-    #[test]
     fn external_form_accepts_external_seal() {
         assert!(check_tier(Form::External, Some(EXTERNAL_TIER)).is_ok());
     }
@@ -247,18 +234,14 @@ mod tests {
     /// fail the cross-check just like the wrong tier does.
     #[test]
     fn unknown_seal_tag_is_rejected() {
-        let detail = check_tier(Form::Embedded, Some("hardware")).unwrap_err();
+        let detail = check_tier(Form::External, Some("hardware")).unwrap_err();
         assert!(detail.contains("hardware"));
-        assert!(detail.contains(EMBEDDED_TIER));
-    }
-
-    #[test]
-    fn embedded_form_rejects_external_seal_naming_both() {
-        let detail = check_tier(Form::Embedded, Some(EXTERNAL_TIER)).unwrap_err();
-        assert!(detail.contains(EMBEDDED_TIER));
         assert!(detail.contains(EXTERNAL_TIER));
     }
 
+    /// The Embedded tier has no `init!` form (it self-initializes
+    /// lazily), so an External-form `init!(provider)` against an
+    /// Embedded-sealed build is a mismatch naming both.
     #[test]
     fn external_form_rejects_embedded_seal_naming_both() {
         let detail = check_tier(Form::External, Some(EMBEDDED_TIER)).unwrap_err();
@@ -268,7 +251,7 @@ mod tests {
 
     #[test]
     fn absent_tier_is_rejected_naming_the_env_var() {
-        let detail = check_tier(Form::Embedded, None).unwrap_err();
+        let detail = check_tier(Form::External, None).unwrap_err();
         assert!(detail.contains(SEAL_TIER_VAR));
     }
 
@@ -308,10 +291,10 @@ mod tests {
     }
 
     #[test]
-    fn classify_empty_is_embedded() {
-        let (form, provider) = classify_str("").unwrap();
-        assert_eq!(form, Form::Embedded);
-        assert!(provider.is_none());
+    fn classify_empty_is_rejected_as_removed() {
+        let detail = classify_str("").unwrap_err();
+        assert!(detail.contains("removed"));
+        assert!(detail.contains("mask!()"));
     }
 
     #[test]

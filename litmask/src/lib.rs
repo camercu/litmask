@@ -11,11 +11,8 @@
 //! source the key from external runtime state.
 //!
 //! ```no_run
-//! # fn main() -> Result<(), litmask::InitError> {
-//! litmask::init!()?;
+//! // The keyless Embedded tier self-initializes on the first `mask!()`.
 //! println!("{}", litmask::mask!("sensitive data"));
-//! # Ok(())
-//! # }
 //! ```
 //!
 //! ## Security levels
@@ -81,12 +78,8 @@
 //! `&str`, bind once:
 //!
 //! ```no_run
-//! # fn main() -> Result<(), litmask::InitError> {
-//! # litmask::init!()?;
 //! let secret = litmask::mask!("my secret");
 //! let s: &str = &secret;
-//! # Ok(())
-//! # }
 //! ```
 //!
 //! When the threat model permits weaker guarantees (no AEAD,
@@ -418,25 +411,17 @@ pub mod __internal {
 mod no_std_tests {
     extern crate std;
 
-    use std::sync::Once;
-
-    fn init_once() {
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            crate::init!().unwrap();
-        });
-    }
+    // No `init!`: the Embedded floor self-initializes on the first
+    // `mask_format!` / `mask_write!` decrypt.
 
     #[test]
     fn mask_format_compiles_under_no_std() {
-        init_once();
         let s = crate::mask_format!("no_std check: {}", 42);
         assert_eq!(s, "no_std check: 42");
     }
 
     #[test]
     fn mask_format_no_args_under_no_std() {
-        init_once();
         let s = crate::mask_format!("plain literal");
         assert_eq!(s, "plain literal");
     }
@@ -444,7 +429,6 @@ mod no_std_tests {
     #[test]
     fn mask_write_compiles_under_no_std() {
         use core::fmt::Write as _;
-        init_once();
         let mut buf = alloc::string::String::new();
         crate::mask_write!(buf, "write {}", 99).unwrap();
         assert_eq!(buf, "write 99");

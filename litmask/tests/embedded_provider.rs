@@ -5,14 +5,13 @@
 //!
 //! Byte-level derivation is pinned by the unit tests in
 //! `litmask::provider::embedded`; this integration test pins the public
-//! contract: `init!()` succeeds under an Embedded build and round-trips
-//! the same `mask!` literals.
+//! contract: an Embedded build self-initializes on the first `mask!()`
+//! (no `init!`) and round-trips the same `mask!` literals.
 
-use litmask::{init, mask};
+use litmask::mask;
 
 #[test]
-fn embedded_init_against_build_succeeds() {
-    init!().expect("Embedded init! round-trips the build wrapper");
+fn embedded_round_trips_via_lazy_self_init() {
     assert_eq!(
         mask!("embedded-provider-fixture"),
         "embedded-provider-fixture"

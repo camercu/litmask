@@ -18,11 +18,11 @@ use crate::provider::KeyProvider;
 ///
 /// # Examples
 ///
+/// The Embedded tier needs no `init!` — the first `mask!()`
+/// self-initializes:
+///
 /// ```no_run
-/// # fn main() -> Result<(), litmask::InitError> {
-/// litmask::init!()?;
-/// # Ok(())
-/// # }
+/// println!("{}", litmask::mask!("sensitive data"));
 /// ```
 #[derive(Debug)]
 pub struct EmbeddedProvider {
