@@ -201,11 +201,11 @@ constants and utilities used by both the runtime and CLI crates.
 `build.rs` detects profile via the `PROFILE` env var that Cargo sets. The
 seed itself is never echoed to the build log (§D.1.2). The one sanctioned
 release-profile `cargo:warning=` is the **Embedded-floor notice**: when a
-release build resolves to the keyless Embedded tier — a deliberately bare
-`init!()` _or_ an omitted `init!` — `emit()` warns that the wrapper key is
-recoverable from the artifact and points at `LITMASK_UNLOCK_KEY` /
-`LITMASK_MACHINE_ID` for a stronger tier. The notice is presence-driven
-(keyed off the resolved tier, not the `init!` form), carries no secret,
+release build resolves to the keyless Embedded tier — no seal key in the
+build environment, so no governing `init!` applies — `emit()` warns that
+the wrapper key is recoverable from the artifact and points at
+`LITMASK_UNLOCK_KEY` / `LITMASK_MACHINE_ID` for a stronger tier. The notice
+is presence-driven (keyed off the resolved tier), carries no secret,
 and rides the build-log channel only — nothing is baked into the shipped
 binary (§D.2.2).
 
@@ -232,14 +232,22 @@ paths) is configured in application code, not in a config file.
 
 #### §1.4.1 Initialization
 
-The runtime maintains a single once-initialized cell for the decrypted
-`mask_key` (`std::sync::OnceLock` under `std`, `once_cell::race::OnceBox`
-under `no_std`; §2.10.6). Initialization happens via:
+The runtime maintains a per-wrapper **mask-key cache** of decrypted
+`mask_key`s (one entry per masking crate, keyed by its wrapper nonce;
+`std::sync::Mutex<HashMap>` under `std`, a single `once_cell::race::OnceBox`
+cell under `no_std`; §2.10.6) and a process-global, install-once
+**governing provider** (ADR-0001). Initialization happens via:
 
 ```rust
-litmask::init!()?;                              // Embedded tier: keyless, nonce-derived
-litmask::init!(provider)?;                      // External tier: uses provided KeyProvider
+litmask::init!(provider)?;                       // External tier: provided KeyProvider
+litmask::init!(bind_to_machine)?;                // Machine tier
+litmask::init!(bind_to_machine + provider)?;     // MachineExternal two-factor
 ```
+
+There is no bare `init!()`: the keyless Embedded tier self-initializes
+lazily on the first `mask!()`. Every surviving form **governs** — it
+installs the governing provider for the whole dependency graph and eagerly
+unlocks the host's own wrapper through it.
 
 `init!` is not a regular function: it expands at the call site so it can
 `include_bytes!(concat!(env!("OUT_DIR"), "/litmask_wrapper.bin"))` against
@@ -247,26 +255,25 @@ the **caller's** crate `OUT_DIR` (where the user's `build.rs` ran
 `litmask_build::emit()`). A regular function in the `litmask` runtime crate
 cannot reach a downstream crate's `OUT_DIR`. `init!` is a proc-macro so it
 can read the build-authoritative `LITMASK_SEAL_TIER` tag and
-`compile_error!` when the form and the sealed tier disagree (the no-arg
-`init!()` form requires the `embedded` tier; `init!(provider)` the
-`external` tier). It delegates to a private function
-`litmask::__internal::__init_with_wrapper(provider, &wrapper_bytes)` that
-contains the actual decryption logic; the no-arg `init!()` constructs an
-`EmbeddedProvider` from the wrapper bytes.
+`compile_error!` when the form and the sealed tier disagree (`init!(provider)`
+requires the `external` tier; `init!(bind_to_machine)` the `machine` tier;
+the two-factor form `machine_external`). It delegates to a private
+`litmask::__internal::__govern_*` seam that installs the governor and runs
+the shared unlock path.
 
-On an Embedded-sealed build either form is optional — the first `mask!()`
-call performs lazy init with `EmbeddedProvider::new(&wrapper)`, deriving the
-Embedded `unlock_key` from the wrapper bytes that `mask!()` itself embeds via
-`include_bytes!`. On a higher-tier seal the lazy path is disabled: `mask!()`
-carries the build-sealed `LITMASK_SEAL_TIER` tag into the runtime, and a
-`mask!()` reached before the matching `init!(...)` panics with an
-init-ordering diagnostic rather than lazy-deriving the wrong (Embedded) key
-(§2.1.1.12a). Explicit init is therefore required above the floor, and
-recommended even at the floor so initialization failures surface at startup
-with structured errors rather than panics deep in program execution.
+**Lazy unlock (Rule X).** On the first `mask!()` for a wrapper not yet
+cached: if a governing provider is installed, it supplies the `unlock_key`
+for that wrapper regardless of tier (governed masking under a uniform seal);
+otherwise only the keyless Embedded floor self-unlocks via
+`EmbeddedProvider::new(&wrapper)`, and a `mask!()` carrying a non-Embedded
+`LITMASK_SEAL_TIER` tag with no governor installed panics with an
+init-ordering diagnostic rather than deriving the wrong key (§2.1.1.12a).
+Governing init is therefore required above the floor — and recommended even
+at the floor, since it surfaces unlock failures at startup with structured
+errors rather than panics deep in execution.
 
-The `OnceLock` is initialized exactly once per process; key rotation at runtime
-is not supported in v1.
+Each cache entry is initialized exactly once per process; key rotation at
+runtime is not supported in v1.
 
 #### §1.4.2 Decryption flow
 
@@ -510,9 +517,10 @@ precludes English-language strings on the trait. Deployment guidance lives in
 | `MachineIdProvider` | `machine-id` (opt-in) | `pub(crate)` | Derives the machine-tier `unlock_key` from the host machine id (`machine-uid`) + the build's wrapper nonce |
 | `EmbeddedProvider` | always available | `pub` | Keyless default; recomputes the Embedded-tier `unlock_key` from the wrapper's cleartext nonce |
 
-Default provider when `init!()` is called without arguments:
-`EmbeddedProvider::new(&wrapper)` — keyless, recomputing the Embedded-tier
-`unlock_key` from the wrapper's public nonce (no stored key material).
+Default provider for the keyless Embedded tier, used by the lazy
+self-init path (no `init!` call): `EmbeddedProvider::new(&wrapper)` —
+recomputes the Embedded-tier `unlock_key` from the wrapper's public nonce
+(no stored key material).
 
 `MachineIdProvider` is **not** part of the public API: it is `pub(crate)` and
 reachable only through the `init!(bind_to_machine)` keyword form, which constructs
@@ -713,11 +721,11 @@ mask_file!()                // current source path → masked String
 #[mask_all(strict)]         // upgrades skip warnings to errors
 ```
 
-`weak_mask!` is the **only** masking macro that works before `init!()`
-has populated the runtime mask key. It MUST be used exclusively for
-strings needed during the pre-`init!()` bootstrap window — env var
-names, default file paths, and other non-secret metadata that the
-provider needs in order to locate the unlock key. The threat model is
+`weak_mask!` is the **only** masking macro that works before the runtime
+mask key is unlocked. It MUST be used exclusively for strings needed
+during the bootstrap window — env var names, default file paths, and
+other non-secret metadata that a governing `init!(<provider>)` needs in
+order to locate the unlock key. The threat model is
 strictly weaker than `mask!`: the literal is XOR-ed against a 64-byte
 key derived from the wrapper nonce (position-dependent bit rotation +
 BLAKE3 keyed hash). The nonce lives in the user binary, so an attacker
@@ -726,7 +734,7 @@ trivially. The derivation uses no string literals (no binary
 fingerprint) and depends only on the wrapper nonce, which is fixed for a
 given build. `weak_mask!`
 defends against `strings(1)` and Level 1 inspection only. Real secrets
-always use `mask!` after `init!()` has succeeded. Decode happens once
+always use `mask!` once the runtime is unlocked. Decode happens once
 per call site (cached in a `OnceLock`).
 
 `weak_mask!` accepts the same three literal kinds as `mask!`:
@@ -792,35 +800,36 @@ audit purposes.
 #### §1.8.2 Init macros
 
 ```rust
-litmask::init!()?;                    // Embedded tier: keyless, nonce-derived
-litmask::init!(bind_to_machine)?;          // Machine tier: host-id-sealed (machine-id feature)
 litmask::init!(provider)?;            // External tier: any KeyProvider expression
+litmask::init!(bind_to_machine)?;          // Machine tier: host-id-sealed (machine-id feature)
 litmask::init!(bind_to_machine + provider)?; // MachineExternal tier: two-factor (machine-id feature)
 ```
 
 `init!` is a proc-macro (form↔tier cross-check; see §1.4.1 for rationale).
-The form is selected by its argument: empty → Embedded, the bare keyword
-`bind_to_machine` → Machine,
-`bind_to_machine + <expr>` → MachineExternal (two-factor), any other expression →
-External (a provider value). A `bind_to_machine +` with no following provider
-expression is a `grammar` `compile_error!`. Each form unlocks exactly one
-sealed tier; the macro reads the build's `LITMASK_SEAL_TIER` tag at expansion
-and emits a `compile_error!` on a form↔tier mismatch (§1.9.6) — the four forms
-and four tags give a 4-way matrix where only the matching pairs compile.
+The form is selected by its argument: empty → a `grammar` `compile_error!`
+(bare `init!()` was removed; the Embedded tier self-initializes lazily on
+the first `mask!()`), the bare keyword `bind_to_machine` → Machine,
+`bind_to_machine + <expr>` → MachineExternal (two-factor), any other
+expression → External (a provider value). A `bind_to_machine +` with no
+following provider expression is also a `grammar` `compile_error!`. Each
+surviving form unlocks exactly one sealed tier; the macro reads the build's
+`LITMASK_SEAL_TIER` tag at expansion and emits a `compile_error!` on a
+form↔tier mismatch (§1.9.6).
 
-`init!()` and the External forms delegate to the private
-`litmask::__internal::__init_with_wrapper` function, passing wrapper bytes read
-via `include_bytes!` at the call site; the no-arg form constructs an
-`EmbeddedProvider` from those bytes. `init!(bind_to_machine)` routes through the
-`__init_machine_id_call!` seam macro instead (so a `machine`-sealed build with
-the `machine-id` feature disabled gets a directed `compile_error!` rather than a
-missing-symbol error); the seam constructs the `pub(crate)` `MachineIdProvider`
-from the wrapper nonce in-crate (§2.5.4). `init!(bind_to_machine + <provider>)` routes
-through the analogous `__init_machine_id_external_call!` seam: it finishes the
-machine factor (in-crate `MachineIdProvider`) and the external factor (the
-consumer's provider), composes them via `UnlockKey::compose` (§2.3), and
-decrypts the wrapper under the composition. The effective signature of every
-expansion result is `Result<(), InitError>`.
+Every surviving form **governs**: it installs the process-global governing
+provider (ADR-0001) and eagerly unlocks the host's own wrapper through it,
+so the lazy path then opens every transitive crate's wrapper under a uniform
+seal. `init!(provider)` delegates to the private
+`litmask::__internal::__govern_external` seam, passing wrapper bytes read via
+`include_bytes!` at the call site. `init!(bind_to_machine)` routes through the
+`__govern_machine_call!` seam macro (so a `machine`-sealed build with the
+`machine-id` feature disabled gets a directed `compile_error!` rather than a
+missing-symbol error); the governor constructs the `pub(crate)`
+`MachineIdProvider` from each wrapper's nonce in-crate at consult time
+(§2.5.4). `init!(bind_to_machine + <provider>)` routes through the analogous
+`__govern_machine_external_call!` seam: per wrapper the governor composes the
+machine factor with the external factor via `UnlockKey::compose` (§2.3). The
+effective signature of every expansion result is `Result<(), InitError>`.
 
 #### §1.8.3 Public types
 
@@ -856,7 +865,7 @@ User code MUST NOT depend on these types.
 
 #### §1.9.1 Two-layer error model
 
-- **Init layer** (fallible, structured): `init!()` and
+- **Init layer** (fallible, structured): `init!(...)` and
   `KeyProvider::unlock_key()` return `Result`. Application code can handle
   initialization errors gracefully (display message, exit cleanly, fall back
   to alternate mode).
@@ -932,7 +941,7 @@ identifiers, not explanations. Application code is responsible for any
 human-readable messaging:
 
 ```rust
-match litmask::init!() {
+match litmask::init!(provider) {
     Ok(()) => {}
     Err(InitError::KeyProvider(KeyError::NotFound)) => {
         eprintln!("Configuration error: missing unlock key");
@@ -1140,7 +1149,7 @@ The mapping rationale:
 Recommended usage pattern:
 
 ```rust
-if let Err(e) = litmask::init!() {
+if let Err(e) = litmask::init!(provider) {
     std::process::exit(e.sysexit_code());
 }
 ```
@@ -1267,7 +1276,7 @@ Stable surface (semver-protected):
 - `UnlockKey` type
 - `EmbeddedProvider`, `EnvVarProvider`, `FileProvider` (public providers;
   `MachineIdProvider` is `pub(crate)` and NOT part of the stable surface)
-- `init!()`, `init!(bind_to_machine)`, `init!(<provider>)`, `init!(bind_to_machine + <provider>)` macro forms
+- `init!(<provider>)`, `init!(bind_to_machine)`, `init!(bind_to_machine + <provider>)` macro forms
 - `InitError::sysexit_code()` method and the sysexits mapping in §1.9.7
 - Error type variants (new variants non-breaking via `#[non_exhaustive]`)
 - `litmask.config` schema (additions allowed; removals breaking)
@@ -1503,28 +1512,21 @@ own substring for this position. See §1.9.6 for rationale.
 §2.1.1.11 — Decryption failure on a `mask!` invocation SHALL panic per the
 policy in §1.9.5.
 
-§2.1.1.12 — Calling `mask!` before `litmask::init!()`
+§2.1.1.12 — Calling `mask!` before any `litmask::init!(...)`
 on an **Embedded**-sealed build SHALL trigger lazy initialization using the
 default keyless `EmbeddedProvider` (`unlock_key` recomputed from the wrapper's
 cleartext nonce). The `mask!` expansion SHALL carry the build-sealed
 `LITMASK_SEAL_TIER` tag into the runtime so the lazy path can gate on it.
 
 §2.1.1.12a — On a build sealed above the Embedded floor (`external`, `machine`,
-`machine_external`), a `mask!` reached before the matching `init!(...)` SHALL
-NOT lazy-derive the Embedded `unlock_key`. It SHALL panic per §1.9.5, naming the
-init-ordering cause (a higher tier requires an explicit `init!(...)` before the
-first `mask!()`). This prevents the wrong-key lazy derive from surfacing as a
-generic wrapper-decryption failure that hides the real cause.
-
-§2.1.1.12b — On an Embedded-sealed **debug** build (`cfg(debug_assertions)`),
-an `init!()` call that arrives AFTER a `mask!()` has already
-lazily initialized the runtime SHALL panic, naming the init-after-lazy
-ordering cause. Rationale: on the Embedded floor the lazy key equals the
-`init!()` key, so the ordering bug is functionally invisible — until the
-consumer reseals above the floor, where the same ordering refuses at the
-first `mask!()` per §2.1.1.12a. Release builds SHALL retain the silent
-idempotent `Ok(())` of §2.6.1.4 and SHALL NOT compile the diagnostic text
-into the artifact.
+`machine_external`), a `mask!` reached with no governing provider installed
+(i.e. before the matching `init!(...)`) SHALL NOT lazy-derive the Embedded
+`unlock_key`. It SHALL panic per §1.9.5, naming the init-ordering cause (a
+higher tier requires a governing `init!(...)` before the first `mask!()`). This
+prevents the wrong-key lazy derive from surfacing as a generic
+wrapper-decryption failure that hides the real cause. (Conversely, when a
+governing provider IS installed, the lazy path unlocks every wrapper through it
+regardless of tier — Rule X, §1.4.1.)
 
 §2.1.1.13 — Lazy initialization failure SHALL panic per the policy in §1.9.5.
 
@@ -2048,52 +2050,51 @@ call site to keep the literal out of `strings(1)` output; it MUST decode to
 
 #### §2.6.1 init functions
 
-§2.6.1.1 — `litmask::init!()` SHALL initialize the runtime using
-`EmbeddedProvider::new(&wrapper)` — the keyless Embedded-tier provider that
-recomputes `unlock_key` from the wrapper's cleartext nonce — returning
-`Result<(), InitError>`. As a proc-macro, `init!` SHALL select its form from
-the macro argument: empty → Embedded, the bare keyword `bind_to_machine` →
-Machine (§2.6.1.8), any other argument → External provider expression
+§2.6.1.1 — `litmask::init!(...)` SHALL install a process-global **governing
+provider** (ADR-0001) and eagerly unlock the host's own wrapper through it,
+returning `Result<(), InitError>`. As a proc-macro, `init!` SHALL select its
+form from the macro argument: empty → a §1.9.6 `grammar` `compile_error!`
+(bare `init!()` is removed; the Embedded tier self-initializes lazily), the
+bare keyword `bind_to_machine` → Machine (§2.6.1.8), `bind_to_machine + <expr>`
+→ MachineExternal, any other argument → External provider expression
 (§2.6.1.2). It SHALL read the build's `LITMASK_SEAL_TIER` tag and emit a
 §1.9.6 `init! tier-mismatch` `compile_error!` when the selected form's tier
 does not match the sealed tier (or the tag is absent).
 
-§2.6.1.2 — `litmask::init!(provider)` SHALL initialize the runtime using
-the given External-tier provider expression, returning `Result<(), InitError>`.
+§2.6.1.2 — `litmask::init!(provider)` SHALL install the given External-tier
+provider as the governor, returning `Result<(), InitError>`.
 
-§2.6.1.8 — `litmask::init!(bind_to_machine)` SHALL initialize the runtime using
-the `pub(crate)` `MachineIdProvider` (§2.5.4), constructed in-crate from the
-embedded wrapper by a hidden seam function `__init_machine_id(wrapper)` in
-`litmask::__internal` — the macro never names the provider type. The
-expansion SHALL route through the `__init_machine_id_call!` macro, which
-carries a `machine-id`-feature-off variant emitting a directed
-`compile_error!` (a `machine`-sealed build can reach this arm with the
-feature disabled), satisfying §1.9.6.
+§2.6.1.8 — `litmask::init!(bind_to_machine)` SHALL install a machine
+governor backed by the `pub(crate)` `MachineIdProvider` (§2.5.4),
+constructed in-crate from each wrapper's nonce at consult time — the macro
+never names the provider type. The expansion SHALL route through the
+`__govern_machine_call!` macro, which carries a `machine-id`-feature-off
+variant emitting a directed `compile_error!` (a `machine`-sealed build can
+reach this arm with the feature disabled), satisfying §1.9.6.
 
-The Embedded and External forms expand at the call site to read wrapper
-bytes via `include_bytes!` from the caller's `OUT_DIR`, then forward to a
-private `__init_with_wrapper(provider, &wrapper_bytes)` function whose
+Each form expands at the call site to read wrapper bytes via `include_bytes!`
+from the caller's `OUT_DIR`, then forwards to a private
+`__govern_*(provider, &wrapper_bytes)` seam in `litmask::__internal` whose
 behavior matches the requirements below verbatim.
 
-§2.6.1.3 — The init seam SHALL retrieve `unlock_key` via
-`provider.unlock_key()`, decrypt the embedded `mask_key` wrapper (format per
-§1.7.3), and store the result in the global `OnceLock`.
+§2.6.1.3 — The govern seam SHALL install the governor (first install wins),
+retrieve `unlock_key` for the host's wrapper via the governor, decrypt the
+embedded `mask_key` wrapper (format per §1.7.3), and store the result in the
+per-wrapper mask-key cache.
 
-§2.6.1.4 — Successive calls to `init!()` after successful
-**explicit** initialization SHALL return `Ok(())` without re-running the
-provider (idempotent). When the mask key was installed by the LAZY path
-instead, a debug build SHALL panic per §2.1.1.12b; a release build SHALL
-keep the silent `Ok(())`.
+§2.6.1.4 — Successive calls to `init!(...)` after a successful one SHALL
+return `Ok(())` without re-running the provider (idempotent; the first
+installed governor wins and the host's wrapper is already cached).
 
 §2.6.1.5 — Successive calls after a failed initialization SHALL retry the
 provider call.
 
-§2.6.1.6 — Lazy initialization (triggered by first `mask!()` call without
-prior `init!()`) SHALL behave equivalently to explicit `init!()` ONLY on an
-Embedded-sealed build, except that lazy init failures result in panic per
-§2.1.1.13 rather than `Result` return. On a higher-tier seal the lazy path
-SHALL refuse per §2.1.1.12a (the `mask!` expansion carries the sealed tier into
-the runtime gate).
+§2.6.1.6 — Lazy initialization (first `mask!()` for an uncached wrapper)
+SHALL apply Rule X (§1.4.1): if a governing provider is installed it supplies
+`unlock_key` for that wrapper regardless of tier; otherwise the keyless
+Embedded floor self-unlocks, and a higher-tier seal with no governor SHALL
+refuse per §2.1.1.12a. Lazy init failures result in panic per §2.1.1.13
+rather than `Result` return.
 
 §2.6.1.7 — Initialization failures SHALL return the `InitError` variants
 defined in §1.9.2 according to their documented semantics.
