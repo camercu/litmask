@@ -17,6 +17,10 @@ See `docs/SPECIFICATION.md` for the full spec with section numbers.
 - Plans: vertical slices, walking skeleton first.
 - Security: never overstate guarantees. Deliberate
   understatement applies to all docs and error messages.
+- Docs: behavior is owned by code + tests, not duplicated prose; make
+  claims executable, cite evidence in decisions, no self-describing-lie
+  surfaces. See CLAUDE.md "Documentation principles". When prose and code
+  disagree, the code wins.
 
 ## Crate boundaries
 

@@ -17,6 +17,13 @@ rationale, and protocol specifications. Requirements (Part II) is canonical for
 testable behavioral assertions. Cross-references point to the canonical source
 rather than restating content.
 
+**Status and source of truth:** This document captures requirements, the wire
+format, cross-cutting invariants, and the _why_ behind the design. **Runtime
+behavior is owned by the code, its rustdoc, and the tests** — they are
+authoritative and executable; this prose can lag. Where the spec and the code
+disagree, the code wins and the spec entry is a bug to fix. For the mental
+model of how the pieces fit, start at [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ---
 
 ## Part I — Architecture

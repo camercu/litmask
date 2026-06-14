@@ -61,3 +61,25 @@ Tool versions pinned in `.tool-versions` — single source of truth.
 - Atomic commits with pathspec (`git commit -- path1 path2`)
 - No `Co-Authored-By` trailers
 - Comments follow Ousterhout: capture WHY / invariants / contracts only
+
+## Documentation principles
+
+Prose drifts from code; these keep the docs honest (learned from the
+`litmask.config` episode, where unverified prose claims survived for a long
+time). When in doubt, verify against the code, not the prose.
+
+- **Behavior lives in code + tests, not duplicated prose.** Docs capture the
+  _why_, the invariants, and the wire format; they don't restate what the
+  code does. Where a doc and the code disagree, the code wins (the doc is a
+  bug). `docs/ARCHITECTURE.md` is the front door.
+- **Make claims executable where feasible.** "Every build artifact is read"
+  is a test (`litmask-build/tests/artifacts_have_consumers.rs`), not a
+  promise; runnable example recipes are exercised by `scripts/test-examples.sh`,
+  not just shown in prose.
+- **Decisions cite checkable evidence.** A "keep/remove X because Y" note
+  must name the specific test or `file:line` so Y can be re-verified.
+  Unfalsifiable claims ("the tests assert it") are not acceptable.
+- **No self-describing-lie surfaces.** A file/header/comment that asserts
+  facts about itself must be generated from truth or pinned by a test — never
+  hand-written prose that can rot (cf. the removed `litmask.config`
+  "SECRET / consumed by the runtime" header, wrong on both counts).
