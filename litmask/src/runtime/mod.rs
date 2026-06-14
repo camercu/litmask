@@ -1,13 +1,13 @@
 //! Imperative shell over the pure decryption core
 //! ([`litmask_internal::decrypt_wrapper`]).
 //!
-//! Mask keys live in a process-global [`mask_key_cache`] keyed by each
-//! crate's wrapper nonce, populated by [`__init_with_wrapper`] (the
+//! Mask keys live in the process-global [`mask_key_store`], keyed by
+//! each crate's wrapper nonce, populated by [`__init_with_wrapper`] (the
 //! target of `init!`) or lazily by [`__decrypt`] on the first `mask!()`
 //! call. Keying by wrapper — rather than the former single set-once cell
 //! — lets several **masking crates** coexist in one **host binary**,
-//! each unlocking its own wrapper independently (the transparent-masking
-//! spike; see `docs/adr/0001`).
+//! each unlocking its own wrapper independently (transparent masking;
+//! see `docs/adr/0001`).
 //!
 //! The decryption path must not leak litmask-identifying message text
 //! into a shipped (release) binary: `assert!` / `.expect("…")` and
@@ -18,85 +18,13 @@
 //! place, so these call sites stay free of per-site `cfg` branching.
 
 use crate::error::InitError;
-use crate::internal::{DecryptError, WRAPPER_LEN, decrypt_blob, decrypt_wrapper, parse_wrapper};
+use crate::internal::{DecryptError, WRAPPER_LEN, decrypt_blob, decrypt_wrapper};
 use crate::key::MaskKey;
 use crate::provider::KeyProvider;
 
 pub(crate) mod cell;
+mod mask_key_store;
 pub(crate) mod weak;
-
-/// Copy a wrapper's cleartext nonce — the key under which its decrypted
-/// mask key is cached, so each masking crate's wrapper maps to its own
-/// entry.
-fn wrapper_cache_key(wrapper: &[u8; WRAPPER_LEN]) -> [u8; crate::internal::NONCE_LEN] {
-    *parse_wrapper(wrapper).nonce
-}
-
-/// Per-wrapper mask-key cache (transparent-masking spike, ADR-0001). One
-/// entry per **masking crate**, keyed by its wrapper nonce, so
-/// independent crates coexist instead of fighting over a single cell.
-mod mask_key_cache {
-    use crate::internal::NONCE_LEN;
-    use crate::key::MaskKey;
-
-    #[cfg(feature = "std")]
-    static CACHE: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<[u8; NONCE_LEN], &'static MaskKey>>,
-    > = std::sync::OnceLock::new();
-
-    // no_std spike scope: a single masking crate per binary (the nonce
-    // key is ignored). Multi-crate no_std is follow-up work.
-    #[cfg(not(feature = "std"))]
-    static CACHE: super::cell::OnceCell<MaskKey> = super::cell::OnceCell::new();
-
-    /// The cached mask key for `nonce`, deriving and inserting it via
-    /// `derive` on first use. The reference is process-lifetime — the
-    /// key, like the former single cell, is never dropped.
-    // The `*` on the entry is load-bearing, not redundant: it copies the
-    // `&'static MaskKey` (a `Copy` reference to leaked data) out of the
-    // map so the borrow of the `MutexGuard` ends before the guard drops.
-    // Auto-deref would instead yield a `&MaskKey` borrowed from the guard
-    // — not `'static`, and dangling past the guard.
-    #[allow(clippy::explicit_auto_deref)]
-    pub(super) fn get_or_init(
-        nonce: [u8; NONCE_LEN],
-        derive: impl FnOnce() -> MaskKey,
-    ) -> &'static MaskKey {
-        #[cfg(feature = "std")]
-        {
-            let mut map = CACHE
-                .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            *map.entry(nonce)
-                .or_insert_with(|| alloc::boxed::Box::leak(alloc::boxed::Box::new(derive())))
-        }
-        #[cfg(not(feature = "std"))]
-        {
-            let _ = nonce;
-            CACHE.get_or_init(derive)
-        }
-    }
-
-    /// Whether `nonce`'s mask key is already cached — the per-wrapper
-    /// analogue of the old single-cell `is_set`, gating the init seams'
-    /// idempotent early return and the init-after-lazy guard.
-    pub(super) fn contains(nonce: &[u8; NONCE_LEN]) -> bool {
-        #[cfg(feature = "std")]
-        {
-            CACHE.get().is_some_and(|m| {
-                m.lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .contains_key(nonce)
-            })
-        }
-        #[cfg(not(feature = "std"))]
-        {
-            let _ = nonce;
-            CACHE.is_set()
-        }
-    }
-}
 
 /// Debug-only provenance bit: did the lazy first-`mask!()` path (rather
 /// than an explicit `init!` seam) install the mask key? Lets a late
@@ -141,7 +69,7 @@ pub fn __init_with_wrapper<P: KeyProvider>(
     provider: P,
     wrapper: &[u8; WRAPPER_LEN],
 ) -> Result<(), InitError> {
-    if mask_key_cache::contains(&wrapper_cache_key(wrapper)) {
+    if mask_key_store::contains(&mask_key_store::key_for(wrapper)) {
         guard_init_after_lazy();
         return Ok(());
     }
@@ -159,7 +87,9 @@ fn init_with_unlock_key(
     wrapper: &[u8; WRAPPER_LEN],
 ) -> Result<(), InitError> {
     let mask_key_bytes = decrypt_mask_key(unlock_key, wrapper)?;
-    mask_key_cache::get_or_init(wrapper_cache_key(wrapper), || MaskKey::new(mask_key_bytes));
+    mask_key_store::get_or_init(mask_key_store::key_for(wrapper), || {
+        MaskKey::new(mask_key_bytes)
+    });
     Ok(())
 }
 
@@ -222,7 +152,7 @@ pub fn __init_machine_id_external<P: KeyProvider>(
     wrapper: &[u8; WRAPPER_LEN],
     external: P,
 ) -> Result<(), InitError> {
-    if mask_key_cache::contains(&wrapper_cache_key(wrapper)) {
+    if mask_key_store::contains(&mask_key_store::key_for(wrapper)) {
         guard_init_after_lazy();
         return Ok(());
     }
@@ -297,7 +227,7 @@ pub fn __decrypt_string(
     clippy::manual_let_else
 )]
 fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN], tier: &str) -> &'static MaskKey {
-    mask_key_cache::get_or_init(wrapper_cache_key(wrapper), || {
+    mask_key_store::get_or_init(mask_key_store::key_for(wrapper), || {
         #[cfg(debug_assertions)]
         LAZY_INIT_USED.store(true, core::sync::atomic::Ordering::Relaxed);
         // No explicit `init!` ran. The lazy fallback derives the
