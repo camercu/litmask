@@ -277,38 +277,6 @@ fixes the key regime) and **bind** (machine factor).
   **Governed masking**: one **governing provider** + **uniform seal** open
   every **wrapper** in the graph.
 
-## Example dialogue
-
-> **Dev:** "If two builds use the same **seed**, do they produce the
-> same **wrapper**?"
->
-> **Maintainer:** "Yes — the **seed** determines the **mask key** and the
-> wrapper **nonce**, and in the Embedded tier the **unlock key** is itself
-> derived from that nonce. AEAD with the same key, nonce, and plaintext is
-> deterministic, so the **wrapper** bytes are byte-identical. Same for
-> per-call-site **blobs**, given the same source layout."
->
-> **Dev:** "How does the runtime find the **wrapper** in the binary?"
->
-> **Maintainer:** "It doesn't search — the **wrapper** is embedded at a
-> fixed address via `include_bytes!`, so the runtime reads it by
-> reference. The only cleartext field is the 12-byte **nonce** at the
-> front; there's no stored locator and no byte scan."
->
-> **Dev:** "Why have both `mask!` and `weak_mask!`?"
->
-> **Maintainer:** "`mask!` needs the **mask key**, which isn't
-> unlocked until a governing `init!(<provider>)` runs (or, on the
-> Embedded floor, the first `mask!()` itself). But the provider needs
-> to know which env var to read for the **unlock key**. So that one
-> string — the default `LITMASK_UNLOCK_KEY` literal — has to be readable
-> before `init!(<provider>)`. `weak_mask!` covers that bootstrap window: XOR
-> the literal against the **weak key** (derived from the wrapper
-> **nonce**), recover at first access. The 'weak' is because the
-> **nonce** is right there in the binary; anyone with a disassembler
-> derives the same **weak key** and reverses it instantly. That's
-> fine — it's an env var name, not a secret."
-
 ## Flagged ambiguities
 
 - **"transparent" vs "autonomous" masking** — for the

@@ -61,6 +61,8 @@ Tool versions pinned in `.tool-versions` — single source of truth.
 - Atomic commits with pathspec (`git commit -- path1 path2`)
 - No `Co-Authored-By` trailers
 - Comments follow Ousterhout: capture WHY / invariants / contracts only
+- Public API follows the [Rust API Guidelines checklist](https://rust-lang.github.io/api-guidelines/checklist.html)
+  (the upstream list is authoritative; don't mirror it into the repo)
 
 ## Documentation principles
 
