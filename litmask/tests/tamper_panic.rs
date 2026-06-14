@@ -67,6 +67,8 @@ fn tampered_blob_panic_message_is_profile_split() {
 /// user binaries. The scan spans five files:
 ///
 /// - `runtime/mod.rs` — `__decrypt`, lazy-init helpers.
+/// - `runtime/mask_key_store.rs` — the per-wrapper mask-key store the
+///   lazy `mask!()` path derives and caches each key through.
 /// - `runtime/weak.rs` — `__weak_decode*` and the weak caches.
 /// - `runtime/cell.rs` — the once-cell every decrypt path borrows
 ///   its key (or cache) through.
@@ -94,6 +96,7 @@ fn no_custom_panic_messages_in_decryption_path() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     let scans: Vec<(String, Vec<&str>)> = vec![
         (format!("{manifest}/src/runtime/mod.rs"), vec![]),
+        (format!("{manifest}/src/runtime/mask_key_store.rs"), vec![]),
         (format!("{manifest}/src/runtime/weak.rs"), vec![]),
         (format!("{manifest}/src/runtime/cell.rs"), vec![]),
         (format!("{manifest}/src/lib.rs"), vec![]),
