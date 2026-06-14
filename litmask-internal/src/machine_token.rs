@@ -1,4 +1,4 @@
-//! Self-checking machine-id token codec (§4.1.1).
+//! Self-checking machine-id token codec (§2.9.3).
 //!
 //! `litmask show-machine-id` prints the host machine id with an
 //! appended check group so an operator copying it through a
@@ -69,7 +69,7 @@ fn check_group(raw_id: &str) -> String {
     base64url::encode(&digest.as_bytes()[..CHECK_LEN])
 }
 
-/// Encode a raw machine id as its self-checking token (§4.1.1).
+/// Encode a raw machine id as its self-checking token (§2.9.3).
 #[must_use]
 pub fn encode_machine_id_token(raw_id: &str) -> String {
     let mut token = String::with_capacity(raw_id.len() + 1 + (CHECK_LEN * 4 / 3 + 1));

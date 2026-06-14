@@ -28,7 +28,7 @@ fn decrypt_panics_on_tampered_blob() {
     });
 }
 
-/// §5.4 profile-split diagnostics: a tampered-blob panic carries
+/// §1.9.5 profile-split diagnostics: a tampered-blob panic carries
 /// actionable, litmask-identifying text in **debug** builds (so the
 /// developer sees the failure on their own machine) but stays a bare,
 /// opaque `panic!()` in **release** builds (so no identifying string
@@ -79,7 +79,7 @@ fn tampered_blob_panic_message_is_profile_split() {
 ///   helper and `OUT_DIR` artifact loader; every `.expect`/`panic!`
 ///   here runs at proc-macro expansion time inside rustc, not in
 ///   the user binary.
-/// - `litmask/src/diagnostics.rs` — the §5.4 profile-split entry points.
+/// - `litmask/src/diagnostics.rs` — the §1.9.5 profile-split entry points.
 ///   Its actionable messages are permitted *only* because each sits on
 ///   the line immediately after a `#[cfg(debug_assertions)]` attribute,
 ///   so it is compiled out of release. The scan enforces that gating

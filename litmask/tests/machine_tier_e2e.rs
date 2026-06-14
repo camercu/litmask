@@ -38,7 +38,7 @@ use std::process::Command;
 mod common;
 use common::{machine_id_via_cli, workspace_root};
 
-/// A self-checking token (§4.1.1) for a machine id that is NOT this
+/// A self-checking token (§2.9.3) for a machine id that is NOT this
 /// host's. It is a *well-formed* token — `emit()` decodes it cleanly —
 /// but its raw id differs from the host, so the runtime re-derives a
 /// different `unlock_key` and the wrapper's AEAD tag check rejects it.

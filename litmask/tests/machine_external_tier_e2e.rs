@@ -48,7 +48,7 @@ const SEALED_MATERIAL: &str = "two-factor operator unlock material v1";
 /// wrapper's AEAD check) must reject it.
 const WRONG_MATERIAL: &str = "an entirely different operator secret";
 
-/// A self-checking token (§4.1.1) for a machine id that is NOT this
+/// A self-checking token (§2.9.3) for a machine id that is NOT this
 /// host's. It is a *well-formed* token — `emit()` decodes it cleanly —
 /// but its raw id differs from the host, so the composed `unlock_key`
 /// diverges and the runtime must reject it. Built through the token codec

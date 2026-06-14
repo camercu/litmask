@@ -1,7 +1,7 @@
-//! Profile-split failure diagnostics (§5.4).
+//! Profile-split failure diagnostics (§1.9.5).
 //!
 //! Every runtime decryption failure routes through one of the entry
-//! points here, which is the single home for the §5.4 profile split:
+//! points here, which is the single home for the §1.9.5 profile split:
 //!
 //! - **Release** (`cfg(not(debug_assertions))`) — a bare `panic!()` with
 //!   no message, so no litmask-identifying string reaches `.rodata` (the
@@ -15,7 +15,7 @@
 //! apart. The actionable message literals live behind
 //! `cfg(debug_assertions)`, so they are never compiled into a release
 //! artifact. A debug binary is self-decrypting at the Embedded floor
-//! *and* prints these diagnostics, so it MUST NOT be distributed (§7.1).
+//! *and* prints these diagnostics, so it MUST NOT be distributed (§D.2.1).
 
 use crate::error::InitError;
 

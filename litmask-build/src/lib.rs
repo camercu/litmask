@@ -196,7 +196,7 @@ struct BuildArtifacts {
 }
 
 /// Recover the raw machine id from the `LITMASK_MACHINE_ID` value, which
-/// is a self-checking token minted by `litmask show-machine-id` (§4.1.1).
+/// is a self-checking token minted by `litmask show-machine-id` (§2.9.3).
 ///
 /// A single trailing newline is stripped first — exactly as the External
 /// tier trims its material — so a token sourced through a newline-bearing
@@ -210,7 +210,7 @@ struct BuildArtifacts {
 /// Panics at build time if the value is not a valid token (no check
 /// group, or a check mismatch from a mistyped id). Rejecting here turns
 /// what would otherwise be an opaque runtime `decryption_failed` on the
-/// deploy host into an actionable build error (§4.1.1).
+/// deploy host into an actionable build error (§2.9.3).
 fn machine_seal_id(env_value: &str) -> String {
     let trimmed = strip_trailing_newline(env_value.as_bytes());
     let token = core::str::from_utf8(trimmed).expect("LITMASK_MACHINE_ID is UTF-8");
@@ -351,7 +351,7 @@ impl Drop for BuildArtifacts {
 
 /// Indicates which of the three sources the seed came from. Retained
 /// for `source_seed`'s unit tests, which assert the priority order;
-/// `emit()` does not branch on it (the seed is never echoed, §6.2).
+/// `emit()` does not branch on it (the seed is never echoed, §D.1.2).
 #[derive(Debug, PartialEq, Eq)]
 enum SeedSource {
     /// Supplied via `LITMASK_RNG_SEED` — highest priority.
@@ -392,7 +392,7 @@ impl Profile {
 /// and an omitted `init!` (lazy-init). Returns `None` for any keyed tier
 /// (which fails loud at runtime when its key is absent) and for any
 /// non-release profile. The string rides the build-log channel only — it
-/// is never baked into the shipped binary (§7.2), and carries no secret.
+/// is never baked into the shipped binary (§1.3.2), and carries no secret.
 fn embedded_floor_warning(tier: &SealTier, profile: Profile) -> Option<String> {
     (profile == Profile::Release && tier.tag_kind() == SealTierTag::Embedded).then(|| {
         "cargo:warning=litmask: Embedded obfuscation floor in a release build — the wrapper \
@@ -859,7 +859,7 @@ mod tests {
 
     /// Wrap a raw id in the self-checking token form `emit()` expects on
     /// the `LITMASK_MACHINE_ID` channel — the build decodes it back to the
-    /// raw id before deriving (§4.1.1).
+    /// raw id before deriving (§2.9.3).
     fn machine(id: &str) -> SealTier {
         SealTier::Machine(Zeroizing::new(encode_machine_id_token(id)))
     }

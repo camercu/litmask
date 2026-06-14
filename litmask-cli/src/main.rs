@@ -18,7 +18,7 @@ const MACHINE_ID_UNAVAILABLE_MSG: &str = "could not read the machine ID (machine
 /// Human guidance printed to **stderr** alongside the machine-id token.
 /// It explains what the stdout token is for. It rides stderr — not
 /// stdout — so a `litmask show-machine-id | …` capture keeps only the
-/// token; the in-band check group (§4.1.1) is what protects the token
+/// token; the in-band check group (§2.9.3) is what protects the token
 /// itself against copy corruption.
 const MACHINE_ID_GUIDANCE_MSG: &str =
     "send the token above to whoever builds your binary (it is checksummed against typos)";
@@ -119,7 +119,7 @@ struct MachineIdReport {
 }
 
 /// Map a machine-id lookup to its presentation. On success the raw id
-/// is wrapped in its self-checking token (§4.1.1) and goes to stdout for
+/// is wrapped in its self-checking token (§2.9.3) and goes to stdout for
 /// capture, while human guidance goes to stderr so a piped capture keeps
 /// only the token. A lookup failure is an error and goes to stderr (exit
 /// 69), keeping stdout clean for callers piping the token.

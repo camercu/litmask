@@ -13,7 +13,7 @@
 //! into a shipped (release) binary: `assert!` / `.expect("…")` and
 //! `panic!("…")` with a custom message would all fingerprint user
 //! binaries as litmask-built. Every failure arm here therefore routes
-//! to a [`crate::diagnostics`] entry point, which owns the §5.4 profile
+//! to a [`crate::diagnostics`] entry point, which owns the §1.9.5 profile
 //! split — bare `panic!()` in release, actionable text in debug — in one
 //! place, so these call sites stay free of per-site `cfg` branching.
 
@@ -191,7 +191,7 @@ pub fn __govern_machine_external<P: KeyProvider + 'static>(
 /// wrapper format / cipher-id mismatch, or a lazy first-`mask!()` on a
 /// non-Embedded seal (init-ordering bug). The panic is bare (no message)
 /// in release and carries an actionable [`crate::diagnostics`] message in
-/// debug (§5.4).
+/// debug (§1.9.5).
 #[doc(hidden)]
 #[allow(clippy::must_use_candidate)]
 pub fn __decrypt(blob: &[u8], wrapper: &[u8; WRAPPER_LEN], tier: &str) -> alloc::vec::Vec<u8> {

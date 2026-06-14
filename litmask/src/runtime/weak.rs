@@ -3,7 +3,7 @@
 //! Independent of the mask-key path in the parent module — the weak key
 //! derives from the embedded wrapper's cleartext nonce alone, so every
 //! entry point here works before `init!()` has populated the mask-key
-//! cell. The same §5.4 panic-hygiene contract applies: failure arms
+//! cell. The same §1.9.5 panic-hygiene contract applies: failure arms
 //! route to [`crate::diagnostics`], never to message-bearing panics
 //! that would fingerprint user binaries as litmask-built.
 
@@ -41,7 +41,7 @@ fn weak_xor_decode(obf: &[u8], wrapper: &[u8; WRAPPER_LEN]) -> alloc::vec::Vec<u
 /// guarantee here is just that `weak_mask!()` callers don't feed it
 /// arbitrary bytes; UTF-8 failure indicates an in-process tamper of
 /// either the obfuscated bytes or the wrapper. The panic is bare in
-/// release and actionable in debug (§5.4), like the `mask!()` path.
+/// release and actionable in debug (§1.9.5), like the `mask!()` path.
 #[doc(hidden)]
 pub fn __weak_decode<const N: usize>(
     obf: &'static [u8; N],
@@ -96,7 +96,7 @@ pub fn __weak_decode_bytes<const N: usize>(
 ///
 /// `LitCStr` rejects interior NUL at parse time and the XOR cycle cannot
 /// introduce one, so the error arm is unreachable in practice; it panics
-/// (bare in release, actionable in debug, §5.4) only on an in-process
+/// (bare in release, actionable in debug, §1.9.5) only on an in-process
 /// tamper of the obfuscated bytes or wrapper.
 #[cfg(feature = "std")]
 #[doc(hidden)]

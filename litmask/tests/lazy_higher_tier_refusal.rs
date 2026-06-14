@@ -16,7 +16,7 @@
 //! table) so sealing it does not reseal the litmask crate's own embedded
 //! build in the shared target dir.
 //!
-//! The fixture is built in debug, where the §5.4 diagnostics split emits
+//! The fixture is built in debug, where the §1.9.5 diagnostics split emits
 //! the actionable message. The test asserts the process aborts and that
 //! the panic names the init-ordering cause rather than a bare decryption
 //! failure.

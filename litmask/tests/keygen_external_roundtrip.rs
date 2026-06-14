@@ -1,4 +1,4 @@
-//! `litmask keygen` produces a usable `LITMASK_UNLOCK_KEY` (§4.4).
+//! `litmask keygen` produces a usable `LITMASK_UNLOCK_KEY` (§2.9.2).
 //!
 //! `keygen` is a pure stdout generator: 32 random bytes, base64url. The
 //! external tier derives its `unlock_key` from *arbitrary* material via
