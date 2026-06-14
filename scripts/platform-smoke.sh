@@ -15,7 +15,10 @@
 # post-build bind step — the script seals and runs the prebuilt binary.
 set -eu
 
-MARKER="greatly exaggerated"
+# A unique substring of the masked Twain quote the machine_id_provider
+# example prints — must match the example's literal (and the scrub
+# substring in tests/example_scrub.rs).
+MARKER="distort them as you please"
 
 CLI="$1"
 EXPECT_UNAVAILABLE=false
