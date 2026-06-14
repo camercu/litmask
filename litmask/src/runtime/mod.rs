@@ -2,12 +2,12 @@
 //! ([`litmask_internal::decrypt_wrapper`]).
 //!
 //! Mask keys live in the process-global [`mask_key_store`], keyed by
-//! each crate's wrapper nonce, populated by [`__init_with_wrapper`] (the
-//! target of `init!`) or lazily by [`__decrypt`] on the first `mask!()`
-//! call. Keying by wrapper — rather than the former single set-once cell
-//! — lets several **masking crates** coexist in one **host binary**,
-//! each unlocking its own wrapper independently (transparent masking;
-//! see `docs/adr/0001`).
+//! each crate's wrapper nonce, populated by the governing `init!` seams
+//! ([`__govern_external`] et al.) or lazily by [`__decrypt`] on the first
+//! `mask!()` call. Keying by wrapper — rather than the former single
+//! set-once cell — lets several **masking crates** coexist in one **host
+//! binary**, each unlocking its own wrapper independently (transparent and
+//! governed masking; see `docs/adr/0001`).
 //!
 //! The decryption path must not leak litmask-identifying message text
 //! into a shipped (release) binary: `assert!` / `.expect("…")` and
@@ -27,29 +27,11 @@ mod governor;
 mod mask_key_store;
 pub(crate) mod weak;
 
-/// Debug fail-fast for an `init!` that arrives after the lazy
-/// first-`mask!()` path already installed *this wrapper's* mask key.
-/// Called from every explicit init seam's already-initialized early
-/// return. The check is per wrapper (see [`mask_key_store::was_lazy`]):
-/// a host that `init!`s its own wrapper is not faulted because some other
-/// masking crate lazy-unlocked first. On the Embedded floor the lazy key
-/// equals the `init!()` key, so the bug is invisible at runtime — until a
-/// higher-tier reseal turns it into the §2.1.1.12a refusal. Release
-/// builds keep the silent idempotent `Ok(())` (§2.6.1.4): this function
-/// compiles to nothing there, and no diagnostic text reaches the artifact.
-#[cfg_attr(not(debug_assertions), allow(unused_variables))]
-fn guard_init_after_lazy(wrapper: &[u8; WRAPPER_LEN]) {
-    #[cfg(debug_assertions)]
-    if mask_key_store::was_lazy(&mask_key_store::key_for(wrapper)) {
-        crate::diagnostics::init_after_lazy();
-    }
-}
-
-/// Decrypt the embedded `mask_key` wrapper and store the result in the
-/// process-global mask key cell.
-///
-/// Called by the `init!` macro after it captures the wrapper bytes via
-/// `include_bytes!`.
+/// Non-governing eager init primitive: decrypt the embedded `mask_key`
+/// wrapper under `provider` and cache it. No governor is installed (unlike
+/// the `init!` govern seams), so it opens exactly the one `wrapper` given.
+/// Used by the init error-path tests to exercise the [`InitError`] surface
+/// in isolation, without a process-global governor leaking across cases.
 ///
 /// # Errors
 ///
@@ -101,14 +83,12 @@ pub fn __govern_external<P: KeyProvider + 'static>(
 /// key if it isn't already, deriving the `unlock_key` via `derive_unlock`
 /// (the only thing that differs between tiers — provider, machine id, or
 /// two-factor composition). A wrapper already cached (a repeat `init!`,
-/// or a prior lazy first-`mask!()`) is an idempotent no-op past the
-/// init-after-lazy guard.
+/// or a prior lazy first-`mask!()`) is an idempotent no-op.
 fn ensure_cached(
     wrapper: &[u8; WRAPPER_LEN],
     derive_unlock: impl FnOnce() -> Result<crate::key::UnlockKey, InitError>,
 ) -> Result<(), InitError> {
     if mask_key_store::contains(&mask_key_store::key_for(wrapper)) {
-        guard_init_after_lazy(wrapper);
         return Ok(());
     }
     let unlock_key = derive_unlock()?;
@@ -259,8 +239,6 @@ pub fn __decrypt_string(
 fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN], tier: &str) -> &'static MaskKey {
     let nonce = mask_key_store::key_for(wrapper);
     mask_key_store::get_or_init(nonce, move || {
-        #[cfg(debug_assertions)]
-        mask_key_store::record_lazy(nonce);
         // Rule X (ADR-0001): a governing provider, if one was installed by
         // an `init!` form, supplies the unlock key for EVERY wrapper
         // regardless of tier (governed masking under a uniform seal).

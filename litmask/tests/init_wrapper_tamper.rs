@@ -1,9 +1,9 @@
 //! Verifies that init-time AEAD authentication failure surfaces as
-//! `Err(InitError::Decryption)` rather than panicking. Lives in its
-//! own integration-test binary so the runtime's process-global
-//! `mask_key` cell starts unset on every run; reusing the test
-//! crate that calls `init_once` first would short-circuit
-//! `__init_with_wrapper` before the tampered path is exercised.
+//! `Err(InitError::Decryption)` rather than panicking. Lives in its own
+//! integration-test binary so the process-global mask-key store starts
+//! empty; a binary that already cached this wrapper (via a `mask!()` or a
+//! govern `init!`) would short-circuit `__init_with_wrapper`'s
+//! already-cached early return before the tampered path runs.
 
 mod common;
 
