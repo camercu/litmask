@@ -125,42 +125,11 @@ pub fn decrypt_blob(
 #[cfg(all(test, feature = "chacha20-poly1305"))]
 mod tests {
     use super::*;
+    use crate::test_util::{build_blob, build_wrapper};
     use crate::{
         CURRENT_CIPHER, CipherId, WRAPPER_BODY_LEN, WRAPPER_PLAINTEXT_LEN, aead_encrypt,
         assemble_wrapper, nonce_for_wrapper,
     };
-
-    /// Encrypt `version_byte || mask_key` under `unlock_key` and
-    /// assemble the wrapper. Mirrors what the build-script helper does,
-    /// but stays purely in-memory so tests run sub-millisecond.
-    fn build_wrapper(
-        unlock_key: &[u8; KEY_LEN],
-        mask_key: &[u8; KEY_LEN],
-        seed: &[u8; KEY_LEN],
-    ) -> [u8; WRAPPER_LEN] {
-        let nonce = nonce_for_wrapper(seed);
-        let mut plaintext = [0u8; WRAPPER_PLAINTEXT_LEN];
-        plaintext[0] = FormatVersion::CURRENT.to_byte();
-        plaintext[1..].copy_from_slice(mask_key);
-        let body = aead_encrypt(CURRENT_CIPHER, unlock_key, &nonce, &plaintext).expect("encrypt");
-        let body: &[u8; WRAPPER_BODY_LEN] = body
-            .as_slice()
-            .try_into()
-            .expect("AEAD output of WRAPPER_PLAINTEXT_LEN plaintext is WRAPPER_BODY_LEN bytes");
-        assemble_wrapper(&nonce, body)
-    }
-
-    fn build_blob(
-        mask_key: &[u8; KEY_LEN],
-        nonce: &[u8; NONCE_LEN],
-        plaintext: &[u8],
-    ) -> alloc::vec::Vec<u8> {
-        let body = aead_encrypt(CURRENT_CIPHER, mask_key, nonce, plaintext).expect("encrypt");
-        let mut blob = alloc::vec::Vec::with_capacity(NONCE_LEN + body.len());
-        blob.extend_from_slice(nonce);
-        blob.extend_from_slice(&body);
-        blob
-    }
 
     #[test]
     fn wrapper_round_trip_succeeds() {

@@ -130,7 +130,7 @@ name = "weak_mask_demo"
 required-features = ["provider-examples"]
 
 [dev-dependencies]
-litmask-internal.workspace = true
+litmask-internal = { workspace = true, features = ["test-util"] }
 postcard = { version = "1.1.3", features = [
   "use-std",
 ], default-features = false }

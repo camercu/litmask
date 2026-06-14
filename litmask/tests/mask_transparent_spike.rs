@@ -10,34 +10,8 @@
 
 #![cfg(feature = "std")]
 
-use litmask_internal::{
-    CURRENT_CIPHER, EMBEDDED_UNLOCK_DERIVATION_CONTEXT, FormatVersion, KEY_LEN, NONCE_LEN,
-    WRAPPER_BODY_LEN, WRAPPER_LEN, WRAPPER_PLAINTEXT_LEN, aead_encrypt, assemble_wrapper,
-    derive_embedded_unlock_key, nonce_for_wrapper,
-};
-
-/// Assemble an Embedded-tier wrapper for `mask_key` — `nonce ||
-/// AEAD(version || mask_key)` under the nonce-derived unlock key, the
-/// shape `emit()` writes and `EmbeddedProvider` reopens.
-fn build_embedded_wrapper(mask_key: &[u8; KEY_LEN], seed: &[u8; KEY_LEN]) -> [u8; WRAPPER_LEN] {
-    let nonce = nonce_for_wrapper(seed);
-    let unlock_key = derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &nonce);
-    let mut plaintext = [0u8; WRAPPER_PLAINTEXT_LEN];
-    plaintext[0] = FormatVersion::CURRENT.to_byte();
-    plaintext[1..].copy_from_slice(mask_key);
-    let body = aead_encrypt(CURRENT_CIPHER, &unlock_key, &nonce, &plaintext).expect("seal wrapper");
-    let body: &[u8; WRAPPER_BODY_LEN] = body.as_slice().try_into().expect("body length");
-    assemble_wrapper(&nonce, body)
-}
-
-/// Build a per-string blob (`nonce || AEAD(plaintext)`) under `mask_key`.
-fn build_blob(mask_key: &[u8; KEY_LEN], blob_nonce: &[u8; NONCE_LEN], plaintext: &[u8]) -> Vec<u8> {
-    let body = aead_encrypt(CURRENT_CIPHER, mask_key, blob_nonce, plaintext).expect("seal blob");
-    let mut blob = Vec::with_capacity(NONCE_LEN + body.len());
-    blob.extend_from_slice(blob_nonce);
-    blob.extend_from_slice(&body);
-    blob
-}
+use litmask_internal::test_util::{build_blob, build_embedded_wrapper};
+use litmask_internal::{KEY_LEN, NONCE_LEN};
 
 #[test]
 fn two_masking_crates_decrypt_independently() {

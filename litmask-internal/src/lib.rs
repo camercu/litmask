@@ -81,3 +81,9 @@ pub use format_parser::{
 
 mod weak;
 pub use weak::xor_cycle;
+
+#[cfg(all(
+    any(test, feature = "test-util"),
+    any(feature = "chacha20-poly1305", feature = "aes-gcm")
+))]
+pub mod test_util;
