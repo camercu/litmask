@@ -1,3 +1,13 @@
+## [0.17.0](https://github.com/camercu/litmask/compare/v0.16.0...v0.17.0) (2026-06-14)
+
+### ⚠ BREAKING CHANGES
+
+* **build:** litmask-build no longer writes target/<profile>/
+litmask.config. Anything scripting against that file (e.g. awk'ing the
+unlock_key out of it) must mint material with `litmask keygen` instead.
+
+* **build:** stop writing litmask.config ([9690caf](https://github.com/camercu/litmask/commit/9690cafc8c859f5b72c73e58037e8a2341bdc33e))
+
 ## [0.16.0](https://github.com/camercu/litmask/compare/v0.15.0...v0.16.0) (2026-06-14)
 
 ### ⚠ BREAKING CHANGES
