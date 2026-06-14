@@ -335,21 +335,21 @@ macro_rules! __weak_decode_cstr_call {
 /// this crate's `machine-id` feature, so a `machine`-sealed build can pass
 /// `init!`'s form↔tier cross-check while the feature is off. Without this
 /// guard the expansion would reference the feature-gated
-/// `__init_machine_id` and fail with an opaque "cannot find function";
+/// `__govern_machine` and fail with an opaque "cannot find function";
 /// here the missing feature surfaces a directed message instead.
 #[cfg(feature = "machine-id")]
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __init_machine_id_call {
+macro_rules! __govern_machine_call {
     ($wrapper:expr) => {
-        $crate::__internal::__init_machine_id($wrapper)
+        $crate::__internal::__govern_machine($wrapper)
     };
 }
 
 #[cfg(not(feature = "machine-id"))]
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __init_machine_id_call {
+macro_rules! __govern_machine_call {
     ($wrapper:expr) => {
         ::core::compile_error!(
             "init!(bind_to_machine) requires the `machine-id` feature on the `litmask` crate; \
@@ -359,25 +359,25 @@ macro_rules! __init_machine_id_call {
 }
 
 /// Internal dispatch for `init!(bind_to_machine + <provider>)` expansion. Like
-/// [`__init_machine_id_call!`], the two-factor seal tier is chosen at
+/// [`__govern_machine_call!`], the two-factor seal tier is chosen at
 /// build time by env-var presence, independent of this crate's
 /// `machine-id` feature, so the form↔tier cross-check can pass while the
 /// feature is off. This guard turns that case into a directed message
 /// instead of an opaque "cannot find function" against the feature-gated
-/// `__init_machine_id_external`.
+/// `__govern_machine_external`.
 #[cfg(feature = "machine-id")]
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __init_machine_id_external_call {
+macro_rules! __govern_machine_external_call {
     ($wrapper:expr, $external:expr) => {
-        $crate::__internal::__init_machine_id_external($wrapper, $external)
+        $crate::__internal::__govern_machine_external($wrapper, $external)
     };
 }
 
 #[cfg(not(feature = "machine-id"))]
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __init_machine_id_external_call {
+macro_rules! __govern_machine_external_call {
     ($wrapper:expr, $external:expr) => {
         ::core::compile_error!(
             "init!(bind_to_machine + provider) requires the `machine-id` feature on the `litmask` \
@@ -394,7 +394,7 @@ pub mod __internal {
     pub use crate::runtime::weak::{__weak_decode_cstr, WeakCStrCell};
     pub use crate::runtime::{__decrypt, __decrypt_string, __govern_external, __init_with_wrapper};
     #[cfg(feature = "machine-id")]
-    pub use crate::runtime::{__init_machine_id, __init_machine_id_external};
+    pub use crate::runtime::{__govern_machine, __govern_machine_external};
     // Hygienic `String` alias for the `mask_format!` / `mask_option_env!`
     // expansions (`__String::new()` / `Option::<__String>::None`).
     //

@@ -195,20 +195,20 @@ pub(crate) fn expand(input: &TokenStream) -> TokenStream {
         }
         // The machine provider is `pub(crate)` and cannot be named in the
         // consumer crate, so the seam fn constructs it from the wrapper
-        // nonce in-crate. Routed through `__init_machine_id_call!` rather
+        // nonce in-crate. Routed through `__govern_machine_call!` rather
         // than the seam fn directly: the macro carries a feature-off
         // variant that emits a directed `compile_error!`, since a
         // `machine`-sealed build can reach this arm with the `machine-id`
         // feature disabled.
         Form::Machine => quote! {{
             let __litmask_wrapper = ::litmask::__wrapper_bytes!();
-            ::litmask::__init_machine_id_call!(__litmask_wrapper)
+            ::litmask::__govern_machine_call!(__litmask_wrapper)
         }}
         .into(),
         // Two-factor: the machine factor is reconstructed in-crate from the
         // wrapper nonce (its provider is `pub(crate)`), and composed with
         // the external provider's key. Routed through
-        // `__init_machine_id_external_call!` for the same reason as the
+        // `__govern_machine_external_call!` for the same reason as the
         // Machine arm — the macro carries a feature-off variant that emits
         // a directed `compile_error!` when `machine-id` is disabled.
         Form::MachineExternal => {
@@ -216,7 +216,7 @@ pub(crate) fn expand(input: &TokenStream) -> TokenStream {
                 provider.expect("MachineExternal form carries an external provider expression");
             quote! {{
                 let __litmask_wrapper = ::litmask::__wrapper_bytes!();
-                ::litmask::__init_machine_id_external_call!(__litmask_wrapper, #provider)
+                ::litmask::__govern_machine_external_call!(__litmask_wrapper, #provider)
             }}
             .into()
         }

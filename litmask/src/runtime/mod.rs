@@ -145,43 +145,50 @@ fn decrypt_mask_key(
     }
 }
 
-/// `init!(bind_to_machine)` seam: construct the crate-private
-/// `MachineIdProvider` from the embedded wrapper nonce and run the shared
-/// init path.
+/// `init!(bind_to_machine)` seam: install the machine factor as the
+/// process-global **governing provider** (ADR-0001) and eagerly unlock the
+/// host's own `wrapper` through it. The governor re-derives the machine
+/// factor from each wrapper's own nonce, so it unlocks every machine-sealed
+/// crate's wrapper lazily.
 ///
-/// The macro calls this seam rather than naming the provider type:
-/// `MachineIdProvider` is `pub(crate)` and unreachable from the consumer
-/// crate where `init!` expansion lands. Routing the construction through
-/// here keeps the build-wrapper nonce injection in-crate and the type out
-/// of expanded code.
+/// The seam exists because `Governor::Machine` wraps the `pub(crate)`
+/// `MachineIdProvider`, unreachable from the consumer crate where `init!`
+/// expands; keeping the construction in-crate keeps that type out of
+/// expanded code.
 #[cfg(feature = "machine-id")]
 #[doc(hidden)]
-pub fn __init_machine_id(wrapper: &[u8; WRAPPER_LEN]) -> Result<(), InitError> {
-    __init_with_wrapper(crate::provider::MachineIdProvider::new(wrapper), wrapper)
+pub fn __govern_machine(wrapper: &[u8; WRAPPER_LEN]) -> Result<(), InitError> {
+    let governor = governor::install(governor::Governor::Machine);
+    ensure_cached(wrapper, || {
+        governor
+            .unlock_key_for(wrapper)
+            .map_err(InitError::KeyProvider)
+    })
 }
 
-/// `init!(bind_to_machine + <provider>)` seam: finish the machine factor key
-/// in-crate (from the embedded wrapper nonce, via the `pub(crate)`
-/// `MachineIdProvider`) and the external factor key from the consumer's
-/// `provider`, compose them machine-first (§2.3), and run the shared init
-/// path under the composition.
+/// `init!(bind_to_machine + <provider>)` seam: install the two-factor
+/// (machine + external) **governing provider** and eagerly unlock the
+/// host's own `wrapper` through it. Per wrapper the governor composes the
+/// machine factor (re-derived from that wrapper's nonce) with the external
+/// provider's key, machine-first (§2.3).
 ///
-/// The macro routes here rather than naming `MachineIdProvider` for the
-/// same reason as [`__init_machine_id`]: that provider is `pub(crate)`
-/// and unreachable from the consumer crate where `init!` expansion lands.
-/// Composition happens here so neither finished factor key, nor the
-/// `MachineIdProvider` type, appears in expanded code.
+/// Routed here for the same reason as [`__govern_machine`]: the machine
+/// factor wraps the `pub(crate)` `MachineIdProvider`, so neither it nor any
+/// finished factor key appears in expanded code.
 #[cfg(feature = "machine-id")]
 #[doc(hidden)]
 #[allow(clippy::needless_pass_by_value)]
-pub fn __init_machine_id_external<P: KeyProvider>(
+pub fn __govern_machine_external<P: KeyProvider + 'static>(
     wrapper: &[u8; WRAPPER_LEN],
     external: P,
 ) -> Result<(), InitError> {
+    let governor = governor::install(governor::Governor::MachineExternal(alloc::boxed::Box::new(
+        external,
+    )));
     ensure_cached(wrapper, || {
-        let machine_key = crate::provider::MachineIdProvider::new(wrapper).unlock_key()?;
-        let external_key = external.unlock_key()?;
-        Ok(crate::key::UnlockKey::compose(&machine_key, &external_key))
+        governor
+            .unlock_key_for(wrapper)
+            .map_err(InitError::KeyProvider)
     })
 }
 
