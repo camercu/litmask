@@ -90,3 +90,53 @@ pub(super) fn contains(nonce: &[u8; NONCE_LEN]) -> bool {
         CACHE.is_set()
     }
 }
+
+// Debug-only provenance: which wrappers were unlocked by the lazy
+// first-`mask!()` path (rather than an explicit `init!`). The
+// init-after-lazy guard ([`super::guard_init_after_lazy`]) consults this
+// per wrapper, so a host that `init!`s its own wrapper is not faulted
+// just because some *other* masking crate lazy-unlocked first. Under
+// `no_std` the store holds a single wrapper, so a coarse flag is already
+// per-wrapper accurate. Best-effort diagnostic, not a sync point.
+#[cfg(all(feature = "std", debug_assertions))]
+static LAZY: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<[u8; NONCE_LEN]>>> =
+    std::sync::OnceLock::new();
+
+#[cfg(all(not(feature = "std"), debug_assertions))]
+static LAZY: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Record that `nonce` was unlocked by the lazy path. Called from inside
+/// the lazy derive, so it fires once, only on a genuine lazy install.
+#[cfg(debug_assertions)]
+pub(super) fn record_lazy(nonce: [u8; NONCE_LEN]) {
+    #[cfg(feature = "std")]
+    {
+        LAZY.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(nonce);
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        let _ = nonce;
+        LAZY.store(true, core::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Whether `nonce` was unlocked by the lazy path (see [`record_lazy`]).
+#[cfg(debug_assertions)]
+pub(super) fn was_lazy(nonce: &[u8; NONCE_LEN]) -> bool {
+    #[cfg(feature = "std")]
+    {
+        LAZY.get().is_some_and(|s| {
+            s.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains(nonce)
+        })
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        let _ = nonce;
+        LAZY.load(core::sync::atomic::Ordering::Relaxed)
+    }
+}
