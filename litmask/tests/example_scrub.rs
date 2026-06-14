@@ -318,17 +318,16 @@ fn mask_format_placeholder_names_absent_from_binary() {
     common::assert_substring_absent(&path, "eyes_only_field_width");
 }
 
-/// `hello_world` and `file_provider` both mask the same Twain quote
-/// — that's the canonical "first example" payload the docs invite
-/// users to verify via `strings | grep`. Without this test, a
-/// `mask!` regression in either would silently leak the quote and
-/// only the identifier scrub would fire — and only if the regression
-/// also leaked a library identifier. Probe on `"The reports of my
-/// death"` rather than `"greatly exaggerated"` because the latter is
-/// common enough English that dependency text could plausibly
-/// contain it; the former is unique to the Twain quote.
+/// `hello_world` and `file_provider` each mask a different public-domain
+/// quip — the canonical "first example" payloads the docs invite users
+/// to verify via `strings | grep`. Without this test, a `mask!`
+/// regression in either would silently leak the quote and only the
+/// identifier scrub would fire — and only if the regression also leaked
+/// a library identifier. Each probe is a lexically-unusual substring of
+/// its example's quote, unique enough that dependency text can't
+/// false-positive.
 #[test]
-fn twain_fixture_absent_from_canonical_examples() {
+fn quote_fixtures_absent_from_canonical_examples() {
     // `hello_world` builds under the default Embedded seal; `file_provider`
     // passes a `FileProvider` to `init!` (External form), so it needs the
     // `provider-examples` feature and `LITMASK_UNLOCK_KEY` set to seal
@@ -340,10 +339,13 @@ fn twain_fixture_absent_from_canonical_examples() {
         &["provider-examples"],
         &[("LITMASK_UNLOCK_KEY", SCRUB_EXTERNAL_KEY)],
     );
-    for name in ["hello_world", "file_provider"] {
+    for (name, probe) in [
+        ("hello_world", "if two of them are dead"),
+        ("file_provider", "except temptation"),
+    ] {
         let path = common::example_path(name, Profile::Release);
         assert!(path.exists(), "example binary missing: {}", path.display());
-        common::assert_substring_absent(&path, "The reports of my death");
+        common::assert_substring_absent(&path, probe);
     }
 }
 
@@ -370,7 +372,7 @@ fn twain_fixture_absent_from_canonical_examples() {
 /// with it. That keeps the scrub running under the standard
 /// `cargo test --workspace` invocation that CI uses.
 ///
-/// Both scrubs apply: the Twain fixture must be absent (proves
+/// Both scrubs apply: the masked quote fixture must be absent (proves
 /// `mask!` worked), and the identifier scrub runs with `"blake3"`
 /// allow-listed. The `blake3` allow is the one unavoidable leak:
 /// the `blake3` crate embeds its own name in internal symbol
@@ -400,7 +402,7 @@ fn machine_id_provider_example_masked_fixtures_absent_from_binary() {
         "machine_id_provider binary missing after build (did `cargo build --features machine-id --example machine_id_provider` succeed?): {}",
         path.display(),
     );
-    common::assert_substring_absent(&path, "The reports of my death");
+    common::assert_substring_absent(&path, "distort them as you please");
     // Both context literals MUST be absent: the runtime `weak_mask!()`
     // calls are the only thing standing between them and a
     // `strings(1)`-visible appearance. If a future refactor drops a

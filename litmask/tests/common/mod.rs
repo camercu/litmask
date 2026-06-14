@@ -20,7 +20,7 @@ use litmask::{KeyError, KeyProvider, UnlockKey, init};
 ///
 /// Treat this list as a regression net rather than proof of
 /// leak-freedom: the canonical positive signal is the
-/// high-entropy-fixture strings check (e.g., the masked Twain
+/// high-entropy-fixture strings check (e.g., a masked quote-fixture
 /// substring being absent from `strings` output). Extend the list
 /// when new identifiable terms enter the codebase.
 pub const FORBIDDEN_SUBSTRINGS: &[&str] = &[
@@ -363,7 +363,7 @@ pub fn assert_fixtures_scrubbed(example: &str, binary: &Path, needles: &[&str]) 
 
 /// Assert that `needle` does NOT appear in `binary`'s `strings`
 /// output. Case-sensitive by design — used for test fixtures that are
-/// intentionally chosen to be lexically unusual (e.g., Twain
+/// intentionally chosen to be lexically unusual (e.g., public-domain
 /// quotations).
 pub fn assert_substring_absent(binary: &Path, needle: &str) {
     let output = strings_of(binary);

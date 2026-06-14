@@ -1,7 +1,7 @@
 //! End-to-end integration test for the `hello_world` example.
 //!
 //! Builds the example, scans its binary with `strings` for absence of
-//! the masked Twain fixture, then runs it with `LITMASK_UNLOCK_KEY`
+//! the masked Franklin fixture, then runs it with `LITMASK_UNLOCK_KEY`
 //! sourced from the build's `litmask.config` and asserts the
 //! decrypted output matches the fixture.
 
@@ -10,12 +10,14 @@ mod common;
 use common::Profile;
 use std::process::Command;
 
-const FIXTURE: &str = "The reports of my death have been greatly exaggerated. — Mark Twain";
+// Must match the string `hello_world` prints — this test builds and
+// runs that example and asserts its stdout equals `FIXTURE`.
+const FIXTURE: &str = "Three may keep a secret, if two of them are dead. — Benjamin Franklin";
 
 /// Substring of the fixture that is lexically unusual enough to make
 /// false-positive matches against std / dependency text effectively
 /// impossible.
-const FIXTURE_SUBSTRING: &str = "greatly exaggerated";
+const FIXTURE_SUBSTRING: &str = "if two of them are dead";
 
 #[test]
 fn end_to_end_round_trip() {

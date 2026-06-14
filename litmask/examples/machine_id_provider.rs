@@ -42,7 +42,7 @@ fn main() -> ExitCode {
     }
     println!(
         "{}",
-        mask!("The reports of my death have been greatly exaggerated. — Mark Twain"),
+        mask!("Get your facts first, then you can distort them as you please. — Mark Twain"),
     );
     ExitCode::SUCCESS
 }
