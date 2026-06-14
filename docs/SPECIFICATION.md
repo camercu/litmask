@@ -2450,32 +2450,10 @@ Per-string key derivation is rejected, not deferred — see §1.5.5.
 
 ## Appendix C — Glossary
 
-- **mask_key**: 32-byte symmetric key used to encrypt all string literal
-  ciphertext in the binary. Stored in the binary, encrypted with
-  `unlock_key`, inside the encrypted `mask_key` wrapper.
-- **unlock_key**: 32-byte symmetric key used to encrypt `mask_key` for
-  storage in the binary. Supplied at runtime via `KeyProvider`.
-- **layered key strategy**: The only key strategy in v1. `mask_key` is
-  encrypted with `unlock_key` and embedded in the binary; `unlock_key` is
-  supplied at runtime.
-- **seal tier**: The keying tier fixed at build time by which channel is
-  present (`Embedded`, `External`, `Machine`, `MachineExternal`), recorded in
-  `LITMASK_SEAL_TIER` and cross-checked by `init!` (§1.6, §2.6.1).
-- **machine_external tier**: The two-factor seal (both `LITMASK_MACHINE_ID`
-  and `LITMASK_UNLOCK_KEY` set at build). `init!(bind_to_machine + <provider>)`
-  composes the machine factor (host id) and the external factor (operator
-  material); either factor wrong fails the wrapper's AEAD check (§1.7.6).
-- **machine tier**: A build sealed under a host machine id
-  (`LITMASK_MACHINE_ID` at build, `init!(bind_to_machine)` at runtime). The
-  `unlock_key` is derived from the host's machine id and the wrapper nonce;
-  there is no post-build rebind step.
-- **wrapper**: The 61-byte structure containing the encrypted `mask_key`
-  along with its cleartext nonce, AEAD-authenticated format version, and
-  authentication tag (§1.7.3). No cipher id appears on the wire.
-- **AEAD**: Authenticated Encryption with Associated Data. The cipher class
-  used by `litmask` (ChaCha20-Poly1305 and AES-256-GCM both qualify).
-- **sysexits**: BSD `<sysexits.h>` standard exit codes (0, 64-78). Used by
-  `InitError::sysexit_code()` for plaintext-free error signaling.
+The canonical glossary is [`CONTEXT.md`](../CONTEXT.md) — the project's
+ubiquitous-language reference for `mask_key`, `unlock_key`, the seal tiers,
+the `wrapper`, and the other domain terms. Spec-only terms are defined at
+their point of use (e.g. the `sysexits` exit-code mapping in §1.9.7).
 
 ## Appendix D — Build-sealed keying: rationale & residuals
 
