@@ -236,10 +236,11 @@ pub fn __decrypt_string(
 fn mask_key_or_lazy_init(wrapper: &[u8; WRAPPER_LEN], tier: &str) -> &'static MaskKey {
     let nonce = mask_key_store::key_for(wrapper);
     mask_key_store::get_or_init(nonce, move || {
-        // Rule X (ADR-0001): a governing provider, if one was installed by
-        // an `init!` form, supplies the unlock key for EVERY wrapper
-        // regardless of tier (governed masking under a uniform seal).
-        // Absent a governor, only the keyless Embedded floor self-unlocks:
+        // Lazy-unlock rule (ADR-0001): a governing provider, if one was
+        // installed by an `init!` form, supplies the unlock key for EVERY
+        // wrapper regardless of tier (governed masking under a uniform
+        // seal). Absent a governor, only the keyless Embedded floor
+        // self-unlocks:
         // a higher-tier seal here would derive the wrong key and fail the
         // wrapper AEAD check, masking the real cause (a missing/late
         // governing `init!`) as a generic decryption error — refuse

@@ -261,9 +261,9 @@ the two-factor form `machine_external`). It delegates to a private
 `litmask::__internal::__govern_*` seam that installs the governor and runs
 the shared unlock path.
 
-**Lazy unlock (Rule X).** On the first `mask!()` for a wrapper not yet
-cached: if a governing provider is installed, it supplies the `unlock_key`
-for that wrapper regardless of tier (governed masking under a uniform seal);
+**Lazy unlock.** On the first `mask!()` for a wrapper not yet cached: if a
+governing provider is installed, it supplies the `unlock_key` for that
+wrapper regardless of tier (governed masking under a uniform seal);
 otherwise only the keyless Embedded floor self-unlocks via
 `EmbeddedProvider::new(&wrapper)`, and a `mask!()` carrying a non-Embedded
 `LITMASK_SEAL_TIER` tag with no governor installed panics with an
@@ -1527,7 +1527,7 @@ higher tier requires a governing `init!(...)` before the first `mask!()`). This
 prevents the wrong-key lazy derive from surfacing as a generic
 wrapper-decryption failure that hides the real cause. (Conversely, when a
 governing provider IS installed, the lazy path unlocks every wrapper through it
-regardless of tier — Rule X, §1.4.1.)
+regardless of tier — see §1.4.1.)
 
 §2.1.1.13 — Lazy initialization failure SHALL panic per the policy in §1.9.5.
 
@@ -2096,10 +2096,10 @@ installed governor wins and the host's wrapper is already cached).
 provider call.
 
 §2.6.1.6 — Lazy initialization (first `mask!()` for an uncached wrapper)
-SHALL apply Rule X (§1.4.1): if a governing provider is installed it supplies
-`unlock_key` for that wrapper regardless of tier; otherwise the keyless
-Embedded floor self-unlocks, and a higher-tier seal with no governor SHALL
-refuse per §2.1.1.12a. Lazy init failures result in panic per §2.1.1.13
+SHALL apply the lazy-unlock rule (§1.4.1): if a governing provider is
+installed it supplies `unlock_key` for that wrapper regardless of tier;
+otherwise the keyless Embedded floor self-unlocks, and a higher-tier seal
+with no governor SHALL refuse per §2.1.1.12a. Lazy init failures result in panic per §2.1.1.13
 rather than `Result` return.
 
 §2.6.1.7 — Initialization failures SHALL return the `InitError` variants

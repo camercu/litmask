@@ -238,9 +238,10 @@ set-once mask-key cell so multiple masking crates coexist in one binary.
 _Avoid_: "key registry".
 
 **Governing provider**:
-A **key provider** the **host binary** installs process-globally; the lazy
-unlock path consults it for every non-Embedded **wrapper** (Rule X), while
-Embedded wrappers self-unlock keyless. The mechanism behind **governed
+A **key provider** the **host binary** installs process-globally; when one
+is installed the lazy unlock path consults it for every **wrapper**
+regardless of tier, otherwise only Embedded wrappers self-unlock keyless.
+The mechanism behind **governed
 masking**.
 _Avoid_: "ambient provider", "host provider".
 
