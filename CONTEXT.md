@@ -188,6 +188,69 @@ mangled in transit _before_ it seals a binary nobody can open.
 validates it, then derives the **machine** key from the bare raw id.
 _Avoid_: "machine-id checksum", "fingerprint".
 
+### Usage patterns
+
+How litmask is consumed across a dependency graph. **Transparent
+masking**, **governed masking**, the **mask-key cache**, the **governing
+provider**, **uniform seal**, and the **govern** verb name the _target_
+model (ADR-0001); the runtime today supports only **self-masking**.
+
+**Masking crate**:
+Any crate (lib or bin) with `mask!()` call sites and its own build
+**seal** — its own `build.rs`/`emit()`, **seed**, **mask key**, and
+**wrapper**. Masking is per-crate because every artifact is per-`OUT_DIR`.
+_Avoid_: "mask unit", "masked crate".
+
+**Masking library**:
+A **masking crate** shipped as a library dependency — the transitive form
+a **host binary** links. Relies on lazy unlock only, never calling
+`init!()` (ADR-0001).
+
+**Host binary**:
+The final linked artifact carrying one or more **masking crates**. A role,
+not a kind: it may itself be a masking crate (**self-masking**) or merely
+link **masking libraries** (**transparent masking**).
+_Avoid_: "consumer binary" (overloads the general "consumer crate").
+
+**Self-masking**:
+The **host binary** is itself the sole **masking crate**, masking its own
+strings — the only pattern the runtime supports today.
+
+**Transparent masking** (target — ADR-0001):
+A **host binary** links **masking libraries** and is unaware litmask is a
+transitive dependency; each masking crate unlocks itself at the keyless
+Embedded floor via lazy init.
+_Avoid_: "autonomous masking" (considered, rejected — see flagged ambiguities).
+
+**Governed masking** (target — ADR-0001):
+A **host binary** installs one **governing provider** that opens every
+masking crate's **wrapper** across the graph, overriding their default
+Embedded lazy unlock; requires a **uniform seal**.
+
+**Mask-key cache** (target — ADR-0001):
+The process-global store of decrypted **mask keys**, one entry per
+**masking crate** keyed by its **wrapper** — replacing the single
+set-once mask-key cell so multiple masking crates coexist in one binary.
+_Avoid_: "key registry".
+
+**Governing provider** (target — ADR-0001):
+A **key provider** the **host binary** installs process-globally; the lazy
+unlock path consults it for every **wrapper** before falling back to the
+keyless `EmbeddedProvider`. The mechanism behind **governed masking**.
+_Avoid_: "ambient provider", "host provider".
+
+**Uniform seal** (target — ADR-0001):
+A build in which every **masking crate** in the graph is sealed under the
+same external **unlock key** (one `LITMASK_UNLOCK_KEY` in the build
+environment reaches every crate's `emit()`), so one **governing provider**
+opens all their **wrappers**.
+_Avoid_: "graph seal", "shared seal".
+
+**Govern** (verb):
+What a **host binary** does in **governed masking** — install the
+**governing provider** for the whole graph. Sits alongside **seal** (build
+fixes the key regime) and **bind** (machine factor).
+
 ## Relationships
 
 - One **seed** per build → derives one **mask key** and all **nonces**.
@@ -201,6 +264,13 @@ _Avoid_: "machine-id checksum", "fingerprint".
 - A **key provider** supplies the **unlock key** at runtime; the
   user's `init!()` — or, on an Embedded-sealed build only, the first
   `mask!()` call (lazy init) — invokes it.
+- A **host binary** links zero or more **masking libraries**; in
+  **self-masking** it is itself the sole **masking crate**. Each masking
+  crate carries its own **seed → mask key → wrapper**.
+- _(Target, ADR-0001)_ The **mask-key cache** holds one decrypted **mask
+  key** per masking crate. **Transparent masking**: each self-unlocks at
+  the Embedded floor. **Governed masking**: one **governing provider** +
+  **uniform seal** open every **wrapper** in the graph.
 
 ## Example dialogue
 
@@ -234,6 +304,19 @@ _Avoid_: "machine-id checksum", "fingerprint".
 > fine — it's an env var name, not a secret."
 
 ## Flagged ambiguities
+
+- **"transparent" vs "autonomous" masking** — for the
+  host-unaware-transitive pattern (UC2), "autonomous masking" was
+  considered (it names the mechanism: each masking crate self-unlocks)
+  but **"transparent masking"** was chosen (it names the host's
+  obliviousness and reads friendlier in docs). The distinguishing axis
+  from **governed masking** is unlock governance — autonomous-self vs
+  host-governed — not transitivity (both are transitive).
+
+- **"host binary" is a role, not a kind** — a **self-masking** host is
+  simultaneously a **host binary** and a **masking crate**; in
+  **transparent masking** the host is _not_ a masking crate (it only
+  links **masking libraries**). Always say which hat is meant.
 
 - **"Walking skeleton"** — previously used to name an integration test
   file. The term is a software-development metaphor (Cockburn,
