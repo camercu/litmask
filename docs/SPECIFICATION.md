@@ -75,7 +75,7 @@ Configurations and what each defeats:
 
 | Configuration | Defeats |
 |---|---|
-| Zero-config build (defaults to keyless `EmbeddedProvider`) | `strings`, casual binary inspection (Level 1) only — the `unlock_key` is recomputed from the wrapper's cleartext nonce, so it is recoverable from the artifact |
+| Zero-config build (keyless Embedded tier, no `init!`) | `strings`, casual binary inspection (Level 1) only — the `unlock_key` is recomputed from the wrapper's cleartext nonce, so it is recoverable from the artifact |
 | `FileProvider` + filesystem permissions | Above with OS-enforced access control |
 | `init!(bind_to_machine)` (build-sealed) | Above + binary moved to a different machine |
 | `init!(bind_to_machine + <provider>)` (two-factor) | Above + the external factor (env/file/vault) the binary alone never carries |
@@ -86,7 +86,7 @@ absence of runtime key provisioning. For providers that source `unlock_key` from
 external runtime state (`EnvVarProvider`, `FileProvider`, custom providers), the
 deployer MUST provision that state at runtime. A binary configured with such a
 provider but without the corresponding state will fail at init. Two configurations
-need no operator provisioning: the default `EmbeddedProvider` stores no key and
+need no operator provisioning: the keyless Embedded floor stores no key and
 recomputes `unlock_key` from the public wrapper nonce (Level 1 only — the nonce
 ships in the binary, so the key is honestly recoverable from the artifact); and
 the machine tier (`init!(bind_to_machine)`) re-sources its factor from the host's own
@@ -515,7 +515,7 @@ precludes English-language strings on the trait. Deployment guidance lives in
 | `EnvVarProvider` | `std` (default) | `pub` | Reads from a configurable env var (default `LITMASK_UNLOCK_KEY`) |
 | `FileProvider` | `std` (default) | `pub` | Reads from a filesystem path |
 | `MachineIdProvider` | `machine-id` (opt-in) | `pub(crate)` | Derives the machine-tier `unlock_key` from the host machine id (`machine-uid`) + the build's wrapper nonce |
-| `EmbeddedProvider` | always available | `pub` | Keyless default; recomputes the Embedded-tier `unlock_key` from the wrapper's cleartext nonce |
+| `EmbeddedProvider` | always available | `pub(crate)` | Keyless floor (internal); recomputes the Embedded-tier `unlock_key` from the wrapper's cleartext nonce |
 
 Default provider for the keyless Embedded tier, used by the lazy
 self-init path (no `init!` call): `EmbeddedProvider::new(&wrapper)` —
@@ -837,9 +837,9 @@ effective signature of every expansion result is `Result<(), InitError>`.
 pub trait KeyProvider { ... }
 pub struct UnlockKey([u8; 32]);
 
-pub struct EmbeddedProvider { ... }
 pub struct EnvVarProvider { ... }
 pub struct FileProvider { ... }
+// EmbeddedProvider is pub(crate) — the internal keyless floor (§2.5.5).
 
 #[non_exhaustive] pub enum InitError { ... }
 #[non_exhaustive] pub enum KeyError { ... }
@@ -1274,14 +1274,15 @@ Stable surface (semver-protected):
   breaking)
 - `KeyProvider` trait
 - `UnlockKey` type
-- `EmbeddedProvider`, `EnvVarProvider`, `FileProvider` (public providers;
-  `MachineIdProvider` is `pub(crate)` and NOT part of the stable surface)
+- `EnvVarProvider`, `FileProvider` (public providers; `EmbeddedProvider`
+  and `MachineIdProvider` are `pub(crate)` and NOT part of the stable surface)
 - `init!(<provider>)`, `init!(bind_to_machine)`, `init!(bind_to_machine + <provider>)` macro forms
 - `InitError::sysexit_code()` method and the sysexits mapping in §1.9.7
 - Error type variants (new variants non-breaking via `#[non_exhaustive]`)
 - `litmask.config` schema (additions allowed; removals breaking)
 - Default cipher (ChaCha20-Poly1305)
-- Default `KeyProvider` (`EmbeddedProvider`)
+- Keyless Embedded floor as the no-`init!` default (backed internally by
+  the `pub(crate)` `EmbeddedProvider`)
 - `LITMASK_RNG_SEED`, `LITMASK_UNLOCK_KEY`, `LITMASK_MACHINE_ID` env var names
   and the `LITMASK_SEAL_TIER` build tag
 
@@ -2035,8 +2036,13 @@ parameter.
 
 #### §2.5.5 EmbeddedProvider
 
+`EmbeddedProvider` is `pub(crate)` — the internal mechanism behind the
+keyless Embedded floor, not a consumer-facing provider. No `init!` form
+takes it, and the lazy self-init path is its only caller (the wrapper bytes
+it needs are internal).
+
 §2.5.5.1 — `EmbeddedProvider::new(wrapper: &[u8; WRAPPER_LEN])` SHALL construct
-the keyless default provider, capturing only the wrapper's cleartext nonce
+the keyless floor provider, capturing only the wrapper's cleartext nonce
 (no key material is stored).
 
 §2.5.5.2 — `EmbeddedProvider::unlock_key()` SHALL recompute and return the

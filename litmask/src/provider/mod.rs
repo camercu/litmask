@@ -24,7 +24,7 @@ pub(crate) mod file;
 #[cfg(feature = "machine-id")]
 pub(crate) mod machine_id;
 
-pub use embedded::EmbeddedProvider;
+pub(crate) use embedded::EmbeddedProvider;
 #[cfg(feature = "std")]
 pub use env::EnvVarProvider;
 #[cfg(feature = "std")]

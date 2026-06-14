@@ -6,9 +6,9 @@
 //! AES-256-GCM); the runtime decrypts on first use, after a
 //! process-global mask key is recovered from the embedded wrapper
 //! using an unlock key that a [`KeyProvider`] sources at runtime. The
-//! default [`EmbeddedProvider`] derives that key from the wrapper's
-//! public nonce — a keyless obfuscation floor; stronger providers
-//! source the key from external runtime state.
+//! keyless Embedded floor derives that key from the wrapper's public
+//! nonce (no `init!` needed); stronger providers source the key from
+//! external runtime state via a governing `init!(provider)`.
 //!
 //! ```no_run
 //! // The keyless Embedded tier self-initializes on the first `mask!()`.
@@ -19,7 +19,7 @@
 //!
 //! | Configuration | Defeats |
 //! |---|---|
-//! | Zero-config build (defaults to `EmbeddedProvider`) | `strings`, casual binary inspection (Level 1) only — the key is recoverable from the artifact |
+//! | Zero-config build (keyless Embedded tier) | `strings`, casual binary inspection (Level 1) only — the key is recoverable from the artifact |
 //! | `EnvVarProvider` | Above, key sourced from an env var, kept out of the binary |
 //! | `FileProvider` | Above, key sourced from a file path |
 //! | `init!(bind_to_machine)` (build-sealed) | Above + binary moved to a different machine |
@@ -63,12 +63,14 @@
 //! ## Two-phase masking
 //!
 //! [`mask!`] (and its variants [`mask_format!`], [`mask_concat!`],
-//! etc.) require [`init!`] to have populated the AEAD mask-key cell.
-//! [`weak_mask!`] is the **only** masking macro that works before
-//! `init!()` — use it exclusively for bootstrap-phase strings
-//! (env-var names, default file paths) that must be readable before
-//! the provider has run. `weak_mask!` provides anti-`strings(1)`
-//! obfuscation only; real secrets always go through `mask!`.
+//! etc.) need the AEAD mask key, which the keyless Embedded tier
+//! recovers lazily on the first call; higher tiers require a governing
+//! [`init!`] first. [`weak_mask!`] is the **only** masking macro that
+//! works before the runtime is unlocked — use it exclusively for
+//! bootstrap-phase strings (env-var names, default file paths) a
+//! governing provider itself needs. `weak_mask!` provides
+//! anti-`strings(1)` obfuscation only; real secrets always go through
+//! [`mask!`].
 //!
 //! ## Return types
 //!
@@ -115,7 +117,8 @@ pub(crate) use litmask_internal as internal;
 pub use error::{InitError, KeyError};
 pub use key::UnlockKey;
 pub use litmask_internal::KEY_LEN;
-pub use provider::{EmbeddedProvider, KeyProvider};
+pub(crate) use provider::EmbeddedProvider;
+pub use provider::KeyProvider;
 
 #[cfg(feature = "std")]
 pub use provider::{EnvVarProvider, FileProvider};

@@ -6,26 +6,21 @@ use crate::internal::{NONCE_LEN, WRAPPER_LEN, derive_embedded_unlock_key, parse_
 use crate::key::UnlockKey;
 use crate::provider::KeyProvider;
 
-/// The default, keyless [`KeyProvider`] for the Embedded seal tier.
+/// The internal keyless [`KeyProvider`] backing the Embedded seal tier.
+///
+/// `pub(crate)`: it is the mechanism behind the keyless floor, not a type
+/// consumers construct. The Embedded tier self-initializes on the first
+/// `mask!()` (there is no `init!` form that takes it), and the wrapper
+/// bytes it needs are internal — so it has no consumer-facing use.
 ///
 /// Stores no secret. It captures the wrapper's **cleartext** nonce at
 /// construction and recomputes the Embedded-tier `unlock_key` from that
 /// nonce on every call — the same derivation `litmask-build` runs at
-/// seal time. The nonce ships in the
-/// binary in the clear, so this provider is honestly recoverable from
-/// the artifact: the Embedded tier buys `strings(1)` resistance, not
-/// secrecy. Higher tiers source a real secret from a runtime channel.
-///
-/// # Examples
-///
-/// The Embedded tier needs no `init!` — the first `mask!()`
-/// self-initializes:
-///
-/// ```no_run
-/// println!("{}", litmask::mask!("sensitive data"));
-/// ```
+/// seal time. The nonce ships in the binary in the clear, so the Embedded
+/// tier buys `strings(1)` resistance, not secrecy. Higher tiers source a
+/// real secret from a runtime channel.
 #[derive(Debug)]
-pub struct EmbeddedProvider {
+pub(crate) struct EmbeddedProvider {
     // Non-secret: the wrapper nonce is public and ships in cleartext,
     // so no zeroize-on-drop is warranted.
     nonce: [u8; NONCE_LEN],
@@ -37,7 +32,7 @@ impl EmbeddedProvider {
     ///
     /// [`unlock_key`]: KeyProvider::unlock_key
     #[must_use]
-    pub fn new(wrapper: &[u8; WRAPPER_LEN]) -> Self {
+    pub(crate) fn new(wrapper: &[u8; WRAPPER_LEN]) -> Self {
         Self {
             nonce: *parse_wrapper(wrapper).nonce,
         }
