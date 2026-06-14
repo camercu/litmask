@@ -1,3 +1,30 @@
+## [0.16.0](https://github.com/camercu/litmask/compare/v0.15.0...v0.16.0) (2026-06-14)
+
+### ⚠ BREAKING CHANGES
+
+* **provider:** litmask::EmbeddedProvider is no longer public. Nothing
+consumer-facing used it (the Embedded tier self-initializes on the first
+mask!()); remove any reference.
+* **macros:** litmask::init!() (no arguments) no longer compiles.
+Drop the call — the Embedded tier initializes on the first mask!() — or
+use init!(provider) / init!(bind_to_machine) to govern the graph.
+
+* **provider:** make EmbeddedProvider pub(crate) ([9a57b8b](https://github.com/camercu/litmask/commit/9a57b8b18b6ac835f5b7d9dfd5e99215030657f4))
+
+### Features
+
+* **diagnostics:** name the non-uniform-seal cause on governed decrypt ([eee93be](https://github.com/camercu/litmask/commit/eee93be8f95fc25f96b3fc895fd0ab64f4d5d93b))
+* **macros:** remove bare init!(); Embedded self-initializes lazily ([f8dd690](https://github.com/camercu/litmask/commit/f8dd69043cccf6ba592499af5b83a56f0f658797))
+* **runtime:** diagnose a second masking crate on no_std ([c29cf96](https://github.com/camercu/litmask/commit/c29cf968e59d3b5f0b89a648f27691c5d84b00df))
+* **runtime:** governing provider for machine init! forms ([0b3a449](https://github.com/camercu/litmask/commit/0b3a4490d10a117dc3898a3914a0abd611dc636a))
+* **runtime:** install a governing provider for init!(provider) ([eef6c61](https://github.com/camercu/litmask/commit/eef6c61fcefdc239b817cbf3a4e597f2e3333150))
+* **runtime:** per-wrapper mask-key cache (transparent-masking spike) ([5cbd5fe](https://github.com/camercu/litmask/commit/5cbd5fe05dbaab94144512cbec201ffe490fb519))
+
+### Bug Fixes
+
+* **ci:** update platform-smoke marker to the example's current quote ([2927564](https://github.com/camercu/litmask/commit/29275648ed0aec0e780ffb48146baab33b3d8c54))
+* **runtime:** make init-after-lazy guard per-wrapper accurate ([737f547](https://github.com/camercu/litmask/commit/737f547ceabf07ccd6872fc4256f9885e2b5f049))
+
 ## [0.15.0](https://github.com/camercu/litmask/compare/v0.14.0...v0.15.0) (2026-06-13)
 
 ### Features
