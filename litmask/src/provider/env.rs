@@ -31,8 +31,7 @@ impl EnvVarProvider {
         Self { name }
     }
 
-    /// Expose the configured variable name so error messages and
-    /// operational tooling can surface it without hardcoding.
+    /// The environment variable name this provider was configured with.
     #[must_use]
     pub const fn var_name(&self) -> &'static str {
         self.name

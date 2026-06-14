@@ -1,7 +1,7 @@
 //! `#[mask_all(strict)]` upgrades the pattern-position skip warning
 //! to a hard compile error (§2.3.3.1). The fixture must fail to
-//! compile and the error text must identify the skip reason so
-//! downstream tooling that greps for the tag continues to work.
+//! compile and the error text must identify the skip reason by its tag
+//! (pinned by the paired `.stderr` snapshot).
 
 use litmask::mask_all;
 

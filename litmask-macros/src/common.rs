@@ -21,9 +21,9 @@ use litmask_internal::{
 };
 
 /// Closed set of failure tags from spec §1.9.6. Every litmask compile
-/// error carries the invoking macro name plus one of these tags so
-/// downstream tooling can pattern-match `<macro>! <tag>` without
-/// depending on prose wording.
+/// error carries the invoking macro name plus one of these tags, so the
+/// rejection reason is identifiable by `<macro>! <tag>` rather than by
+/// prose wording; the `tests/compile/*.stderr` snapshots pin the format.
 #[derive(Clone, Copy)]
 pub(crate) enum FailTag {
     NonLiteral,

@@ -1061,7 +1061,8 @@ proc-macro SHALL include both:
    `mask_option_env!`, `mask_file!`, `unmasked!`, `weak_mask!`, `init!`).
 2. One of the closed failure tags below, identifying the rejection reason.
    The tag SHALL appear verbatim as a hyphen-separated lowercase substring
-   so downstream tooling can pattern-match on `<macro>! <tag>`.
+   (`<macro>! <tag>`); the `tests/compile/*.stderr` snapshots pin it so a
+   wording edit is caught, and a consumer may pattern-match on it.
 
 | Tag | Situation |
 |---|---|
@@ -1800,9 +1801,9 @@ reference triggers rustc's `deprecated` lint, which surfaces as a normal
 literal at ...` in cargo output. Under `#[mask_all(strict)]`, the proc-macro
 SHALL substitute `compile_error!("litmask: ...")` for the ghost-item pattern
 so the same skip becomes a hard error. Migration to `Diagnostic::emit` is a
-v2 candidate; the warning text format above is normative and MUST NOT change
-without a minor-version bump (so downstream tooling that greps cargo output
-remains stable).
+v2 candidate; the warning text format above is normative and is pinned by
+the `tests/compile/mask_all_*_warning.stderr` snapshots, so a wording edit
+is caught and surfaces as a deliberate, reviewed change.
 
 §2.3.1.5 — `#[mask_all]` SHALL recurse into nested modules, functions,
 blocks, and closures within the attributed module.
