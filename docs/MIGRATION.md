@@ -8,10 +8,10 @@
  # Cargo.toml
  [dependencies]
 -litcrypt = "0.2"
-+litmask = "0.10"
++litmask = "0.16"
 +
 +[build-dependencies]
-+litmask-build = "0.10"
++litmask-build = "0.16"
 ```
 
 ```rust
@@ -67,10 +67,10 @@ LITMASK_UNLOCK_KEY='same material the build was sealed with' ./my_app
  # Cargo.toml
  [dependencies]
 -litcrypt2 = "0.1"
-+litmask = "0.10"
++litmask = "0.16"
 +
 +[build-dependencies]
-+litmask-build = "0.10"
++litmask-build = "0.16"
 ```
 
 ```rust
@@ -107,10 +107,10 @@ seal tiers keep the key out of the binary entirely.
  # Cargo.toml
  [dependencies]
 -obfstr = "0.6"
-+litmask = "0.10"
++litmask = "0.16"
 +
 +[build-dependencies]
-+litmask-build = "0.10"
++litmask-build = "0.16"
 ```
 
 ```rust
