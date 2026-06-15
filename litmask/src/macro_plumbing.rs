@@ -167,3 +167,21 @@ macro_rules! __govern_machine_external_call {
         )
     };
 }
+
+#[cfg(test)]
+mod tests {
+    /// `__wrapper_bytes!` hardcodes the wrapper filename inside a
+    /// `concat!`, which needs a literal token and so cannot reference
+    /// `litmask_internal::WRAPPER_ARTIFACT`. Pin the literal to that const
+    /// — a const rename that overlooked this macro would desync the
+    /// runtime read from the build write. Scrapes this file's own source
+    /// (the const value appears only in the macro, never in this test).
+    #[test]
+    fn wrapper_bytes_literal_matches_artifact_const() {
+        let src = include_str!("macro_plumbing.rs");
+        assert!(
+            src.contains(crate::internal::WRAPPER_ARTIFACT),
+            "__wrapper_bytes! must embed the WRAPPER_ARTIFACT filename literally",
+        );
+    }
+}

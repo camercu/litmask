@@ -51,9 +51,9 @@ pub use tier::SealTierTag;
 
 mod wire;
 pub use wire::{
-    CipherId, FormatVersion, KEY_LEN, NONCE_LEN, NONCE_OFFSET, ParsedWrapper, TAG_LEN,
-    UnknownFormatVersion, WRAPPER_BODY_LEN, WRAPPER_LEN, WRAPPER_PLAINTEXT_LEN, assemble_wrapper,
-    parse_wrapper,
+    CipherId, FormatVersion, KEY_ARTIFACT, KEY_LEN, NONCE_LEN, NONCE_OFFSET, ParsedWrapper,
+    SEED_ARTIFACT, TAG_LEN, UnknownFormatVersion, WRAPPER_ARTIFACT, WRAPPER_BODY_LEN, WRAPPER_LEN,
+    WRAPPER_PLAINTEXT_LEN, assemble_wrapper, parse_wrapper,
 };
 // `wrapper_nonce` has no out-of-crate callers (consumers derive the
 // wrapper nonce via `nonce_for_wrapper`); keep it crate-private.

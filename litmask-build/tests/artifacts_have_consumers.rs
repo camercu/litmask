@@ -1,14 +1,15 @@
-//! Guard: every artifact `emit()` writes to disk must have a consumer.
+//! Guard: every build-artifact filename const is both written and read.
 //!
 //! The dead `litmask.config` artifact survived for a long time partly
 //! because nothing mechanically checked that what the build *writes* is
-//! actually *read*. This test derives the artifact filenames from
-//! `emit()`'s own source and asserts each is referenced in the consumer
-//! crates — `litmask-macros` (reads them at macro expansion) or `litmask`
-//! (embeds the wrapper via `include_bytes!`). A new build artifact with no
-//! reader fails here, loudly, with a pointer to the fix.
+//! actually *read*. litmask-internal now owns the `*_ARTIFACT` filename
+//! consts (the single source of truth for the `OUT_DIR` contract); this
+//! test scrapes those const names and asserts each is referenced by the
+//! writer (litmask-build's `emit`) AND by at least one reader crate
+//! (litmask-macros at expansion time, or litmask via `include_bytes!`).
+//! A new artifact const with no writer or no reader fails here, loudly,
+//! with a pointer to the fix.
 
-use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -20,28 +21,19 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Filenames `emit()` writes, scraped from its production source: every
-/// `.join("litmask_*")` target. Scoped to the code above the test module
-/// so the in-crate tests (which deliberately assert `litmask.config` is
-/// *absent*) don't feed phantom artifacts into the check.
-fn written_artifacts() -> BTreeSet<String> {
-    let full = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"))
-        .expect("read litmask-build src");
-    let src = &full[..full.find("mod tests").unwrap_or(full.len())];
-
-    let mut found = BTreeSet::new();
-    let needle = ".join(\"";
-    let mut rest = src;
-    while let Some(i) = rest.find(needle) {
-        rest = &rest[i + needle.len()..];
-        if let Some(end) = rest.find('"') {
-            let name = &rest[..end];
-            if name.starts_with("litmask_") {
-                found.insert(name.to_string());
-            }
-        }
-    }
-    found
+/// The `*_ARTIFACT` const names declared in litmask-internal's wire
+/// module — the single source of truth for the on-disk filenames.
+fn artifact_consts(root: &Path) -> Vec<String> {
+    let src = fs::read_to_string(root.join("litmask-internal/src/wire.rs"))
+        .expect("read litmask-internal wire.rs");
+    src.lines()
+        .filter_map(|line| {
+            let rest = line.trim_start().strip_prefix("pub const ")?;
+            let (name, _) = rest.split_once(':')?;
+            let name = name.trim();
+            name.ends_with("_ARTIFACT").then(|| name.to_string())
+        })
+        .collect()
 }
 
 /// Concatenate every `.rs` source under `dir`, recursively.
@@ -62,24 +54,30 @@ fn all_rs_sources(dir: &Path) -> String {
 }
 
 #[test]
-fn every_written_artifact_has_a_consumer() {
+fn every_artifact_const_is_written_and_read() {
     let root = workspace_root();
-    let consumers = format!(
+    let consts = artifact_consts(&root);
+    assert!(
+        !consts.is_empty(),
+        "scraper found no `*_ARTIFACT` consts in litmask-internal/src/wire.rs — the scrape broke",
+    );
+
+    let writer = all_rs_sources(&root.join("litmask-build/src"));
+    let readers = format!(
         "{}{}",
         all_rs_sources(&root.join("litmask-macros/src")),
         all_rs_sources(&root.join("litmask/src")),
     );
 
-    let artifacts = written_artifacts();
-    assert!(
-        !artifacts.is_empty(),
-        "scraper found no `litmask_*` artifacts in emit() source — the scrape broke",
-    );
-
-    for name in &artifacts {
+    for name in &consts {
         assert!(
-            consumers.contains(name.as_str()),
-            "litmask-build writes `{name}` but no litmask-macros/litmask source reads it — \
+            writer.contains(name.as_str()),
+            "litmask-internal declares `{name}` but litmask-build never references it — \
+             wire it into emit(), or drop the const",
+        );
+        assert!(
+            readers.contains(name.as_str()),
+            "litmask-internal declares `{name}` but no litmask-macros/litmask source reads it — \
              wire a consumer, or stop writing it (cf. the litmask.config removal)",
         );
     }

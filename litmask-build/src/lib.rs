@@ -37,8 +37,9 @@ use zeroize::{Zeroize, Zeroizing};
 
 use litmask_internal::{
     CURRENT_CIPHER, EMBEDDED_UNLOCK_DERIVATION_CONTEXT, EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
-    FormatVersion, KEY_LEN, MACHINE_ID_DERIVATION_CONTEXT, MACHINE_ID_SALT_DERIVATION_CONTEXT,
-    SealTierTag, TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, WRAPPER_BODY_LEN, WRAPPER_LEN,
+    FormatVersion, KEY_ARTIFACT, KEY_LEN, MACHINE_ID_DERIVATION_CONTEXT,
+    MACHINE_ID_SALT_DERIVATION_CONTEXT, SEED_ARTIFACT, SealTierTag,
+    TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, WRAPPER_ARTIFACT, WRAPPER_BODY_LEN, WRAPPER_LEN,
     WRAPPER_PLAINTEXT_LEN, aead_encrypt, assemble_wrapper, base64url, decode_machine_id_token,
     derive_embedded_unlock_key, derive_external_unlock_key, derive_machine_id_key,
     derive_two_factor_unlock_key, nonce_for_wrapper, strip_trailing_newline,
@@ -92,7 +93,6 @@ impl SealTier {
     /// Pure core of [`SealTier::from_env`]: maps the optional factor
     /// channels to a tier without touching process state, so the
     /// presence rule is unit-testable under `forbid(unsafe_code)`.
-    ///
     fn from_material(unlock: Option<String>, machine: Option<String>) -> Self {
         match (unlock, machine) {
             (None, None) => Self::Embedded,
@@ -335,9 +335,9 @@ impl BuildArtifacts {
     /// floor recomputes it from the wrapper nonce, and the keyed tiers
     /// re-source their material at runtime.
     fn write_to(&self, out_dir: &Path) {
-        write_secret(&out_dir.join("litmask_seed.bin"), &self.seed);
-        write_secret(&out_dir.join("litmask_key.bin"), &self.mask_key);
-        write_secret(&out_dir.join("litmask_wrapper.bin"), &self.wrapper);
+        write_secret(&out_dir.join(SEED_ARTIFACT), &self.seed);
+        write_secret(&out_dir.join(KEY_ARTIFACT), &self.mask_key);
+        write_secret(&out_dir.join(WRAPPER_ARTIFACT), &self.wrapper);
     }
 }
 
@@ -422,7 +422,7 @@ fn source_seed_with_env_and_profile(
         let seed = decode_env_seed(&raw);
         return (seed, SeedSource::Env);
     }
-    let persist_path = profile_dir.join("litmask_seed.bin");
+    let persist_path = profile_dir.join(SEED_ARTIFACT);
     if profile == Profile::Debug {
         if let Ok(bytes) = fs::read(&persist_path) {
             let bytes = Zeroizing::new(bytes);
@@ -516,7 +516,7 @@ mod tests {
     }
 
     fn persist_path(dir: &TempDir) -> PathBuf {
-        dir.path().join("litmask_seed.bin")
+        dir.path().join(SEED_ARTIFACT)
     }
 
     /// Helper: invoke `source_seed_with_env_and_profile` with no env
@@ -1129,9 +1129,9 @@ mod tests {
 
         BuildArtifacts::derive(&seed, &external("operator secret")).write_to(out.path());
 
-        assert!(out.path().join("litmask_wrapper.bin").exists());
-        assert!(out.path().join("litmask_key.bin").exists());
-        assert!(out.path().join("litmask_seed.bin").exists());
+        assert!(out.path().join(WRAPPER_ARTIFACT).exists());
+        assert!(out.path().join(KEY_ARTIFACT).exists());
+        assert!(out.path().join(SEED_ARTIFACT).exists());
         assert!(
             !out.path().join("litmask.config").exists(),
             "no litmask.config is written for any tier",

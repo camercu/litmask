@@ -35,6 +35,28 @@ pub const WRAPPER_BODY_LEN: usize = WRAPPER_PLAINTEXT_LEN + TAG_LEN;
 /// = 61 bytes.
 pub const WRAPPER_LEN: usize = NONCE_LEN + WRAPPER_BODY_LEN;
 
+// ── Build-artifact filenames ────────────────────────────────────
+//
+// The `OUT_DIR` filenames the build writes and the proc-macro / runtime
+// read. The single source of truth for the on-disk contract, so the
+// writer (`litmask-build::emit`) and the readers cannot drift; the
+// `artifacts_have_consumers` test pins that every const here is both
+// written and read.
+
+/// Plaintext `mask_key` artifact: written by `emit()`, read by the
+/// proc-macro to encrypt each `mask!` blob.
+pub const KEY_ARTIFACT: &str = "litmask_key.bin";
+
+/// Build-seed artifact: written by `emit()`, read by the proc-macro for
+/// per-call-site nonce derivation.
+pub const SEED_ARTIFACT: &str = "litmask_seed.bin";
+
+/// Encrypted-`mask_key` wrapper artifact: written by `emit()`, embedded
+/// by the runtime via `include_bytes!` (see `litmask`'s `__wrapper_bytes!`,
+/// whose hardcoded literal is pinned to this const) and read by
+/// `weak_mask!` expansion.
+pub const WRAPPER_ARTIFACT: &str = "litmask_wrapper.bin";
+
 // ── Types ───────────────────────────────────────────────────────
 
 /// Wire-format version of the encrypted-`mask_key` wrapper. Encoded as

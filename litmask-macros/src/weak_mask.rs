@@ -23,7 +23,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use zeroize::Zeroize;
 
-use litmask_internal::{WRAPPER_LEN, derive_weak_xor_key, xor_cycle};
+use litmask_internal::{WRAPPER_ARTIFACT, WRAPPER_LEN, derive_weak_xor_key, xor_cycle};
 
 use crate::common::{
     StringLiteral, byte_string_literal, load_out_dir_artifact, parse_string_literal,
@@ -56,7 +56,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         StringLiteral::CStr(c) => (c.value().into_bytes(), WeakKind::CStr),
     };
 
-    let mut wrapper = load_out_dir_artifact::<WRAPPER_LEN>("litmask_wrapper.bin");
+    let mut wrapper = load_out_dir_artifact::<WRAPPER_LEN>(WRAPPER_ARTIFACT);
     let mut weak_key = derive_weak_xor_key(&wrapper);
     wrapper.zeroize();
     let encoded = xor_cycle(&plaintext, &weak_key);

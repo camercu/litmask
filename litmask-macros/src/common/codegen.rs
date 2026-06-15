@@ -8,7 +8,8 @@ use syn::ext::IdentExt;
 use zeroize::Zeroize;
 
 use litmask_internal::{
-    CURRENT_CIPHER, KEY_LEN, NONCE_LEN, TAG_LEN, aead_encrypt, nonce_for_call_site,
+    CURRENT_CIPHER, KEY_ARTIFACT, KEY_LEN, NONCE_LEN, SEED_ARTIFACT, TAG_LEN, aead_encrypt,
+    nonce_for_call_site,
 };
 
 use super::artifact::load_out_dir_artifact;
@@ -117,8 +118,8 @@ pub(crate) fn mask_cstr(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStr
 /// `plaintext` is zeroized on return; callers MUST NOT rely on
 /// reading the buffer afterwards.
 fn mask_plaintext(mut plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKind) -> TokenStream {
-    let mut mask_key = load_out_dir_artifact::<KEY_LEN>("litmask_key.bin");
-    let mut seed = load_out_dir_artifact::<KEY_LEN>("litmask_seed.bin");
+    let mut mask_key = load_out_dir_artifact::<KEY_LEN>(KEY_ARTIFACT);
+    let mut seed = load_out_dir_artifact::<KEY_LEN>(SEED_ARTIFACT);
 
     let pm_span = span.unwrap();
     let file = canonicalize_file_path(pm_span.file(), manifest_dir());
