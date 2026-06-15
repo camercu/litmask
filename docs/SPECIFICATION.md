@@ -141,15 +141,16 @@ else is operational maturity (key management, deployment story, tooling).
 
 The user-facing API ships as a single `litmask` crate. Internally, Rust
 forbids exporting non-macro items from a `proc-macro = true` crate, so the
-workspace contains a hidden `litmask-macros` proc-macro crate that `litmask`
-re-exports via `pub use litmask_macros::*;`. The two MUST be pinned as
-`=x.y.z` exact-version dependencies and released together so the binary
-format never desyncs. `litmask-macros` is marked `publish = true` (so users
-can resolve the transitive dependency) but documented as "internal — do not
-depend on directly."
+workspace contains a hidden `litmask-macros` proc-macro crate whose macros
+`litmask` re-exports. All members share one workspace version, bumped in
+lockstep and released together so the binary format never desyncs;
+crates.io publishing is disabled workspace-wide (`publish = false`) and the
+inter-crate dependencies are path-only. `litmask-macros` is documented as
+"internal — do not depend on directly."
 
 An additional internal crate, `litmask-internal`, holds shared wire-format
-constants and utilities used by both the runtime and CLI crates.
+constants and crypto primitives used across the workspace (the runtime,
+build helper, proc-macro, and CLI crates).
 
 ### §1.3 Build Pipeline
 
@@ -285,7 +286,8 @@ runtime is not supported in v1.
 
 Each `mask!()` call:
 
-1. Retrieves the cached `mask_key` from the `OnceLock` (lazy-init if needed).
+1. Retrieves the cached `mask_key` from the per-wrapper mask-key cache
+   (lazy-init if needed).
 2. Reads its locally-embedded encrypted blob (format: §1.7.2).
 3. Decrypts using the configured cipher.
 4. Returns the result (`String`, `Vec<u8>`, or `CString` based on literal type).
@@ -295,9 +297,10 @@ Decryption failures at this stage indicate ciphertext tampering and panic per
 
 #### §1.4.3 Concurrency
 
-`OnceLock` provides thread-safe one-shot initialization. `mask!()` calls from
-multiple threads do not contend beyond the `OnceLock` read; each call decrypts
-into its own owned return value.
+The mask-key cache initializes each wrapper's key at most once
+(`Mutex<HashMap>` under `std`, a `OnceBox` cell under `no_std`). `mask!()`
+calls from multiple threads contend only on that one-shot insert, then each
+call decrypts into its own owned return value.
 
 ### §1.5 Cryptographic Design
 
@@ -307,19 +310,21 @@ into its own owned return value.
 - **Optional**: AES-256-GCM (AEAD, 256-bit key, 96-bit nonce, 128-bit tag),
   selected by enabling the `aes-gcm` feature
 
-Exactly one cipher is compiled into the `litmask` runtime crate and
-`litmask-build`. The selection rule is:
+Exactly one cipher (`CURRENT_CIPHER`) seals and opens each build of the
+`litmask` runtime crate and `litmask-build`. The selection rule is:
 
-| `aes-gcm` feature | Compiled cipher |
+| `aes-gcm` feature | `CURRENT_CIPHER` |
 |---|---|
 | disabled | ChaCha20-Poly1305 |
-| enabled | AES-256-GCM (replaces ChaCha20-Poly1305) |
+| enabled | AES-256-GCM (takes precedence) |
 
-The runtime crate uses `#[cfg(feature = "aes-gcm")]` to select the cipher
-implementation. Both ciphers are NOT compiled simultaneously; the
-`#[cfg(not(feature = "aes-gcm"))]` branch contains the ChaCha20-Poly1305
-implementation. This avoids ambiguity about which cipher is in use and keeps
-the binary footprint minimal.
+`litmask-internal` resolves `CURRENT_CIPHER` by feature: `aes-gcm` enabled
+selects AES-256-GCM, otherwise ChaCha20-Poly1305. Every wrapper and blob is
+sealed and opened with that one cipher, which is never written to the wire
+(§1.7.3). Under Cargo feature unification (e.g. `--all-features`) both
+backend crates may be compiled and the AEAD dispatch handles either
+`CipherId`, but `CURRENT_CIPHER` still resolves to a single cipher per
+build — so there is no ambiguity about which cipher sealed the artifacts.
 
 `litmask-cli` does not decrypt wrappers (its v1 subcommands, `keygen` and
 `show-machine-id`, are generate/read-only), so it links no cipher and the
@@ -501,13 +506,15 @@ cipher.
 #### §1.6.1 KeyProvider trait
 
 ```rust
-pub trait KeyProvider {
+pub trait KeyProvider: Send + Sync {
     fn unlock_key(&self) -> Result<UnlockKey, KeyError>;
 }
 ```
 
 The `&self` receiver allows stateful providers (cached lookups, network
-clients). `UnlockKey` is a 32-byte newtype that zeroes on drop.
+clients); the `Send + Sync` bound lets one be installed as the
+process-global governing provider across threads. `UnlockKey` is a 32-byte
+newtype that zeroes on drop.
 
 The trait is intentionally minimal. It has no `deployment_hint()` method or
 similar — the goal of minimizing library-side plaintext (see §1.9.3)
@@ -558,7 +565,8 @@ material.
 
 `UnlockKey` is constructed by `KeyProvider::unlock_key()`, used to decrypt
 `mask_key` during `init!()`, and dropped immediately after. The decrypted
-`mask_key` is held in the `OnceLock` for the program lifetime.
+`mask_key` is held in the per-wrapper mask-key cache for the program
+lifetime.
 
 `UnlockKey` and `MaskKey` (internal type) both implement `Drop` with `zeroize`
 to clear their contents from memory when dropped.
@@ -732,7 +740,7 @@ fingerprint) and depends only on the wrapper nonce, which is fixed for a
 given build. `weak_mask!`
 defends against `strings(1)` and Level 1 inspection only. Real secrets
 always use `mask!` once the runtime is unlocked. Decode happens once
-per call site (cached in a `OnceLock`).
+per call site (cached in a once-cell).
 
 `weak_mask!` accepts the same three literal kinds as `mask!`:
 
@@ -831,7 +839,7 @@ effective signature of every expansion result is `Result<(), InitError>`.
 #### §1.8.3 Public types
 
 ```rust
-pub trait KeyProvider { ... }
+pub trait KeyProvider: Send + Sync { ... }
 pub struct UnlockKey([u8; 32]);
 
 pub struct EnvVarProvider { ... }
@@ -848,15 +856,17 @@ the `machine-id` feature it is `pub(crate)`, reachable only through the
 
 #### §1.8.4 Internal types (not stable API)
 
-The following types exist but are explicitly internal — marked `#[doc(hidden)]`
-and not subject to semver guarantees:
+The following exist but are explicitly internal — `#[doc(hidden)]` or
+`pub(crate)`, not subject to semver guarantees:
 
-- `MaskKey` — runtime container for the decrypted mask key
-- `EncryptedBlob` and helper types used by macro-generated code
-- Derivation helpers (e.g., the `derive_nonce` private function inside
-  `litmask-macros`)
+- `MaskKey` — `#[doc(hidden)]` runtime container for the decrypted mask key
+- The `litmask::__internal` re-export module and the `#[doc(hidden)]
+  #[macro_export]` plumbing macros (`__wrapper_bytes!`, `__seal_tier!`, the
+  decrypt / govern seam macros) emitted into macro-generated code
+- Nonce derivation helpers (`nonce_for_call_site`, `nonce_for_wrapper`) in
+  `litmask-internal`
 
-User code MUST NOT depend on these types.
+User code MUST NOT depend on these.
 
 ### §1.9 Error Handling
 
@@ -1058,7 +1068,8 @@ proc-macro SHALL include both:
 
 1. The invoking macro's name with `!` suffix (`mask!`, `mask_format!`,
    `mask_include_str!`, `mask_include_bytes!`, `mask_concat!`, `mask_env!`,
-   `mask_option_env!`, `mask_file!`, `unmasked!`, `weak_mask!`, `init!`).
+   `mask_option_env!`, `mask_file!`, `unmasked!`, `weak_mask!`, `init!`, and
+   the derives `MaskDebug!` / `MaskSerialize!` / `MaskDeserialize!`).
 2. One of the closed failure tags below, identifying the rejection reason.
    The tag SHALL appear verbatim as a hyphen-separated lowercase substring
    (`<macro>! <tag>`); the `tests/compile/*.stderr` snapshots pin it so a
@@ -1330,33 +1341,41 @@ specific versions.
 `std` and `no_std` are not mutually exclusive features (Cargo can't enforce
 that); disabling `std` enables `no_std + alloc` mode. Pure `core` (no
 allocator) is not supported in v1. Because Cargo unifies features, the
-single-cipher property of §1.5.1 requires `--no-default-features` when
-selecting `aes-gcm`; with both cipher features enabled, `aes-gcm` is
-compiled and ChaCha20-Poly1305 is not.
+single-cipher (`CURRENT_CIPHER`) selection of §1.5.1 resolves to `aes-gcm`
+whenever that feature is enabled; for a strict single-cipher dependency
+tree (no ChaCha20-Poly1305 crate linked), build with
+`--no-default-features --features aes-gcm`.
 
 ### §1.14 Dependencies
 
+Internal crate (`litmask-internal`) — the shared wire format and crypto
+primitives the other crates build on:
+
+- `chacha20poly1305` / `aes-gcm` (RustCrypto AEAD, selected by cipher feature)
+- `base64ct` (constant-time base64url)
+- `blake3` (key + nonce derivation)
+- `zeroize` (key zero-on-drop)
+
 Runtime crate (`litmask`):
 
-- `chacha20poly1305` (RustCrypto, `#[cfg(not(feature = "aes-gcm"))]`)
-- `aes-gcm` (RustCrypto, `#[cfg(feature = "aes-gcm")]`)
-- `base64ct` (constant-time base64)
-- `blake3` (nonce derivation)
-- `machine-uid` (behind `machine-id` feature)
+- `litmask-internal` (wire format, AEAD, KDF), `litmask-macros` (the
+  re-exported proc-macros)
 - `zeroize` (`UnlockKey`/`MaskKey` zero-on-drop)
-- `once_cell` (only on `no_std` builds, for `OnceBox`)
+- `once_cell` (`race`/`alloc` features, backing the `no_std` once-cell)
+- `machine-uid` (behind `machine-id`), `serde` (behind `unstable-serde`)
 
 Proc-macro crate (`litmask-macros`, re-exported by `litmask`):
 
 - `proc-macro2`, `quote`, `syn` (proc-macro authoring)
+- `litmask-internal`, `blake3`, `zeroize` (AEAD-encrypt each literal at
+  expansion, derive the weak key, wipe build-time key material)
 
 Build crate (`litmask-build`):
 
-- `chacha20poly1305` (`#[cfg(not(feature = "aes-gcm"))]`)
-- `aes-gcm` (`#[cfg(feature = "aes-gcm")]`)
-- `base64ct`
-- `rand_chacha` (seedable RNG)
-- `blake3`
+- `litmask-internal` (AEAD, KDF, wire format)
+- `rand_chacha` / `rand_core` (seedable ChaCha20 CSPRNG for the mask key)
+- `getrandom` (OS entropy for the seed)
+- `zeroize` (wipe derived secrets)
 
 CLI crate (`litmask-cli`):
 
@@ -1485,8 +1504,9 @@ other type (e.g., integer, float, bool, char), a non-literal expression, or
 any macro invocation. Use the dedicated `mask_include_str!` / `mask_concat!` /
 `mask_env!` macros for compile-time-resolving inputs.
 
-§2.1.1.6 — The compile error message for invalid literal types SHALL include
-the substring "mask! accepts string, byte string, or C string literals".
+§2.1.1.6 — The compile error for invalid literal types SHALL carry the
+`mask! non-literal` tag (§1.9.6) and the detail "accepts string, byte
+string, or C string literals".
 
 §2.1.1.7 — Each `mask!` invocation SHALL produce ciphertext using a unique
 nonce derived per §1.5.2.
@@ -1556,12 +1576,13 @@ file containing the invocation (via `proc_macro::Span::file()`), so
 its contents per §1.5.2, and expand to a runtime decrypt call returning a
 value of type `String`.
 
-§2.1.3.3 — Non-string-literal argument SHALL produce a compile error
-containing the substring "mask_include_str! requires a string literal
-path".
+§2.1.3.3 — Non-string-literal argument SHALL produce a
+`mask_include_str! non-literal` compile error (§1.9.6) with the detail
+"requires a string literal path".
 
-§2.1.3.4 — File-read failure at proc-macro time SHALL produce a compile
-error containing the substring "mask_include_str!: could not read".
+§2.1.3.4 — File-read failure at proc-macro time SHALL produce a
+`mask_include_str! read-failure` compile error (§1.9.6) whose detail begins
+"could not read".
 
 §2.1.3.5 — File contents SHALL be absent from the compiled binary's
 plaintext (`strings` output) under the same scrub policy as bare
@@ -1576,12 +1597,13 @@ literal argument naming a file path. Path resolution mirrors §2.1.3.1.
 bytes (no UTF-8 validation), AEAD-encrypt the bytes per §1.5.2, and
 expand to a runtime decrypt call returning a value of type `Vec<u8>`.
 
-§2.1.4.3 — Non-string-literal argument SHALL produce a compile error
-containing the substring "mask_include_bytes! requires a string literal
-path".
+§2.1.4.3 — Non-string-literal argument SHALL produce a
+`mask_include_bytes! non-literal` compile error (§1.9.6) with the detail
+"requires a string literal path".
 
-§2.1.4.4 — File-read failure at proc-macro time SHALL produce a compile
-error containing the substring "mask_include_bytes!: could not read".
+§2.1.4.4 — File-read failure at proc-macro time SHALL produce a
+`mask_include_bytes! read-failure` compile error (§1.9.6) whose detail
+begins "could not read".
 
 §2.1.4.5 — File contents SHALL be absent from the compiled binary's
 plaintext under the standard scrub policy.
@@ -1615,9 +1637,10 @@ returning a value of type `String`.
 
 §2.1.5.3 — Arguments not matching §2.1.5.1 — including
 `unmasked!(...)` (which by intent opts OUT of masking, the logical
-opposite of `mask_concat!`'s job) — SHALL produce a compile error
-containing the substring "mask_concat! arguments must be string
-literals or compile-time-resolvable string macros".
+opposite of `mask_concat!`'s job) — SHALL produce a
+`mask_concat! invalid-arg` compile error (§1.9.6) with the detail
+"arguments must be string literals or compile-time-resolvable string
+macros".
 
 §2.1.5.4 — An empty argument list (`mask_concat!()`) SHALL yield the
 empty string `""`, mirroring stdlib `concat!()`. It SHALL NOT be a
@@ -1646,19 +1669,20 @@ type `String`.
 
 §2.1.6.3 — When the named env var is unset at proc-macro time, the
 macro SHALL produce a compile error. The error text SHALL be the
-custom second-arg message when provided, otherwise the substring
-"mask_env!: environment variable `<NAME>` is not set" where
-`<NAME>` is the exact literal text the user passed.
+custom second-arg message verbatim when provided, otherwise a
+`mask_env! unset` error (§1.9.6) with the detail "environment variable
+`<NAME>` is not set" where `<NAME>` is the exact literal text the user
+passed.
 
 §2.1.6.4 — When the named env var is set but its value is not valid
-UTF-8, the macro SHALL produce a compile error containing the
-substring "mask_env!: environment variable `<NAME>` is set but its
+UTF-8, the macro SHALL produce a `mask_env! unicode-failure` error
+(§1.9.6) with the detail "environment variable `<NAME>` is set but its
 value is not valid UTF-8". Distinct from §2.1.6.3 so users can tell
 the two failure modes apart.
 
 §2.1.6.5 — Non-string-literal argument (or extra arguments beyond
-the two-arg form) SHALL produce a compile error containing the
-substring "mask_env! requires a string literal name".
+the two-arg form) SHALL produce a `mask_env! non-literal` compile
+error (§1.9.6) with the detail "requires a string literal name".
 
 #### §2.1.7 mask_option_env! macro
 
@@ -1674,15 +1698,15 @@ String>)`. When unset, expand to a runtime expression returning
 unset env var. The unset case is a legitimate runtime `None`, mirroring
 stdlib `option_env!`'s contract.
 
-§2.1.7.4 — Non-string-literal argument SHALL produce a compile error
-containing the substring "mask_option_env! requires a string literal
-name".
+§2.1.7.4 — Non-string-literal argument SHALL produce a
+`mask_option_env! non-literal` compile error (§1.9.6) with the detail
+"requires a string literal name".
 
 #### §2.1.8 mask_file! macro
 
 §2.1.8.1 — `mask_file!()` SHALL accept no arguments. Any input tokens
-SHALL produce a compile error containing the substring "mask_file!
-takes no arguments".
+SHALL produce a `mask_file! args-not-allowed` compile error (§1.9.6)
+with the detail "takes no arguments".
 
 §2.1.8.2 — At proc-macro time, the macro SHALL read
 `proc_macro::Span::call_site().file()`, AEAD-encrypt that value
@@ -1788,7 +1812,7 @@ proc-macro SHALL inject an unused item of the form
 
 ```rust
 #[deprecated(note = "litmask: skipped literal at <file>:<line>: <reason>")]
-#[allow(non_upper_case_globals)]
+#[allow(dead_code)]
 const _LITMASK_SKIP_<n>: () = ();
 let _ = _LITMASK_SKIP_<n>;
 ```
@@ -1910,8 +1934,10 @@ seed-recovery channel. The only sanctioned release-profile
 `cargo:warning=` is the Embedded-floor notice (§1.3.2), which carries no
 secret.
 
-§2.4.1.6 — `emit()` SHALL generate `mask_key` and `unlock_key`
-deterministically from `RNG_SEED` using `rand_chacha::ChaCha20Rng`.
+§2.4.1.6 — `emit()` SHALL generate `mask_key` deterministically from
+`RNG_SEED` using `rand_chacha::ChaCha20Rng`. (`unlock_key` is not
+seed-derived — it is nonce-derived for the Embedded tier and
+provider/machine-sourced above it, per §1.3.1.)
 
 §2.4.1.7 — `emit()` SHALL write the plaintext `mask_key` to a binary file at
 `$OUT_DIR/litmask_key.bin` and the `RNG_SEED` to
@@ -1949,7 +1975,8 @@ file; no `litmask.toml` or equivalent is read in v1.
 `unlock_key(&self) -> Result<UnlockKey, KeyError>`.
 
 §2.5.1.2 — `KeyProvider` SHALL be object-safe (usable as
-`Box<dyn KeyProvider>`).
+`Box<dyn KeyProvider>`) and `Send + Sync`, so a provider can be installed
+as the process-global governing provider.
 
 §2.5.1.3 — `UnlockKey` SHALL be a newtype wrapping `[u8; 32]` with `Drop`
 zeroing its contents.
@@ -2111,7 +2138,8 @@ no external `sysexits` crate dependency is permitted.
 ### §2.7 Iteration 7 — Cipher implementations
 
 §2.7.1 — Cipher selection SHALL follow the rules in §1.5.1: exactly one
-cipher compiled per build, selected by the `aes-gcm` Cargo feature.
+cipher (`CURRENT_CIPHER`) seals and opens each build, selected by the
+`aes-gcm` Cargo feature.
 
 §2.7.2 — Encryption and decryption operations SHALL use the cipher
 implementation crate specified in §1.5.1 (`chacha20poly1305` or `aes-gcm`)
@@ -2164,10 +2192,9 @@ the wrapper nonce; the keyed tiers re-source their material at runtime.
 ### §2.9 Iteration 9 — CLI tooling
 
 CLI exit codes follow the sysexits.h mapping documented in §1.9.7. The CLI's
-own non-litmask-specific failures (argument parsing errors, file I/O errors
-not corresponding to a `litmask` semantic) follow standard sysexits
-conventions: EX_USAGE (64) for argument errors, EX_NOINPUT (66) for missing
-files.
+own non-litmask-specific failures follow standard sysexits conventions:
+argument-parsing errors exit EX_USAGE (64). The v1 subcommands read no input
+files, so no file-I/O exit code (e.g. EX_NOINPUT) arises.
 
 #### §2.9.1 CLI surface
 
@@ -2727,7 +2754,7 @@ Residuals (documented, not defects):
 Stabilization (rename to `serde`) requires at minimum: a decision on the
 supportable `#[serde(...)]` attribute subset. _(Resolved: the subset in
 §E.2.5 has landed; `MaskDeserialize` and the `#[mask_all]` derive-swap
-(§2.13) ship alongside it.)_ The remaining deferred attributes —
+ship alongside it.)_ The remaining deferred attributes —
 `flatten`, the enum representations `tag` / `untagged` / `content`,
 `getter` / `into` / `from` / `try_from`, explicit `borrow`, variant
 `alias`, and `with`-functions on generic types — are tracked for later
