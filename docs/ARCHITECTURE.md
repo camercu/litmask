@@ -61,12 +61,12 @@ stored.
 
 ## Initialization & governance (ADR-0001)
 
-- There is **no bare `init!()`**. The keyless Embedded tier
-  **self-initializes** on the first `mask!()`.
-- The surviving `init!` forms **govern**: `init!(provider)`,
-  `init!(bind_to_machine)`, `init!(bind_to_machine + provider)` install one
-  process-global **governing provider** and unlock the whole dependency
-  graph under a uniform seal.
+- The keyless Embedded tier **self-initializes** on the first `mask!()` —
+  no `init!` needed.
+- The **governing** `init!` forms — `init!(provider)`,
+  `init!(bind_to_machine)`, and `init!(bind_to_machine + provider)` — each
+  install one process-global **governing provider** and unlock the whole
+  dependency graph under a uniform seal.
 - **Lazy-unlock rule:** on first `mask!()` for a wrapper, if a governor is
   installed it supplies the key for that wrapper regardless of tier;
   otherwise only the keyless Embedded floor self-unlocks (a non-Embedded
