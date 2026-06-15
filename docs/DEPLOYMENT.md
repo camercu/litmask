@@ -13,8 +13,9 @@ unlocked:
   `strings(1)`-resistance only; the key is recoverable from the artifact.
 - **Governed masking** — put one unlock key in the **build** environment
   so it reaches every crate's `build.rs`/`emit()`, then call a single
-  governing `init!(provider)` (or `init!(bind_to_machine[ + provider]`)
-  at startup. That one key unlocks the entire graph with real secrecy.
+  governing `init!(provider)`, `init!(bind_to_machine)`, or
+  `init!(bind_to_machine + provider)` at startup. That one key unlocks the
+  entire graph with real secrecy.
 
 ```sh
 # Uniform seal: this key reaches every masking crate's emit() in the graph.
@@ -25,10 +26,10 @@ LITMASK_UNLOCK_KEY='…' ./my_app
 
 The seal tier is uniform by construction — it is fixed by the shared build
 environment, so a dependency graph is uniformly Embedded, External, or
-Machine. There is no per-library configuration, and there is no bare
-`init!()`. A masking library that calls `init!()` (or masks in a
-`static`/constructor before the host's governing init! runs) seizes
-governance from the host and must be treated as a bug. See
+Machine. There is no per-library configuration. A masking library that
+calls `init!()` (or masks in a `static`/constructor before the host's
+governing init! runs) seizes governance from the host and must be treated
+as a bug. See
 [ADR-0001](adr/0001-masking-crate-unlock-governance.md).
 
 ## Key providers
@@ -97,8 +98,8 @@ litmask::init!(bind_to_machine)?;
 At runtime `init!(bind_to_machine)` recomputes the host id locally via
 `machine_uid::get()` and re-derives the same key — so the binary decrypts
 only on the host it was sealed for, with no environment variable or key
-file required. There is no post-build rebind step; re-targeting a different
-host means rebuilding with that host's `LITMASK_MACHINE_ID`. See the
+file required. Re-targeting a different host means rebuilding with that
+host's `LITMASK_MACHINE_ID`. See the
 [README](../README.md#machine-id-binding) for the full walkthrough.
 
 ### Two-factor tier (`init!(bind_to_machine + provider)`)
@@ -227,7 +228,7 @@ ssh deploy@host '/opt/my_app/my_app'   # decrypts; no extra material
 ```
 
 Re-targeting a different host means rebuilding with that host's
-`LITMASK_MACHINE_ID` — there is no in-place rebind.
+`LITMASK_MACHINE_ID`.
 
 ### Off-box (vendor-side) sealing
 
