@@ -237,6 +237,11 @@ jobs:
     runs-on: ubuntu-latest
     name: smoke (almalinux)
     container: almalinux:9
+    # Pin cargo/rustup homes: in a container job $HOME is unreliable, so
+    # rustup's generated `.cargo/env` may not be where later steps look.
+    env:
+      CARGO_HOME: /usr/local/cargo
+      RUSTUP_HOME: /usr/local/rustup
     steps:
       - name: Install dependencies
         run: dnf install -y gcc make git
@@ -246,18 +251,14 @@ jobs:
       - name: Install Rust
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-            | sh -s -- -y --default-toolchain stable
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            | sh -s -- -y --default-toolchain stable --no-modify-path
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
 
       - name: Build
-        run: |
-          . "$HOME/.cargo/env"
-          cargo build -p litmask-cli
+        run: cargo build -p litmask-cli
 
       - name: Smoke test
-        run: |
-          . "$HOME/.cargo/env"
-          sh scripts/platform-smoke.sh target/debug/litmask
+        run: sh scripts/platform-smoke.sh target/debug/litmask
 
   smoke-windows:
     name: smoke (windows)
