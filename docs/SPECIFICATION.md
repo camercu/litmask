@@ -1492,9 +1492,8 @@ other type (e.g., integer, float, bool, char), a non-literal expression, or
 any macro invocation. Use the dedicated `mask_include_str!` / `mask_concat!` /
 `mask_env!` macros for compile-time-resolving inputs.
 
-§2.1.1.6 — The compile error for invalid literal types SHALL carry the
-`mask! non-literal` tag (§1.9.6) and the detail "accepts string, byte
-string, or C string literals".
+§2.1.1.6 — Invalid literal types SHALL be rejected with the
+`mask! non-literal` tag (§1.9.6).
 
 §2.1.1.7 — Each `mask!` invocation SHALL produce ciphertext using a unique
 nonce derived per §1.5.2.
@@ -1564,13 +1563,11 @@ file containing the invocation (via `proc_macro::Span::file()`), so
 its contents per §1.5.2, and expand to a runtime decrypt call returning a
 value of type `String`.
 
-§2.1.3.3 — Non-string-literal argument SHALL produce a
-`mask_include_str! non-literal` compile error (§1.9.6) with the detail
-"requires a string literal path".
+§2.1.3.3 — Non-string-literal argument SHALL be rejected with the
+`mask_include_str! non-literal` tag (§1.9.6).
 
-§2.1.3.4 — File-read failure at proc-macro time SHALL produce a
-`mask_include_str! read-failure` compile error (§1.9.6) whose detail begins
-"could not read".
+§2.1.3.4 — File-read failure at proc-macro time SHALL be rejected with the
+`mask_include_str! read-failure` tag (§1.9.6).
 
 §2.1.3.5 — File contents SHALL be absent from the compiled binary's
 plaintext (`strings` output) under the same scrub policy as bare
@@ -1585,13 +1582,11 @@ literal argument naming a file path. Path resolution mirrors §2.1.3.1.
 bytes (no UTF-8 validation), AEAD-encrypt the bytes per §1.5.2, and
 expand to a runtime decrypt call returning a value of type `Vec<u8>`.
 
-§2.1.4.3 — Non-string-literal argument SHALL produce a
-`mask_include_bytes! non-literal` compile error (§1.9.6) with the detail
-"requires a string literal path".
+§2.1.4.3 — Non-string-literal argument SHALL be rejected with the
+`mask_include_bytes! non-literal` tag (§1.9.6).
 
-§2.1.4.4 — File-read failure at proc-macro time SHALL produce a
-`mask_include_bytes! read-failure` compile error (§1.9.6) whose detail
-begins "could not read".
+§2.1.4.4 — File-read failure at proc-macro time SHALL be rejected with the
+`mask_include_bytes! read-failure` tag (§1.9.6).
 
 §2.1.4.5 — File contents SHALL be absent from the compiled binary's
 plaintext under the standard scrub policy.
@@ -1625,20 +1620,16 @@ returning a value of type `String`.
 
 §2.1.5.3 — Arguments not matching §2.1.5.1 — including
 `unmasked!(...)` (which by intent opts OUT of masking, the logical
-opposite of `mask_concat!`'s job) — SHALL produce a
-`mask_concat! invalid-arg` compile error (§1.9.6) with the detail
-"arguments must be string literals or compile-time-resolvable string
-macros".
+opposite of `mask_concat!`'s job) — SHALL be rejected with the
+`mask_concat! invalid-arg` tag (§1.9.6).
 
 §2.1.5.4 — An empty argument list (`mask_concat!()`) SHALL yield the
 empty string `""`, mirroring stdlib `concat!()`. It SHALL NOT be a
 compile error.
 
-§2.1.5.5 — A nested `env!` that references an unset env var SHALL
-surface the env's failure (compile error containing the substring
-"env!: environment variable") to the user. A nested `env!` whose
-value is set but is not valid UTF-8 SHALL produce a compile error
-containing the substring "is set but its value is not valid UTF-8".
+§2.1.5.5 — A nested `env!` SHALL surface its own failure to the user —
+both the unset-variable case and the set-but-not-valid-UTF-8 case — per
+§1.9.6.
 
 #### §2.1.6 mask_env! macro
 
@@ -1657,20 +1648,17 @@ type `String`.
 
 §2.1.6.3 — When the named env var is unset at proc-macro time, the
 macro SHALL produce a compile error. The error text SHALL be the
-custom second-arg message verbatim when provided, otherwise a
-`mask_env! unset` error (§1.9.6) with the detail "environment variable
-`<NAME>` is not set" where `<NAME>` is the exact literal text the user
-passed.
+custom second-arg message verbatim when provided; otherwise the macro
+SHALL be rejected with the `mask_env! unset` tag (§1.9.6).
 
 §2.1.6.4 — When the named env var is set but its value is not valid
-UTF-8, the macro SHALL produce a `mask_env! unicode-failure` error
-(§1.9.6) with the detail "environment variable `<NAME>` is set but its
-value is not valid UTF-8". Distinct from §2.1.6.3 so users can tell
-the two failure modes apart.
+UTF-8, the macro SHALL be rejected with the `mask_env! unicode-failure`
+tag (§1.9.6), distinct from §2.1.6.3 so users can tell the two failure
+modes apart.
 
 §2.1.6.5 — Non-string-literal argument (or extra arguments beyond
-the two-arg form) SHALL produce a `mask_env! non-literal` compile
-error (§1.9.6) with the detail "requires a string literal name".
+the two-arg form) SHALL be rejected with the `mask_env! non-literal`
+tag (§1.9.6).
 
 #### §2.1.7 mask_option_env! macro
 
@@ -1686,15 +1674,13 @@ String>)`. When unset, expand to a runtime expression returning
 unset env var. The unset case is a legitimate runtime `None`, mirroring
 stdlib `option_env!`'s contract.
 
-§2.1.7.4 — Non-string-literal argument SHALL produce a
-`mask_option_env! non-literal` compile error (§1.9.6) with the detail
-"requires a string literal name".
+§2.1.7.4 — Non-string-literal argument SHALL be rejected with the
+`mask_option_env! non-literal` tag (§1.9.6).
 
 #### §2.1.8 mask_file! macro
 
 §2.1.8.1 — `mask_file!()` SHALL accept no arguments. Any input tokens
-SHALL produce a `mask_file! args-not-allowed` compile error (§1.9.6)
-with the detail "takes no arguments".
+SHALL be rejected with the `mask_file! args-not-allowed` tag (§1.9.6).
 
 §2.1.8.2 — At proc-macro time, the macro SHALL read
 `proc_macro::Span::call_site().file()`, AEAD-encrypt that value
