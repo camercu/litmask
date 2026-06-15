@@ -28,7 +28,7 @@ clean: _profraw-purge
 
 # ── Linting ─────────────────────────────────────────────────
 
-lint: fmt-check lint-clippy lint-typos lint-taplo lint-markdown lint-deny
+lint: fmt-check lint-clippy lint-typos lint-taplo lint-markdown lint-actions lint-deny
 
 lint-clippy:
     cargo clippy --all-targets --workspace -- {{warnings}}
@@ -57,6 +57,12 @@ lint-taplo:
 # is disabled there because it can't wrap reference tables.
 lint-markdown:
     markdownlint-cli2
+
+# Lint GitHub Actions workflows (syntax, expression typos, shell issues
+# in `run:` blocks via shellcheck). Catches workflow bugs that otherwise
+# only surface on a pushed CI run.
+lint-actions:
+    actionlint
 
 lint-deny:
     cargo deny check advisories licenses bans sources
@@ -225,6 +231,7 @@ check-tool-versions:
             typos-cli)     actual=$(typos --version | awk '{print $2}') ;;
             taplo-cli)     actual=$(taplo --version | awk '{print $2}') ;;
             markdownlint-cli2) actual=$(markdownlint-cli2 --version 2>&1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/^v//') ;;
+            actionlint)    actual=$(actionlint --version | head -1) ;;
             cargo-llvm-cov) actual=$(cargo llvm-cov --version | awk '{print $2}') ;;
             cargo-semver-checks) actual=$(cargo semver-checks --version | awk '{print $2}') ;;
             cargo-fuzz) actual=$(cargo fuzz --version 2>/dev/null | awk '{print $2}') ;;
