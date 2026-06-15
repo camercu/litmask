@@ -117,8 +117,12 @@ This table SHALL appear in the README and in the crate-level rustdoc:
 | Tamper detection | No | No | Yes (AEAD authentication) |
 | Per-string nonces | Compile-time random (no auth) | None | Per-build deterministic, authenticated |
 | Key model | Compile-time random per build | Single env var | Layered: `mask_key` + `unlock_key`, multiple providers |
+| Dependency-graph unlock | None | None | Governed masking — one `init!` unlocks the whole graph under a uniform seal (ADR-0001) |
 | Format string masking | Separate `fmtools` crate | None | Built-in `mask_format!` with single-evaluation semantics |
+| File / env / path inclusion | None | None | `mask_include_str!` / `mask_include_bytes!` / `mask_concat!` / `mask_env!` / `mask_option_env!` / `mask_file!` |
 | Module-level masking | None | None | `#[mask_all]` with deep substitution |
+| `Debug` name masking | None | None | `#[derive(MaskDebug)]` (masks type/field/variant names) |
+| serde name masking | None | None | `MaskSerialize` / `MaskDeserialize` (experimental, `unstable-serde`) |
 | Machine-ID binding | None | None | Yes (build-time seal via `init!(bind_to_machine)`) |
 | Multiple literal types (str/bytes/cstr) | str only | str only | All three |
 | `no_std` support | Limited | No | Yes (with `alloc`) |

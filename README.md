@@ -29,17 +29,22 @@ strings target/release/my_app | grep "pricing oracle"   # no output
 
 ## Why litmask
 
-|                     | `obfstr`            | `litcrypt`     | **`litmask`**                       |
-| ------------------- | ------------------- | -------------- | ----------------------------------- |
-| Cipher              | XOR                 | XOR            | **ChaCha20-Poly1305 / AES-256-GCM** |
-| Tamper detection    | No                  | No             | **Yes (AEAD)**                      |
-| Key model           | Compile-time random | Single env var | **Layered providers**               |
-| Format strings      | No                  | No             | **`mask_format!`**                  |
-| Module-level        | No                  | No             | **`#[mask_all]`**                   |
-| Machine-ID binding  | No                  | No             | **`init!(bind_to_machine)`**             |
-| Literal types       | `str`               | `str`          | **str / bytes / cstr**              |
-| `no_std`            | Limited             | No             | **Yes** (requires `alloc`)          |
-| Reproducible builds | No                  | No             | **Yes**                             |
+|                          | `obfstr`            | `litcrypt`     | **`litmask`**                                          |
+| ------------------------ | ------------------- | -------------- | ------------------------------------------------------ |
+| Cipher                   | XOR                 | XOR            | **ChaCha20-Poly1305 / AES-256-GCM**                    |
+| Tamper detection         | No                  | No             | **Yes (AEAD)**                                         |
+| Per-string nonces        | Compile-time random | None           | **Per-build, authenticated**                           |
+| Literal types            | `str`               | `str`          | **str / bytes / cstr**                                 |
+| Format strings           | No                  | No             | **`mask_format!`**                                     |
+| File / env / path inputs | No                  | No             | **`mask_include_str!`, `mask_env!`, `mask_concat!`, …** |
+| Module-level masking     | No                  | No             | **`#[mask_all]`** (whole module, deep rewrite)         |
+| `Debug` name masking     | No                  | No             | **`#[derive(MaskDebug)]`**                             |
+| serde name masking       | No                  | No             | **`MaskSerialize` / `MaskDeserialize`** (experimental) |
+| Key model                | Compile-time random | Single env var | **Layered: `mask_key` + runtime `unlock_key`**         |
+| Dependency-graph unlock  | No                  | No             | **Governed masking — one `init!`, uniform seal**       |
+| Machine-ID binding       | No                  | No             | **`init!(bind_to_machine)`**                           |
+| `no_std`                 | Limited             | No             | **Yes** (requires `alloc`)                             |
+| Reproducible builds      | No                  | No             | **Yes**                                                |
 
 ## Quick start
 
