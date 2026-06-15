@@ -3,177 +3,108 @@
 Audit date: 2026-05-27
 Auditor: Cameron Unterberger + Claude
 
+This is a point-in-time record of accepted-risk dispositions. The facts
+each finding rests on live in code and tests (cited inline); THREAT_MODEL.md
+is canonical for scope. Re-verify against those, not this prose.
+
 ## Strings hygiene
 
 **Status:** pass
 
-Release-profile builds (strip=symbols, debug=false, panic=abort, lto=true)
-are scrubbed by `example_scrub.rs` integration tests against a curated
-forbidden-word list (`litmask`, `blake3`, `mask_key`, `unlock_key`,
-`ChaCha20-Poly1305`, `AEAD encryption`, `OUT_DIR`, `locator_b64`,
-`weak_mask`, `tamper`).
+Release-profile builds are scrubbed against the forbidden-word list owned by
+`litmask/tests/example_scrub.rs` (the list lives there so it cannot drift
+from what is enforced). Two examples carry documented carve-outs in that
+test: `file_provider` (references the `LITMASK_UNLOCK_KEY_FILE` env name) and
+`machine_id_provider` (`blake3` allow-listed — the crate embeds its own name
+in unstrippable symbols).
 
-Debug builds contain identifier strings from DWARF info and dependency
-crate names — this is expected and not a security concern (debug builds
-are not deployment artifacts).
-
-Two examples sit outside the plain identifier scrub. `file_provider` is
-fixture-scrubbed only — it references the published `LITMASK_UNLOCK_KEY_FILE`
-env-var name, which contains a forbidden substring. `machine_id_provider`
-runs the identifier scrub with `blake3` allow-listed, because the `blake3`
-crate embeds its own name in symbol strings the build cannot strip. Both
-are documented in `example_scrub.rs`.
-
-**Category:** accepted-risk
-Debug-build string leakage is inherent to Rust's debug info. The
-recommended release profile eliminates it. Short `Display` variant
-tags are accepted (they don't identify litmask); panic messages use
-no identifying text.
+**Disposition:** accepted-risk. Debug-build identifier leakage is inherent to
+Rust debug info; the recommended release profile (DEPLOYMENT.md) eliminates
+it. Short `Display` tags and bare panic messages do not identify litmask.
 
 ## Panic hygiene
 
 **Status:** pass
 
-Grep of the runtime decryption path (`litmask/src/runtime/`) for
-`.expect(`, `panic!("`, `unwrap_or_else(|_| panic!`, `unreachable!(`
-with custom messages: **zero hits**.
+The runtime decryption path (`litmask/src/runtime/`) carries no custom panic
+messages; the `no_custom_panic_messages_in_decryption_path` test enforces it.
+Message-bearing `panic!`/`.expect()` outside that path are confined to
+`#[cfg(test)]` and rustdoc examples.
 
-All `panic!()` calls in the runtime are bare (no message argument).
-The `.expect()` and `panic!("...")` hits in `key.rs`, `error.rs`, and the
-provider modules are exclusively in `#[cfg(test)]` blocks and rustdoc
-examples.
-
-**Category:** accepted-risk
-Bare `panic!()` produces std's generic panic message, which appears in
-many Rust programs and does not identify litmask.
+**Disposition:** accepted-risk. Bare `panic!()` produces std's generic
+message, which appears in many Rust programs and does not identify litmask.
 
 ## Key zeroization
 
 **Status:** pass
 
-- `UnlockKey` and `MaskKey` both derive `Zeroize` + `ZeroizeOnDrop`.
-- Neither derives `Clone` — no accidental copies.
-- Neither implements `Debug` with key contents — `UnlockKey`'s `Debug`
-  prints `UnlockKey([REDACTED])`.
-- `EnvVarProvider` wraps the env-var `String` in `Zeroizing<String>`.
-- `MachineIdProvider` wraps the machine-id `String` in
-  `Zeroizing<String>`.
-- `FileProvider` reads into a `Zeroizing<Vec<u8>>` buffer.
+`UnlockKey`/`MaskKey` (key.rs) derive `Zeroize` + `ZeroizeOnDrop`, do not
+derive `Clone`, and redact key bytes from `Debug`; the providers read secrets
+into `Zeroizing` buffers. No path leaks key bytes into formatting, logs, or
+error variants.
 
-No path was found where key bytes escape into `String` formatting,
-log lines, error variants, or long-lived buffers.
-
-**Category:** accepted-risk
-`Zeroize` is best-effort against compiler optimizations (the standard
-caveat for all Rust zeroization). The `zeroize` crate's approach
-(volatile writes) is the state of the art. Runtime memory inspection
-is explicitly out of scope.
+**Disposition:** accepted-risk. `Zeroize` is best-effort against compiler
+optimization (the standard caveat); runtime memory inspection is out of scope.
 
 ## Threat-model claim verification
 
 **Status:** pass
 
-Reviewed `THREAT_MODEL.md`, `README.md`, `DEPLOYMENT.md`, and
-crate-level rustdoc. No claim promises resistance against out-of-scope
-capabilities:
+THREAT_MODEL.md, README.md, DEPLOYMENT.md, and the rustdoc were reviewed: no
+claim promises resistance to an out-of-scope capability, and each user-facing
+surface states the out-of-scope limitations (inline or by reference to
+THREAT_MODEL.md). Level 3 resistance is explicitly hedged.
 
-- No mention of runtime memory protection.
-- No anti-debugging claims.
-- No side-channel resistance claims.
-- "Does NOT protect against" section present in README, DEPLOYMENT.md,
-  and THREAT_MODEL.md.
-- Level 3 resistance explicitly hedged: "does not promise complete
-  Level 3 resistance."
-
-Tone conforms to deliberate understatement policy.
-
-**Category:** accepted-risk (by design — honesty is the policy)
+**Disposition:** accepted-risk by design — deliberate understatement is the
+policy.
 
 ## Dependency surface
 
 **Status:** pass
 
-`cargo tree --all-features` review:
+`cargo tree --all-features` reviewed against `Cargo.toml`: all crypto
+dependencies are RustCrypto-ecosystem; no unexpected transitive crates.
+`deny.toml` enforces no advisories, no yanked crates, permissive licenses,
+crates.io only.
 
-| Dependency | Purpose | Notes |
-|---|---|---|
-| `chacha20poly1305` | AEAD cipher | RustCrypto, widely audited |
-| `aes-gcm` | AEAD cipher | RustCrypto, widely audited |
-| `blake3` | Key derivation, nonce | Official impl, constant-time eq |
-| `zeroize` | Key wiping | RustCrypto standard |
-| `base64ct` | Base64url encoding | Constant-time, RustCrypto |
-| `machine-uid` | Machine ID (CLI + runtime `machine-id` feature) | Small crate, reads `/etc/machine-id` or equivalent |
-| `clap` | CLI argument parsing | Standard, CLI-only |
-| `getrandom` | OS entropy for the build seed | Randomness source (build + CLI `keygen`) |
-| `rand_chacha` / `rand_core` | ChaCha20 CSPRNG deriving `mask_key` from the seed | Build-time only |
-| `once_cell` | `no_std` once-cell for the runtime mask-key / weak caches | `race` feature, `no_std` path |
-| `proc-macro2` / `quote` / `syn` | Proc-macro expansion | Compile-time only, absent from the shipped binary |
-
-No unexpected transitive dependencies. All crypto dependencies are from
-the RustCrypto ecosystem. `deny.toml` enforces: no advisories, no
-yanked crates, permissive licenses only, crates.io registry only.
-
-**Category:** accepted-risk
-`machine-uid` is a small crate without formal audit. Its failure mode
-(returns error → exit 69) is well-handled. The alternative (reimplementing
-platform-specific machine-ID lookup) would increase maintenance burden
-without security benefit.
+**Disposition:** accepted-risk. `machine-uid` is small and unaudited; its
+failure mode (error → exit 69) is well-handled, and reimplementing
+platform-specific machine-ID lookup would add maintenance burden without
+security benefit.
 
 ## Timing surface
 
 **Status:** informational
 
-The AEAD crates (`chacha20poly1305`, `aes-gcm`) use constant-time
-primitives internally. `blake3` uses `constant_time_eq` for comparisons.
+The AEAD crates use constant-time primitives and `blake3` uses
+`constant_time_eq`; surrounding Rust branching is not constant-time.
 
-Surrounding Rust code (error branching) is not constant-time.
-Side-channel attacks are out of scope but noted for users who assess
-timing properties.
-
-**Category:** accepted-risk — side-channel attacks are out of scope.
-Documented in THREAT_MODEL.md timing section.
+**Disposition:** accepted-risk — side-channel attacks are out of scope (see
+THREAT_MODEL.md timing section).
 
 ## Reproducibility
 
 **Status:** pass
 
-`LITMASK_RNG_SEED` env var seeds all key and nonce derivation.
-`litmask-build` sources the seed with priority:
+Byte-identical output for a fixed `LITMASK_RNG_SEED` is verified by the
+`litmask-build` tests `build_artifacts_derive_is_deterministic` and
+`identical_env_seed_produces_byte_identical_wrappers`.
 
-1. `LITMASK_RNG_SEED` (deterministic, cross-machine)
-2. Persisted seed file in the target dir (debug profile only, for
-   same-machine stability)
-3. Fresh random (new build)
-
-The `litmask-build` tests `build_artifacts_derive_is_deterministic` and
-`identical_env_seed_produces_byte_identical_wrappers` verify byte-identical
-output for a fixed seed. Reproducibility conditions (same seed, same
-source, same toolchain) are documented.
-
-**Category:** accepted-risk
-Reproducibility depends on `LITMASK_RNG_SEED` being set explicitly.
-Without it, each clean build generates a new seed. This is documented
-behavior, not a vulnerability.
+**Disposition:** accepted-risk. Without an explicit seed each clean build
+generates a fresh one; this is documented behavior, not a vulnerability.
 
 ## Format-version rejection
 
 **Status:** pass
 
 `litmask-internal/src/decrypt.rs` authenticates before it trusts: the
-wrapper's format-version byte lives _inside_ the AEAD plaintext and is
-validated only after the tag verifies (decrypt-then-check):
+format-version byte lives inside the AEAD plaintext and is checked only after
+the tag verifies. Unknown version → `UnsupportedFormat` (exit 70); tamper →
+`Decryption` (exit 65). No cipher-id byte exists on the wire — the cipher is
+fixed at compile time (`CURRENT_CIPHER`). Unit tests cover both rejection
+paths.
 
-- Unknown authenticated format version → `InitError::UnsupportedFormat`
-  (exit 70)
-- Tampered or truncated wrapper → AEAD authentication failure →
-  `InitError::Decryption` (exit 65)
-
-There is no cipher-id byte on the wire; the cipher is fixed at compile
-time (`CURRENT_CIPHER`), so no runtime cipher-mismatch path exists.
-
-Unit tests cover: bad authenticated version byte, tampered wrappers.
-
-**Category:** accepted-risk — none; these are clean passes.
+**Disposition:** clean pass; no residual risk.
 
 ## Summary
 
@@ -187,7 +118,5 @@ Unit tests cover: bad authenticated version byte, tampered wrappers.
 | Non-constant-time Rust code | accepted-risk |
 | Reproducibility requires explicit seed | accepted-risk |
 
-**Blockers: 0**
-**Fix-before-1.0: 0**
-**Track-for-v2: 0**
-**Accepted-risk: 7** (all with justification)
+**Blockers: 0** · **Fix-before-1.0: 0** · **Track-for-v2: 0** ·
+**Accepted-risk: 7** (all justified)
