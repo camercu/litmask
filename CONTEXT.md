@@ -72,12 +72,13 @@ call site, from the seed and the site's identity).
 ### API surface
 
 **Key provider** ([`KeyProvider`]):
-Trait that supplies the **unlock key** at runtime. Built-in
-implementations: [`EmbeddedProvider`] (keyless default — recomputes the
-**unlock key** from the wrapper's cleartext **nonce**), [`EnvVarProvider`]
-(env var), `FileProvider` (path). The machine-ID provider is `pub(crate)`,
-reachable only through the `init!(bind_to_machine)` seam — never named in
-downstream code.
+Trait that supplies the **unlock key** at runtime. Public built-in
+implementations: [`EnvVarProvider`] (env var) and `FileProvider` (path).
+The keyless default and the machine-ID binding are backed by `pub(crate)`
+providers — `EmbeddedProvider` (recomputes the **unlock key** from the
+wrapper's cleartext **nonce**) and the machine-ID provider — reachable
+only through the tier machinery (`init!(bind_to_machine)`, or first-`mask!()`
+lazy init for Embedded), never named in downstream code.
 _Avoid_: "key source", "key backend".
 
 **Mask** (verb): To encrypt a literal at compile time via `mask!()` or
@@ -136,9 +137,8 @@ has three forms, each cross-checked against the build's **seal tier** tag:
 `init!(<provider>)` takes any [`KeyProvider`] and unlocks an **external**
 seal; the `init!(bind_to_machine)` keyword form unlocks a **machine** seal;
 `init!(bind_to_machine + <provider>)` unlocks the two-factor
-**machine_external** seal. There is no bare `init!()` — the keyless
-**embedded** seal self-initializes on the first `mask!()`. Any form↔tier
-mismatch is a `compile_error!`.
+**machine_external** seal. The keyless **embedded** seal self-initializes
+on the first `mask!()`. Any form↔tier mismatch is a `compile_error!`.
 Vocabulary: the build **seals** (fixes the tier and key material at
 compile time); `bind_to_machine` **binds** (re-reads the host machine id
 at runtime and succeeds only on the sealed machine); the host **governs**
@@ -150,11 +150,12 @@ _Avoid_: "lock to machine", "machine_id form".
 
 **Build helper** (`litmask_build::emit()`): Invoked from the
 downstream user's `build.rs`. Generates the **seed**, derives the
-**mask key** and **nonces** from it and the **unlock key** from the
-wrapper **nonce**, encrypts the **mask key** into the **wrapper**, and
-writes the key/seed/wrapper artifacts to `OUT_DIR`. No **unlock key** is
-written to disk — the runtime re-derives (Embedded) or re-sources (keyed
-tiers) it.
+**mask key** and **nonces** from it, establishes the **unlock key** for
+the build's **seal tier** (nonce-derived for Embedded, provider- or
+machine-sourced above it), encrypts the **mask key** into the **wrapper**,
+and writes the key/seed/wrapper artifacts to `OUT_DIR`. No **unlock key**
+is written to disk — the runtime re-derives (Embedded) or re-sources
+(keyed tiers) it.
 
 **Seal tier**: How the **unlock key** is sourced for a build, in
 ascending strength: **Embedded** (default — nonce-derived, keyless
