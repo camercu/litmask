@@ -61,7 +61,7 @@ decryption runs, any observer with runtime access sees plaintext.
 
 | Configuration | Defeats |
 |---|---|
-| Zero-config build (keyless `EmbeddedProvider`) | `strings`, casual binary inspection (Level 1) — `unlock_key` is recoverable from the artifact |
+| Zero-config build (keyless Embedded tier) | `strings`, casual binary inspection (Level 1) — `unlock_key` is recoverable from the artifact |
 | `EnvVarProvider` | Above + Level 2: `unlock_key` sourced at runtime, not embedded |
 | `FileProvider` + filesystem permissions | Above with OS-enforced access control |
 | Machine tier (`init!(bind_to_machine)`) | Above + binary moved to a different machine |
