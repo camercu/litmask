@@ -60,7 +60,7 @@ fn tampered_blob_panic_message_is_profile_split() {
 /// Scans every file that contributes text to the user binary's
 /// `mask!()` decryption path for `.expect("msg")` and `panic!("msg")`
 /// patterns — the two ways a litmask-specific string would leak into
-/// user binaries. The scan spans five files:
+/// user binaries. The scan spans every decryption-path file:
 ///
 /// - `runtime/mod.rs` — `__decrypt`, lazy-init helpers.
 /// - `runtime/mask_key_store.rs` — the per-wrapper mask-key store the
@@ -70,15 +70,18 @@ fn tampered_blob_panic_message_is_profile_split() {
 /// - `runtime/weak.rs` — `__weak_decode*` and the weak caches.
 /// - `runtime/cell.rs` — the once-cell every decrypt path borrows
 ///   its key (or cache) through.
-/// - `litmask/src/lib.rs` — `__decrypt_cstring_call!` shim.
+/// - `litmask/src/lib.rs` — crate root; re-exports + public macros.
+/// - `litmask/src/macro_plumbing.rs` — the `__decrypt_cstring_call!` /
+///   `__weak_decode_cstr_call!` shims, whose `.unwrap()` stays bare.
 /// - `litmask-macros/src/mask.rs` — proc-macro entry point; emits
 ///   the type-construction wrappers, no `.expect` of its own.
 /// - `litmask-macros/src/mask_format.rs` — proc-macro emission for
 ///   `mask_format!` (`write_fmt` + `format_args!` per placeholder).
-/// - `litmask-macros/src/common.rs` — shared `mask_plaintext`
-///   helper and `OUT_DIR` artifact loader; every `.expect`/`panic!`
-///   here runs at proc-macro expansion time inside rustc, not in
-///   the user binary.
+/// - `litmask-macros/src/common/codegen.rs` + `common/artifact.rs` —
+///   the `mask_plaintext` helper and `OUT_DIR` artifact loader; every
+///   `.expect`/`panic!` here runs at proc-macro expansion time inside
+///   rustc, not in the user binary. The other `common/` submodules are
+///   scanned too, with empty allow-lists.
 /// - `litmask/src/diagnostics.rs` — the §1.9.5 profile-split entry points.
 ///   Its actionable messages are permitted *only* because each sits on
 ///   the line immediately after a `#[cfg(debug_assertions)]` attribute,
@@ -99,6 +102,7 @@ fn no_custom_panic_messages_in_decryption_path() {
         (format!("{manifest}/src/runtime/weak.rs"), vec![]),
         (format!("{manifest}/src/runtime/cell.rs"), vec![]),
         (format!("{manifest}/src/lib.rs"), vec![]),
+        (format!("{manifest}/src/macro_plumbing.rs"), vec![]),
         (format!("{manifest}/../litmask-macros/src/mask.rs"), vec![]),
         (
             format!("{manifest}/../litmask-macros/src/mask_format.rs"),
@@ -106,24 +110,36 @@ fn no_custom_panic_messages_in_decryption_path() {
         ),
         (format!("{manifest}/src/diagnostics.rs"), vec![]),
         (
-            format!("{manifest}/../litmask-macros/src/common.rs"),
+            format!("{manifest}/../litmask-macros/src/common/diagnostics.rs"),
+            vec![],
+        ),
+        (
+            format!("{manifest}/../litmask-macros/src/common/parse.rs"),
+            vec![],
+        ),
+        (
+            format!("{manifest}/../litmask-macros/src/common/path.rs"),
+            vec![],
+        ),
+        (
+            format!("{manifest}/../litmask-macros/src/common/artifact.rs"),
             vec![
-                // All call sites run at proc-macro expansion time
-                // inside rustc — the mask_plaintext helper loads
-                // build artifacts and AEAD-encrypts the plaintext
-                // before emitting tokens, and read_lit_str_path
-                // resolves path-shaped macro arguments against
-                // CARGO_MANIFEST_DIR. None reaches the user binary.
+                // The OUT_DIR artifact loader runs at proc-macro expansion
+                // time inside rustc, reading build artifacts before any
+                // tokens are emitted. None reaches the user binary.
                 r#".expect("artifact cache mutex poisoned")"#,
                 r#"panic!("litmask: {name} expected {N} bytes, found {}", bytes.len()))"#,
                 r#".expect("litmask: OUT_DIR not set; did you add a build.rs running litmask_build::emit()?")"#,
-                r#".expect("AEAD encryption failed during litmask macro expansion")"#,
-                r#"panic!("{macro_name}!: CARGO_MANIFEST_DIR not set")"#,
                 "litmask: failed to read {name} from OUT_DIR",
-                // `transparent_field` validates a `#[serde(transparent)]`
-                // struct at expansion time; the invariant message never
-                // reaches emitted tokens or the user binary.
-                r#".expect("named field has an ident")"#,
+            ],
+        ),
+        (
+            format!("{manifest}/../litmask-macros/src/common/codegen.rs"),
+            vec![
+                // `mask_plaintext` AEAD-encrypts the literal at expansion
+                // time before emitting the decrypt tokens; this expect runs
+                // inside rustc, never in the user binary.
+                r#".expect("AEAD encryption failed during litmask macro expansion")"#,
             ],
         ),
     ];
