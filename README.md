@@ -77,15 +77,11 @@ cargo build
 cargo run    # no key to deliver — the default Embedded tier is keyless
 ```
 
-The zero-config default is keyless: the Embedded tier self-initializes on
-the first `mask!()` (deriving the key from the wrapper nonce), so a build
-runs with nothing to provision. That buys
-`strings(1)` resistance, not secrecy — the key is recoverable from the
-artifact. To keep the `unlock_key` out of the binary, source it at runtime
-with a [`KeyProvider`](#key-providers) and `init!(provider)` (e.g.
-`EnvVarProvider` reading `LITMASK_UNLOCK_KEY`). That same `init!(provider)`
-also **governs** every transitive masking crate under a uniform seal — one
-key opens the whole dependency graph.
+The zero-config default is keyless — the Embedded tier self-initializes on
+the first `mask!()`, so a build runs with nothing to provision. That buys
+`strings(1)` resistance, not secrecy; for real secrecy, source the key at
+runtime with a [`KeyProvider`](#key-providers) — see
+[Security model](#security-model).
 
 ## How it works
 
@@ -215,11 +211,10 @@ struct LicenseManifest {
 
 Every struct shape (named-field, tuple, newtype, unit) and enums are
 supported, including the variant names self-describing formats print and
-match on. A documented subset of `#[serde(...)]` is honored and stays
-wire-identical to the plain derive: `rename` / `rename_all`, `skip`
-(and `skip_serializing` / `skip_deserializing` / `skip_serializing_if`),
-`default`, `alias`, `with` / `serialize_with` / `deserialize_with`,
-`deny_unknown_fields`, `bound`, and `transparent`.
+match on. A documented subset of `#[serde(...)]` is honored and stays wire-identical
+to the plain derive — `rename`/`rename_all`, `skip*`, `default`, `alias`,
+`with`, `deny_unknown_fields`, `transparent`, and more; SPECIFICATION.md
+Appendix E lists the full set.
 
 Current limitations (the `unstable-` prefix means semver-exempt):
 
@@ -234,13 +229,16 @@ See `examples/mask_serde_demo.rs` and SPECIFICATION.md Appendix E.
 
 ## Key providers
 
-| Provider                 | Source                                  | Feature      |
-| ------------------------ | --------------------------------------- | ------------ |
-| _Keyless default_        | Wrapper nonce (Embedded tier, no `init!`) | always     |
-| `EnvVarProvider`         | Environment variable                    | default      |
-| `FileProvider`      | Filesystem path                         | default      |
-| `init!(bind_to_machine)` | Host machine ID + BLAKE3 (build-sealed) | `machine-id` |
-| `impl KeyProvider`  | Anything you write                      | --           |
+The Embedded tier (default) needs no `init!`; every other tier needs exactly
+one governing `init!(...)` at startup.
+
+| Provider                 | Source                                    | Feature      |
+| ------------------------ | ----------------------------------------- | ------------ |
+| _Keyless default_        | Wrapper nonce (Embedded tier, no `init!`) | always       |
+| `EnvVarProvider`         | Environment variable                      | default      |
+| `FileProvider`           | Filesystem path                           | default      |
+| `init!(bind_to_machine)` | Host machine ID + BLAKE3 (build-sealed)   | `machine-id` |
+| `impl KeyProvider`       | Anything you write                        | --           |
 
 A runtime provider is sourced explicitly with `init!(provider)`:
 
