@@ -41,9 +41,16 @@ enum Command {
     /// Print 32 bytes of fresh randomness, base64url-encoded, to stdout.
     ///
     /// A pure, pipeable generator: nothing is written to stderr and the
-    /// binary is never touched. The value serves as a `LITMASK_UNLOCK_KEY`
-    /// for the external tier or as a per-customer build seed — the role is
-    /// usage, not format (see `docs/DEPLOYMENT.md`).
+    /// binary is never touched. The same 32-byte value populates either
+    /// build-time environment variable, depending on what you want:
+    ///
+    /// `LITMASK_UNLOCK_KEY` seals the external tier — re-supply it at
+    /// runtime to unlock, keeping the key out of the binary.
+    ///
+    /// `LITMASK_RNG_SEED` pins the build seed for reproducible,
+    /// per-customer builds — the same seed produces byte-identical output.
+    ///
+    /// The role is usage, not format (see `docs/DEPLOYMENT.md`).
     ///
     /// Exit codes:
     /// - 0 on success (prints the key to stdout, newline-terminated)
