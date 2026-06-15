@@ -292,61 +292,36 @@ pre-push:
 
 # ── CI ──────────────────────────────────────────────────────
 
-ci:
+# Pass `timed` (see `ci-timed`) to print per-step wall-clock timings.
+# The step list lives here once; `ci-timed` reuses it via dependency.
+ci mode="":
     #!/usr/bin/env bash
     set -euo pipefail
-    just fmt-check
-    just lint
-    cov_log=$(mktemp)
-    trap 'rm -f "$cov_log"' EXIT
-    CARGO_BUILD_JOBS=$(($(nproc 2>/dev/null || sysctl -n hw.ncpu) / 2)) \
-        just ci-coverage >"$cov_log" 2>&1 &
-    pid_cov=$!
-    just test-doc
-    just test-examples
-    just build
-    just doc
-    just test-no-default
-    just check-no-default
-    just test-aes-gcm
-    just check-no-std
-    just check-cross
-    printf '\n══ ci-coverage (background) ══\n'
-    if wait "$pid_cov"; then
-        tail -1 "$cov_log"
-    else
-        cat "$cov_log"
-        exit 1
-    fi
-
-ci-timed:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    time_step() {
-        local step=$1
+    timed=""; [ "{{mode}}" = "timed" ] && timed=1
+    step() {
+        if [ -z "$timed" ]; then just "$1"; return; fi
         local start=$(date +%s)
-        just "$step"
-        local elapsed=$(( $(date +%s) - start ))
-        printf '%4ds  %s\n' "$elapsed" "$step"
+        just "$1"
+        printf '%4ds  %s\n' "$(( $(date +%s) - start ))" "$1"
     }
     ci_start=$(date +%s)
-    time_step fmt-check
-    time_step lint
+    step fmt-check
+    step lint
     cov_log=$(mktemp)
     trap 'rm -f "$cov_log"' EXIT
     cov_start=$(date +%s)
     { CARGO_BUILD_JOBS=$(($(nproc 2>/dev/null || sysctl -n hw.ncpu) / 2)) \
         just ci-coverage; } >"$cov_log" 2>&1 &
     pid_cov=$!
-    time_step test-doc
-    time_step test-examples
-    time_step build
-    time_step doc
-    time_step test-no-default
-    time_step check-no-default
-    time_step test-aes-gcm
-    time_step check-no-std
-    time_step check-cross
+    step test-doc
+    step test-examples
+    step build
+    step doc
+    step test-no-default
+    step check-no-default
+    step test-aes-gcm
+    step check-no-std
+    step check-cross
     printf '\n══ ci-coverage (background) ══\n'
     if wait "$pid_cov"; then
         tail -1 "$cov_log"
@@ -354,9 +329,13 @@ ci-timed:
         cat "$cov_log"
         exit 1
     fi
-    printf '%4ds  ci-coverage\n' "$(( $(date +%s) - cov_start ))"
-    ci_elapsed=$(( $(date +%s) - ci_start ))
-    printf '\nTotal: %ds\n' "$ci_elapsed"
+    if [ -n "$timed" ]; then
+        printf '%4ds  ci-coverage\n' "$(( $(date +%s) - cov_start ))"
+        printf '\nTotal: %ds\n' "$(( $(date +%s) - ci_start ))"
+    fi
+
+# `ci` with per-step wall-clock timings (foreground steps + coverage + total).
+ci-timed: (ci "timed")
 
 # Best-effort coverage summary. Prints to stdout but does not fail CI
 # pre-1.0 (no minimum threshold set).
