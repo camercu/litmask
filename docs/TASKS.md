@@ -421,9 +421,9 @@ anywhere (and no public `MachineIdProvider` reference — it is now
       §10 residuals, Appendix A friction) is present in
       `SPECIFICATION.md`; `SPEC_DEVEX.md` removed (or reduced to a
       pointer). Done: folded into `SPECIFICATION.md` Appendix D
-      (§D.1 build guarantees, §D.2 threat deltas, §D.3 residuals I-R1–7,
-      §D.4 friction F1–7/S1, §D.5 surface disposition); `SPEC_DEVEX.md`
-      reduced to a retired pointer.
+      (§D.1 build guarantees, §D.2 threat deltas, §D.3 residuals);
+      `SPEC_DEVEX.md` reduced to a retired pointer. The origin-friction and
+      surface-disposition narratives were later trimmed to git history.
 - [x] Repo-wide grep is clean of retired vocabulary — `locator`,
       `MultiProvider`, `hardware`/`hw-id` — except where
       explicitly documenting their removal. `MachineIdProvider` survives
