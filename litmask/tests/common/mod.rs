@@ -51,6 +51,63 @@ pub fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+// ── External-tier fixture helpers ───────────────────────────
+// Shared by `external_tier_e2e` and `keygen_external_roundtrip`, which
+// both build and run the `tests/external_fixture/` crate.
+
+/// The `cargo` binary, honoring `$CARGO` when the harness sets it.
+pub fn cargo() -> std::ffi::OsString {
+    std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into())
+}
+
+/// Manifest of the external-tier fixture crate — a one-crate workspace
+/// (empty `[workspace]` table) so sealing it does not reseal this
+/// workspace's own embedded build in the shared target dir.
+pub fn fixture_manifest() -> PathBuf {
+    workspace_root().join("litmask/tests/external_fixture/Cargo.toml")
+}
+
+/// Canary plaintext the external fixture masks. Single source of truth
+/// for the test side — MUST equal the literal masked in
+/// `tests/external_fixture/src/main.rs`.
+pub const CANARY: &str = "external-tier-roundtrip-canary-9f3a2c";
+
+/// Env var both the build seal and the runtime `EnvVarProvider::default()`
+/// read for the external fixture.
+pub const MATERIAL_VAR: &str = "LITMASK_UNLOCK_KEY";
+
+/// Build the external fixture sealed under `material`; return the produced
+/// binary path. The fixture's own workspace puts the binary at a
+/// predictable `target/debug/<name>`, so no `--message-format=json` parse
+/// is needed to locate it.
+pub fn build_sealed_fixture(material: &str) -> PathBuf {
+    let manifest = fixture_manifest();
+    let status = Command::new(cargo())
+        .args(["build", "--manifest-path"])
+        .arg(&manifest)
+        .env(MATERIAL_VAR, material)
+        .status()
+        .expect("invoke cargo build for the external fixture");
+    assert!(status.success(), "external fixture failed to build");
+    let bin = manifest
+        .parent()
+        .expect("fixture manifest has a parent dir")
+        .join("target/debug/litmask_external_fixture");
+    assert!(bin.exists(), "expected fixture binary at {}", bin.display());
+    bin
+}
+
+/// Run the sealed fixture with `material` supplied via the env channel;
+/// return `(success, stdout)`.
+pub fn run_fixture(bin: &Path, material: &str) -> (bool, String) {
+    let out = Command::new(bin)
+        .env(MATERIAL_VAR, material)
+        .output()
+        .expect("run the external fixture binary");
+    let stdout = String::from_utf8(out.stdout).expect("fixture stdout is UTF-8");
+    (out.status.success(), stdout)
+}
+
 /// Cargo build profiles available to integration tests.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Profile {
