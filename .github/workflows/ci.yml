@@ -42,7 +42,7 @@ jobs:
 
       - uses: taiki-e/install-action@v2
         with:
-          tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }},actionlint@${{ steps.tools.outputs.actionlint }},cargo-llvm-cov@${{ steps.tools.outputs.cargo_llvm_cov }}
+          tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }},cargo-llvm-cov@${{ steps.tools.outputs.cargo_llvm_cov }}
 
       # `just lint` shells out to markdownlint-cli2, an npm tool the
       # cargo-centric install-action above can't provide. Locally it
@@ -53,6 +53,17 @@ jobs:
 
       - name: Install markdownlint-cli2
         run: npm install -g markdownlint-cli2@${{ steps.tools.outputs.markdownlint_cli2 }}
+
+      # actionlint is a Go binary, not a cargo crate, so install-action
+      # can't provide it. Pull the pinned release tarball straight from
+      # GitHub (version from .tool-versions) onto PATH.
+      - name: Install actionlint
+        run: |
+          ver=${{ steps.tools.outputs.actionlint }}
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz" \
+            | tar -xz -C "$HOME/.local/bin" actionlint
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Format check
         run: just fmt-check
