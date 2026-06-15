@@ -257,19 +257,17 @@ the sealed host _and_ with the sealed material.
 
 ## Security model
 
-| Configuration                        | Defeats                                                      |
-| ------------------------------------ | ------------------------------------------------------------ |
-| Default (keyless Embedded tier)      | `strings`, casual inspection (key recoverable from artifact) |
-| `EnvVarProvider`                     | Above, key sourced from an env var, kept out of the binary   |
-| `FileProvider`                       | Above, key sourced from a file path                          |
-| `init!(bind_to_machine)`                  | Above + binary redistribution                                |
-| `init!(bind_to_machine + provider)`       | Above + the external factor the binary alone never carries   |
-| Custom provider (vault, HSM)         | Above + offline attackers                                    |
+Protection scales with how the key is supplied. The keyless **Embedded**
+default gives `strings(1)` resistance only (the key is recoverable from the
+artifact); sourcing the key at runtime — `EnvVarProvider`, `FileProvider`,
+`init!(bind_to_machine)`, or a custom vault/HSM provider — keeps it out of the
+binary and raises the bar accordingly. The full
+configuration-to-resistance ladder lives in
+[THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 **Does NOT protect against:** runtime memory inspection, debugger
 attachment, compromised runtime environments, side-channel attacks,
-or a motivated reverse engineer with runtime access. See
-[THREAT_MODEL.md](docs/THREAT_MODEL.md) for the full scope.
+or a motivated reverse engineer with runtime access.
 
 ## Machine-ID binding
 

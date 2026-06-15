@@ -171,7 +171,7 @@ example, a binary sealed under the machine tier or using `weak_mask!`
 carries:
 
 ```text
-.../registry/src/index.crates.io-.../blake3-1.8.5/src/lib.rs
+.../registry/src/index.crates.io-.../blake3-<version>/src/lib.rs
 ```
 
 This is not unique to BLAKE3: every panic-capable dependency embeds its
@@ -281,10 +281,8 @@ echo $?   # 78 → missing configuration
 
 ## What litmask does NOT protect against
 
-- Runtime memory inspection
-- Debugger attachment after key derivation
-- Compromised runtime environments
-- Side-channel attacks (timing, power analysis)
-- Control-flow obfuscation or anti-debugging
-
-See [THREAT_MODEL.md](THREAT_MODEL.md) for the full scope.
+litmask does not defend against runtime memory inspection, debugger
+attachment, compromised runtime environments, side-channel attacks, or
+control-flow/anti-debugging analysis. See
+[THREAT_MODEL.md](THREAT_MODEL.md) for the full out-of-scope list and the
+configuration-to-resistance ladder.

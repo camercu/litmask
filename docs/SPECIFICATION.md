@@ -1235,8 +1235,10 @@ matrix — they may work but are not validated.
 
 #### §1.11.2 Required content
 
-Every documentation surface MUST include the security level table from §1.1.4
-and a prominent "What `litmask` does NOT protect against" section.
+Every user-facing documentation surface MUST surface the out-of-scope
+limitations — at minimum the "What `litmask` does NOT protect against" points —
+inline or by a clear reference to `THREAT_MODEL.md`, which is canonical for the
+security ladder (§1.1.4) and the out-of-scope list (§1.1.3).
 
 `DEPLOYMENT.md` MUST include the recommended release profile snippet:
 
