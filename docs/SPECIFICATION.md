@@ -309,10 +309,12 @@ Exactly one cipher (`CURRENT_CIPHER`) seals and opens each build of the
 `litmask-internal` resolves `CURRENT_CIPHER` by feature: `aes-gcm` enabled
 selects AES-256-GCM, otherwise ChaCha20-Poly1305. Every wrapper and blob is
 sealed and opened with that one cipher, which is never written to the wire
-(§1.7.3). Under Cargo feature unification (e.g. `--all-features`) both
-backend crates may be compiled and the AEAD dispatch handles either
-`CipherId`, but `CURRENT_CIPHER` still resolves to a single cipher per
-build — so there is no ambiguity about which cipher sealed the artifacts.
+(§1.7.3). Each backend is an optional dependency pulled in only by its own
+feature, so a normal single-feature build compiles just the selected crate.
+Cargo feature unification (e.g. `--all-features`) can compile both backends
+at once — the AEAD dispatch then handles either `CipherId` — but
+`CURRENT_CIPHER` still resolves to a single cipher per build, so there is no
+ambiguity about which cipher sealed the artifacts.
 
 `litmask-cli` does not decrypt wrappers (its v1 subcommands, `keygen` and
 `show-machine-id`, are generate/read-only), so it links no cipher and the
