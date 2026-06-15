@@ -10,7 +10,7 @@ mod common;
 use litmask::__internal::__init_with_wrapper;
 use litmask::InitError;
 use litmask_internal::test_util::build_wrapper;
-use litmask_internal::{KEY_LEN, base64url};
+use litmask_internal::{KEY_LEN, NONCE_LEN, base64url};
 
 /// Self-contained test unlock key — the wrapper is forged under it and
 /// the provider returns it, so the only cause of failure is the tamper.
@@ -18,13 +18,14 @@ const TEST_UNLOCK_KEY: [u8; KEY_LEN] = [0x5Au8; KEY_LEN];
 
 #[test]
 fn init_returns_decryption_error_on_tampered_wrapper() {
-    // A valid wrapper (`nonce(12) || AEAD(version || mask_key)`) sealed
-    // under TEST_UNLOCK_KEY, with one byte inside the AEAD body flipped
-    // (index 20, past the 12-byte cleartext nonce). The header still
-    // parses, so AEAD authentication is what fails under the correct
-    // key — the very signal Decryption is meant to surface.
+    // A valid wrapper (`nonce || AEAD(version || mask_key)`) sealed under
+    // TEST_UNLOCK_KEY, with one byte inside the AEAD body flipped (past the
+    // cleartext nonce). The header still parses, so AEAD authentication is
+    // what fails under the correct key — the very signal Decryption is
+    // meant to surface. Offset is tied to NONCE_LEN so it can't drift into
+    // the cleartext nonce if the nonce length ever changes.
     let mut tampered = build_wrapper(&TEST_UNLOCK_KEY, &[0x22u8; KEY_LEN], &[0x33u8; KEY_LEN]);
-    tampered[20] ^= 0x01;
+    tampered[NONCE_LEN + 8] ^= 0x01;
 
     let provider = common::TestKeyProvider {
         key_b64: base64url::encode(&TEST_UNLOCK_KEY),
