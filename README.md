@@ -73,8 +73,8 @@ cargo run    # no key to deliver — the default Embedded tier is keyless
 ```
 
 The zero-config default is keyless: the Embedded tier self-initializes on
-the first `mask!()` (deriving the key from the wrapper nonce via
-`EmbeddedProvider`), so a build runs with nothing to provision. That buys
+the first `mask!()` (deriving the key from the wrapper nonce), so a build
+runs with nothing to provision. That buys
 `strings(1)` resistance, not secrecy — the key is recoverable from the
 artifact. To keep the `unlock_key` out of the binary, source it at runtime
 with a [`KeyProvider`](#key-providers) and `init!(provider)` (e.g.
@@ -94,9 +94,9 @@ key opens the whole dependency graph.
    expansion and the ciphertext is embedded in the binary as `&[u8]`. The
    plaintext never appears in the output binary.
 3. **Run** — the `mask_key` is unwrapped using an `unlock_key`. The default
-   keyless `EmbeddedProvider` recomputes it from the wrapper nonce on the
-   first `mask!()` (no `init!` needed); higher tiers source it at runtime
-   via a [`KeyProvider`](#key-providers) and a governing `init!(provider)`.
+   keyless Embedded tier recomputes it from the wrapper nonce on the first
+   `mask!()`; higher tiers source it at runtime via a
+   [`KeyProvider`](#key-providers) and a governing `init!(provider)`.
    `mask!` then decrypts each blob on demand.
 
 Above the Embedded floor, the `unlock_key` is the only secret that lives
@@ -126,9 +126,8 @@ decides how the whole graph is unlocked:
 
 Because the seal tier is fixed by the shared build environment, there is
 no per-library configuration: the binary owner governs deployment
-security for the whole graph. There is no bare `init!()`; the governing
-forms are `init!(provider)`, `init!(bind_to_machine)`, and
-`init!(bind_to_machine + provider)`.
+security for the whole graph. The governing forms are `init!(provider)`,
+`init!(bind_to_machine)`, and `init!(bind_to_machine + provider)`.
 
 See [ADR-0001](docs/adr/0001-masking-crate-unlock-governance.md) for the
 rationale and the [Deployment Guide](docs/DEPLOYMENT.md) for host setup.
@@ -211,12 +210,18 @@ struct LicenseManifest {
 
 Every struct shape (named-field, tuple, newtype, unit) and enums are
 supported, including the variant names self-describing formats print and
-match on.
+match on. A documented subset of `#[serde(...)]` is honored and stays
+wire-identical to the plain derive: `rename` / `rename_all`, `skip`
+(and `skip_serializing` / `skip_deserializing` / `skip_serializing_if`),
+`default`, `alias`, `with` / `serialize_with` / `deserialize_with`,
+`deny_unknown_fields`, `bound`, and `transparent`.
 
 Current limitations (the `unstable-` prefix means semver-exempt):
 
-- `#[serde(...)]` attributes and unions are compile errors rather than
-  silent cleartext fallbacks.
+- Any other `#[serde(...)]` key (e.g. `flatten`, enum `tag` / `untagged`
+  / `content`) is a compile error rather than a silent cleartext fallback,
+  as are unions; `with` / `serialize_with` / `deserialize_with` is not yet
+  supported on a generic type.
 - A plain serde derive or plain `Debug` on the same struct re-embeds every
   name and defeats the masking (use `#[derive(MaskDebug)]` for `Debug`).
 
