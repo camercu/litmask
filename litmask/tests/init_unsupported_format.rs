@@ -10,11 +10,11 @@
 //! representable and has no runtime check.
 //!
 //! Lives in a dedicated integration-test binary, and every test here
-//! expects an `Err`, so none calls `try_set` — the process-global
-//! `mask_key` cell stays unset across the whole binary and the
-//! `is_set` early-return in `__init_with_wrapper` never masks a
-//! rejection as an idempotent `Ok(())`. The happy path is covered by
-//! other integration binaries (e.g. `file_provider`).
+//! expects an `Err`, so none ever caches a mask key — the per-wrapper
+//! mask-key store stays empty across the whole binary and the
+//! already-cached (`contains`) early-return in `__init_with_wrapper`
+//! never masks a rejection as an idempotent `Ok(())`. The happy path is
+//! covered by other integration binaries (e.g. `file_provider`).
 
 mod common;
 

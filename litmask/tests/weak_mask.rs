@@ -31,8 +31,8 @@ fn weak_mask_multibyte_utf8() {
 
 #[test]
 fn weak_mask_literal_longer_than_wrapper() {
-    // Wrapper is 62 bytes; this literal is 96 bytes, forcing the
-    // XOR-cycle path to wrap around. Decoded value must still match.
+    // The weak XOR key is 64 bytes; this literal is longer, so the
+    // XOR-cycle path wraps the key around. Decoded value must still match.
     let decoded = weak_mask!(
         "padding-test-padding-test-padding-test-padding-test-padding-test-padding-test-padding-test-aaaa"
     );

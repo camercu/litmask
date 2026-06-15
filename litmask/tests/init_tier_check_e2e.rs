@@ -88,9 +88,10 @@ fn init_machine_form_against_external_seal_fails_to_compile() {
 
 #[test]
 fn init_form_without_emit_fails_with_unset_tier() {
-    // The unset fixture has no build.rs, so `litmask_build::emit()` never
-    // runs and `LITMASK_SEAL_TIER` is absent in this isolated consumer
-    // crate (litmask's own tag does not cross the crate boundary).
+    // The unset fixture's build.rs deliberately does not call
+    // `litmask_build::emit()`, so `LITMASK_SEAL_TIER` is absent in this
+    // isolated consumer crate (litmask's own tag does not cross the crate
+    // boundary).
     let out = build_fixture("litmask/tests/init_unset_fixture/Cargo.toml", &[]);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
