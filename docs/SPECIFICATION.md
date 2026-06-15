@@ -688,8 +688,8 @@ without a stored key:
   binary opens only on the sealed host **and** with the sealed material; either
   factor wrong fails the wrapper's AEAD check.
 
-The design rationale, accepted residuals, and origin friction behind the
-build-sealed model are folded into Appendix D.
+The design rationale and accepted residuals behind the build-sealed model are
+folded into Appendix D.
 
 ### §1.8 API Surface
 
@@ -2459,29 +2459,24 @@ their point of use (e.g. the `sysexits` exit-code mapping in §1.9.7).
 
 ## Appendix D — Build-sealed keying: rationale & residuals
 
-This appendix folds the design rationale, accepted residuals, and origin
-friction that motivated the build-sealed keying model (Part I §1.6–§1.7,
-Part II §2.4–§2.6). It is the canonical home for that material; the normative
+This appendix folds the design rationale and accepted residuals behind the
+build-sealed keying model (Part I §1.6–§1.7, Part II §2.4–§2.6). The normative
 requirements live in Parts I and II.
 
 ### §D.1 Build-time guarantees (no runtime self-assertion)
 
 - **§D.1.1 — Round-trip is a unit-test invariant, not a per-build step.**
-  Seal/unseal correctness is covered by a litmask **unit test**
-  (`build_artifacts_wrapper_round_trips_under_unlock_key`, via
-  `decrypt_wrapper`), not a per-consumer-build runtime assertion in `emit()`.
-  This drops the per-build cost and avoids a tautology: for the machine tier a
-  build-time round-trip only proves `emit()` can reopen with the _same_ id it
-  just sealed under — it says nothing about whether the deploy host emits that
-  id (the case that actually matters; see §D.3 I-R2).
+  Seal/unseal correctness is a litmask unit test
+  (`build_artifacts_wrapper_round_trips_under_unlock_key`), not a
+  per-consumer-build runtime assertion in `emit()`. A build-time machine-tier
+  round-trip would only prove `emit()` can reopen with the _same_ id it just
+  sealed under — not that the deploy host emits that id (the case that matters;
+  see §D.3 I-R2).
 - **§D.1.2 — No secret echo.** `emit()` MUST NOT print the seed, unlock key,
-  machine-id, or any secret input to `cargo:warning=` or any build log. The
-  only sanctioned release `cargo:warning=` from `emit()` is the §1.3.2
-  Embedded-floor notice, which carries no secret value. Reproducible rebuild
-  relies on the operator pinning the seed up front via `keygen` (§1.3.3);
-  there is no post-hoc seed-recovery channel. _(Resolved: the former
-  `LITMASK_RNG_SEED=<seed>` build-warning echo has been removed from
-  `emit()`.)_
+  machine-id, or any secret input to `cargo:warning=` or any build log. The only
+  sanctioned release `cargo:warning=` is the §1.3.2 Embedded-floor notice, which
+  carries no secret. Reproducible rebuild relies on the operator pinning the seed
+  via `keygen` (§1.3.3); there is no post-hoc seed-recovery channel.
 
 ### §D.2 Threat-model deltas
 
@@ -2490,125 +2485,43 @@ deltas the build-sealed model introduced.
 
 - **§D.2.1 — Debug self-decrypts _and_ diagnoses.** Debug builds seal like
   release (no pass-through plaintext) but **fail loud**: init failures carry
-  actionable, identifying messages (§1.9.5). A debug binary is self-decrypting
-  at the Embedded floor _and_ prints litmask-identifying diagnostics, so it
-  **MUST NOT be distributed** — the accepted trust boundary belongs in
-  `THREAT_MODEL.md`.
-- **§D.2.2 — Opacity unchanged or improved.** The build-sealed model stores no
-  derived locator in the artifact; the wrapper is indistinguishable `.rodata`.
-  The dirty-word scrub (§1.9) still gates against identifying substrings.
+  identifying, actionable messages (§1.9.5). A debug binary is self-decrypting at
+  the Embedded floor _and_ prints litmask-identifying diagnostics, so it **MUST
+  NOT be distributed**.
+- **§D.2.2 — Opacity unchanged or improved.** The model stores no derived locator
+  in the artifact; the wrapper is indistinguishable `.rodata`, still gated by the
+  §1.9 dirty-word scrub.
 - **§D.2.3 — Host compromise unchanged.** Machine-id binding defends only the
-  "exfiltrate the binary, run/analyze it elsewhere" path. A rooted deployment
-  host has the live process and the decrypted `mask_key` regardless.
-  Defense-in-depth, not a wall.
+  "exfiltrate the binary, analyze it elsewhere" path; a rooted deploy host has the
+  live process and decrypted `mask_key` regardless. Defense-in-depth, not a wall.
 
 ### §D.3 Honest residuals
 
-- **I-R1 (no self-service rebind).** Machine changes require a builder
-  rebuild. Accepted; the builder owns provisioning anyway. Honest cost: _every_
-  drift = a full per-customer rebuild + re-sign + notarize cycle. Machine-id is
-  documented as a **stable-host** factor; churning fleets (VMs, cloud, hardware
-  swaps) are directed to an external orchestrator-delivered factor instead. The
-  residual stands only for genuinely stable hosts that nonetheless occasionally
-  drift, where rebuild is the accepted recovery.
-- **I-R2 (no off-box assurance).** No way to confirm a sealed binary will
-  unlock on a target except by running it there. There is no build-time
-  round-trip (it proved crypto-correctness, not target-openability — §D.1.1).
-  Mitigated by (i) the determinism of tier derivation, (ii) the build-time
-  floor warning (§1.3.2), and (iii) loud, actionable debug-build diagnostics
-  (§1.9.5) that surface external-material-mismatch, wrong-source-host, and
-  no-init+machine misconfigurations on the developer's own machine before a
-  release ships. There is **no** consumer-callable tier query and **no**
-  runtime warning string in release (opacity preserved); the residual is the
-  irreducible "a stable host must be exercised once."
+- **I-R1 (no self-service rebind).** Machine changes require a builder rebuild
+  (+ re-sign + notarize). Machine-id is a **stable-host** factor; churning fleets
+  (VMs, cloud, hardware swaps) are directed to an external orchestrator-delivered
+  factor instead.
+- **I-R2 (no off-box assurance).** No way to confirm a sealed binary unlocks on a
+  target except by running it there (the build-time round-trip proves
+  crypto-correctness, not target-openability — §D.1.1). Mitigated by deterministic
+  tier derivation, the §1.3.2 floor warning, and loud debug diagnostics (§1.9.5);
+  there is no consumer-callable tier query and no release warning string (opacity
+  preserved).
 - **I-R3 (build-env key exposure).** The build host is trusted with the key;
-  untrusted build deps are out of scope. Not a new trust boundary: the build
-  host already holds the seed + `mask_key`, and a secret store handles at-rest
-  custody.
-- **I-R4 (per-customer build cost — N real builds).** The seed is pinned
-  **per customer**, giving each customer a distinct `mask_key` and a distinct
-  blob pool (the literal-isolation property). A per-customer build re-encrypts
-  the literals (symmetric AEAD, cheap), re-seals the wrapper, re-links, and
-  re-signs. A post-build reseal step would save only blob re-encryption,
-  dwarfed by the irreducible re-link + re-sign + notarize — so dropping reseal
-  in favor of a full per-customer build is not a cost regression. The blob
-  cache survives only across **same-customer** patch-rebuilds (same pinned
-  seed), not across customers. Bit-reproducible patch-rebuild requires that
-  customer's seed pinned up front (mint with `keygen`); there is no post-hoc
-  seed-recovery channel (§D.1.2).
-- **I-R5 (`keygen` — kept).** Direct-key and seed tiers need a generator;
-  `keygen` ships as a pure stdout generator, no binary I/O, not part of any
-  removed re-key surface. CLI surface is `{keygen, show-machine-id}`.
-- **I-R6 (cross-crate build channel).** The tier tag and `OUT_DIR` reach only
-  the crate that owns `emit()`'s `build.rs`; `init!`/`mask!` MUST co-locate
-  there (§2.6.1). A workspace split is rejected at compile time (absent-tag
-  `compile_error!`), never silently downgraded — a hard failure, but
-  discoverable at build, not at the consumer's runtime.
+  untrusted build deps are out of scope. Not a new boundary — the build host
+  already holds the seed + `mask_key`.
+- **I-R4 (per-customer build cost).** The seed is pinned **per customer**, so each
+  gets a distinct `mask_key` and blob pool (literal isolation). A per-customer
+  build re-encrypts literals (cheap AEAD), re-seals, re-links, and re-signs; the
+  blob cache survives only across same-customer patch-rebuilds (same pinned seed).
+- **I-R6 (cross-crate build channel).** The tier tag and `OUT_DIR` reach only the
+  crate that owns `emit()`'s `build.rs`; `init!`/`mask!` MUST co-locate there
+  (§2.6.1). A workspace split is rejected at compile time (absent-tag
+  `compile_error!`), never silently downgraded.
 - **I-R7 (build-warning re-display).** The §1.3.2 floor warning rides cargo's
-  `cargo:warning=` channel, which cargo only re-displays when `build.rs`
-  re-runs. A source-only incremental rebuild of an already-built embedded crate
-  may not re-echo it; `rerun-if-env-changed` on the factor vars covers tier
-  flips, and a fresh/release build always shows it. Accepted.
-
-### §D.4 Origin friction
-
-The build-sealed model removes a catalogue of friction observed live in the
-pre-spec codebase (not theorized). Each entry notes where the spec addresses it.
-
-1. **F1 — Opaque runtime death.** A missing _or_ wrong `unlock_key` both
-   aborted with the same opaque `explicit panic` and no hint. **Addressed:**
-   profile-split diagnostics (§1.9.5) make debug builds fail loud and
-   actionable while release stays bare/opaque.
-2. **F2 — `awk` ritual.** Extracting the key for every run/deploy required an
-   `awk` over `litmask.config`. **Addressed:** the build-sealed model has no
-   runtime `unlock_key` to extract — Embedded self-unlocks (§1.7.6), higher
-   tiers take material as build env. No config file is parsed at runtime.
-3. **F3 — Silent key rotation.** Any `build.rs` rerun rotated the release
-   `unlock_key`; a previously-captured key then died opaquely. **Addressed:**
-   the seal is baked into the binary at build (§2.6.1, single-crate
-   co-location of `emit`/`init!`/`mask!`); no separately-stored key to drift,
-   no post-build re-key surface. Reproducibility comes from per-customer seed
-   pinning (§1.3.3).
-4. **F4 — Shared-config clobbering.** Every build overwrote the single
-   `target/<profile>/litmask.config`, so building one customer after another
-   lost the first's config. **Addressed:** no shared runtime config exists;
-   per-customer identity lives in per-customer seeds and N real per-customer
-   builds (§D.3 I-R4).
-5. **F5 — No per-customer build/key ergonomics.** Minting a per-customer seed
-   was hand-rolled. **Addressed:** `keygen` mints seed/key material as a pure
-   stdout generator (§D.3 I-R5).
-6. **F6 — No key-wire helper.** Nothing wired the matching key to a binary.
-   **Addressed:** the dev loop wires nothing (Embedded self-unlock, §1.7.6);
-   release material is a build-time input, not a runtime wiring step.
-7. **F7 — Locator-only verification.** The retired `inspect` tool confirmed a
-   `locator` was present in the binary but never that the `unlock_key` actually
-   decrypted the wrapper. **Addressed:** the `inspect` tool and the locator
-   concept are removed; the wrapper is address-found (§1.7.1) and its
-   correctness is established at build time (§D.1.1), not by a post-build tool.
-8. **S1 — Seed leak into CI logs.** A fresh release build once emitted a
-   `cargo:warning=` containing `LITMASK_RNG_SEED=<seed>` — the master secret.
-   **Addressed:** `emit()` MUST NOT print the seed value (§D.1.2); the build
-   warning carries no secret material.
-
-### §D.5 Surface disposition
-
-The net change from litmask's pre-spec design (a post-build re-key/inspect CLI,
-a derived locator, and a split init macro). Documents what was removed and why.
-
-| Surface | Disposition |
-|---|---|
-| Keying paths | **build-seal only** — post-build reseal removed |
-| Re-key CLI (`bind`/`reseal`) | **removed** — re-keying moves to rebuild |
-| Verify CLI (`inspect`/`verify`) | **removed** — on-host check = run the binary; seal/unseal round-trip is a unit test (§D.1.1) |
-| Derived locator + recorded-locator config | **removed** — runtime finds the wrapper by compile-time address (§1.7.1) |
-| Machine-id | **build-time raw id only** (§1.7.6); no post-build reseal |
-| CLI surface | **`{keygen, show-machine-id}`** — generate/read-only, no binary mutation |
-| Init macro | **single `init!`** with four forms: `()` / `(<expr>)` / `(bind_to_machine)` / `(bind_to_machine + <expr>)` (§1.8.2) |
-| Factor selection | external = `impl KeyProvider` **value**; `bind_to_machine` = one-keyword carve-out. No keyword DSL, no general `MultiProvider` (§1.6.2) |
-| Multi-factor | **fixed `bind_to_machine + <external>`** — arity-2, order fixed by construction (§1.7.6) |
-| Build/runtime tier agreement | **tracked `LITMASK_SEAL_TIER` tag, cross-checked at compile time** (§2.6.1); replaces silent runtime AEAD failure on mismatch |
-| Embedded-in-release guard | **build-time `emit()` floor warning** (§1.3.2); no runtime warning string |
-| Runtime failure diagnostics | **profile-split** — loud/actionable in debug, bare/opaque in release (§1.9.5) |
+  `cargo:warning=` channel, which cargo re-displays only when `build.rs` re-runs.
+  `rerun-if-env-changed` on the factor vars covers tier flips, and a fresh/release
+  build always shows it.
 
 ## Appendix E — Experimental: masked serde integration (`unstable-serde`)
 
