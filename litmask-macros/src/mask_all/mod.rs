@@ -87,10 +87,11 @@ fn parse_attr_strict(attr: TokenStream2) -> syn::Result<bool> {
         if ident == "strict" && input.is_empty() {
             return Ok(true);
         }
-        Err(syn::Error::new(
+        Err(compile_error(
             ident.span(),
-            "mask_all: invalid_arg: only `strict` is supported \
-             (e.g. `#[mask_all(strict)]`)",
+            MACRO_NAME,
+            FailTag::InvalidArg,
+            "only `strict` is supported (e.g. `#[mask_all(strict)]`)",
         ))
     };
     parser.parse2(attr)
