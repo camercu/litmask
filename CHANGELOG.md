@@ -1,3 +1,9 @@
+## [0.17.1](https://github.com/camercu/litmask/compare/v0.17.0...v0.17.1) (2026-06-15)
+
+### Bug Fixes
+
+* **macros:** emit §1.9.6 format for #[mask_all] invalid-arg error ([f413129](https://github.com/camercu/litmask/commit/f41312931621bd23f40ddb560caba5023cfc77f7))
+
 ## [0.17.0](https://github.com/camercu/litmask/compare/v0.16.0...v0.17.0) (2026-06-14)
 
 ### ⚠ BREAKING CHANGES
