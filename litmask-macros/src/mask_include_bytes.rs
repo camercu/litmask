@@ -1,8 +1,8 @@
 //! `mask_include_bytes!` proc-macro: read a file as raw bytes at
 //! proc-macro time, AEAD-encrypt the contents, and expand to a
 //! runtime decrypt call returning `Vec<u8>`. Path resolution
-//! mirrors `mask_include_str!` — relative to the consumer crate's
-//! `CARGO_MANIFEST_DIR`.
+//! mirrors `mask_include_str!` — relative to the source file
+//! containing the invocation, like stdlib `include_bytes!`.
 
 use std::fs;
 

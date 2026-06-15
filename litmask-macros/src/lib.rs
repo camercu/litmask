@@ -174,6 +174,11 @@ pub fn mask_include_str(input: TokenStream) -> TokenStream {
 ///   string literal path`.
 /// - File read failure: `mask_include_bytes!: could not read PATH:
 ///   REASON`.
+///
+/// # Panics
+///
+/// Same proc-macro-time panic conditions as [`mask!`] for missing
+/// `OUT_DIR`, key/seed files, etc.
 #[proc_macro]
 pub fn mask_include_bytes(input: TokenStream) -> TokenStream {
     mask_include_bytes::expand(input)
@@ -197,6 +202,11 @@ pub fn mask_include_bytes(input: TokenStream) -> TokenStream {
 /// - Nested `include_str!` file-read failure or nested `env!` of
 ///   an unset variable: propagated as a compile error with the
 ///   underlying cause.
+///
+/// # Panics
+///
+/// Same proc-macro-time panic conditions as [`mask!`] for missing
+/// `OUT_DIR`, key/seed files, etc.
 #[proc_macro]
 pub fn mask_concat(input: TokenStream) -> TokenStream {
     mask_concat::expand(input)
@@ -212,6 +222,11 @@ pub fn mask_concat(input: TokenStream) -> TokenStream {
 ///   literal name`.
 /// - Env var unset: `mask_env!: environment variable NAME is not
 ///   set`.
+///
+/// # Panics
+///
+/// Same proc-macro-time panic conditions as [`mask!`] for missing
+/// `OUT_DIR`, key/seed files, etc.
 #[proc_macro]
 pub fn mask_env(input: TokenStream) -> TokenStream {
     mask_env::expand(input)
@@ -232,6 +247,11 @@ pub fn mask_env(input: TokenStream) -> TokenStream {
 ///   is not valid UTF-8` (matches stdlib `option_env!`, which also
 ///   rejects non-Unicode values at compile time rather than yielding
 ///   `None`).
+///
+/// # Panics
+///
+/// Same proc-macro-time panic conditions as [`mask!`] for missing
+/// `OUT_DIR`, key/seed files, etc.
 #[proc_macro]
 pub fn mask_option_env(input: TokenStream) -> TokenStream {
     mask_option_env::expand(input)
@@ -254,6 +274,11 @@ pub fn mask_option_env(input: TokenStream) -> TokenStream {
 /// # Errors
 ///
 /// - Non-empty argument list: `mask_file! takes no arguments`.
+///
+/// # Panics
+///
+/// Same proc-macro-time panic conditions as [`mask!`] for missing
+/// `OUT_DIR`, key/seed files, etc.
 #[proc_macro]
 pub fn mask_file(input: TokenStream) -> TokenStream {
     mask_file::expand(input)
@@ -381,6 +406,8 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
 ///   skipped silently — their literals either serve compile-time /
 ///   developer-facing purposes that never reach shipping binaries,
 ///   or are dead-code-eliminated in release builds.
+/// - Qualified macro paths (`std::format!`, `core::dbg!`, etc.) are
+///   recognized by matching the last path segment.
 ///
 /// # Return-type side effects
 ///
@@ -400,8 +427,6 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
 /// shape) will not compile under `#[mask_all]`. Wrap the call site
 /// with `unmasked!(file!())` to opt that one position out of the
 /// rewrite and keep the stdlib return type.
-/// - Qualified macro paths (`std::format!`, `core::dbg!`, etc.) are
-///   recognized by matching the last path segment.
 ///
 /// Literals are left untouched (with a per-occurrence warning) when:
 ///

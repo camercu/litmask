@@ -1,8 +1,7 @@
 //! `mask_include_str!` proc-macro: read a UTF-8 file at proc-macro
 //! time, AEAD-encrypt the contents, and expand to a runtime decrypt
-//! call returning `String`. Path resolution is relative to the
-//! consumer crate's `CARGO_MANIFEST_DIR`, matching the existing
-//! `mask!(include_str!(...))` shim's behaviour.
+//! call returning `String`. Path resolution is relative to the source
+//! file containing the invocation, matching stdlib `include_str!`.
 
 use std::fs;
 
