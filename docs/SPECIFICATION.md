@@ -109,26 +109,10 @@ description of security properties must be conservative.
 
 #### §1.1.6 Value proposition vs. existing crates
 
-This table SHALL appear in the README and in the crate-level rustdoc:
-
-| Property | `obfstr` | `litcrypt`/`litcrypt2` | `litmask` |
-|---|---|---|---|
-| Cipher | XOR | XOR | ChaCha20-Poly1305 (AEAD) or AES-256-GCM |
-| Tamper detection | No | No | Yes (AEAD authentication) |
-| Per-string nonces | Compile-time random (no auth) | None | Per-build deterministic, authenticated |
-| Key model | Compile-time random per build | Single env var | Layered: `mask_key` + `unlock_key`, multiple providers |
-| Dependency-graph unlock | None | None | Governed masking — one `init!` unlocks the whole graph under a uniform seal (ADR-0001) |
-| Format string masking | Separate `fmtools` crate | None | Built-in `mask_format!` with single-evaluation semantics |
-| File / env / path inclusion | None | None | `mask_include_str!` / `mask_include_bytes!` / `mask_concat!` / `mask_env!` / `mask_option_env!` / `mask_file!` |
-| Module-level masking | None | None | `#[mask_all]` with deep substitution |
-| `Debug` name masking | None | None | `#[derive(MaskDebug)]` (masks type/field/variant names) |
-| serde name masking | None | None | `MaskSerialize` / `MaskDeserialize` (experimental, `unstable-serde`) |
-| Machine-ID binding | None | None | Yes (build-time seal via `init!(bind_to_machine)`) |
-| Multiple literal types (str/bytes/cstr) | str only | str only | All three |
-| `no_std` support | Limited | No | Yes (with `alloc`) |
-| Threat model documented | Minimal | Minimal | Explicit security ladder, honest scope |
-| Reproducible builds | No | No | Yes (with `LITMASK_RNG_SEED`) |
-| Fuzzing | No | No | Yes |
+The feature-by-feature comparison against `obfstr` and `litcrypt`/`litcrypt2`
+lives canonically in the README's "Why litmask" table; the crate rustdoc and
+this section reference it rather than duplicating it (one table to keep honest,
+not three).
 
 The cipher upgrade (XOR → AEAD) is the primary technical advance. Everything
 else is operational maturity (key management, deployment story, tooling).
@@ -1242,8 +1226,8 @@ matrix — they may work but are not validated.
 
 | Artifact | Purpose |
 |---|---|
-| `README.md` | Project overview, security level table, "what does NOT protect against" callout, value proposition table from §1.1.6, quick start |
-| `lib.rs` crate docs | API overview, security level table, value proposition table |
+| `README.md` | Project overview, security posture, "what does NOT protect against" callout, the canonical value-proposition comparison table, quick start |
+| `lib.rs` crate docs | API overview, security posture, value-proposition comparison table (references the canonical README copy) |
 | `THREAT_MODEL.md` | Formal threat model including in-scope and out-of-scope attacker capabilities and the init-failure plaintext limitation from §1.9.4 |
 | `DEPLOYMENT.md` | Operational guide per keying tier, recommended release profile, build-time `machine`-tier sealing workflow, sysexits.h code reference |
 | Per-API rustdoc | Standard rustdoc on every public item with examples |
