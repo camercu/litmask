@@ -28,3 +28,6 @@ ignores:
   - node_modules
   - target
   - CHANGELOG.md
+  # Local Claude Code config and installed skills — agent tooling, not
+  # project docs, and often third-party Markdown that won't conform.
+  - .claude
