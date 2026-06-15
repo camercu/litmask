@@ -9,17 +9,20 @@ Auditor: Cameron Unterberger + Claude
 
 Release-profile builds (strip=symbols, debug=false, panic=abort, lto=true)
 are scrubbed by `example_scrub.rs` integration tests against a curated
-forbidden-word list (`litmask`, `mask_key`, `unlock_key`, `decrypt`,
-`cipher`, `chacha`, `aes`, `tamper`, `nonce`, `InitError`, `KeyError`).
+forbidden-word list (`litmask`, `blake3`, `mask_key`, `unlock_key`,
+`ChaCha20-Poly1305`, `AEAD encryption`, `OUT_DIR`, `locator_b64`,
+`weak_mask`, `tamper`).
 
 Debug builds contain identifier strings from DWARF info and dependency
 crate names — this is expected and not a security concern (debug builds
 are not deployment artifacts).
 
-Two examples are intentionally excluded from the identifier scrub
-(`file_provider`, `machine_id_provider`) because they reference canonical
-env-var names containing forbidden substrings for pedagogical clarity.
-These are documented in `example_scrub.rs`.
+Two examples sit outside the plain identifier scrub. `file_provider` is
+fixture-scrubbed only — it references the published `LITMASK_UNLOCK_KEY_FILE`
+env-var name, which contains a forbidden substring. `machine_id_provider`
+runs the identifier scrub with `blake3` allow-listed, because the `blake3`
+crate embeds its own name in symbol strings the build cannot strip. Both
+are documented in `example_scrub.rs`.
 
 **Category:** accepted-risk
 Debug-build string leakage is inherent to Rust's debug info. The
@@ -36,9 +39,9 @@ Grep of the runtime decryption path (`litmask/src/runtime/`) for
 with custom messages: **zero hits**.
 
 All `panic!()` calls in the runtime are bare (no message argument).
-The `.expect()` and `panic!("...")` hits in
-`key.rs`, `error.rs`, and provider modules are exclusively in
-`#[cfg(test)]` blocks.
+The `.expect()` and `panic!("...")` hits in `key.rs`, `error.rs`, and the
+provider modules are exclusively in `#[cfg(test)]` blocks and rustdoc
+examples.
 
 **Category:** accepted-risk
 Bare `panic!()` produces std's generic panic message, which appears in
@@ -101,6 +104,10 @@ Tone conforms to deliberate understatement policy.
 | `base64ct` | Base64url encoding | Constant-time, RustCrypto |
 | `machine-uid` | Machine ID (CLI + runtime `machine-id` feature) | Small crate, reads `/etc/machine-id` or equivalent |
 | `clap` | CLI argument parsing | Standard, CLI-only |
+| `getrandom` | OS entropy for the build seed | Randomness source (build + CLI `keygen`) |
+| `rand_chacha` / `rand_core` | ChaCha20 CSPRNG deriving `mask_key` from the seed | Build-time only |
+| `once_cell` | `no_std` once-cell for the runtime mask-key / weak caches | `race` feature, `no_std` path |
+| `proc-macro2` / `quote` / `syn` | Proc-macro expansion | Compile-time only, absent from the shipped binary |
 
 No unexpected transitive dependencies. All crypto dependencies are from
 the RustCrypto ecosystem. `deny.toml` enforces: no advisories, no
@@ -134,12 +141,14 @@ Documented in THREAT_MODEL.md timing section.
 `litmask-build` sources the seed with priority:
 
 1. `LITMASK_RNG_SEED` (deterministic, cross-machine)
-2. Persisted seed file in target dir (same-machine stability)
+2. Persisted seed file in the target dir (debug profile only, for
+   same-machine stability)
 3. Fresh random (new build)
 
-Integration test `reproducible_builds_produce_identical_artifacts`
-verifies byte-identical output with fixed seed. Reproducibility
-conditions (same seed, same source, same toolchain) are documented.
+The `litmask-build` tests `build_artifacts_derive_is_deterministic` and
+`identical_env_seed_produces_byte_identical_wrappers` verify byte-identical
+output for a fixed seed. Reproducibility conditions (same seed, same
+source, same toolchain) are documented.
 
 **Category:** accepted-risk
 Reproducibility depends on `LITMASK_RNG_SEED` being set explicitly.
