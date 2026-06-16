@@ -33,10 +33,29 @@ git diff --quiet && git diff --cached --quiet || commit="$commit (dirty)"
 host="$(uname -s) $(uname -m)"
 toolchain="$(rustc --version | awk '{print $1, $2}')"
 
+# Freshness guard: the header claims these numbers belong to HEAD, but the
+# artifacts are whatever the last `just bench` / `just bench-build` left
+# behind. Warn (don't fail) if any predate HEAD's commit, so a stale doc
+# isn't silently attributed to the current commit.
+# GNU `stat` (-c %Y) first, BSD/macOS (-f %m) second: on GNU coreutils
+# `-f` means "filesystem status", so a BSD-first order misfires there.
+file_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
+head_time="$(git log -1 --format=%ct 2>/dev/null || echo 0)"
+for art in "$runtime_log" "$build_dir"/clean-dev.json "$build_dir"/clean-release.json \
+    "$build_dir"/incremental-dev.json "$build_dir"/incremental-release.json; do
+    if [ "$(file_mtime "$art")" -lt "$head_time" ]; then
+        echo "warning: $art predates HEAD ($commit); re-run 'just bench' and 'just bench-build' for numbers matching this commit" >&2
+    fi
+done
+
 # The divan table: from its header row ("decrypt …") to end of log. The
 # "Timer precision" line goes to stderr, so the captured stdout starts at
 # the table header.
 runtime_table="$(awk '/^decrypt /{f=1} f' "$runtime_log")"
+[ -n "$runtime_table" ] || {
+    echo "no divan table found in $runtime_log (expected a row starting 'decrypt'); re-run 'just bench'" >&2
+    exit 1
+}
 
 RUNTIME_TABLE="$runtime_table" \
 GEN_DATE="$gen_date" COMMIT="$commit" HOST="$host" TOOLCHAIN="$toolchain" \

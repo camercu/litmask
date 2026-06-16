@@ -6,7 +6,7 @@
 > | | |
 > |---|---|
 > | Date (UTC) | 2026-06-16 |
-> | Commit | 3b863a2 (dirty) |
+> | Commit | 358cace (dirty) |
 > | Host | Darwin arm64 |
 > | Toolchain | rustc 1.88.0 |
 > | Cipher | chacha20-poly1305 (default) |
