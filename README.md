@@ -330,6 +330,7 @@ LITMASK_UNLOCK_KEY="$(cargo run -q -p litmask-cli -- keygen)" \
 - [Threat model](docs/THREAT_MODEL.md)
 - [Deployment guide](docs/DEPLOYMENT.md)
 - [Specification](docs/SPECIFICATION.md)
+- [Benchmarks](docs/BENCHMARKS.md) — build-time and runtime overhead (regenerate with `just bench-doc`)
 
 ## License
 

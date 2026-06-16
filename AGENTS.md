@@ -17,6 +17,14 @@ just test                       # fast test loop
 just lint                       # fmt + clippy + typos + taplo + markdown + deny
 ```
 
+Benchmarks (on demand, not in `just ci`):
+
+```sh
+just bench         # runtime overhead (divan) — captures target/bench/runtime.log
+just bench-build   # build-time overhead (hyperfine) — writes target/bench-build/*.json
+just bench-doc     # regenerate docs/BENCHMARKS.md from the above (run both first)
+```
+
 Tool versions pinned in `.tool-versions` — single source of truth.
 `rust-toolchain.toml` is auto-generated; do not edit by hand.
 

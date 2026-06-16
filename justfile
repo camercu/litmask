@@ -186,9 +186,15 @@ build-timings:
 # key. The roundtrip test runs first so a bad seal fails loudly before
 # any timing number is trusted. Not part of `just ci` — run on demand.
 bench:
-    key="$(cargo run -q -p litmask-cli -- keygen)" && \
-        LITMASK_UNLOCK_KEY="$key" cargo test --manifest-path benches/litmask-bench/Cargo.toml && \
-        LITMASK_UNLOCK_KEY="$key" cargo bench --manifest-path benches/litmask-bench/Cargo.toml
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p target/bench
+    key="$(cargo run -q -p litmask-cli -- keygen)"
+    LITMASK_UNLOCK_KEY="$key" cargo test --manifest-path benches/litmask-bench/Cargo.toml
+    # Persist the divan table (no stable JSON output, so capture verbatim)
+    # for `just bench-doc` to fold into docs/BENCHMARKS.md.
+    LITMASK_UNLOCK_KEY="$key" cargo bench --manifest-path benches/litmask-bench/Cargo.toml \
+        | tee target/bench/runtime.log
 
 # Build-time benchmarks (hyperfine). Regenerates the masked_N / plain_N
 # fixture crates, then times clean and incremental builds across
@@ -226,6 +232,13 @@ bench-build:
             "cargo build $flag --manifest-path $base/{mode}_{n}/Cargo.toml"
     done
     echo "build-bench JSON written to target/bench-build/"
+
+# Regenerate docs/BENCHMARKS.md from the latest `just bench` +
+# `just bench-build` artifacts, stamping a provenance header. The doc is
+# generated, never hand-edited; run the two benches first so the numbers
+# are current.
+bench-doc:
+    ./scripts/gen-benchmarks.sh
 
 # Verify the runtime crate compiles with `--no-default-features --features alloc`
 # (the no_std + alloc configuration). `test-no-default` runs unit tests under
