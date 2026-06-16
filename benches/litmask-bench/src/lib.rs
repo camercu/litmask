@@ -22,22 +22,24 @@ pub const PLAINTEXTS: [&str; 10] = [
     "juliet-roundtrip-canary-9",
 ];
 
-/// Decrypt all 10 masked literals, returning owned copies. Each `mask!`
-/// decrypts its blob on call (the `mask_key` is cached, the per-blob
-/// AEAD open is not), so this is the steady-state decrypt path.
+/// Decrypt all 10 masked literals. `mask!` returns an owned `String`
+/// (AEAD-open into a heap buffer — that allocation is intrinsic to every
+/// access and is part of litmask's real cost), so these are collected
+/// directly with no extra copy. Exercises every call site for the
+/// roundtrip test; the benchmark times a single `mask!` instead.
 #[must_use]
 pub fn masked() -> Vec<String> {
     vec![
-        AsRef::<str>::as_ref(&mask!("alpha-roundtrip-canary-0")).to_owned(),
-        AsRef::<str>::as_ref(&mask!("bravo-roundtrip-canary-1")).to_owned(),
-        AsRef::<str>::as_ref(&mask!("charlie-roundtrip-canary-2")).to_owned(),
-        AsRef::<str>::as_ref(&mask!("delta-roundtrip-canary-3")).to_owned(),
-        AsRef::<str>::as_ref(&mask!("echo-roundtrip-canary-4")).to_owned(),
-        AsRef::<str>::as_ref(&mask!("foxtrot-roundtrip-canary-5")).to_owned(),
-        AsRef::<str>::as_ref(&mask!("golf-roundtrip-canary-6")).to_owned(),
-        AsRef::<str>::as_ref(&mask!("hotel-roundtrip-canary-7")).to_owned(),
-        AsRef::<str>::as_ref(&mask!("india-roundtrip-canary-8")).to_owned(),
-        AsRef::<str>::as_ref(&mask!("juliet-roundtrip-canary-9")).to_owned(),
+        mask!("alpha-roundtrip-canary-0"),
+        mask!("bravo-roundtrip-canary-1"),
+        mask!("charlie-roundtrip-canary-2"),
+        mask!("delta-roundtrip-canary-3"),
+        mask!("echo-roundtrip-canary-4"),
+        mask!("foxtrot-roundtrip-canary-5"),
+        mask!("golf-roundtrip-canary-6"),
+        mask!("hotel-roundtrip-canary-7"),
+        mask!("india-roundtrip-canary-8"),
+        mask!("juliet-roundtrip-canary-9"),
     ]
 }
 
