@@ -6,8 +6,12 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      # Bench fixtures are fixed-size payloads (16/256/4096 bytes); a
+      # normalizing newline would change their byte length, so exempt them.
       - id: end-of-file-fixer
+        exclude: '^benches/litmask-bench/fixtures/'
       - id: trailing-whitespace
+        exclude: '^benches/litmask-bench/fixtures/'
       - id: check-added-large-files
 
   - repo: local
