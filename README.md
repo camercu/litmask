@@ -267,6 +267,12 @@ configuration-to-resistance ladder lives in
 attachment, compromised runtime environments, side-channel attacks,
 or a motivated reverse engineer with runtime access.
 
+For memory-remanence hygiene, wrap a masked output in `litmask::Zeroizing`
+to overwrite its buffer on drop — `let token = litmask::Zeroizing::new(litmask::mask!("secret"));`.
+This shrinks the window a dropped secret survives in a core dump, swap, or
+hibernation image; it does not change the memory-inspection limits above.
+See [THREAT_MODEL.md](docs/THREAT_MODEL.md) for the per-macro coverage.
+
 ## Machine-ID binding
 
 The `machine-id` feature seals the build's `unlock_key` to a host's

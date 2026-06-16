@@ -11,10 +11,16 @@
 //!
 //! [`get_or_init`] returns `&'static MaskKey`: the decrypted key is
 //! leaked once per wrapper. Like the former single cell, a mask key
-//! lives for the whole process — the threat model is the binary at rest,
-//! not process memory — so the leak is bounded (one key per masking
-//! crate) and never reclaimed. Returning `&'static` keeps the per-call
-//! `mask!()` decrypt path allocation- and refcount-free.
+//! lives for the whole process — the primary threat model is the binary
+//! at rest, not process memory — so the leak is bounded (one key per
+//! masking crate) and never reclaimed. Returning `&'static` keeps the
+//! per-call `mask!()` decrypt path allocation- and refcount-free.
+//!
+//! Output zeroization (spec §2.15) adds narrow memory-remanence hygiene
+//! for decrypted *outputs*, but the mask key is deliberately
+//! process-resident here — which is also why output zeroization cannot
+//! prevent re-derivation from a memory dump (the resident key plus the
+//! `.rodata` blobs suffice).
 //!
 //! ## `no_std` scope
 //!

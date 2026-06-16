@@ -89,6 +89,41 @@ These exclusions are fundamental, not aspirational gaps. An obfuscation
 library that claims to defeat runtime memory inspection is lying; we
 prefer honesty over false confidence.
 
+## Output zeroization (memory-remanence hygiene)
+
+A masked macro decrypts to an owned heap value that is freed **without**
+overwriting; its plaintext lingers in residual memory after it is no
+longer needed. `litmask` lets you shrink that window — wrap a masked
+output in `litmask::Zeroizing` and it is overwritten on drop, and the
+internal transient plaintext of `mask_format!` and `#[derive(MaskDebug)]`
+self-wipes. The spec requirements are §2.15.
+
+This is **memory-remanence hygiene only**: it shrinks the window in which
+a dropped secret is recoverable from a core/crash dump, swap file,
+hibernation image, or freed-heap reuse. **Level 4 stays out of scope** —
+this does **not** defend against a live debugger (which reads the value
+between decrypt and drop; swap/hibernation can likewise capture a page
+while the value is still live), and it does **not** prevent
+re-derivation: the `mask_key` is process-resident by design and the
+ciphertext blobs live in `.rodata`, so an attacker with any such memory
+artifact can re-derive every literal regardless of output wiping. It
+defeats a `strings`/grep pass over a dump, not a structural analyst.
+
+The byte-clearing itself is the `zeroize` crate's contract; litmask's
+tests pin the wiring (the routing, the wrapper type, the reserved
+capacity), not the clearing.
+
+| Surface | Coverage | Pinned by |
+|---|---|---|
+| `mask!("…")` / `mask_include_str!` / `mask_env!` / `mask_option_env!` / `mask_file!` / `mask_concat!` (`String`); `mask!(b"…")` / `mask_include_bytes!` (`Vec<u8>`) | Wrap in `Zeroizing`; the single decrypt-path allocation is the complete footprint, so the wrapper wipes it all | `litmask/tests/zeroizing_output.rs`; `runtime::tests::zeroizing_drop_calls_zeroize_exactly_once` |
+| `mask_format!` (`String`) | Each literal fragment is wiped after it is copied in; result is wrappable; capacity reserved for literal fragments. **Residual:** runtime-argument growth past the reserve may leave un-wiped realloc buffers | `mask_format::tests::fragment_write_routes_through_zeroizing`, `::fragments_reserve_sums_byte_lengths` |
+| `mask_print!` / `mask_write!` | Fragments wiped; the assembled output goes to the sink **by design** (the destination owns confidentiality, per each macro's security note) | inherits `mask_format!` |
+| `#[derive(MaskDebug)]` | Each decrypted name is wiped after the `fmt` call, automatically | `codegen::tests::maskdebug_kind_wraps_decrypt_in_zeroizing`; `litmask/tests/mask_debug.rs` |
+| `mask!(c"…")` (`CString`) | **Excluded** — `CString` exposes no zeroizing wrapper. Escape hatch: `mask!("…")` → wrap the `String` → build a transient `CString` at the FFI boundary | spec §2.15.1.6 |
+
+Beyond these, any `.clone()`, `format!`, or copy of a masked output into
+another buffer escapes the wrapper and is not wiped.
+
 ## Init-failure plaintext limitation
 
 After a governing `litmask::init!(provider)` fails, `mask!()` cannot be
