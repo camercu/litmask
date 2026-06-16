@@ -37,7 +37,8 @@ fn decrypt_masked(n: usize) -> String {
     match n {
         16 => litmask_bench::masked_16(),
         256 => litmask_bench::masked_256(),
-        _ => litmask_bench::masked_4096(),
+        4096 => litmask_bench::masked_4096(),
+        _ => unreachable!(),
     }
 }
 
@@ -46,7 +47,8 @@ fn plain_baseline(n: usize) -> &'static str {
     match n {
         16 => litmask_bench::PLAIN_16,
         256 => litmask_bench::PLAIN_256,
-        _ => litmask_bench::PLAIN_4096,
+        4096 => litmask_bench::PLAIN_4096,
+        _ => unreachable!(),
     }
 }
 
@@ -55,7 +57,8 @@ fn plain_owned(n: usize) -> String {
     match n {
         16 => litmask_bench::PLAIN_16.to_owned(),
         256 => litmask_bench::PLAIN_256.to_owned(),
-        _ => litmask_bench::PLAIN_4096.to_owned(),
+        4096 => litmask_bench::PLAIN_4096.to_owned(),
+        _ => unreachable!(),
     }
 }
 
