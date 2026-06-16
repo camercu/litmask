@@ -1,0 +1,8 @@
+# Build artifacts and the auto-healed lockfile for this nested bench
+# workspace. Cargo.lock is ignored for the same reason as the test
+# fixtures: its litmask path-dep pins the workspace version, which
+# `cargo set-version` does not reach across the workspace boundary, so a
+# committed lockfile would go stale on every release bump and dirty the
+# tree on the next bench run.
+/target
+/Cargo.lock

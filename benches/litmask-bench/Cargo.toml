@@ -1,0 +1,18 @@
+[package]
+name = "litmask-bench"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+litmask = { path = "../../litmask" }
+
+[build-dependencies]
+litmask-build = { path = "../../litmask-build" }
+
+[[bench]]
+name = "decrypt"
+harness = false
+
+[dev-dependencies]
+divan = "0.1.21"

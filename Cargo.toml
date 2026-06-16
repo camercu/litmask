@@ -7,6 +7,11 @@ members = [
   "litmask-internal",
   "litmask-macros",
 ]
+# The benchmark suite is a separate nested workspace (`benches/`). It is
+# path-dep on the crates above but kept out of `--workspace` lint/test
+# and `cargo publish`: its fixtures intentionally seal a non-default tier
+# and would trip pedantic clippy / publish checks they don't need.
+exclude = ["benches"]
 
 [workspace.package]
 version = "0.17.1"

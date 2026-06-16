@@ -1,0 +1,57 @@
+//! Benchmark fixture: 10 `mask!` call sites and a plain-literal twin,
+//! sealed under the External tier (`build.rs` + `LITMASK_UNLOCK_KEY`).
+//!
+//! The runtime benchmarks drive [`masked`]; [`PLAINTEXTS`] is the
+//! `~0`-cost baseline (plain `&'static str`) and the oracle the roundtrip
+//! test checks against. Keep the two in lock-step order.
+
+use litmask::mask;
+
+/// The plaintexts behind each masked literal, same order as [`masked`].
+/// Doubles as the plain-literal baseline for the benchmarks.
+pub const PLAINTEXTS: [&str; 10] = [
+    "alpha-roundtrip-canary-0",
+    "bravo-roundtrip-canary-1",
+    "charlie-roundtrip-canary-2",
+    "delta-roundtrip-canary-3",
+    "echo-roundtrip-canary-4",
+    "foxtrot-roundtrip-canary-5",
+    "golf-roundtrip-canary-6",
+    "hotel-roundtrip-canary-7",
+    "india-roundtrip-canary-8",
+    "juliet-roundtrip-canary-9",
+];
+
+/// Decrypt all 10 masked literals, returning owned copies. Each `mask!`
+/// decrypts its blob on call (the `mask_key` is cached, the per-blob
+/// AEAD open is not), so this is the steady-state decrypt path.
+#[must_use]
+pub fn masked() -> Vec<String> {
+    vec![
+        AsRef::<str>::as_ref(&mask!("alpha-roundtrip-canary-0")).to_owned(),
+        AsRef::<str>::as_ref(&mask!("bravo-roundtrip-canary-1")).to_owned(),
+        AsRef::<str>::as_ref(&mask!("charlie-roundtrip-canary-2")).to_owned(),
+        AsRef::<str>::as_ref(&mask!("delta-roundtrip-canary-3")).to_owned(),
+        AsRef::<str>::as_ref(&mask!("echo-roundtrip-canary-4")).to_owned(),
+        AsRef::<str>::as_ref(&mask!("foxtrot-roundtrip-canary-5")).to_owned(),
+        AsRef::<str>::as_ref(&mask!("golf-roundtrip-canary-6")).to_owned(),
+        AsRef::<str>::as_ref(&mask!("hotel-roundtrip-canary-7")).to_owned(),
+        AsRef::<str>::as_ref(&mask!("india-roundtrip-canary-8")).to_owned(),
+        AsRef::<str>::as_ref(&mask!("juliet-roundtrip-canary-9")).to_owned(),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use litmask::{EnvVarProvider, init};
+
+    // Proves the new bench workspace seals + unlocks the External tier
+    // correctly before any timing number is trusted. Requires the same
+    // `LITMASK_UNLOCK_KEY` at build (seal) and run (EnvVarProvider).
+    #[test]
+    fn masked_roundtrips_to_plaintexts() {
+        init!(EnvVarProvider::default()).expect("External-tier unlock");
+        assert_eq!(masked(), PLAINTEXTS);
+    }
+}

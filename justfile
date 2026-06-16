@@ -177,6 +177,19 @@ build:
 build-timings:
     cargo build --workspace --all-targets --timings
 
+# ── Benchmarking ────────────────────────────────────────────
+
+# Runtime benchmarks (divan) in the nested `benches/` workspace. Mints
+# an unlock key, seals the fixture under the External tier with it, and
+# re-supplies the same key at runtime via EnvVarProvider. Build + run
+# share one env so the release-profile reseal still matches the runtime
+# key. The roundtrip test runs first so a bad seal fails loudly before
+# any timing number is trusted. Not part of `just ci` — run on demand.
+bench:
+    key="$(cargo run -q -p litmask-cli -- keygen)" && \
+        LITMASK_UNLOCK_KEY="$key" cargo test --manifest-path benches/litmask-bench/Cargo.toml && \
+        LITMASK_UNLOCK_KEY="$key" cargo bench --manifest-path benches/litmask-bench/Cargo.toml
+
 # Verify the runtime crate compiles with `--no-default-features --features alloc`
 # (the no_std + alloc configuration). `test-no-default` runs unit tests under
 # the same feature set; this recipe is a faster compile-only gate.
