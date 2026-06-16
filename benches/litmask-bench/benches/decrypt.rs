@@ -1,11 +1,15 @@
 //! Runtime benchmarks for litmask.
 //!
-//! - `decrypt_masked` vs `plain_baseline` (size-swept): steady-state cost
-//!   of a `mask!`-style access. `decrypt_masked` returns the owned
+//! - `decrypt_masked` vs the two baselines (size-swept): steady-state
+//!   cost of a `mask!`-style access. `decrypt_masked` returns the owned
 //!   `String` that masking produces — AEAD open *and* its heap alloc,
-//!   both real per-access costs — against the `&'static str` a no-litmask
-//!   user would write (zero). The gap is the true cost of adopting
-//!   litmask, allocation included.
+//!   both real per-access costs. Two baselines bracket the comparison:
+//!     - `plain_baseline` (`&'static str`, ~0): what a no-litmask user
+//!       writes when they only read the literal. The gap to it is
+//!       litmask's *total* overhead, allocation included.
+//!     - `plain_owned` (`"…".to_string()`): the allocation a user pays
+//!       anyway when they need an owned `String`. The gap from it to
+//!       `decrypt_masked` isolates the *pure crypto* cost.
 //! - `first_use_unlock`: the one-time cost paid on the first masked
 //!   access for a wrapper — recover the `mask_key` (provider KDF + wrapper
 //!   AEAD-open) and cache it. It runs the real production path cold by
@@ -43,6 +47,15 @@ fn plain_baseline(n: usize) -> &'static str {
         16 => litmask_bench::PLAIN_16,
         256 => litmask_bench::PLAIN_256,
         _ => litmask_bench::PLAIN_4096,
+    }
+}
+
+#[divan::bench(args = [16usize, 256, 4096])]
+fn plain_owned(n: usize) -> String {
+    match n {
+        16 => litmask_bench::PLAIN_16.to_owned(),
+        256 => litmask_bench::PLAIN_256.to_owned(),
+        _ => litmask_bench::PLAIN_4096.to_owned(),
     }
 }
 
