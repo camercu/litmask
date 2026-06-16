@@ -31,9 +31,8 @@ pub(crate) fn mask_name(span: proc_macro2::Span, name: &str) -> TokenStream {
 /// masking derives' raw-ident contract: `r#type` renders/serializes as
 /// `type`, never with the raw prefix — matching the plain derives.
 ///
-/// Only `#[derive(MaskDebug)]` uses this; the serde name paths take the
-/// plain [`mask_name`] (they `Box::leak` the name, so it never drops and
-/// zeroize-on-drop would be meaningless).
+/// Only `#[derive(MaskDebug)]` uses this; serde names take the plain
+/// [`mask_name`] (see there for why).
 pub(crate) fn mask_ident(ident: &syn::Ident) -> TokenStream {
     mask_str_zeroizing(ident.span(), ident.unraw().to_string().into_bytes())
 }

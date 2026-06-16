@@ -335,10 +335,9 @@ fn build_writes(
     let mut writes: Vec<TokenStream2> = Vec::new();
     for (i, fragment) in fragments.iter().enumerate() {
         if !fragment.is_empty() {
-            // Bind the decrypted fragment to a `Zeroizing` local so its
-            // plaintext is overwritten when the block ends, right after
-            // its bytes are copied into the accumulator (§2.15.1.3). The
-            // local derefs to `&str`, so `write_str` is unchanged.
+            // The `Zeroizing` local derefs to `&str`, so `write_str` is
+            // unchanged; the block scope drops (and wipes) it right after
+            // the copy.
             writes.push(quote! {
                 {
                     let #frag_ident = ::litmask::Zeroizing::new(::litmask::mask!(#fragment));
