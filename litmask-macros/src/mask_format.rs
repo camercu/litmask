@@ -202,15 +202,25 @@ fn mask_format_expand(parsed: &MaskFormatInput) -> syn::Result<TokenStream2> {
         resolved.iter().map(build_placeholder_emission).collect();
 
     let writes = build_writes(&fragments, &resolved, &emissions, &arg_idents, &out_ident);
+    let reserve = fragments_reserve(&fragments);
 
     Ok(quote! {
         {
             #(#arg_bindings)*
-            let mut #out_ident = ::litmask::__internal::__String::new();
+            let mut #out_ident = ::litmask::__internal::__String::with_capacity(#reserve);
             #(#writes)*
             #out_ident
         }
     })
+}
+
+/// Sum of the compile-time literal fragment byte-lengths — the result's
+/// reserved capacity (§2.15.1.4). Reserving it up front means
+/// literal-driven assembly performs no reallocation, so no partial-secret
+/// prefix is left in an un-wiped freed buffer. Runtime-argument growth
+/// past this reserve is the documented residual.
+fn fragments_reserve(fragments: &[String]) -> usize {
+    fragments.iter().map(String::len).sum()
 }
 
 /// Walk parsed placeholders + resolve every `TemplateRef` against
@@ -305,7 +315,9 @@ fn check_unused_named(
 }
 
 /// Interleave fragment + placeholder writes. Each fragment is masked
-/// individually via `mask!()`; each placeholder lands as its own
+/// individually via `mask!()` and held in a `Zeroizing` local so its
+/// plaintext is wiped right after it is copied into the accumulator
+/// (§2.15.1.3); each placeholder lands as its own
 /// `format_args!` over only the bindings it references, with the spec
 /// text rewritten so any `<token>$` resolves to a LOCAL positional
 /// index — placeholder names never reach `format_args!`'s argument
@@ -320,11 +332,15 @@ fn build_writes(
     let mut writes: Vec<TokenStream2> = Vec::new();
     for (i, fragment) in fragments.iter().enumerate() {
         if !fragment.is_empty() {
+            // Bind the decrypted fragment to a `Zeroizing` local so its
+            // plaintext is overwritten when the block ends, right after
+            // its bytes are copied into the accumulator (§2.15.1.3). The
+            // local derefs to `&str`, so `write_str` is unchanged.
             writes.push(quote! {
-                ::core::fmt::Write::write_str(
-                    &mut #out_ident,
-                    &::litmask::mask!(#fragment),
-                ).unwrap();
+                {
+                    let __litmask_frag = ::litmask::Zeroizing::new(::litmask::mask!(#fragment));
+                    ::core::fmt::Write::write_str(&mut #out_ident, &__litmask_frag).unwrap();
+                }
             });
         }
         if resolved.get(i).is_some() {
@@ -552,6 +568,39 @@ fn rewrite_spec_refs(spec: &str, resolved: &[usize]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fragments_reserve_sums_byte_lengths() {
+        // §2.15.1.4: reserve == Σ compile-time fragment byte-lengths, so
+        // literal-driven growth never reallocates (which would leave
+        // un-wiped intermediate buffers). Empty fragments contribute 0;
+        // multibyte UTF-8 counts bytes, not chars.
+        let frags = vec![
+            "ab".to_string(),
+            String::new(),
+            "cde".to_string(),
+            "é".to_string(), // 2 bytes
+        ];
+        // "ab" (2) + "" (0) + "cde" (3) + "é" (2) == 7
+        assert_eq!(fragments_reserve(&frags), 7);
+    }
+
+    #[test]
+    fn fragment_write_routes_through_zeroizing() {
+        // §2.15.1.3: each fragment is wrapped in `Zeroizing` before being
+        // written, so its plaintext is wiped after the copy.
+        let out = syn::Ident::new("out", proc_macro2::Span::mixed_site());
+        let writes = build_writes(
+            &["hi".to_string()],
+            &[] as &[ResolvedPlaceholder],
+            &[] as &[(String, Vec<usize>)],
+            &[] as &[syn::Ident],
+            &out,
+        );
+        let emitted: String = writes.iter().map(ToString::to_string).collect();
+        assert!(emitted.contains("Zeroizing"), "{emitted}");
+        assert!(emitted.contains("write_str"), "{emitted}");
+    }
 
     #[test]
     fn empty_spec_passes_through() {
