@@ -29,20 +29,35 @@ categories = ["cryptography", "no-std"]
 publish = true
 
 # Intra-workspace dependencies: dual `path` + `version`. The `version` is
-# required for registry publish; the caret range tolerates the lockstep
-# bump that `semantic-release-cargo` applies via `cargo set-version` on each
-# release, so a published `litmask 0.17.x` still resolves its siblings.
-# Member crates inherit these via `dep.workspace = true`.
+# required for registry publish. `semantic-release-cargo` bumps versions by
+# regex-rewriting every line that *starts* with `version =` in this file
+# (`/^version\s*=.*/gm`), so each requirement is given its own
+# `version = "x"` line via the sub-table form below; an inline table would
+# hide the requirement mid-line and leave it stale (breaking sibling
+# resolution on the next minor bump). Member crates inherit these via
+# `dep.workspace = true`.
 [workspace.dependencies]
+
 # Cipher selection (§1.5.1): the runtime crate picks one cipher via
 # `default-features = false` + explicit feature in `litmask`'s own
 # Cargo.toml. `litmask-cli` does the same with both ciphers enabled.
 # `default-features = false` here keeps member crates in charge of
 # their own feature selection rather than inheriting whatever
 # litmask-internal's default happens to be.
-litmask-internal = { path = "litmask-internal", version = "0.17.1", default-features = false }
-litmask-macros = { path = "litmask-macros", version = "0.17.1", default-features = false }
-litmask-build = { path = "litmask-build", version = "0.17.1", default-features = false }
+[workspace.dependencies.litmask-internal]
+path = "litmask-internal"
+version = "0.17.1"
+default-features = false
+
+[workspace.dependencies.litmask-macros]
+path = "litmask-macros"
+version = "0.17.1"
+default-features = false
+
+[workspace.dependencies.litmask-build]
+path = "litmask-build"
+version = "0.17.1"
+default-features = false
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
