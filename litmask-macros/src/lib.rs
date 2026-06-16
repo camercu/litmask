@@ -54,6 +54,24 @@ mod weak_mask;
 /// [`macro@mask_include_bytes`], [`macro@mask_concat`],
 /// [`macro@mask_env`], [`macro@mask_option_env`], [`macro@mask_file`].
 ///
+/// # Wiping the decrypted output
+///
+/// The returned value is an ordinary `String` / `Vec<u8>`, freed without
+/// overwriting — its plaintext lingers in residual memory after drop.
+/// Wrap it in `litmask::Zeroizing` to overwrite the buffer on drop:
+///
+/// ```ignore
+/// let token = litmask::Zeroizing::new(litmask::mask!("super-secret"));
+/// assert_eq!(token.as_str(), "super-secret"); // derefs to `str`
+/// ```
+///
+/// This is memory-remanence hygiene (shrinks the window a dropped secret
+/// is recoverable from a core dump, swap, or hibernation image); it does
+/// not defend against a live debugger or prevent re-derivation, and any
+/// `.clone()` / `format!` / print copy escapes the wrapper. `mask!(c"…")`
+/// (`CString`) is not wrappable this way — decrypt as `mask!("…")`, wrap
+/// the `String`, and build a transient `CString` at the FFI boundary.
+///
 /// # Errors
 ///
 /// - Non-literal input (including macro invocations such as

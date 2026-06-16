@@ -235,6 +235,30 @@ pub fn __decrypt_string(
     }
 }
 
+/// [`__decrypt_string`] wrapped in [`zeroize::Zeroizing`] so the decrypted
+/// plaintext is overwritten when the value drops. Used by the macro
+/// expansions whose decrypted plaintext is an internal transient that
+/// must not linger in residual memory — `mask_format!` literal fragments
+/// and `MaskDebug` names — so the wipe happens without the caller naming
+/// a wrapper.
+///
+/// `__decrypt_string`'s result reuses the single decrypt-path allocation
+/// (no extra plaintext copy), so wrapping it here overwrites the complete
+/// footprint on drop.
+///
+/// # Panics
+///
+/// Same policy as [`__decrypt_string`].
+#[doc(hidden)]
+#[allow(clippy::must_use_candidate)]
+pub fn __decrypt_string_zeroizing(
+    blob: &[u8],
+    wrapper: &[u8; WRAPPER_LEN],
+    tier: &str,
+) -> zeroize::Zeroizing<alloc::string::String> {
+    zeroize::Zeroizing::new(__decrypt_string(blob, wrapper, tier))
+}
+
 // The explicit `match` arms (tier selection and the Ok/Err decrypt
 // result) are deliberate over clippy's `if let … else` / `let … else`
 // rewrites: they keep the diverging arms uniform with the rest of the
@@ -289,5 +313,47 @@ fn decrypt_blob_or_panic(
     match decrypt_blob(mask_key, blob) {
         Ok(plaintext) => plaintext,
         Err(_) => crate::diagnostics::blob_failure(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Type-level pin (§2.15.1.5/.3 rely on it): the internal seam returns
+    // `Zeroizing<String>`. A real blob isn't needed — this only checks the
+    // signature compiles, since behavioral coverage rides the macro
+    // callers (`mask_format!` fragments, `MaskDebug`).
+    #[allow(dead_code)]
+    fn seam_returns_zeroizing_string(
+        blob: &[u8],
+        wrapper: &[u8; WRAPPER_LEN],
+        tier: &str,
+    ) -> zeroize::Zeroizing<alloc::string::String> {
+        __decrypt_string_zeroizing(blob, wrapper, tier)
+    }
+
+    // The wipe itself is `zeroize`'s upstream-tested contract; this only
+    // proves our reliance on it is wired — dropping a `Zeroizing<T>` calls
+    // `T::zeroize` exactly once. The probe has no `Drop` of its own, so
+    // the count isolates `Zeroizing`'s call (the provider tests' `Counted`
+    // self-zeroizes in its own `Drop` and would double-count here).
+    #[test]
+    fn zeroizing_drop_calls_zeroize_exactly_once() {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+
+        struct Probe;
+        impl zeroize::Zeroize for Probe {
+            fn zeroize(&mut self) {
+                COUNT.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        {
+            let _z = zeroize::Zeroizing::new(Probe);
+        }
+        assert_eq!(COUNT.load(Ordering::SeqCst), 1);
     }
 }

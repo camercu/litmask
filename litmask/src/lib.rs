@@ -102,9 +102,32 @@ pub(crate) use litmask_internal as internal;
 
 pub use error::{InitError, KeyError};
 pub use key::UnlockKey;
+
 pub use litmask_internal::KEY_LEN;
 pub(crate) use provider::EmbeddedProvider;
 pub use provider::KeyProvider;
+/// Re-export of [`zeroize::Zeroizing`], a wrapper that overwrites its
+/// contents when dropped.
+///
+/// Masked outputs (`mask!`, `mask_include_str!`, `mask_format!`, …)
+/// decrypt to ordinary owned values (`String`, `Vec<u8>`) that are freed
+/// **without** overwriting; their plaintext lingers in residual memory
+/// until the allocator reuses the pages. Wrapping a masked output opts it
+/// into overwrite-on-drop:
+///
+/// ```
+/// let token = litmask::Zeroizing::new(litmask::mask!("super-secret"));
+/// assert_eq!(token.as_str(), "super-secret"); // derefs to `str`
+/// // `token`'s buffer is overwritten when it drops.
+/// ```
+///
+/// This is **memory-remanence hygiene** — it shrinks the window in which
+/// a dropped secret is recoverable from a core dump, swap file, or
+/// hibernation image. It does **not** defend against a live debugger
+/// reading the value before it drops, and it does not prevent
+/// re-derivation. Any copy made by `.clone()`, `format!`, or printing
+/// escapes the wrapper and is not overwritten.
+pub use zeroize::Zeroizing;
 
 #[cfg(feature = "std")]
 pub use provider::{EnvVarProvider, FileProvider};
@@ -216,7 +239,10 @@ pub mod __internal {
     pub use crate::runtime::weak::{__weak_decode, __weak_decode_bytes, WeakByteCell, WeakCell};
     #[cfg(feature = "std")]
     pub use crate::runtime::weak::{__weak_decode_cstr, WeakCStrCell};
-    pub use crate::runtime::{__decrypt, __decrypt_string, __govern_external, __init_with_wrapper};
+    pub use crate::runtime::{
+        __decrypt, __decrypt_string, __decrypt_string_zeroizing, __govern_external,
+        __init_with_wrapper,
+    };
     #[cfg(feature = "machine-id")]
     pub use crate::runtime::{__govern_machine, __govern_machine_external};
     // Hygienic `String` alias for the `mask_format!` / `mask_option_env!`

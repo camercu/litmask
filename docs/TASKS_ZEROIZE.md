@@ -97,9 +97,10 @@ internal seam exists for the macros to emit.
       compiles and `&*s` Derefs to `&str`.
 - [ ] `__decrypt_string_zeroizing` returns `Zeroizing<String>` (type-level
       test) whose value round-trips the masked plaintext.
-- [ ] A `Zeroizing<Counted<_>>` drop-path test asserts `zeroize()` fires
-      exactly once on drop (proves wiring to zeroize-on-drop; reuses the
-      `Counted` pattern from `provider/mod.rs:84`).
+- [ ] A drop-path test asserts dropping a `Zeroizing<T>` calls
+      `T::zeroize` exactly once (proves wiring to zeroize-on-drop). Uses a
+      no-`Drop` probe rather than `provider/mod.rs:84`'s `Counted`, whose
+      own `Drop` would double-count under `Zeroizing`.
 - [ ] Rustdoc on `mask!` carries the usage pattern + honest scope and
       reads correctly standalone (no cross-doc links).
 - [ ] `just ci` green.
