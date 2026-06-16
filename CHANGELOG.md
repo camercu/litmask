@@ -1,3 +1,18 @@
+## [0.18.0](https://github.com/camercu/litmask/compare/v0.17.1...v0.18.0) (2026-06-16)
+
+### Features
+
+* **litmask:** add test-util cache-reset hook ([612fc6d](https://github.com/camercu/litmask/commit/612fc6df0fc8d2eef6b38d07f3861c99b28bba76))
+* **litmask:** add Zeroizing seam for masked output (§2.15.1.1) ([55ba01c](https://github.com/camercu/litmask/commit/55ba01c3aaa5bad85c1e721c870159c6bd1c23d1))
+* **macros:** wipe mask_format fragments and reserve capacity (§2.15.1.3, .4) ([08aa4b0](https://github.com/camercu/litmask/commit/08aa4b0dc2c5949728c03dc0d0bae8e0e6fcbc65))
+* **macros:** zeroize MaskDebug names on drop (§2.15.1.5) ([a863b23](https://github.com/camercu/litmask/commit/a863b23aefb8e8539f4d4edb8398ce2f3d7374bf))
+
+### Bug Fixes
+
+* **bench:** guard benchmark doc generation ([cfa32a0](https://github.com/camercu/litmask/commit/cfa32a099f8fcfd60134472abf6ed1f7d7cf1c78))
+* **bench:** measure mask!'s real per-access cost without scaffolding ([af8b5dd](https://github.com/camercu/litmask/commit/af8b5ddab7a6dd2d53767ac7cc1330996efd79da))
+* **ci:** bump intra-workspace dep versions in lockstep on release ([38d462e](https://github.com/camercu/litmask/commit/38d462eb631e6779630d1d936394a5269a93bd59))
+
 ## [0.17.1](https://github.com/camercu/litmask/compare/v0.17.0...v0.17.1) (2026-06-15)
 
 ### Bug Fixes
