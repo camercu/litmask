@@ -25,6 +25,10 @@ fmt-check:
 
 clean: _profraw-purge
     cargo clean
+    # The nested `benches/` workspace and the generated build fixtures are
+    # separate workspaces, so root `cargo clean` can't reach their target
+    # dirs; the fixtures themselves are generated. Remove both.
+    rm -rf benches/target benches/build-fixtures
 
 # ── Linting ─────────────────────────────────────────────────
 
