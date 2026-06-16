@@ -236,11 +236,12 @@ pub fn __decrypt_string(
 }
 
 /// [`__decrypt_string`] wrapped in [`zeroize::Zeroizing`] so the decrypted
-/// plaintext is overwritten when the value drops. Used by the macro
-/// expansions whose decrypted plaintext is an internal transient that
-/// must not linger in residual memory — `mask_format!` literal fragments
-/// and `MaskDebug` names — so the wipe happens without the caller naming
-/// a wrapper.
+/// plaintext is overwritten when the value drops. Emitted by the
+/// `#[derive(MaskDebug)]` expansion for each per-`fmt` name, so the name
+/// is wiped without the derive naming a wrapper. (`mask_format!` fragments
+/// achieve the same wipe differently — they wrap the public `mask!`
+/// output in `Zeroizing::new(...)` to keep `mask!`'s literal/span
+/// handling — so they do not route through here.)
 ///
 /// `__decrypt_string`'s result reuses the single decrypt-path allocation
 /// (no extra plaintext copy), so wrapping it here overwrites the complete
@@ -320,10 +321,10 @@ fn decrypt_blob_or_panic(
 mod tests {
     use super::*;
 
-    // Type-level pin (§2.15.1.5/.3 rely on it): the internal seam returns
+    // Type-level pin (§2.15.1.5 relies on it): the internal seam returns
     // `Zeroizing<String>`. A real blob isn't needed — this only checks the
     // signature compiles, since behavioral coverage rides the macro
-    // callers (`mask_format!` fragments, `MaskDebug`).
+    // caller (the `MaskDebug` derive).
     #[allow(dead_code)]
     fn seam_returns_zeroizing_string(
         blob: &[u8],

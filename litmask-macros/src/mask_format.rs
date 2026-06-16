@@ -329,6 +329,9 @@ fn build_writes(
     arg_idents: &[syn::Ident],
     out_ident: &syn::Ident,
 ) -> Vec<TokenStream2> {
+    // `mixed_site` hygiene matches `out_ident` / `arg_idents`: keeps the
+    // fragment local from resolving against any caller-scope identifier.
+    let frag_ident = syn::Ident::new("mask_format_frag", proc_macro2::Span::mixed_site());
     let mut writes: Vec<TokenStream2> = Vec::new();
     for (i, fragment) in fragments.iter().enumerate() {
         if !fragment.is_empty() {
@@ -338,8 +341,8 @@ fn build_writes(
             // local derefs to `&str`, so `write_str` is unchanged.
             writes.push(quote! {
                 {
-                    let __litmask_frag = ::litmask::Zeroizing::new(::litmask::mask!(#fragment));
-                    ::core::fmt::Write::write_str(&mut #out_ident, &__litmask_frag).unwrap();
+                    let #frag_ident = ::litmask::Zeroizing::new(::litmask::mask!(#fragment));
+                    ::core::fmt::Write::write_str(&mut #out_ident, &#frag_ident).unwrap();
                 }
             });
         }
