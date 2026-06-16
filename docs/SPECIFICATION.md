@@ -2428,6 +2428,93 @@ its effective `Copy`-field requirement.
 - Formatted output prints decrypted names at runtime — at-rest
   protection only, per §1.1.
 
+### §2.15 Iteration 15 — Output zeroization (zeroize-on-drop)
+
+A masked macro decrypts to an owned heap value (`String`, `Vec<u8>`,
+`CString`) which, by default, is freed without overwriting — its
+plaintext lingers in residual memory until the allocator reuses the
+pages, and so survives in a memory artifact captured after the value is
+no longer needed. This iteration lets a consumer opt masked
+`String`/`Vec<u8>` outputs into zeroize-on-drop, and makes litmask's own
+internal transient plaintext (`mask_format!` fragments, `MaskDebug`
+names) self-wipe.
+
+Scope is **memory-remanence hygiene**: it shrinks the window in which a
+dropped secret's cleartext is recoverable from residual memory after the
+value is no longer needed. This covers the common remanence artifacts —
+**core/crash dumps, swap files, hibernation images, and freed-heap
+reuse**. It is **NOT** a defense against runtime memory inspection
+(§1.1's threat model and THREAT_MODEL Level 4 remain out of scope — a
+live attacker reads the value between decrypt and drop; swap and
+hibernation may likewise capture a page while the value is still live)
+nor against re-derivation (the `mask_key` is process-resident by design
+and ciphertext blobs live in `.rodata`, so an attacker with any such
+artifact can re-derive regardless of output wiping). The byte-clearing
+primitive is the `zeroize` crate's contract and is relied upon, not
+re-specified.
+
+#### §2.15.1 Acceptance criteria
+
+§2.15.1.1 — litmask SHALL re-export a zeroize-on-drop string wrapper as
+public API such that a consumer can wrap a masked output (e.g.
+`Zeroizing::new(mask!("…"))`) and obtain a value whose plaintext buffer
+is overwritten when it drops, **without** the default return type of
+`mask!` and its string-producing siblings changing.
+
+§2.15.1.2 — For a single-allocation masked output (`mask!` string/byte
+literals, `mask_include_str!`, `mask_include_bytes!`, `mask_env!`,
+`mask_option_env!`, `mask_file!`, `mask_concat!`), the wrapped value
+SHALL wipe the complete decrypted footprint on drop — no un-wiped
+intermediate plaintext copy SHALL be produced by the decrypt path.
+
+§2.15.1.3 — `mask_format!` SHALL overwrite each decrypted literal
+fragment's plaintext after it is written into the result, before that
+fragment's buffer is freed.
+
+§2.15.1.4 — `mask_format!` SHALL reserve result capacity equal to the
+sum of its compile-time literal fragment lengths, so that literal-driven
+assembly performs no reallocation. Reallocation caused by
+runtime-argument growth beyond that reserve is a documented residual
+(§2.15.2).
+
+§2.15.1.5 — `#[derive(MaskDebug)]` SHALL overwrite each decrypted
+type/field/variant name after formatting, and its `{:?}` / `{:#?}`
+output SHALL remain byte-identical to plain `#[derive(Debug)]`
+(strengthening §2.14.1.3).
+
+§2.15.1.6 — `mask!(c"…")` (CString output) SHALL be explicitly
+**excluded** from zeroize-on-drop coverage; the documentation SHALL
+state the exclusion and the escape hatch (`mask!("secret")` → wrap the
+`String` → construct a transient `CString` at the FFI boundary).
+
+§2.15.1.7 — No documentation, error text, or comment SHALL claim that
+output zeroization defeats runtime memory inspection or re-derivation.
+Claims SHALL be confined to memory-remanence hygiene per §1.1's
+understatement rule.
+
+§2.15.1.8 — The feature SHALL introduce no new cargo feature flag
+(`zeroize` is already a required dependency) and SHALL NOT use `unsafe`.
+
+#### §2.15.2 Residual exposure
+
+- The decrypted `mask_key` is process-resident (`'static`) and
+  ciphertext blobs are in `.rodata`; an attacker with a memory artifact
+  can re-derive every masked literal regardless of output wiping. Output
+  zeroization defeats only the trivial cleartext-grep, not structural
+  analysis.
+- A live debugger or `/proc/pid/mem` read captures the value between
+  decrypt and drop — unaffected.
+- Swap and hibernation may capture a memory page while the value is
+  **still live** (before drop); that copy is unaffected, same as the
+  live-debugger case.
+- Any `.clone()`, `format!`, or write of a masked output into another
+  buffer (including `mask_print!` / `mask_write!` emitting to a sink)
+  copies plaintext that escapes the wrapped value and is not wiped.
+- `mask_format!` results that grow past the reserved capacity
+  (runtime-argument expansion) may leave un-wiped intermediate buffers
+  from reallocation.
+- `CString` output (§2.15.1.6) is not covered.
+
 ## Appendix A — Open Items for Implementation
 
 These are decisions deferred to implementation that are not constrained by
