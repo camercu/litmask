@@ -39,6 +39,12 @@ include = [
 # pass `--no-default-features` explicitly.
 default = ["std", "chacha20-poly1305"]
 std = []
+# Test/bench-only hooks (`test_util` module). Off by default and absent
+# from consumer builds; enables resetting the process-global init state
+# so benchmarks can re-measure the one-time first-use unlock and tests
+# can isolate that global between cases. Implies `std` (the resettable
+# mask-key cache is the `std` `Mutex<HashMap>` variant).
+test-util = ["std"]
 chacha20-poly1305 = [
   "litmask-internal/chacha20-poly1305",
   "litmask-build/chacha20-poly1305",

@@ -27,6 +27,14 @@ mod governor;
 mod mask_key_store;
 pub(crate) mod weak;
 
+/// Crate-internal entry point for [`crate::test_util::reset_mask_key_cache`],
+/// keeping `mask_key_store` private to this module. Feature-gated to the
+/// test/bench hook surface.
+#[cfg(feature = "test-util")]
+pub(crate) fn reset_mask_key_cache() {
+    mask_key_store::clear();
+}
+
 /// Non-governing eager init primitive: decrypt the embedded `mask_key`
 /// wrapper under `provider` and cache it. No governor is installed (unlike
 /// the `init!` govern seams), so it opens exactly the one `wrapper` given.

@@ -237,6 +237,29 @@ pub mod __internal {
     pub use alloc::string::String as __String;
 }
 
+/// Test/bench-only hooks for the process-global init state. Behind the
+/// `test-util` feature, so this module does not exist in normal consumer
+/// builds. Not part of the stable API.
+#[cfg(feature = "test-util")]
+#[doc(hidden)]
+pub mod test_util {
+    /// Drop the process-global mask-key cache so the next `mask!()`
+    /// re-runs the full first-use unlock (provider derivation + wrapper
+    /// AEAD-open + cache insert) through the real production path. The
+    /// installed governor is left in place; only the per-wrapper key
+    /// cache is cleared.
+    ///
+    /// Exists so benchmarks can re-measure the one-time unlock cost per
+    /// sample and tests can isolate the global between cases. It exposes
+    /// no key material — it clears a cache and returns nothing. The
+    /// leaked `&'static` keys from prior unlocks are not reclaimed, so
+    /// repeated calls leak one `MaskKey` each (bounded, test/bench-scope
+    /// only).
+    pub fn reset_mask_key_cache() {
+        crate::runtime::reset_mask_key_cache();
+    }
+}
+
 #[cfg(test)]
 #[cfg(not(feature = "std"))]
 mod no_std_tests {

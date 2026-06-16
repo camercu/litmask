@@ -88,6 +88,22 @@ pub(super) fn get_or_init(
     }
 }
 
+/// Drop all cached mask keys so the next [`get_or_init`] re-runs the
+/// full first-use unlock. Test/bench hook (see
+/// [`crate::test_util::reset_mask_key_cache`]): the per-wrapper keys are
+/// `Box::leak`ed `&'static`, so clearing only removes the map entries —
+/// the leaked key memory is not reclaimed. That bounded per-clear leak
+/// is acceptable for the test/bench scope this hook serves and never
+/// reachable in a normal build (the `test-util` feature is off).
+#[cfg(feature = "test-util")]
+pub(super) fn clear() {
+    if let Some(map) = CACHE.get() {
+        map.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
+}
+
 /// Whether `nonce`'s mask key is already cached — the per-wrapper
 /// analogue of the old single-cell `is_set`, gating the init seams'
 /// idempotent early return.
@@ -104,5 +120,35 @@ pub(super) fn contains(nonce: &[u8; NONCE_LEN]) -> bool {
     {
         let _ = nonce;
         CACHE.is_set()
+    }
+}
+
+#[cfg(all(test, feature = "std", feature = "test-util"))]
+mod tests {
+    use super::*;
+    use crate::internal::KEY_LEN;
+
+    // `clear()` must drop cached entries so a later `get_or_init` re-runs
+    // the derive closure — the property the first-use benchmark relies on
+    // to re-measure the one-time unlock per sample. A unique nonce keeps
+    // this independent of any other entry in the process-global cache.
+    #[test]
+    fn clear_drops_cached_entries_so_next_get_reinits() {
+        let nonce = [0xC1; NONCE_LEN];
+        let mut derived = 0;
+        get_or_init(nonce, || {
+            derived += 1;
+            MaskKey::new([0x00; KEY_LEN])
+        });
+        assert!(contains(&nonce));
+
+        clear();
+        assert!(!contains(&nonce));
+
+        get_or_init(nonce, || {
+            derived += 1;
+            MaskKey::new([0x00; KEY_LEN])
+        });
+        assert_eq!(derived, 2, "derive closure must run again after clear");
     }
 }
