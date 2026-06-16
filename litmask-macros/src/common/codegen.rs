@@ -35,11 +35,7 @@ pub(crate) fn mask_name(span: proc_macro2::Span, name: &str) -> TokenStream {
 /// plain [`mask_name`] (they `Box::leak` the name, so it never drops and
 /// zeroize-on-drop would be meaningless).
 pub(crate) fn mask_ident(ident: &syn::Ident) -> TokenStream {
-    mask_plaintext(
-        ident.unraw().to_string().into_bytes(),
-        ident.span(),
-        MaskKind::StrZeroizing,
-    )
+    mask_str_zeroizing(ident.span(), ident.unraw().to_string().into_bytes())
 }
 
 /// Emit a `&'static str` expression yielding a masked resolved name at
@@ -101,6 +97,13 @@ enum MaskKind {
 /// `mask_format!`'s per-fragment masking.
 pub(crate) fn mask_str(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
     mask_plaintext(plaintext, span, MaskKind::Str)
+}
+
+/// Like [`mask_str`] but emits a decrypt returning `Zeroizing<String>`,
+/// overwriting the plaintext on drop. Used by [`mask_ident`] for
+/// `#[derive(MaskDebug)]` names.
+fn mask_str_zeroizing(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
+    mask_plaintext(plaintext, span, MaskKind::StrZeroizing)
 }
 
 /// AEAD-encrypt `plaintext` and emit a runtime decrypt expression
