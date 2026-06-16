@@ -235,31 +235,6 @@ pub fn __decrypt_string(
     }
 }
 
-/// [`__decrypt_string`] wrapped in [`zeroize::Zeroizing`] so the decrypted
-/// plaintext is overwritten when the value drops. Emitted by the
-/// `#[derive(MaskDebug)]` expansion for each per-`fmt` name, so the name
-/// is wiped without the derive naming a wrapper. (`mask_format!` fragments
-/// achieve the same wipe differently — they wrap the public `mask!`
-/// output in `Zeroizing::new(...)` to keep `mask!`'s literal/span
-/// handling — so they do not route through here.)
-///
-/// `__decrypt_string`'s result reuses the single decrypt-path allocation
-/// (no extra plaintext copy), so wrapping it here overwrites the complete
-/// footprint on drop.
-///
-/// # Panics
-///
-/// Same policy as [`__decrypt_string`].
-#[doc(hidden)]
-#[allow(clippy::must_use_candidate)]
-pub fn __decrypt_string_zeroizing(
-    blob: &[u8],
-    wrapper: &[u8; WRAPPER_LEN],
-    tier: &str,
-) -> zeroize::Zeroizing<alloc::string::String> {
-    zeroize::Zeroizing::new(__decrypt_string(blob, wrapper, tier))
-}
-
 // The explicit `match` arms (tier selection and the Ok/Err decrypt
 // result) are deliberate over clippy's `if let … else` / `let … else`
 // rewrites: they keep the diverging arms uniform with the rest of the
@@ -319,21 +294,6 @@ fn decrypt_blob_or_panic(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    // Type-level pin (§2.15.1.5 relies on it): the internal seam returns
-    // `Zeroizing<String>`. A real blob isn't needed — this only checks the
-    // signature compiles, since behavioral coverage rides the macro
-    // caller (the `MaskDebug` derive).
-    #[allow(dead_code)]
-    fn seam_returns_zeroizing_string(
-        blob: &[u8],
-        wrapper: &[u8; WRAPPER_LEN],
-        tier: &str,
-    ) -> zeroize::Zeroizing<alloc::string::String> {
-        __decrypt_string_zeroizing(blob, wrapper, tier)
-    }
-
     // The wipe itself is `zeroize`'s upstream-tested contract; this only
     // proves our reliance on it is wired — dropping a `Zeroizing<T>` calls
     // `T::zeroize` exactly once. The probe has no `Drop` of its own, so

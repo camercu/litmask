@@ -239,10 +239,7 @@ pub mod __internal {
     pub use crate::runtime::weak::{__weak_decode, __weak_decode_bytes, WeakByteCell, WeakCell};
     #[cfg(feature = "std")]
     pub use crate::runtime::weak::{__weak_decode_cstr, WeakCStrCell};
-    pub use crate::runtime::{
-        __decrypt, __decrypt_string, __decrypt_string_zeroizing, __govern_external,
-        __init_with_wrapper,
-    };
+    pub use crate::runtime::{__decrypt, __decrypt_string, __govern_external, __init_with_wrapper};
     #[cfg(feature = "machine-id")]
     pub use crate::runtime::{__govern_machine, __govern_machine_external};
     // Hygienic `String` alias for the `mask_format!` / `mask_option_env!`

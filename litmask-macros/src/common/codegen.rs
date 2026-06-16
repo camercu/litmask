@@ -179,8 +179,8 @@ fn mask_plaintext(mut plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKin
 
 /// The runtime decrypt-and-construct expression for a [`MaskKind`].
 /// Pure (no artifact loading) so the kind→seam routing is unit-testable:
-/// `StrZeroizing` must reach `__decrypt_string_zeroizing`, the others
-/// their plain seams.
+/// `StrZeroizing` wraps the plain string decrypt in `Zeroizing`, the
+/// others reach their plain seams.
 fn decrypt_expr(
     kind: MaskKind,
     blob_ident: &syn::Ident,
@@ -196,12 +196,16 @@ fn decrypt_expr(
         MaskKind::Str => quote! {
             ::litmask::__internal::__decrypt_string(#blob_ident, #wrapper, #seal_tier)
         },
-        // `MaskDebug` names: decrypt to a `Zeroizing<String>` so the
+        // `MaskDebug` names: wrap the plain decrypt in `Zeroizing` so the
         // formatted name is overwritten when the per-`fmt` temporary
-        // drops (§2.15.1.5). Derefs to `&str`, so the `Formatter`
-        // builder call sites are unchanged.
+        // drops (§2.15.1.5). The wrapper derefs to `&str`, so the
+        // `Formatter` builder call sites are unchanged; naming
+        // `Zeroizing` (not `String`) keeps `__decrypt_string`'s
+        // diagnostic-stability property intact.
         MaskKind::StrZeroizing => quote! {
-            ::litmask::__internal::__decrypt_string_zeroizing(#blob_ident, #wrapper, #seal_tier)
+            ::litmask::Zeroizing::new(
+                ::litmask::__internal::__decrypt_string(#blob_ident, #wrapper, #seal_tier)
+            )
         },
         MaskKind::Bytes => quote! {
             ::litmask::__internal::__decrypt(#blob_ident, #wrapper, #seal_tier)
@@ -223,23 +227,22 @@ mod tests {
     }
 
     #[test]
-    fn maskdebug_kind_routes_through_zeroizing_seam() {
-        assert!(
-            expr_string(MaskKind::StrZeroizing).contains("__decrypt_string_zeroizing"),
-            "StrZeroizing must reach the zeroizing seam"
-        );
+    fn maskdebug_kind_wraps_decrypt_in_zeroizing() {
+        // StrZeroizing wraps the plain string decrypt in `Zeroizing` so
+        // the name is wiped on drop — the same idiom every other wipe
+        // site uses (no dedicated runtime primitive).
+        let s = expr_string(MaskKind::StrZeroizing);
+        assert!(s.contains("Zeroizing"), "{s}");
+        assert!(s.contains("__decrypt_string"), "{s}");
     }
 
     #[test]
-    fn plain_str_kind_uses_non_zeroizing_seam() {
+    fn plain_str_kind_is_not_zeroizing() {
         // The serde name paths (`mask_name` / `masked_static_name`) stay
         // on this kind; they `Box::leak` the name, so zeroize-on-drop is
         // meaningless and must not be emitted for them.
         let s = expr_string(MaskKind::Str);
         assert!(s.contains("__decrypt_string"));
-        assert!(
-            !s.contains("__decrypt_string_zeroizing"),
-            "plain Str must not reach the zeroizing seam"
-        );
+        assert!(!s.contains("Zeroizing"), "plain Str must not be wrapped");
     }
 }
