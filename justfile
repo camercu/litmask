@@ -190,6 +190,43 @@ bench:
         LITMASK_UNLOCK_KEY="$key" cargo test --manifest-path benches/litmask-bench/Cargo.toml && \
         LITMASK_UNLOCK_KEY="$key" cargo bench --manifest-path benches/litmask-bench/Cargo.toml
 
+# Build-time benchmarks (hyperfine). Regenerates the masked_N / plain_N
+# fixture crates, then times clean and incremental builds across
+# N=10/100/1000 and the dev + release profiles, exporting JSON per
+# (scenario, profile) to target/bench-build/. Clean builds include
+# compiling the litmask dep tree (total adoption cost); incremental
+# touches only the leaf source (isolates build.rs + proc-macro). Embedded
+# tier, so no key is needed — the fixtures are only compiled, never run.
+# Not part of `just ci` — run on demand. Requires hyperfine (pinned in
+# .tool-versions; install via your package manager).
+bench-build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ./scripts/gen-build-fixtures.sh
+    mkdir -p target/bench-build
+    base=benches/build-fixtures
+    for profile in dev release; do
+        flag=""; [ "$profile" = release ] && flag="--release"
+        # Clean: each timed run is a full from-scratch build. `--runs 3`
+        # keeps the (slow, dep-recompiling) clean matrix bounded.
+        hyperfine --warmup 0 --runs 3 \
+            -L mode masked,plain -L n 10,100,1000 \
+            --command-name "{mode}_{n}" \
+            --prepare "cargo clean --manifest-path $base/{mode}_{n}/Cargo.toml" \
+            --export-json "target/bench-build/clean-$profile.json" \
+            "cargo build $flag --manifest-path $base/{mode}_{n}/Cargo.toml"
+        # Incremental: `--setup` compiles deps once; `--prepare` touches
+        # the leaf so each timed run re-expands + recompiles only it.
+        hyperfine --warmup 1 --runs 5 \
+            -L mode masked,plain -L n 10,100,1000 \
+            --command-name "{mode}_{n}" \
+            --setup "cargo build $flag --manifest-path $base/{mode}_{n}/Cargo.toml" \
+            --prepare "touch $base/{mode}_{n}/src/main.rs" \
+            --export-json "target/bench-build/incremental-$profile.json" \
+            "cargo build $flag --manifest-path $base/{mode}_{n}/Cargo.toml"
+    done
+    echo "build-bench JSON written to target/bench-build/"
+
 # Verify the runtime crate compiles with `--no-default-features --features alloc`
 # (the no_std + alloc configuration). `test-no-default` runs unit tests under
 # the same feature set; this recipe is a faster compile-only gate.
@@ -248,6 +285,7 @@ check-tool-versions:
             cargo-llvm-cov) actual=$(cargo llvm-cov --version | awk '{print $2}') ;;
             cargo-semver-checks) actual=$(cargo semver-checks --version | awk '{print $2}') ;;
             cargo-fuzz) actual=$(cargo fuzz --version 2>/dev/null | awk '{print $2}') ;;
+            hyperfine) actual=$(hyperfine --version | awk '{print $2}') ;;
             nodejs)        actual=$(node --version | sed 's/^v//') ;;
             *)
                 # Loud failure: a new entry in `.tool-versions` without

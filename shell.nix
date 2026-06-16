@@ -43,5 +43,9 @@ pkgs.mkShell {
     # cargo-semver-checks is omitted: pinned nixpkgs ships 0.41.0 but
     # .tool-versions pins 0.44.0. Install locally via
     # `cargo install cargo-semver-checks` or rely on CI's taiki-e/install-action.
+    # hyperfine is omitted: it is only needed by the on-demand `just
+    # bench-build` (not `just ci`), and pinning it here would risk the
+    # nixpkgs version drifting from `.tool-versions`. Install via your
+    # package manager (e.g. `cargo install hyperfine`).
   ];
 }
