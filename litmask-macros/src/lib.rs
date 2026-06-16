@@ -116,10 +116,10 @@ pub fn init(input: TokenStream) -> TokenStream {
     init::expand(&input)
 }
 
-/// Mask the UTF-8 contents of a file at compile time. The file is
-/// read by the proc-macro relative to the consumer crate's
-/// `CARGO_MANIFEST_DIR`; its bytes are AEAD-encrypted into a blob
-/// embedded in the binary, and the macro expands to a runtime
+/// Mask the UTF-8 contents of a file at compile time. The path is
+/// resolved relative to the source file containing the invocation
+/// (like stdlib `include_str!`); its bytes are AEAD-encrypted into a
+/// blob embedded in the binary, and the macro expands to a runtime
 /// decrypt call returning `String`. The plaintext never appears in
 /// the compiled binary's `.rodata`.
 ///
@@ -155,11 +155,11 @@ pub fn mask_include_str(input: TokenStream) -> TokenStream {
     mask_include_str::expand(input)
 }
 
-/// Mask the raw bytes of a file at compile time. The file is read
-/// by the proc-macro relative to the consumer crate's
-/// `CARGO_MANIFEST_DIR`; its bytes are AEAD-encrypted and the macro
-/// expands to a runtime decrypt call returning `Vec<u8>`. The
-/// plaintext bytes never appear in the compiled binary's
+/// Mask the raw bytes of a file at compile time. The path is
+/// resolved relative to the source file containing the invocation
+/// (like stdlib `include_bytes!`); its bytes are AEAD-encrypted and
+/// the macro expands to a runtime decrypt call returning `Vec<u8>`.
+/// The plaintext bytes never appear in the compiled binary's
 /// `.rodata`.
 ///
 /// # Rebuild on file change
@@ -259,11 +259,14 @@ pub fn mask_option_env(input: TokenStream) -> TokenStream {
 
 /// Mask the call site's source-file path at compile time. The
 /// proc-macro reads `proc_macro::Span::call_site().file()`,
-/// canonicalizes it relative to the consumer crate's
-/// `CARGO_MANIFEST_DIR` for reproducibility across checkouts at
-/// different absolute filesystem locations, AEAD-encrypts the
-/// result, and expands to a runtime decrypt call returning
-/// `String`.
+/// AEAD-encrypts that path, and expands to a runtime decrypt call
+/// returning `String`. The decrypted value mirrors stdlib `file!()`
+/// exactly — the same path at the same span — only masked.
+///
+/// The `CARGO_MANIFEST_DIR`-relative stripping (§1.5.2) is applied
+/// solely to the per-call-site nonce derivation, for reproducible
+/// builds across checkouts at different absolute paths; it does NOT
+/// alter the value handed back to the caller.
 ///
 /// The raw source path never appears in the compiled binary's
 /// `.rodata`. Note: `core::panic::Location::caller()` independently

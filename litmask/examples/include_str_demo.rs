@@ -2,9 +2,10 @@
 //! masks its contents. Use for embedded config templates, baked-in
 //! prompts, or any string payload too large for a literal.
 //!
-//! Path is resolved relative to `CARGO_MANIFEST_DIR`. Edits to the
-//! included file do NOT auto-rebuild on stable Rust — see the
-//! macro's rustdoc for the workaround.
+//! Path is resolved relative to the source file containing the
+//! invocation (like stdlib `include_str!`). Edits to the included
+//! file do NOT auto-rebuild on stable Rust — see the macro's rustdoc
+//! for the workaround.
 //!
 //! Verify masking via the strings/grep recipe in `hello_world.rs`.
 
