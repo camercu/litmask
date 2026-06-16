@@ -113,9 +113,12 @@ doc = f"""# litmask benchmarks
 > | Toolchain | {toolchain} |
 > | Cipher | chacha20-poly1305 (default) |
 >
-> Numbers are machine-specific — read them as orders of magnitude, not
-> guarantees. The methodology lives in the benchmark sources under
-> `benches/`; this file only records one run's results.
+> Commit is HEAD at generation time; `(dirty)` is expected here, since
+> regenerating this doc and committing it necessarily leaves the tree
+> dirty at the moment it is stamped. Numbers are machine-specific — read
+> them as orders of magnitude, not guarantees. The methodology lives in
+> the benchmark sources under `benches/`; this file only records one
+> run's results.
 
 ## Runtime
 
