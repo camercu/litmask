@@ -57,76 +57,166 @@ fn tampered_blob_panic_message_is_profile_split() {
     );
 }
 
-/// Scans every file that contributes text to the user binary's
-/// `mask!()` decryption path for `.expect("msg")` and `panic!("msg")`
-/// patterns — the two ways a litmask-specific string would leak into
-/// user binaries. The scan spans every decryption-path file:
-///
-/// - `runtime/mod.rs` — `__decrypt`, lazy-init helpers.
-/// - `runtime/mask_key_store.rs` — the per-wrapper mask-key store the
-///   lazy `mask!()` path derives and caches each key through.
-/// - `runtime/governor.rs` — the process-global governing provider the
-///   lazy path consults to unlock each wrapper.
-/// - `runtime/weak.rs` — `__weak_decode*` and the weak caches.
-/// - `runtime/cell.rs` — the once-cell every decrypt path borrows
-///   its key (or cache) through.
-/// - `runtime/stack.rs` — the `mask_stack!` seams (`__decrypt_stack_*`),
-///   which decrypt into stack buffers through the same governed path.
-/// - `litmask/src/lib.rs` — crate root; re-exports + public macros.
-/// - `litmask/src/macro_plumbing.rs` — the `__decrypt_cstring_call!` /
-///   `__weak_decode_cstr_call!` shims, whose `.unwrap()` stays bare.
-/// - `litmask-macros/src/mask.rs` — proc-macro entry point; emits
-///   the type-construction wrappers, no `.expect` of its own.
-/// - `litmask-macros/src/mask_format.rs` — proc-macro emission for
-///   `mask_format!` (`write_fmt` + `format_args!` per placeholder).
-/// - `litmask-macros/src/common/codegen.rs` + `common/artifact.rs` —
-///   the `mask_plaintext` helper and `OUT_DIR` artifact loader; every
-///   `.expect`/`panic!` here runs at proc-macro expansion time inside
-///   rustc, not in the user binary. The other `common/` submodules are
-///   scanned too, with empty allow-lists.
-/// - `litmask/src/diagnostics.rs` — the §1.9.5 profile-split entry points.
-///   Its actionable messages are permitted *only* because each sits on
-///   the line immediately after a `#[cfg(debug_assertions)]` attribute,
-///   so it is compiled out of release. The scan enforces that gating
-///   (see `gated` below): an ungated message here still fails.
-///
-/// Each entry pairs a path with an allowlist of substrings whose
-/// containing line executes at PROC-MACRO TIME (inside rustc's
-/// process) and therefore cannot leak into a user binary. New
-/// allowlist entries require security review.
+/// Net `{` minus `}` on a line, ignoring braces inside `//` line comments
+/// and double-quoted strings — the realistic miscount sources when
+/// brace-matching a module to strip it.
+fn brace_delta(line: &str) -> i32 {
+    let mut depth = 0i32;
+    let mut chars = line.chars().peekable();
+    let mut in_str = false;
+    while let Some(c) = chars.next() {
+        if in_str {
+            match c {
+                '\\' => {
+                    chars.next();
+                }
+                '"' => in_str = false,
+                _ => {}
+            }
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '/' if chars.peek() == Some(&'/') => break,
+            '{' => depth += 1,
+            '}' => depth -= 1,
+            _ => {}
+        }
+    }
+    depth
+}
+
+/// Drop `#[cfg(test)]` / `#[cfg(all(test, …))]` modules so the scan sees
+/// only code that can ship. `test` must be the leading predicate, so a
+/// merely test-*reachable* item like `extra_masking_crate_no_std`
+/// (`cfg(all(debug_assertions, any(test, …)))`) is kept and judged on its
+/// own debug-gating.
+fn strip_test_modules(src: &str) -> String {
+    let attr = regex::Regex::new(r"^\s*#\[cfg\(\s*(all\(\s*)?test\s*[,)]").expect("regex");
+    let lines: Vec<&str> = src.lines().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < lines.len() {
+        if attr.is_match(lines[i]) {
+            let mut depth = 0i32;
+            let mut opened = false;
+            while i < lines.len() {
+                depth += brace_delta(lines[i]);
+                if lines[i].contains('{') {
+                    opened = true;
+                }
+                i += 1;
+                if opened && depth <= 0 {
+                    break;
+                }
+            }
+            continue;
+        }
+        out.push_str(lines[i]);
+        out.push('\n');
+        i += 1;
+    }
+    out
+}
+
+/// Core scan: return `(line, matched_text)` for every `.expect("…")` /
+/// `panic!("…")` in `src` (after stripping test modules) that is NOT
+/// exempt. A hit is exempt when its message substring is on `allow`, or —
+/// when `gating_exempts` — the line directly above is
+/// `#[cfg(debug_assertions)]` (compiled out of release).
+fn message_panic_hits(src: &str, allow: &[&str], gating_exempts: bool) -> Vec<(usize, String)> {
+    // `(?s)` + `\s*` so a message rustfmt wrapped onto its own line still
+    // matches; a per-line regex would let the wrapped form slip past.
+    let re = regex::Regex::new(r#"(?s)(?:\.expect|panic!)\(\s*"[^"]+""#).expect("regex");
+    let stripped = strip_test_modules(src);
+    let lines: Vec<&str> = stripped.lines().collect();
+    let mut hits = Vec::new();
+    for mat in re.find_iter(&stripped) {
+        let idx = stripped[..mat.start()]
+            .bytes()
+            .filter(|&b| b == b'\n')
+            .count();
+        let line = lines[idx];
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        let gated =
+            gating_exempts && idx > 0 && lines[idx - 1].trim() == "#[cfg(debug_assertions)]";
+        let exempt = allow
+            .iter()
+            .any(|s| mat.as_str().contains(s) || line.contains(s));
+        if gated || exempt {
+            continue;
+        }
+        hits.push((idx + 1, mat.as_str().to_string()));
+    }
+    hits
+}
+
+/// Recursively collect `.rs` files under `dir`.
+fn rs_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    for entry in
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read dir {}: {e}", dir.display()))
+    {
+        let path = entry.expect("dir entry").path();
+        if path.is_dir() {
+            out.extend(rs_files(&path));
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            out.push(path);
+        }
+    }
+    out
+}
+
+/// The runtime crate's `mask!()` / `mask_stack!()` decryption path must
+/// not leak litmask-identifying `.expect("…")` / `panic!("…")` text into a
+/// shipped binary (§1.9.5). Rather than a hand-maintained file list (which
+/// silently misses a newly-added decryption-path file), this walks **all**
+/// of `litmask/src`, strips test modules, and asserts the only
+/// message-panics live in `diagnostics.rs` behind `#[cfg(debug_assertions)]`
+/// — the single place actionable text is allowed, compiled out of release.
 #[test]
-fn no_custom_panic_messages_in_decryption_path() {
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    let scans: Vec<(String, Vec<&str>)> = vec![
-        (format!("{manifest}/src/runtime/mod.rs"), vec![]),
-        (format!("{manifest}/src/runtime/mask_key_store.rs"), vec![]),
-        (format!("{manifest}/src/runtime/governor.rs"), vec![]),
-        (format!("{manifest}/src/runtime/weak.rs"), vec![]),
-        (format!("{manifest}/src/runtime/cell.rs"), vec![]),
-        (format!("{manifest}/src/runtime/stack.rs"), vec![]),
-        (format!("{manifest}/src/lib.rs"), vec![]),
-        (format!("{manifest}/src/macro_plumbing.rs"), vec![]),
-        (format!("{manifest}/../litmask-macros/src/mask.rs"), vec![]),
+fn no_message_panics_outside_gated_diagnostics() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut hits: Vec<String> = Vec::new();
+    for path in rs_files(&src) {
+        let text = std::fs::read_to_string(&path).expect("read source");
+        // `diagnostics.rs` is the sanctioned home for actionable text;
+        // there a message is allowed iff debug-gated. Everywhere else, any
+        // message-panic is a violation — centralizing keeps the policy in
+        // one auditable file.
+        let is_diagnostics = path.file_name().is_some_and(|n| n == "diagnostics.rs");
+        for (line, text) in message_panic_hits(&text, &[], is_diagnostics) {
+            hits.push(format!("{}:{line}  {text}", path.display()));
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "runtime decryption path must route message-panics through gated diagnostics.rs; found:\n{}",
+        hits.join("\n"),
+    );
+}
+
+/// The proc-macro crate's emission path is scanned separately: its
+/// `.expect`/`panic!` calls run at PROC-MACRO TIME inside rustc and never
+/// reach a user binary, so the policy is an explicit allowlist of
+/// expansion-time call sites rather than the runtime crate's
+/// gated-diagnostics rule. Scoped to the files that emit the `mask!()`
+/// decryption tokens (the rest of the macro crate is full of legitimate
+/// expansion-time `.expect`s on `syn` parsing).
+#[test]
+fn macro_expansion_path_panics_are_allowlisted() {
+    let macros = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../litmask-macros/src");
+    let scans: &[(&str, &[&str])] = &[
+        ("mask.rs", &[]),
+        ("mask_format.rs", &[]),
+        ("common/diagnostics.rs", &[]),
+        ("common/parse.rs", &[]),
+        ("common/path.rs", &[]),
         (
-            format!("{manifest}/../litmask-macros/src/mask_format.rs"),
-            vec![],
-        ),
-        (format!("{manifest}/src/diagnostics.rs"), vec![]),
-        (
-            format!("{manifest}/../litmask-macros/src/common/diagnostics.rs"),
-            vec![],
-        ),
-        (
-            format!("{manifest}/../litmask-macros/src/common/parse.rs"),
-            vec![],
-        ),
-        (
-            format!("{manifest}/../litmask-macros/src/common/path.rs"),
-            vec![],
-        ),
-        (
-            format!("{manifest}/../litmask-macros/src/common/artifact.rs"),
-            vec![
+            "common/artifact.rs",
+            &[
                 // The OUT_DIR artifact loader runs at proc-macro expansion
                 // time inside rustc, reading build artifacts before any
                 // tokens are emitted. None reaches the user binary.
@@ -137,56 +227,53 @@ fn no_custom_panic_messages_in_decryption_path() {
             ],
         ),
         (
-            format!("{manifest}/../litmask-macros/src/common/codegen.rs"),
-            vec![
-                // `mask_plaintext` AEAD-encrypts the literal at expansion
-                // time before emitting the decrypt tokens; this expect runs
-                // inside rustc, never in the user binary.
-                r#".expect("AEAD encryption failed during litmask macro expansion")"#,
-            ],
+            "common/codegen.rs",
+            // `mask_plaintext` AEAD-encrypts the literal at expansion time
+            // before emitting the decrypt tokens; this expect runs inside
+            // rustc, never in the user binary.
+            &[r#".expect("AEAD encryption failed during litmask macro expansion")"#],
         ),
     ];
 
-    // `(?s)` + `\s*` so a `panic!(` / `.expect(` whose message rustfmt
-    // wrapped onto its own line still matches: a per-line regex would miss
-    // the wrapped form and let a message-bearing panic slip past unguarded.
-    let custom_panic =
-        regex::Regex::new(r#"(?s)(?:\.expect|panic!)\(\s*"[^"]+""#).expect("regex compiles");
-
-    let mut hits: Vec<(String, usize, String)> = Vec::new();
-    for (path, allow) in &scans {
-        let src = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
-        let lines: Vec<&str> = src.lines().collect();
-        for mat in custom_panic.find_iter(&src) {
-            // Physical line where the `panic!(` / `.expect(` token opens.
-            let open_idx = src[..mat.start()].bytes().filter(|&b| b == b'\n').count();
-            let open_line = lines[open_idx];
-            // Comment lines (incl. `//!` doc comments) never reach `.rodata`,
-            // so a `.expect("…")`/`panic!("…")` quoted in prose — e.g. this
-            // file's own policy docs — cannot fingerprint the binary.
-            if open_line.trim_start().starts_with("//") {
-                continue;
-            }
-            // Exempt when the line immediately above the opener is
-            // `#[cfg(debug_assertions)]` — the message is then compiled out
-            // of release, where the opacity contract applies.
-            let gated = open_idx > 0 && lines[open_idx - 1].trim() == "#[cfg(debug_assertions)]";
-            // Allowlist entries are matched against the whole call text (so a
-            // substring on a wrapped message line still exempts) and the
-            // opener line (for single-line panics carrying trailing args the
-            // capture drops).
-            let exempt = allow
-                .iter()
-                .any(|s| mat.as_str().contains(s) || open_line.contains(s));
-            if gated || exempt {
-                continue;
-            }
-            hits.push((path.clone(), open_idx + 1, mat.as_str().to_string()));
+    let mut hits: Vec<String> = Vec::new();
+    for (rel, allow) in scans {
+        let path = macros.join(rel);
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {rel}: {e}"));
+        for (line, text) in message_panic_hits(&text, allow, false) {
+            hits.push(format!("{rel}:{line}  {text}"));
         }
     }
-
     assert!(
         hits.is_empty(),
-        "decryption-path files leak custom panic-message text: {hits:#?}",
+        "macro emission path leaks non-allowlisted message-panic text: {hits:#?}",
+    );
+}
+
+/// The scan is only as good as its detection: prove `message_panic_hits`
+/// fires on a real violation, stays silent on the sanctioned forms, and
+/// strips test modules — otherwise a future regression to the scanner
+/// itself would let leaks through unnoticed.
+#[test]
+fn message_panic_scan_detects_and_exempts() {
+    // Bare message-panic in shippable code → caught.
+    assert_eq!(
+        message_panic_hits("fn f() { panic!(\"litmask leak\"); }", &[], false).len(),
+        1,
+    );
+    // Same panic inside a test module → stripped, not caught.
+    let in_test = "#[cfg(test)]\nmod tests {\n    fn t() { panic!(\"litmask leak\"); }\n}\n";
+    assert!(message_panic_hits(in_test, &[], false).is_empty());
+    // Debug-gated message → exempt only when gating is allowed.
+    let gated = "    #[cfg(debug_assertions)]\n    panic!(\"litmask leak\");\n";
+    assert!(message_panic_hits(gated, &[], true).is_empty());
+    assert_eq!(message_panic_hits(gated, &[], false).len(), 1);
+    // Allowlisted message → exempt.
+    assert!(
+        message_panic_hits(
+            "fn f() { panic!(\"allowed thing\"); }",
+            &["allowed thing"],
+            false
+        )
+        .is_empty()
     );
 }
