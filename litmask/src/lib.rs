@@ -238,17 +238,188 @@ pub use zeroize::Zeroizing;
 #[cfg(feature = "std")]
 pub use provider::{EnvVarProvider, FileProvider};
 
-pub use litmask_macros::{
-    MaskDebug, init, mask, mask_all, mask_concat, mask_env, mask_file, mask_format,
-    mask_include_bytes, mask_include_str, mask_option_env, unmasked, unmasked_derive, weak_mask,
-};
+// The macros' reference docs (prose, errors, panics) live on the
+// definitions in `litmask-macros`; rustdoc merges them with the runnable
+// `# Examples` below. The examples live here, not on the definitions,
+// because doctests run in the crate that owns the item and this crate is
+// the one with the `build.rs` artifacts a `mask!` expansion needs — the
+// proc-macro crate has neither those nor a `litmask` dependency.
 
+/// # Examples
+///
+/// ```
+/// let s: String = litmask::mask!("secret");
+/// assert_eq!(s, "secret");
+/// let b: Vec<u8> = litmask::mask!(b"\x01\x02");
+/// assert_eq!(b, vec![1, 2]);
+/// ```
+pub use litmask_macros::mask;
+
+/// # Examples
+///
+/// ```
+/// let who = "world";
+/// assert_eq!(litmask::mask_format!("hi {who} {}", 1), "hi world 1");
+/// ```
+pub use litmask_macros::mask_format;
+
+/// # Examples
+///
+/// ```
+/// assert_eq!(litmask::mask_concat!("a", "b", "c"), "abc");
+/// ```
+pub use litmask_macros::mask_concat;
+
+/// # Examples
+///
+/// ```
+/// // resolved at build time, like stdlib `env!`:
+/// let _pkg: String = litmask::mask_env!("CARGO_PKG_NAME");
+/// ```
+pub use litmask_macros::mask_env;
+
+/// # Examples
+///
+/// ```
+/// let v: Option<String> = litmask::mask_option_env!("DEFINITELY_UNSET_AT_BUILD");
+/// assert!(v.is_none());
+/// ```
+pub use litmask_macros::mask_option_env;
+
+/// # Examples
+///
+/// The path is resolved relative to the source file, so this cannot run as
+/// a doctest:
+///
+/// ```ignore
+/// let cfg: String = litmask::mask_include_str!("secret.txt");
+/// ```
+pub use litmask_macros::mask_include_str;
+
+/// # Examples
+///
+/// ```ignore
+/// let blob: Vec<u8> = litmask::mask_include_bytes!("key.bin");
+/// ```
+pub use litmask_macros::mask_include_bytes;
+
+/// # Examples
+///
+/// ```
+/// let here: String = litmask::mask_file!(); // masked equivalent of `file!()`
+/// assert!(!here.is_empty());
+/// ```
+pub use litmask_macros::mask_file;
+
+/// # Examples
+///
+/// ```
+/// // the env-var NAME a provider reads during init! — metadata, not a secret:
+/// let var: &'static str = litmask::weak_mask!("MY_APP_KEY");
+/// assert_eq!(var, "MY_APP_KEY");
+/// ```
+pub use litmask_macros::weak_mask;
+
+/// # Examples
+///
+/// ```
+/// // identity outside `#[mask_all]`; an opt-out marker inside it:
+/// let v: &'static str = litmask::unmasked!("v1");
+/// assert_eq!(v, "v1");
+/// ```
+pub use litmask_macros::unmasked;
+
+/// # Examples
+///
+/// ```
+/// #[litmask::mask_all]
+/// mod secrets {
+///     pub fn banner() -> String {
+///         format!("build {}", 1) // rewritten to mask_format!
+///     }
+/// }
+/// assert_eq!(secrets::banner(), "build 1");
+/// ```
+pub use litmask_macros::mask_all;
+
+/// # Examples
+///
+/// `#[mask_all]` is the only context where this attribute is meaningful,
+/// so it cannot be shown standalone:
+///
+/// ```ignore
+/// #[litmask::mask_all]
+/// mod m {
+///     #[litmask::unmasked_derive] // keep the plain Debug
+///     #[derive(Debug)]
+///     pub struct Plain;
+/// }
+/// ```
+pub use litmask_macros::unmasked_derive;
+
+/// # Examples
+///
+/// The External form needs a key-bearing seal, so it cannot run at the
+/// Embedded tier this crate's doctests build under:
+///
+/// ```ignore
+/// let provider = litmask::EnvVarProvider::new("LITMASK_UNLOCK_KEY");
+/// litmask::init!(provider)?; // host binary, External tier
+/// ```
+pub use litmask_macros::init;
+
+/// # Examples
+///
+/// ```
+/// #[derive(litmask::MaskDebug)]
+/// struct Creds {
+///     user: String,
+/// }
+/// // renders like `#[derive(Debug)]`, but the names are absent from .rodata:
+/// assert_eq!(format!("{:?}", Creds { user: "bob".into() }), "Creds { user: \"bob\" }");
+/// ```
+pub use litmask_macros::MaskDebug;
+
+/// # Examples
+///
+/// ```
+/// #[derive(litmask::MaskSerialize)]
+/// struct Config {
+///     host: String,
+///     port: u16,
+/// }
+/// // wire output is byte-identical to `#[derive(Serialize)]`; names masked:
+/// let json = serde_json::to_string(&Config { host: "h".into(), port: 80 }).unwrap();
+/// assert_eq!(json, r#"{"host":"h","port":80}"#);
+/// ```
 #[cfg(feature = "unstable-serde")]
-pub use litmask_macros::{MaskDeserialize, MaskSerialize};
+pub use litmask_macros::MaskSerialize;
+
+/// # Examples
+///
+/// ```
+/// #[derive(litmask::MaskDeserialize)]
+/// struct Config {
+///     host: String,
+///     port: u16,
+/// }
+/// // accepts the same input as `#[derive(Deserialize)]`; names masked:
+/// let cfg: Config = serde_json::from_str(r#"{"host":"h","port":80}"#).unwrap();
+/// assert_eq!((cfg.host.as_str(), cfg.port), ("h", 80));
+/// ```
+#[cfg(feature = "unstable-serde")]
+pub use litmask_macros::MaskDeserialize;
 
 /// Stack-backed, zero-alloc masking — see [`macro@mask_stack`],
 /// [`MaskStr`], [`MaskBytes`], and [`MaskCStr`]. Gated behind the `stack`
 /// feature.
+///
+/// # Examples
+///
+/// ```
+/// let pw = litmask::mask_stack!("hunter2"); // `MaskStr<N>`, wiped on drop
+/// assert_eq!(&*pw, "hunter2"); // derefs to `str`
+/// ```
 #[cfg(feature = "stack")]
 pub use litmask_macros::mask_stack;
 #[cfg(feature = "stack")]
@@ -280,6 +451,15 @@ pub mod __serde_support;
 /// written, the destination controls confidentiality.
 ///
 /// Available in `no_std` + `alloc` builds.
+///
+/// # Examples
+///
+/// ```
+/// use core::fmt::Write as _;
+/// let mut buf = String::new();
+/// litmask::mask_write!(&mut buf, "x = {}", 42).unwrap();
+/// assert_eq!(buf, "x = 42");
+/// ```
 #[macro_export]
 macro_rules! mask_write {
     ($dst:expr, $($args:tt)*) => {
@@ -300,6 +480,15 @@ macro_rules! mask_write {
 /// written, the destination controls confidentiality.
 ///
 /// Available in `no_std` + `alloc` builds.
+///
+/// # Examples
+///
+/// ```
+/// use core::fmt::Write as _;
+/// let mut buf = String::new();
+/// litmask::mask_writeln!(&mut buf, "line {}", 1).unwrap();
+/// assert_eq!(buf, "line 1\n");
+/// ```
 #[macro_export]
 macro_rules! mask_writeln {
     ($dst:expr) => {
@@ -318,6 +507,12 @@ macro_rules! mask_writeln {
 /// **Security note:** the decrypted text is printed in the clear to
 /// stdout. litmask protects literals at rest in the binary; once
 /// printed, the output is unprotected.
+///
+/// # Examples
+///
+/// ```
+/// litmask::mask_print!("loaded {} entries\n", 3);
+/// ```
 #[cfg(feature = "std")]
 #[macro_export]
 macro_rules! mask_print {
@@ -336,6 +531,13 @@ macro_rules! mask_print {
 /// **Security note:** the decrypted text is printed in the clear to
 /// stdout. litmask protects literals at rest in the binary; once
 /// printed, the output is unprotected.
+///
+/// # Examples
+///
+/// ```
+/// let user = "alice";
+/// litmask::mask_println!("welcome, {user}");
+/// ```
 #[cfg(feature = "std")]
 #[macro_export]
 macro_rules! mask_println {
