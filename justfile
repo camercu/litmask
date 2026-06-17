@@ -155,19 +155,15 @@ _cov-purge:
 _profraw-purge:
     find . -name '*.profraw' -not -path '*/target/*' -not -path './node_modules/*' -delete
 
-coverage: _cov-purge && _profraw-purge
-    cargo llvm-cov nextest --workspace --all-features
+coverage *flags: _cov-purge && _profraw-purge
+    cargo llvm-cov nextest --workspace --all-features {{flags}}
 
 alias cov := coverage
 
-coverage-html: _cov-purge && _profraw-purge
-    cargo llvm-cov nextest --workspace --all-features --html
-
+coverage-html: (coverage "--html")
 alias cov-html := coverage-html
 
-coverage-lcov: _cov-purge && _profraw-purge
-    cargo llvm-cov nextest --workspace --all-features --lcov --output-path target/llvm-cov/lcov.info
-
+coverage-lcov: (coverage "--lcov --output-path target/llvm-cov/lcov.info")
 alias cov-lcov := coverage-lcov
 
 # ── Building / checking ─────────────────────────────────────
