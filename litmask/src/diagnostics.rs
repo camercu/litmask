@@ -124,6 +124,22 @@ pub(crate) fn blob_utf8_failure() -> ! {
     panic!();
 }
 
+/// Diverge when a `mask_stack!(c"...")` buffer is not a single
+/// NUL-terminated C string. Practically unreachable — the proc-macro
+/// rejects interior NULs at parse time and the seam forces the trailing
+/// terminator — but `CStr::from_bytes_with_nul` forces the branch, which
+/// must follow the module's profile-split contract.
+#[cfg(feature = "stack")]
+pub(crate) fn blob_cstr_failure() -> ! {
+    #[cfg(debug_assertions)]
+    panic!(
+        "litmask: a mask_stack!(c\"...\") literal decrypted to a malformed C string — \
+         the embedded blob was tampered"
+    );
+    #[cfg(not(debug_assertions))]
+    panic!();
+}
+
 /// Diverge when a `weak_mask!("...")` decode does not yield valid UTF-8.
 pub(crate) fn weak_utf8_failure() -> ! {
     #[cfg(debug_assertions)]

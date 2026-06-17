@@ -253,9 +253,14 @@ check-no-default:
 # Cross-compile the runtime crate to a bare-metal embedded target
 # (§2.10.1–§2.10.6). The `thumbv7m-none-eabi` triple has no `std`
 # and no allocator, so this fails fast if any `std::` reference
-# leaks into `--no-default-features --features alloc` builds.
+# leaks into `--no-default-features --features alloc` builds. The second
+# check adds `stack`: the `mask_stack!` guard types (`MaskStr` /
+# `MaskBytes` / `MaskCStr`) must stay `core`/`alloc`-only — `MaskCStr`
+# borrows `core::ffi::CStr`, so it works without `std`, unlike the heap
+# `mask!(c"...")`.
 check-no-std:
     cargo check --target thumbv7m-none-eabi -p litmask --no-default-features --features alloc
+    cargo check --target thumbv7m-none-eabi -p litmask --no-default-features --features alloc,stack
 
 # `cargo check` only (no linking) so no cross-linker is required.
 check-cross:

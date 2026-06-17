@@ -9,7 +9,9 @@
 
 use proc_macro::TokenStream;
 
-use crate::common::{StringLiteral, mask_stack_bytes, mask_stack_str, parse_string_literal};
+use crate::common::{
+    StringLiteral, mask_stack_bytes, mask_stack_cstr, mask_stack_str, parse_string_literal,
+};
 
 const MACRO_NAME: &str = "mask_stack";
 
@@ -21,11 +23,11 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     match parsed {
         StringLiteral::Str(lit) => mask_stack_str(lit.span(), lit.value().into_bytes()),
         StringLiteral::ByteStr(lit) => mask_stack_bytes(lit.span(), lit.value()),
-        StringLiteral::CStr(lit) => syn::Error::new(
-            lit.span(),
-            "mask_stack!(c\"...\") is not yet implemented; use mask!(c\"...\") for now",
-        )
-        .to_compile_error(),
+        // `LitCStr::value` yields a `CString`; `into_bytes()` drops the
+        // NUL terminator so the sealed blob holds only the payload, the
+        // same contract heap `mask!(c"...")` uses (the seam re-adds the
+        // terminator into the stack buffer).
+        StringLiteral::CStr(lit) => mask_stack_cstr(lit.span(), lit.value().into_bytes()),
     }
     .into()
 }

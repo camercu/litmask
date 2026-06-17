@@ -15,14 +15,16 @@ use std::process::Command;
 // Must match the string `stack_demo` prints.
 const FIXTURE: &str = "stack-resident secret: parsnip clavicle 8842";
 const BYTES_FIXTURE: &str = "stack-bytes secret: rutabaga 7731";
+const CSTR_FIXTURE: &str = "stack-cstr secret: kohlrabi 5519";
 
 /// High-entropy substrings that cannot false-positive against std /
 /// dependency text.
 const FIXTURE_SUBSTRING: &str = "parsnip clavicle 8842";
 const BYTES_FIXTURE_SUBSTRING: &str = "rutabaga 7731";
+const CSTR_FIXTURE_SUBSTRING: &str = "kohlrabi 5519";
 
 #[test]
-fn stack_str_and_bytes_end_to_end_round_trip() {
+fn stack_guards_end_to_end_round_trip() {
     common::build_example_with_features("stack_demo", Profile::Debug, &["stack"]);
     let example_bin = common::example_path("stack_demo", Profile::Debug);
     assert!(
@@ -31,9 +33,10 @@ fn stack_str_and_bytes_end_to_end_round_trip() {
         example_bin.display()
     );
 
-    // Security property: neither masked fixture is in the binary.
+    // Security property: no masked fixture is in the binary.
     common::assert_substring_absent(&example_bin, FIXTURE_SUBSTRING);
     common::assert_substring_absent(&example_bin, BYTES_FIXTURE_SUBSTRING);
+    common::assert_substring_absent(&example_bin, CSTR_FIXTURE_SUBSTRING);
 
     // Runtime check: the stack guards decrypt and deref to the fixtures.
     let run_output = Command::new(&example_bin)
@@ -46,5 +49,8 @@ fn stack_str_and_bytes_end_to_end_round_trip() {
         String::from_utf8_lossy(&run_output.stderr)
     );
     let stdout = String::from_utf8(run_output.stdout).expect("example stdout is UTF-8");
-    assert_eq!(stdout, format!("{FIXTURE}\n{BYTES_FIXTURE}\n"));
+    assert_eq!(
+        stdout,
+        format!("{FIXTURE}\n{BYTES_FIXTURE}\n{CSTR_FIXTURE}\n")
+    );
 }

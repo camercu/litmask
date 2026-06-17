@@ -214,25 +214,41 @@ fn seal_blob(mut plaintext: Vec<u8>, span: proc_macro2::Span) -> SealedBlob {
 /// allocation. `N` is the plaintext length, fixed at expansion.
 #[cfg(feature = "stack")]
 pub(crate) fn mask_stack_str(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
-    mask_stack_call(span, plaintext, &quote! { __decrypt_stack_str })
+    mask_stack_call(span, plaintext, &quote! { __decrypt_stack_str }, 0)
 }
 
 /// `mask_stack!(b"...")` counterpart of [`mask_stack_str`], emitting a
 /// [`litmask::MaskBytes<N>`].
 #[cfg(feature = "stack")]
 pub(crate) fn mask_stack_bytes(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
-    mask_stack_call(span, plaintext, &quote! { __decrypt_stack_bytes })
+    mask_stack_call(span, plaintext, &quote! { __decrypt_stack_bytes }, 0)
+}
+
+/// `mask_stack!(c"...")` counterpart, emitting a [`litmask::MaskCStr<N>`].
+/// The NUL terminator is dropped from `plaintext` before sealing (like
+/// heap `mask!(c"...")`), so the inline buffer needs one extra byte for the
+/// terminator the `&CStr` borrow requires: `N = payload_len + 1`.
+#[cfg(feature = "stack")]
+pub(crate) fn mask_stack_cstr(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
+    mask_stack_call(span, plaintext, &quote! { __decrypt_stack_cstr }, 1)
 }
 
 /// Shared emitter for the stack masking macros: seal the blob and call the
-/// named `__decrypt_stack_*` seam with the plaintext length as the `const`
-/// generic `N`. `seam` is the bare seam identifier in `::litmask::__internal`.
+/// named `__decrypt_stack_*` seam with `N = plaintext_len + n_extra` as the
+/// `const` generic. `seam` is the bare seam identifier in
+/// `::litmask::__internal`; `n_extra` is `1` for the NUL-terminated C-string
+/// buffer, `0` otherwise.
 #[cfg(feature = "stack")]
-fn mask_stack_call(span: proc_macro2::Span, plaintext: Vec<u8>, seam: &TokenStream) -> TokenStream {
+fn mask_stack_call(
+    span: proc_macro2::Span,
+    plaintext: Vec<u8>,
+    seam: &TokenStream,
+    n_extra: usize,
+) -> TokenStream {
     let sealed = seal_blob(plaintext, span);
     let blob_ident = &sealed.blob_ident;
     let const_def = &sealed.const_def;
-    let n = sealed.plaintext_len;
+    let n = sealed.plaintext_len + n_extra;
 
     quote! {
         {

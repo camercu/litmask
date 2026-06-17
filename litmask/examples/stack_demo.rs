@@ -27,6 +27,11 @@ fn main() {
     // Byte-string form: decrypts into an inline `[u8; N]`, derefs to `[u8]`.
     let raw = mask_stack!(b"stack-bytes secret: rutabaga 7731");
     println!("{}", core::str::from_utf8(&raw).expect("fixture is UTF-8"));
+
+    // C-string form: derefs to `&CStr` borrowed from the inline buffer
+    // (works without `alloc`, unlike heap `mask!(c"...")`).
+    let cstr = mask_stack!(c"stack-cstr secret: kohlrabi 5519");
+    println!("{}", cstr.to_str().expect("fixture is UTF-8"));
 }
 
 fn proprietary_gonculator(data: &str) {

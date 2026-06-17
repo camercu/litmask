@@ -88,6 +88,52 @@ pub fn __decrypt_stack_bytes<const N: usize>(
     MaskBytes(decrypt_into::<N>(blob, wrapper, tier))
 }
 
+/// A stack-resident masked C string — the output of `mask_stack!(c"...")`.
+/// Derefs to [`core::ffi::CStr`]; the inline `[u8; N]` buffer holds the
+/// `N - 1` payload bytes plus the trailing NUL terminator the blob omits,
+/// and is overwritten when the value drops.
+///
+/// Unlike heap `mask!(c"...")` (which yields a `CString` and so needs
+/// `alloc`), this borrows `core::ffi::CStr` from its own inline buffer and
+/// works in `no_std` without an allocator.
+pub struct MaskCStr<const N: usize>(Zeroizing<[u8; N]>);
+
+impl<const N: usize> Deref for MaskCStr<N> {
+    type Target = core::ffi::CStr;
+
+    fn deref(&self) -> &core::ffi::CStr {
+        match core::ffi::CStr::from_bytes_with_nul(self.0.as_ref()) {
+            Ok(c) => c,
+            Err(_) => crate::diagnostics::blob_cstr_failure(),
+        }
+    }
+}
+
+/// `mask_stack!(c"...")` seam. The blob holds the `N - 1` payload bytes
+/// (the NUL terminator is stripped before sealing, like heap
+/// `mask!(c"...")`); decrypt them into the front of the `[u8; N]` buffer
+/// and leave the final byte as the `0` terminator a `&CStr` borrow needs.
+///
+/// # Panics
+///
+/// Same policy as [`__decrypt_stack_str`].
+#[doc(hidden)]
+#[must_use]
+pub fn __decrypt_stack_cstr<const N: usize>(
+    blob: &[u8],
+    wrapper: &[u8; WRAPPER_LEN],
+    tier: &str,
+) -> MaskCStr<N> {
+    let mask_key = super::mask_key_or_lazy_init(wrapper, tier);
+    let mut buf = Zeroizing::new([0u8; N]);
+    // Payload occupies `[0..N-1]`; `buf[N-1]` stays `0` as the C
+    // terminator. `N >= 1` always — the macro stamps `N = payload + 1`.
+    match decrypt_blob_into(mask_key.as_bytes(), blob, &mut buf[..N - 1]) {
+        Ok(()) => MaskCStr(buf),
+        Err(_) => crate::diagnostics::blob_failure(),
+    }
+}
+
 /// Shared body for the stack seams: fetch the `mask_key` (governor or the
 /// lazy Embedded floor, exactly like [`crate::__internal::__decrypt`]) and
 /// decrypt into a fresh zeroizing `[u8; N]`. Any failure routes to the
