@@ -748,6 +748,11 @@ per call site (cached in a once-cell).
 `mask!(<macro>!(...))` form is rejected with the standard non-literal
 error from §1.9.6.
 
+`mask_stack!` (the `stack` feature, §2.1.9) is the zero-allocation
+variant: it accepts the same three literal kinds but decrypts into an
+inline stack buffer — `MaskStr<N>` / `MaskBytes<N>` / `MaskCStr<N>` — that
+zeroizes on drop, instead of a heap `String` / `Vec<u8>` / `CString`.
+
 A dedicated family of compile-time-resolving masking macros handles
 stdlib equivalents. Each macro takes the same input as its stdlib
 counterpart but encrypts the result before emission:
@@ -1699,6 +1704,35 @@ binary's plaintext under the standard scrub policy. (Caveat:
 `core::panic::Location::caller()` independently embeds source paths at
 panic sites; `mask_file!` masks only its own explicit user-written
 invocations, not the implicit panic-site embedding.)
+
+#### §2.1.9 mask_stack! macro (`stack` feature)
+
+§2.1.9.1 — `mask_stack!` SHALL accept the same three literal kinds as
+`mask!` (§2.1.1.1) and SHALL be gated behind the `stack` cargo feature.
+
+§2.1.9.2 — Rather than the heap owned values of §2.1.1.2–§2.1.1.4,
+`mask_stack!` SHALL expand to a guard owning an inline `[u8; N]` whose
+length `N` is fixed at expansion: `MaskStr<N>` (derefs to `str`) for a
+string literal, `MaskBytes<N>` (derefs to `[u8]`) for a byte-string
+literal, and `MaskCStr<N>` (derefs to `core::ffi::CStr`) for a C-string
+literal. The decrypted plaintext SHALL NOT be heap-allocated, and the
+buffer SHALL be zeroized when the guard drops.
+
+§2.1.9.3 — Decryption SHALL reuse the §2.1.1 governed/lazy unlock path;
+`mask_stack!` and `mask!` differ only in the final decrypt-and-construct
+step, so a build's seal tier governs both identically.
+
+§2.1.9.4 — A literal whose inline buffer would exceed the
+`LITMASK_STACK_LIMIT` byte cap (default 4096; overridable via that
+environment variable) SHALL be rejected at proc-macro time with a
+`compile_error!`. The cap guards against unbounded stack growth; large
+literals belong on the heap `mask!`.
+
+§2.1.9.5 — `MaskCStr` SHALL NOT require `alloc`: it borrows
+`core::ffi::CStr` from its own buffer (with the NUL terminator the blob
+omits restored at decrypt time), so `mask_stack!(c"...")` works under
+`no_std` without an allocator — unlike heap `mask!(c"...")`, which
+requires `CString` (§2.1.1.4).
 
 ### §2.2 Iteration 2 — Format string masking (mask_format!)
 

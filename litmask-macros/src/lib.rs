@@ -104,7 +104,7 @@ pub fn mask(input: TokenStream) -> TokenStream {
 /// than a heap `String` / `Vec` / `CString`. The expansion returns a
 /// guard that derefs to the value and zeroizes its buffer on drop:
 ///
-/// - `mask_stack!("...")` returns [`litmask::MaskStr<N>`] (derefs to `str`).
+/// - `mask_stack!("...")` returns `litmask::MaskStr<N>` (derefs to `str`).
 ///
 /// Because nothing is heap-allocated, no allocator reuse can leave an
 /// unscrubbed copy of the plaintext behind — the only copy lives in the

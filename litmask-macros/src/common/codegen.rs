@@ -203,7 +203,7 @@ fn seal_blob(mut plaintext: Vec<u8>, span: proc_macro2::Span) -> SealedBlob {
 }
 
 /// AEAD-encrypt `plaintext` and emit a `mask_stack!("...")` expansion: a
-/// stack-resident [`litmask::MaskStr<N>`] decrypted in place, no heap
+/// stack-resident `litmask::MaskStr<N>` decrypted in place, no heap
 /// allocation. `N` is the plaintext length, fixed at expansion.
 #[cfg(feature = "stack")]
 pub(crate) fn mask_stack_str(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
@@ -211,13 +211,13 @@ pub(crate) fn mask_stack_str(span: proc_macro2::Span, plaintext: Vec<u8>) -> Tok
 }
 
 /// `mask_stack!(b"...")` counterpart of [`mask_stack_str`], emitting a
-/// [`litmask::MaskBytes<N>`].
+/// `litmask::MaskBytes<N>`.
 #[cfg(feature = "stack")]
 pub(crate) fn mask_stack_bytes(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
     mask_stack_call(span, plaintext, &quote! { __decrypt_stack_bytes }, 0)
 }
 
-/// `mask_stack!(c"...")` counterpart, emitting a [`litmask::MaskCStr<N>`].
+/// `mask_stack!(c"...")` counterpart, emitting a `litmask::MaskCStr<N>`.
 /// The NUL terminator is dropped from `plaintext` before sealing (like
 /// heap `mask!(c"...")`), so the inline buffer needs one extra byte for the
 /// terminator the `&CStr` borrow requires: `N = payload_len + 1`.

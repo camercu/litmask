@@ -75,6 +75,23 @@
 //! `&'static [u8]` for `b"..."`, `&'static CStr` for `c"..."`
 //! (`std` feature).
 //!
+//! ### Stack-backed outputs (`stack` feature)
+//!
+//! `mask_stack!` is the zero-allocation alternative to [`mask!`]: it
+//! decrypts each literal into an inline `[u8; N]` (length fixed at
+//! expansion) instead of a heap `String` / `Vec` / `CString`, and the
+//! returned guard (`MaskStr` / `MaskBytes` / `MaskCStr`) zeroizes that
+//! buffer on drop. Because nothing is heap-allocated, no allocator reuse
+//! can leave an unscrubbed copy behind — the wipe is complete, not
+//! best-effort like [`Zeroizing`] over a heap value.
+//!
+//! The buffer lives on the stack, so [`mask!`] remains the right choice
+//! for large literals; a literal whose buffer would exceed
+//! `LITMASK_STACK_LIMIT` (default 4096 bytes) is a compile error.
+//! `MaskCStr` borrows `core::ffi::CStr` from its own storage, so unlike
+//! `mask!(c"...")` (which needs `CString`) it works in `no_std` without an
+//! allocator. (All gated behind the `stack` feature.)
+//!
 //! The crate is `#![no_std]` + `alloc` from day one. The default
 //! `std` feature gates only what genuinely requires `std`.
 
