@@ -8,6 +8,7 @@
 //! - [`path`] — call-site path resolution and canonicalization.
 //! - [`artifact`] — `OUT_DIR` build-artifact loading.
 //! - [`codegen`] — the AEAD-mask token emitters.
+//! - [`stack_limit`] — the `mask_stack!` stack-buffer cap policy.
 //!
 //! Re-exported flat below so callers keep importing `crate::common::*`
 //! regardless of which concern an item lives in.
@@ -17,6 +18,8 @@ mod codegen;
 mod diagnostics;
 mod parse;
 mod path;
+#[cfg(feature = "stack")]
+mod stack_limit;
 
 pub(crate) use artifact::load_out_dir_artifact;
 // `mask_name` is reachable only through the serde derives' identifier
