@@ -13,15 +13,15 @@ use common::Profile;
 use std::process::Command;
 
 // Must match the string `stack_demo` prints.
-const FIXTURE: &str = "stack-resident secret: parsnip clavicle 8842";
-const BYTES_FIXTURE: &str = "stack-bytes secret: rutabaga 7731";
-const CSTR_FIXTURE: &str = "stack-cstr secret: kohlrabi 5519";
+const FIXTURE: &str = "I buried the treasure under the bird bath";
+const BYTES_FIXTURE: &str = "my other car is a submarine";
+const CSTR_FIXTURE: &str = "the moon landing was filmed in my garage";
 
-/// High-entropy substrings that cannot false-positive against std /
-/// dependency text.
-const FIXTURE_SUBSTRING: &str = "parsnip clavicle 8842";
-const BYTES_FIXTURE_SUBSTRING: &str = "rutabaga 7731";
-const CSTR_FIXTURE_SUBSTRING: &str = "kohlrabi 5519";
+/// Substrings about anything but software, so they cannot false-positive
+/// against std / dependency text.
+const FIXTURE_SUBSTRING: &str = "treasure under the bird bath";
+const BYTES_FIXTURE_SUBSTRING: &str = "other car is a submarine";
+const CSTR_FIXTURE_SUBSTRING: &str = "landing was filmed in my garage";
 
 #[test]
 fn stack_guards_end_to_end_round_trip() {

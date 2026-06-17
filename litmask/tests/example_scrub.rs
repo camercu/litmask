@@ -512,9 +512,9 @@ fn stack_demo_fixtures_and_identifiers_absent_from_binary() {
         "stack_demo binary missing after build: {}",
         path.display(),
     );
-    common::assert_substring_absent(&path, "parsnip clavicle 8842");
-    common::assert_substring_absent(&path, "rutabaga 7731");
-    common::assert_substring_absent(&path, "kohlrabi 5519");
+    common::assert_substring_absent(&path, "treasure under the bird bath");
+    common::assert_substring_absent(&path, "other car is a submarine");
+    common::assert_substring_absent(&path, "landing was filmed in my garage");
     common::assert_no_dirty_words(&path);
 }
 

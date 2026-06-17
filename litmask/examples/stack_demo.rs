@@ -8,29 +8,30 @@
 //!
 //! ```sh
 //! cargo build --example stack_demo --features stack
-//! strings target/debug/examples/stack_demo | grep "parsnip clavicle"
+//! strings target/debug/examples/stack_demo | grep "bird bath"
 //! # (no output — the plaintext is absent from the binary)
 //!
 //! ./target/debug/examples/stack_demo
 //! # prints the decrypted fixture; the Embedded tier self-initializes
 //! ```
 //!
-//! The fixture is high-entropy nonsense so the `strings` grep above
-//! cannot false-positive against std or dependency text.
+//! The fixtures are lighthearted phrases about anything but software, so
+//! the `strings` grep above cannot false-positive against std or
+//! dependency text.
 
 use litmask::mask_stack;
 
 fn main() {
-    let secret = mask_stack!("stack-resident secret: parsnip clavicle 8842");
+    let secret = mask_stack!("I buried the treasure under the bird bath");
     proprietary_gonculator(&secret);
 
     // Byte-string form: decrypts into an inline `[u8; N]`, derefs to `[u8]`.
-    let raw = mask_stack!(b"stack-bytes secret: rutabaga 7731");
+    let raw = mask_stack!(b"my other car is a submarine");
     println!("{}", core::str::from_utf8(&raw).expect("fixture is UTF-8"));
 
     // C-string form: derefs to `&CStr` borrowed from the inline buffer
     // (works without `alloc`, unlike heap `mask!(c"...")`).
-    let cstr = mask_stack!(c"stack-cstr secret: kohlrabi 5519");
+    let cstr = mask_stack!(c"the moon landing was filmed in my garage");
     println!("{}", cstr.to_str().expect("fixture is UTF-8"));
 }
 
