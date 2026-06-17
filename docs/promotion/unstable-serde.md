@@ -50,7 +50,7 @@ Every rejected row is a `compile_error!` pinned by a trybuild case.
 | `skip` / `skip_serializing` / `skip_deserializing` (named field) | supported | `litmask/tests/mask_serde_skip.rs` |
 | `skip_serializing_if = "path"` | supported | `litmask/tests/mask_serde_skip_if.rs` |
 | `default` / `default = "path"` | supported | `litmask/tests/mask_serde_default.rs` |
-| `alias` (field) | supported | `litmask/tests/mask_serde_alias.rs` |
+| `alias` (field, variant) | supported | `litmask/tests/mask_serde_alias.rs` (variant: `variant_alias_accepts_each_name`) |
 | `deny_unknown_fields` (container) | supported | `litmask/tests/mask_serde_alias.rs::deny_unknown_fields_*` |
 | `bound` / `bound(serialize=,deserialize=)` (container) | supported | `litmask/tests/mask_serde_bound.rs` |
 | `transparent` (container) | supported | `litmask/tests/mask_serde_transparent.rs` |
@@ -70,7 +70,7 @@ Every rejected row is a `compile_error!` pinned by a trybuild case.
 | `other` (variant) | rejected (`invalid-arg`) | `litmask/tests/compile/mask_serialize_serde_attr_variant.rs` (+ deserialize) |
 | `with`/`serialize_with`/`deserialize_with` on a generic type | rejected (`invalid-arg`) | `serde_attrs.rs::reject_with_on_generic`; compile case `litmask/tests/compile/mask_serialize_with_on_generic.rs` |
 | `#[serde(...)]` on a tuple field | rejected (`invalid-arg`) | `serde_attrs.rs::reject_tuple_field_attrs`; compile case `litmask/tests/compile/mask_serialize_skip_tuple_field.rs` |
-| Any other unsupported key (`getter`/`into`/`from`/`try_from`/explicit `borrow`/variant `alias`) | rejected (`invalid-arg`) | `serde_attrs.rs::unsupported` + unit `unsupported_key_is_reject_loud` |
+| Any other unsupported key (`getter`/`into`/`from`/`try_from`/explicit `borrow`) | rejected (`invalid-arg`) | `serde_attrs.rs::unsupported` + unit `unsupported_key_is_reject_loud` |
 
 ## Open items blocking promotion
 
@@ -93,7 +93,7 @@ All three resolved — gates 1–5 are green. Promotion (the
    rejection.
 
 The remaining deferred attributes — `flatten`, the enum representations
-`tag`/`untagged`/`content`, explicit `borrow`, and variant `alias` — stay
+`tag`/`untagged`/`content`, and explicit `borrow` — stay
 reject-loud and are **not** promotion blockers: ADR-0002 gate 3 permits a
 rejected row as long as the rejection is tested (it is).
 
@@ -106,16 +106,13 @@ Effort is relative; "masking value" is whether the attribute actually
 moves schema vocabulary out of the binary (the whole point of the
 feature).
 
-### Low effort — completes existing parity
+### Done — landed post-stabilization
 
 - **variant `alias`** — masking value: high (alias names are wire
-  vocabulary). Field `alias` already works
-  (`litmask/tests/mask_serde_alias.rs`) and the variant identifier
-  visitor already matches against runtime-decrypted names (§E.2.6), so
-  this is threading an alias list into the variant arm. The
-  field-works/variant-doesn't asymmetry makes it the obvious first
-  follow-up. Currently rejected via the catch-all
-  (`serde_attrs.rs::unsupported`).
+  vocabulary). Implemented by threading a variant-keyed `AliasMatch`
+  (`mask_deserialize.rs::variant_aliases`) into the enum-level
+  identifier visitor, reusing the field-alias machinery. Twins:
+  `litmask/tests/mask_serde_alias.rs::variant_alias_*`.
 
 ### Medium effort
 

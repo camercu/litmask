@@ -2734,7 +2734,7 @@ struct (named-field, tuple, newtype, unit) or enum.
   | `skip` / `skip_serializing` / `skip_deserializing` | named field | skipped-de fields fill from `Default`; reject-loud on tuple fields |
   | `skip_serializing_if = "path"` | named field | runtime length pre-count |
   | `default` / `default = "path"` | named field | fills a missing or skipped-de field |
-  | `alias` | named field | extra accepted deserialize names (variant `alias` deferred) |
+  | `alias` | named field, variant | extra accepted deserialize names |
   | `deny_unknown_fields` | container | unknown string key → `unknown_field` error |
   | `bound` / `bound(serialize=,deserialize=)` | container | replaces the default per-param trait bound |
   | `transparent` | container | single-field struct (de)serializes as that field |
@@ -2742,7 +2742,7 @@ struct (named-field, tuple, newtype, unit) or enum.
 
   Every other key — notably `flatten`, the enum representations `tag` /
   `untagged` / `content`, container `getter` / `into` / `from` /
-  `try_from`, explicit `borrow`, and variant `alias` — fails with
+  `try_from`, and explicit `borrow` — fails with
   `<macro>! invalid-arg`, naming the key, rather than silently ignoring it
   (which would break §E.2.1/§E.2.6). Generic types are otherwise
   supported; each type parameter receives a `Serialize` (resp.
@@ -2782,7 +2782,7 @@ Residuals (documented, not defects):
 
 The supported `#[serde(...)]` subset is fixed by §E.2.5. Beyond it, the
 deferred attributes — `flatten`, the enum representations `tag` /
-`untagged` / `content`, explicit `borrow`, variant `alias`, and
+`untagged` / `content`, explicit `borrow`, and
 `with`-functions on generic types — are not yet supported and stay
 reject-loud; they may land in a future minor release. `into` / `from` /
 `try_from` / `getter` are out of scope, not deferred: they delegate

@@ -94,3 +94,61 @@ fn alias_in_struct_variant() {
         assert_eq!(m, "e");
     }
 }
+
+// Variant-level `#[serde(alias)]`: an enum variant accepts extra names on
+// deserialize, selecting that variant. Mirrors field alias but keyed by
+// variant. Serialize still emits the primary (renamed) name.
+#[derive(MaskSerialize, MaskDeserialize, PartialEq, Debug)]
+enum MaskedVariantAlias {
+    #[serde(alias = "primary", alias = "first")]
+    Main(u32),
+    #[serde(rename = "renamed", alias = "second")]
+    Unit,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+enum PlainVariantAlias {
+    #[serde(alias = "primary", alias = "first")]
+    Main(u32),
+    #[serde(rename = "renamed", alias = "second")]
+    Unit,
+}
+
+#[test]
+fn variant_alias_accepts_each_name() {
+    // Each alias selects the same variant as the primary name.
+    for input in [r#"{"Main":7}"#, r#"{"primary":7}"#, r#"{"first":7}"#] {
+        let masked: MaskedVariantAlias = serde_json::from_str(input).expect("masked de");
+        let plain: PlainVariantAlias = serde_json::from_str(input).expect("plain de");
+        assert_eq!(masked, MaskedVariantAlias::Main(7));
+        assert_eq!(masked, plain_as_masked(&plain));
+    }
+    // A renamed unit variant: its rename and its alias both select it.
+    for input in [r#""renamed""#, r#""second""#] {
+        let masked: MaskedVariantAlias = serde_json::from_str(input).expect("masked de");
+        let plain: PlainVariantAlias = serde_json::from_str(input).expect("plain de");
+        assert_eq!(masked, MaskedVariantAlias::Unit);
+        assert_eq!(masked, plain_as_masked(&plain));
+    }
+}
+
+#[test]
+fn variant_alias_serialize_uses_primary_name() {
+    // Serialization ignores aliases and emits the primary (or renamed) name.
+    let masked = serde_json::to_string(&MaskedVariantAlias::Main(7)).expect("ser");
+    let plain = serde_json::to_string(&PlainVariantAlias::Main(7)).expect("ser");
+    assert_eq!(masked, plain);
+    assert_eq!(masked, r#"{"Main":7}"#);
+
+    let masked = serde_json::to_string(&MaskedVariantAlias::Unit).expect("ser");
+    let plain = serde_json::to_string(&PlainVariantAlias::Unit).expect("ser");
+    assert_eq!(masked, plain);
+    assert_eq!(masked, r#""renamed""#);
+}
+
+fn plain_as_masked(plain: &PlainVariantAlias) -> MaskedVariantAlias {
+    match plain {
+        PlainVariantAlias::Main(v) => MaskedVariantAlias::Main(*v),
+        PlainVariantAlias::Unit => MaskedVariantAlias::Unit,
+    }
+}

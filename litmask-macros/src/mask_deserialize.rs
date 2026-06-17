@@ -45,7 +45,7 @@ mod identifier;
 mod named_fields;
 
 use generics::{DeGenerics, split_de_generics, visitor_decl, visitor_expr};
-use identifier::{IdentifierKind, identifier_block, names_list_fn, type_name_fn};
+use identifier::{AliasMatch, IdentifierKind, identifier_block, names_list_fn, type_name_fn};
 use named_fields::{
     NamedFieldsCx, build_aliases, de_names_of, named_field_infos, named_fields_visitor,
 };
@@ -154,6 +154,38 @@ fn variant_de_names(
             ))
         })
         .collect()
+}
+
+/// Build the variant-level `#[serde(alias)]` match data: a (possibly
+/// empty) masked alias-name function plus the [`AliasMatch`] mapping each
+/// alias back to its variant's `__Field` arm (indexed by declaration
+/// order, matching [`identifier_block`](identifier)'s variant numbering).
+/// Aliases are deserialize-only and unaffected by `rename_all`, mirroring
+/// the field-alias builder.
+fn variant_aliases(
+    data: &syn::DataEnum,
+    names_fn: &syn::Ident,
+) -> syn::Result<(TokenStream2, Option<AliasMatch>)> {
+    let mut flat: Vec<(proc_macro2::Span, String)> = Vec::new();
+    let mut entries: Vec<(usize, usize)> = Vec::new();
+    for (variant_index, variant) in data.variants.iter().enumerate() {
+        let attrs = serde_attrs::parse_variant(MACRO_NAME, &variant.attrs)?;
+        for alias in &attrs.aliases {
+            entries.push((variant_index, flat.len()));
+            flat.push((variant.ident.span(), alias.clone()));
+        }
+    }
+    if flat.is_empty() {
+        return Ok((TokenStream2::new(), None));
+    }
+    let decl = names_list_fn(names_fn, &flat);
+    Ok((
+        decl,
+        Some(AliasMatch {
+            names_fn: names_fn.clone(),
+            entries,
+        }),
+    ))
 }
 
 /// The container's deserialize type-name tuple `(span, resolved name)`.
@@ -443,11 +475,13 @@ fn enum_body(input: &DeriveInput, data: &syn::DataEnum) -> syn::Result<TokenStre
     let names_fn = quote::format_ident!("__litmask_names");
     let type_name_fn = type_name_fn(&type_name_tuple(input, &container));
     let names_fn_decl = names_list_fn(&names_fn, &de_names);
+    let valiases_fn = quote::format_ident!("__litmask_variant_aliases");
+    let (valiases_decl, valias_match) = variant_aliases(data, &valiases_fn)?;
     let variant_identifier = identifier_block(
         &names_fn,
         de_names.len(),
         &IdentifierKind::EnumVariant,
-        None,
+        valias_match.as_ref(),
         false,
     );
 
@@ -489,6 +523,7 @@ fn enum_body(input: &DeriveInput, data: &syn::DataEnum) -> syn::Result<TokenStre
     Ok(quote! {
         #type_name_fn
         #names_fn_decl
+        #valiases_decl
         #variant_identifier
 
         #visitor

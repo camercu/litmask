@@ -212,6 +212,10 @@ impl FieldAttrs {
 pub(crate) struct VariantAttrs {
     pub(crate) rename: Rename,
     pub(crate) rename_all: RenameAll,
+    /// `#[serde(alias = "name")]` (repeatable): extra names this variant
+    /// also accepts on deserialize. Deserialize-only — serialize emits
+    /// the primary (renamed) name. Not affected by `rename_all`.
+    pub(crate) aliases: Vec<String>,
 }
 
 impl ContainerAttrs {
@@ -385,6 +389,10 @@ pub(crate) fn parse_variant(macro_name: &str, attrs: &[Attribute]) -> syn::Resul
             Ok(())
         } else if meta.path.is_ident("rename_all") {
             out.rename_all = parse_rename_all(macro_name, &meta)?;
+            Ok(())
+        } else if meta.path.is_ident("alias") {
+            let lit: LitStr = meta.value()?.parse()?;
+            out.aliases.push(lit.value());
             Ok(())
         } else {
             Err(unsupported(macro_name, &meta))
@@ -778,10 +786,10 @@ mod tests {
     }
 
     #[test]
-    fn variant_alias_is_reject_loud() {
+    fn variant_aliases_accumulate() {
         let di: syn::DeriveInput = syn::parse2(quote! {
             enum E {
-                #[serde(alias = "v")]
+                #[serde(alias = "v", alias = "w")]
                 V,
             }
         })
@@ -790,7 +798,8 @@ mod tests {
             unreachable!()
         };
         let variant = &data.variants[0];
-        assert!(parse_variant("MaskDeserialize", &variant.attrs).is_err());
+        let attrs = parse_variant("MaskDeserialize", &variant.attrs).expect("variant alias parses");
+        assert_eq!(attrs.aliases, vec!["v".to_string(), "w".to_string()]);
     }
 
     #[test]
