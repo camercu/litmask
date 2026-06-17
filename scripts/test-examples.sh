@@ -21,12 +21,12 @@ for src in litmask/examples/*.rs; do
         continue
     fi
     echo "litmask: test-examples — running $name"
-    # `mask_serde_demo` requires the `unstable-serde` feature
+    # `mask_serde_demo` requires the `serde` feature
     # (EXPERIMENTAL); it is Embedded-tier like the plain examples, so
     # the same env-stripping applies — only the feature flag differs.
     if [ "$name" = "mask_serde_demo" ]; then
         env -u LITMASK_UNLOCK_KEY -u LITMASK_MACHINE_ID \
-            cargo run --quiet --features unstable-serde --example "$name"
+            cargo run --quiet --features serde --example "$name"
         found=$((found + 1))
         continue
     fi

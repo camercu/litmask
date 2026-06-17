@@ -1,10 +1,10 @@
 //! `#[serde(skip)]` / `skip_serializing` / `skip_deserializing` support
-//! in `MaskSerialize` / `MaskDeserialize` (`unstable-serde`). Each
+//! in `MaskSerialize` / `MaskDeserialize` (`serde`). Each
 //! masked type is compared against a structurally-identical plain-serde
 //! twin to pin field-count and Default-fill behavior byte-for-byte
 //! (§E.2.1/§E.2.6).
 
-#![cfg(feature = "unstable-serde")]
+#![cfg(feature = "serde")]
 
 mod common;
 

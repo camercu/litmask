@@ -55,8 +55,8 @@
 //!   inline, self-zeroizing buffer instead of the heap.
 //!
 //! Two derives round these out: [`MaskDebug`] masks `Debug`
-//! type/field/variant names, and the experimental `unstable-serde` feature
-//! adds masked serde derives.
+//! type/field/variant names, and the `serde` feature adds masked serde
+//! derives.
 //!
 //! ## Two-phase masking
 //!
@@ -185,7 +185,7 @@
 //!
 //! The crate is `#![no_std]` + `alloc` from day one; the default `std`
 //! feature gates only what genuinely requires `std`. `stack`,
-//! `machine-id`, `unstable-serde`, and the cipher toggle
+//! `machine-id`, `serde`, and the cipher toggle
 //! (`chacha20-poly1305` default vs `aes-gcm`) gate the rest. Each is
 //! documented at its definition in
 //! [`litmask/Cargo.toml`](https://github.com/camercu/litmask/blob/main/litmask/Cargo.toml);
@@ -403,7 +403,7 @@ pub use litmask_macros::MaskDebug;
 /// let json = serde_json::to_string(&Config { host: "h".into(), port: 80 }).unwrap();
 /// assert_eq!(json, r#"{"host":"h","port":80}"#);
 /// ```
-#[cfg(feature = "unstable-serde")]
+#[cfg(feature = "serde")]
 pub use litmask_macros::MaskSerialize;
 
 /// # Examples
@@ -418,7 +418,7 @@ pub use litmask_macros::MaskSerialize;
 /// let cfg: Config = serde_json::from_str(r#"{"host":"h","port":80}"#).unwrap();
 /// assert_eq!((cfg.host.as_str(), cfg.port), ("h", 80));
 /// ```
-#[cfg(feature = "unstable-serde")]
+#[cfg(feature = "serde")]
 pub use litmask_macros::MaskDeserialize;
 
 /// Stack-backed, zero-alloc masking — see [`macro@mask_stack`],
@@ -439,13 +439,13 @@ pub use runtime::stack::{MaskBytes, MaskCStr, MaskStr};
 // The `MaskSerialize`/`MaskDeserialize` expansions reference serde's
 // traits through `::litmask::__serde::...` so consumers don't need a
 // direct serde dependency for the generated code to resolve.
-#[cfg(feature = "unstable-serde")]
+#[cfg(feature = "serde")]
 #[doc(hidden)]
 pub use serde as __serde;
 
 // The double-underscore module name marks it as macro-plumbing in
 // consumer-facing paths; the source file keeps the conventional name.
-#[cfg(feature = "unstable-serde")]
+#[cfg(feature = "serde")]
 #[doc(hidden)]
 #[path = "serde_support.rs"]
 pub mod __serde_support;

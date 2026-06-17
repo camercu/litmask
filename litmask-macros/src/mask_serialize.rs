@@ -1,6 +1,6 @@
 //! `#[derive(MaskSerialize)]`: a `serde::Serialize` impl whose type,
 //! field, and enum variant names are AEAD-masked at compile time
-//! (EXPERIMENTAL, `unstable-serde` feature).
+//! (`serde` feature).
 //!
 //! Plain `#[derive(serde::Serialize)]` embeds every name as a
 //! cleartext `&'static str` in `.rodata` via

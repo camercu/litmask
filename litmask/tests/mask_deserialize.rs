@@ -10,7 +10,7 @@
 //! so `expecting()` texts ("struct `DeConfig`") and error strings match
 //! exactly and any divergence is the derive's fault, not the fixture's.
 
-#![cfg(feature = "unstable-serde")]
+#![cfg(feature = "serde")]
 
 mod common;
 

@@ -1,8 +1,12 @@
 # Promotion checklist — `unstable-serde` → `serde`
 
+**Status: COMPLETED (2026-06-17).** All gates green; the feature was
+renamed `unstable-serde` → `serde` and SPEC Appendix E promoted to
+STABLE. This file is retained as the historical promotion record.
+
 Tracks `unstable-serde` against the shared bar in
-[ADR-0002](../adr/0002-experimental-feature-promotion.md). Stabilization
-renames the feature `unstable-serde` → `serde` (a breaking change by
+[ADR-0002](../adr/0002-experimental-feature-promotion.md). The promotion
+renamed the feature `unstable-serde` → `serde` (a breaking change by
 design, MINOR pre-1.0). The normative surface lives in SPEC Appendix E;
 this file is the exit checklist and cites the evidence for each gate.
 
@@ -72,7 +76,7 @@ Every rejected row is a `compile_error!` pinned by a trybuild case.
 
 All three resolved — gates 1–5 are green. Promotion (the
 `unstable-serde` → `serde` rename) is unblocked; see
-[Promotion procedure](#promotion-procedure).
+[Promotion procedure](#promotion-procedure-completed).
 
 1. ~~**Gate 5 — aes-gcm × serde untested.**~~ Done: `test-aes-gcm` now
    folds in `unstable-serde` (`justfile`), so the serde twin tests run
@@ -152,18 +156,14 @@ feature).
   would add surface with zero masking benefit and could mislead. Keep
   permanently reject-loud.
 
-## Promotion procedure
+## Promotion procedure (completed)
 
-When gates 1–5 are all ✅:
-
-1. Rename the feature `unstable-serde` → `serde` in `litmask/Cargo.toml`
-   and `litmask-macros/Cargo.toml` (and the macro's internal feature
-   reference).
-2. Update gating in code (`#[cfg(feature = "unstable-serde")]` →
-   `"serde"`), examples' `required-features`, and the scrub test's
-   feature list.
-3. Promote SPEC Appendix E from EXPERIMENTAL to stable; fold this matrix
-   into the spec section per ADR-0002, or keep this file as the historical
-   record and link it.
-4. Note the rename as a breaking change in `docs/MIGRATION.md`.
-5. Mark this checklist complete.
+1. ✅ Renamed the feature `unstable-serde` → `serde` in
+   `litmask/Cargo.toml` and `litmask-macros/Cargo.toml`.
+2. ✅ Updated gating in code (`#[cfg(feature = "serde")]`), examples'
+   `required-features`, the scrub test's feature list, and the
+   `test-aes-gcm` lane.
+3. ✅ Promoted SPEC Appendix E from EXPERIMENTAL to STABLE; this file is
+   kept as the historical record.
+4. ✅ Noted the rename as a breaking change in `docs/MIGRATION.md`.
+5. ✅ Marked this checklist complete (status banner at top).

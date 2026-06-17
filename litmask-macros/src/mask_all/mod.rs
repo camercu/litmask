@@ -263,10 +263,10 @@ impl VisitMut for MaskAllWalker {
         // leak the literal-rewrite pass cannot reach. A type carrying
         // the `#[unmasked_derive]` opt-out keeps its plain derives;
         // the marker is stripped either way. Serde swapping is gated
-        // on `unstable-serde` because the masking serde derives only
+        // on `serde` because the masking serde derives only
         // exist under that feature. Recursion (literal masking) still
         // descends into the item afterward, opt-out or not.
-        let serde_enabled = cfg!(feature = "unstable-serde");
+        let serde_enabled = cfg!(feature = "serde");
         match item {
             Item::Struct(s) => derives::swap_item_derives(&mut s.attrs, serde_enabled),
             Item::Enum(e) => derives::swap_item_derives(&mut e.attrs, serde_enabled),

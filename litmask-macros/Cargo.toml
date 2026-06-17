@@ -23,11 +23,11 @@ proc-macro = true
 default = ["chacha20-poly1305"]
 chacha20-poly1305 = ["litmask-internal/chacha20-poly1305"]
 aes-gcm = ["litmask-internal/aes-gcm"]
-# EXPERIMENTAL: gates the `MaskSerialize` derive (semver-exempt while
-# `unstable-`). No serde dependency here — the derive only emits tokens
-# referencing `::litmask::__serde`, so the trait paths resolve in the
-# consumer crate, not in this one.
-unstable-serde = []
+# Gates the `MaskSerialize` / `MaskDeserialize` derives. No serde
+# dependency here — the derive only emits tokens referencing
+# `::litmask::__serde`, so the trait paths resolve in the consumer
+# crate, not in this one.
+serde = []
 # EXPERIMENTAL: gates the `mask_stack!` proc-macro (stack-backed,
 # zero-alloc masking; semver-exempt while `unstable-`). No dependency here
 # — the macro only emits tokens referencing `::litmask::` paths, which

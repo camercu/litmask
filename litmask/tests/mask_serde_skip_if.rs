@@ -1,9 +1,9 @@
 //! `#[serde(skip_serializing_if = "path")]` support in `MaskSerialize`
-//! (`unstable-serde`). The masked type is compared against a
+//! (`serde`). The masked type is compared against a
 //! plain-serde twin to pin the dynamic struct-length behavior
 //! byte-for-byte (§E.2.1).
 
-#![cfg(feature = "unstable-serde")]
+#![cfg(feature = "serde")]
 
 mod common;
 

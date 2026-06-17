@@ -1,6 +1,6 @@
 //! Parsing of the supported `#[serde(...)]` attribute subset for the
 //! masking serde derives (`MaskSerialize` / `MaskDeserialize`,
-//! `unstable-serde`).
+//! `serde`).
 //!
 //! The masking derives must stay byte-identical to the plain serde
 //! derives (§E.2.1/§E.2.6), so every honored attribute is parsed into a

@@ -1,8 +1,8 @@
 //! `#[serde(alias = ...)]` and `#[serde(deny_unknown_fields)]` support
-//! in `MaskDeserialize` (`unstable-serde`). Compared against plain-serde
+//! in `MaskDeserialize` (`serde`). Compared against plain-serde
 //! twins so accepted inputs and error messages match (§E.2.6).
 
-#![cfg(feature = "unstable-serde")]
+#![cfg(feature = "serde")]
 
 mod common;
 

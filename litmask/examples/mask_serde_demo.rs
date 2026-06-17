@@ -1,5 +1,5 @@
-//! EXPERIMENTAL (`unstable-serde`): mask serde field and struct names
-//! at compile time, decrypt on first use.
+//! (`serde` feature) Mask serde field and struct names at compile
+//! time, decrypt on first use.
 //!
 //! Plain `#[derive(serde::Serialize)]` embeds every field name and the
 //! struct name as cleartext `&'static str` in the compiled binary's
@@ -13,7 +13,7 @@
 //! yourself:
 //!
 //! ```sh
-//! cargo build --release --features unstable-serde --example mask_serde_demo
+//! cargo build --release --features serde --example mask_serde_demo
 //! strings target/release/examples/mask_serde_demo | grep activation_token
 //! # (no output — the field names are absent from the binary)
 //!

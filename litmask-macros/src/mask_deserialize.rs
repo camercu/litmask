@@ -1,6 +1,6 @@
 //! `#[derive(MaskDeserialize)]`: a `serde::Deserialize` impl whose
 //! type, field, and enum variant names are AEAD-masked at compile time
-//! (EXPERIMENTAL, `unstable-serde` feature).
+//! (`serde` feature).
 //!
 //! Plain `#[derive(serde::Deserialize)]` embeds every name as
 //! cleartext in `.rodata` — the `FIELDS`/`VARIANTS` arrays, the

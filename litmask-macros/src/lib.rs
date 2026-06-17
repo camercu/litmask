@@ -24,7 +24,7 @@ mod mask;
 mod mask_all;
 mod mask_concat;
 mod mask_debug;
-#[cfg(feature = "unstable-serde")]
+#[cfg(feature = "serde")]
 mod mask_deserialize;
 mod mask_env;
 mod mask_file;
@@ -32,11 +32,11 @@ mod mask_format;
 mod mask_include_bytes;
 mod mask_include_str;
 mod mask_option_env;
-#[cfg(feature = "unstable-serde")]
+#[cfg(feature = "serde")]
 mod mask_serialize;
 #[cfg(feature = "unstable-stack")]
 mod mask_stack;
-#[cfg(feature = "unstable-serde")]
+#[cfg(feature = "serde")]
 mod serde_attrs;
 mod unmasked;
 mod weak_mask;
@@ -403,7 +403,7 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
 /// [`mask_format!`] for their templates.
 ///
 /// It also swaps each type's plain `#[derive(Debug)]` for [`MaskDebug`]
-/// and — under the `unstable-serde` feature — `#[derive(Serialize)]` /
+/// and — under the `serde` feature — `#[derive(Serialize)]` /
 /// `#[derive(Deserialize)]` for `MaskSerialize` / `MaskDeserialize`, so
 /// the container / field / variant *names* don't re-enter `.rodata` as
 /// cleartext. Annotate a type with [`macro@unmasked_derive`] to keep its
@@ -511,7 +511,7 @@ pub fn mask_all(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Opt a single struct or enum out of `#[mask_all]`'s derive-swapping.
 ///
 /// `#[mask_all]` rewrites a type's plain `#[derive(Serialize)]` /
-/// `#[derive(Deserialize)]` (under `unstable-serde`) and
+/// `#[derive(Deserialize)]` (under `serde`) and
 /// `#[derive(Debug)]` to litmask's masking derives so the type's names
 /// don't land in `.rodata` as cleartext. Annotate a type with
 /// `#[unmasked_derive]` to keep its plain derives instead — useful when
@@ -526,8 +526,8 @@ pub fn unmasked_derive(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
 
-/// **EXPERIMENTAL** (`unstable-serde` feature, semver-exempt): derive
-/// a `serde::Serialize` impl whose struct and field names are
+/// (`serde` feature) Derive a `serde::Serialize` impl whose struct and
+/// field names are
 /// AEAD-masked at compile time instead of embedded as cleartext
 /// `&'static str` data in the binary.
 ///
@@ -573,7 +573,7 @@ pub fn unmasked_derive(_attr: TokenStream, item: TokenStream) -> TokenStream {
 // `#[serde(...)]` on the input instead of erroring "cannot find
 // attribute" — the derive then honors the supported subset and
 // reject-louds the rest with a §1.9.6 diagnostic.
-#[cfg(feature = "unstable-serde")]
+#[cfg(feature = "serde")]
 #[proc_macro_derive(MaskSerialize, attributes(serde))]
 pub fn mask_serialize(input: TokenStream) -> TokenStream {
     mask_serialize::expand(input)
@@ -625,7 +625,7 @@ pub fn mask_serialize(input: TokenStream) -> TokenStream {
 // `#[serde(...)]` on the input instead of erroring "cannot find
 // attribute" — the derive then honors the supported subset and
 // reject-louds the rest with a §1.9.6 diagnostic.
-#[cfg(feature = "unstable-serde")]
+#[cfg(feature = "serde")]
 #[proc_macro_derive(MaskDeserialize, attributes(serde))]
 pub fn mask_deserialize(input: TokenStream) -> TokenStream {
     mask_deserialize::expand(input)

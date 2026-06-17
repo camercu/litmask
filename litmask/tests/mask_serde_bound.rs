@@ -1,11 +1,11 @@
 //! `#[serde(bound = "...")]` where-clause override in `MaskSerialize` /
-//! `MaskDeserialize` (`unstable-serde`). An empty bound drops the
+//! `MaskDeserialize` (`serde`). An empty bound drops the
 //! default `T: Serialize` / `T: Deserialize<'de>` predicate, so a type
 //! parameter that implements neither still compiles — proving the
 //! override replaces (not augments) the generated bounds. Compared
 //! against a plain-serde twin (§E.2.1/§E.2.6).
 
-#![cfg(feature = "unstable-serde")]
+#![cfg(feature = "serde")]
 
 mod common;
 

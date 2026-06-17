@@ -1,9 +1,9 @@
 //! `#[serde(rename_all = ...)]` support in `MaskSerialize` /
-//! `MaskDeserialize` (`unstable-serde`). Each masked type is compared
+//! `MaskDeserialize` (`serde`). Each masked type is compared
 //! against a structurally-identical plain-serde twin to pin the case
 //! conventions byte-for-byte (§E.2.1/§E.2.6).
 
-#![cfg(feature = "unstable-serde")]
+#![cfg(feature = "serde")]
 
 mod common;
 

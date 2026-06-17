@@ -44,7 +44,7 @@ use common::Profile;
 ///   but the `blake3` crate embeds its own name in internal symbol
 ///   strings (e.g. `blake3_*` function names) that we can't filter
 ///   away. The `machine_id` scrub allow-lists `blake3` specifically.
-/// - `mask_serde_demo`: gated behind `--features unstable-serde`.
+/// - `mask_serde_demo`: gated behind `--features serde`.
 const EXAMPLES: &[&str] = &[
     "hello_world",
     "byte_cstr_demo",
@@ -445,20 +445,20 @@ fn mask_debug_demo_names_and_fixtures_absent_from_binary() {
 }
 
 /// `mask_serde_demo` derives `MaskSerialize` + `MaskDeserialize`
-/// (EXPERIMENTAL, `unstable-serde`): the struct name and every field
+/// (`serde` feature): the struct name and every field
 /// name must be absent from the compiled binary — the plain serde
 /// derives would embed each as a cleartext `&'static str` reachable by
 /// `strings(1)` (serialize: `serialize_field` names; deserialize:
 /// `FIELDS` arrays, field-matching arms, `missing field` diagnostics).
 /// The `mask!`-ed field values are scrubbed too, same as
 /// every other example. The example sits in `EXCEPTIONS` because its
-/// `required-features = ["unstable-serde"]` makes the default-features
+/// `required-features = ["serde"]` makes the default-features
 /// `EXAMPLES` loop unable to build it; this test shells out with the
 /// feature enabled, mirroring the `machine_id_provider` pattern, so the
 /// scrub runs under the standard default-features `cargo test`.
 #[test]
 fn mask_serde_demo_names_and_fixtures_absent_from_binary() {
-    common::build_example_with_features("mask_serde_demo", Profile::Release, &["unstable-serde"]);
+    common::build_example_with_features("mask_serde_demo", Profile::Release, &["serde"]);
     let path = common::example_path("mask_serde_demo", Profile::Release);
     assert!(
         path.exists(),

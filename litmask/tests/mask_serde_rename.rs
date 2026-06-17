@@ -1,11 +1,11 @@
 //! `#[serde(rename = ...)]` support in `MaskSerialize` / `MaskDeserialize`
-//! (`unstable-serde`). Each masked type is compared against a
+//! (`serde`). Each masked type is compared against a
 //! structurally-identical plain-serde twin: serialized output must be
 //! byte-identical, and deserialization must accept the renamed wire
 //! names — the masking only moves the resolved name into the AEAD blob,
 //! never changes which name appears on the wire (§E.2.1/§E.2.6).
 
-#![cfg(feature = "unstable-serde")]
+#![cfg(feature = "serde")]
 
 mod common;
 

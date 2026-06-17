@@ -7,11 +7,12 @@ status: accepted
 ## Context
 
 litmask ships experimental surfaces behind `unstable-`-prefixed Cargo
-features — today `unstable-serde` (the `MaskSerialize` / `MaskDeserialize`
-derives, SPEC Appendix E) and `unstable-stack` (the `mask_stack!` family,
-SPEC §2.1.9). The prefix is the semver-exemption signal: the surface may
+features — today `unstable-stack` (the `mask_stack!` family, SPEC
+§2.1.9). The prefix is the semver-exemption signal: the surface may
 change or be removed in any release, and stabilization renames the feature
-(drops the `unstable-` prefix) as a deliberate breaking change.
+(drops the `unstable-` prefix) as a deliberate breaking change. The
+`serde` feature (SPEC Appendix E) is the first to have graduated this
+way, via the bar below.
 
 What we lack is a written bar for _when_ a feature has earned that rename.
 Without one, promotion is an ad-hoc judgment call, and the failure mode is

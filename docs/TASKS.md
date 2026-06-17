@@ -494,7 +494,7 @@ SPECIFICATION default-provider) is already fixed.
 ## Masked-serde `#[serde(...)]` subset + `#[mask_all]` derive-swap (2026-06-13)
 
 `#[mask_all]` now rewrites a type's plain `#[derive(Serialize)]` /
-`#[derive(Deserialize)]` (under `unstable-serde`) and `#[derive(Debug)]`
+`#[derive(Deserialize)]` (under `serde`) and `#[derive(Debug)]`
 to litmask's masking derives, closing the name-leak the literal rewrite
 couldn't reach. `#[unmasked_derive]` opts a type out. The masking serde
 derives gained the supported `#[serde(...)]` subset documented in spec

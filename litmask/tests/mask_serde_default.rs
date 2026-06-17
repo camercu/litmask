@@ -1,9 +1,9 @@
 //! `#[serde(default)]` / `#[serde(default = "path")]` support in
-//! `MaskDeserialize` (`unstable-serde`), including the interaction with
+//! `MaskDeserialize` (`serde`), including the interaction with
 //! `skip_deserializing`. Compared against a plain-serde twin so the
 //! accepted inputs and filled values match byte-for-byte (§E.2.6).
 
-#![cfg(feature = "unstable-serde")]
+#![cfg(feature = "serde")]
 
 mod common;
 

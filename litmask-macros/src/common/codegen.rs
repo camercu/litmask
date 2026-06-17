@@ -22,7 +22,7 @@ use super::stack_limit::{over_stack_limit, stack_limit};
 /// field/variant/container resolves to after `#[serde(rename = ...)]`.
 /// Serde-only: its names are `Box::leak`ed (never dropped), so they take
 /// the plain non-zeroizing seam; `MaskDebug` uses [`mask_ident`].
-#[cfg(feature = "unstable-serde")]
+#[cfg(feature = "serde")]
 pub(crate) fn mask_name(span: proc_macro2::Span, name: &str) -> TokenStream {
     mask_str(span, name.as_bytes().to_vec())
 }
@@ -47,7 +47,7 @@ pub(crate) fn mask_ident(ident: &syn::Ident) -> TokenStream {
 /// bounds the leak to one allocation per use site. (`MaskDebug` uses
 /// `mask_ident` instead — the `Formatter` API takes `&str`, so it
 /// never needs the leak and can zeroize the name on drop.)
-#[cfg(feature = "unstable-serde")]
+#[cfg(feature = "serde")]
 pub(crate) fn masked_static_name(span: proc_macro2::Span, name: &str) -> TokenStream {
     let decrypt = mask_name(span, name);
     quote! {

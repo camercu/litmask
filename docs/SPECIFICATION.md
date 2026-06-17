@@ -1360,7 +1360,7 @@ Runtime crate (`litmask`):
   re-exported proc-macros)
 - `zeroize` (`UnlockKey`/`MaskKey` zero-on-drop)
 - `once_cell` (`race`/`alloc` features, backing the `no_std` once-cell)
-- `machine-uid` (behind `machine-id`), `serde` (behind `unstable-serde`)
+- `machine-uid` (behind `machine-id`), `serde` (behind `serde`)
 
 Proc-macro crate (`litmask-macros`, re-exported by `litmask`):
 
@@ -2425,8 +2425,9 @@ vocabulary to `strings(1)` even when every field _value_ is masked.
 `MaskDebug` closes that channel with the same AEAD pipeline as
 `mask!`.
 
-`MaskDebug` is stable, ungated surface: unlike `MaskSerialize`
-(Appendix E), the `core::fmt` builder API takes `&str` rather than
+`MaskDebug` is an ungated, always-available surface: unlike
+`MaskSerialize` (Appendix E, which needs the `serde` feature and `std`),
+the `core::fmt` builder API takes `&str` rather than
 `&'static str`, so no decrypt-once leak — and therefore no `std`
 requirement — exists. The derive works in every build configuration,
 including `no_std` + `alloc`.
@@ -2663,16 +2664,13 @@ deltas the build-sealed model introduced.
   `rerun-if-env-changed` on the factor vars covers tier flips, and a fresh/release
   build always shows it.
 
-## Appendix E — Experimental: masked serde integration (`unstable-serde`)
+## Appendix E — Masked serde integration (`serde`)
 
-Status: **EXPERIMENTAL**. Gated by the `unstable-serde` feature on the
-`litmask` crate. The `unstable-` prefix is the semver-exemption signal: this
-surface may change or be removed in any release. Stabilization renames the
-feature to `serde` (a breaking change by design) and is governed by the
-shared bar in
-[ADR-0002](adr/0002-experimental-feature-promotion.md) — most critically,
-a complete serde-attribute support matrix (every row a passing test or an
-explicit rejection).
+Status: **STABLE**. Gated by the `serde` feature on the `litmask` crate.
+Graduated from the `unstable-serde` experiment through the bar in
+[ADR-0002](adr/0002-experimental-feature-promotion.md); the support
+matrix (every row a passing test or an explicit rejection) was filled
+before promotion.
 
 ### §E.1 Motivation
 
@@ -2717,7 +2715,7 @@ struct (named-field, tuple, newtype, unit) or enum.
   `deserialize_enum` `FIELDS`/`VARIANTS`), which runtime-decrypted names
   can only satisfy by leaking. The leak is bounded (one allocation per name
   per process, plus one slice per name group) and consistent with the §1.1
-  threat model (binary at rest, not process memory). `unstable-serde`
+  threat model (binary at rest, not process memory). `serde`
   therefore requires `std`.
 - **§E.2.4 Init semantics.** Name decryption follows `mask!`'s runtime
   policy: lazy Embedded-floor initialization, §1.9.5 profile-split panic on
@@ -2770,7 +2768,7 @@ struct (named-field, tuple, newtype, unit) or enum.
   that live there are replicated against public API in the `#[doc(hidden)]`
   `litmask::__serde_support` module.
 
-### §E.3 Residual exposure and stabilization criteria
+### §E.3 Residual exposure and unsupported attributes
 
 Residuals (documented, not defects):
 
@@ -2782,14 +2780,11 @@ Residuals (documented, not defects):
 - serde's own crate-internal strings remain in the binary; the masking
   covers user schema vocabulary, not dependency text.
 
-Stabilization (rename to `serde`) requires at minimum: a decision on the
-supportable `#[serde(...)]` attribute subset. _(Resolved: the subset in
-§E.2.5 has landed; `MaskDeserialize` and the `#[mask_all]` derive-swap
-ship alongside it.)_ The remaining deferred attributes —
-`flatten`, the enum representations `tag` / `untagged` / `content`,
-explicit `borrow`, variant `alias`, and `with`-functions on generic
-types — are tracked for later consideration and stay reject-loud until
-then. `into` / `from` / `try_from` / `getter` are out of scope, not
-deferred: they delegate (de)serialization to a shadow type whose own
-derive embeds the names, so masking cannot reach them; they stay
-permanently reject-loud.
+The supported `#[serde(...)]` subset is fixed by §E.2.5. Beyond it, the
+deferred attributes — `flatten`, the enum representations `tag` /
+`untagged` / `content`, explicit `borrow`, variant `alias`, and
+`with`-functions on generic types — are not yet supported and stay
+reject-loud; they may land in a future minor release. `into` / `from` /
+`try_from` / `getter` are out of scope, not deferred: they delegate
+(de)serialization to a shadow type whose own derive embeds the names, so
+masking cannot reach them; they stay permanently reject-loud.

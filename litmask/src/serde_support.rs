@@ -1,4 +1,4 @@
-//! Runtime support for the `MaskDeserialize` derive (`unstable-serde`).
+//! Runtime support for the `MaskDeserialize` derive (`serde`).
 //!
 //! `#[doc(hidden)]` — referenced only by macro-generated code through
 //! `::litmask::__serde_support::...`. The derive cannot use

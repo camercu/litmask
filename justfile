@@ -37,7 +37,7 @@ lint: fmt-check lint-clippy lint-typos lint-taplo lint-markdown lint-actions lin
 lint-clippy:
     cargo clippy --all-targets --workspace -- {{warnings}}
     # Second pass under --all-features: feature-gated modules (the
-    # `unstable-serde` proc-macro derives, `machine-id` paths) are not
+    # `serde` proc-macro derives, `machine-id` paths) are not
     # compiled by the default-feature pass above, so without this they
     # escape clippy entirely. Examples are excluded (`--lib --tests
     # --bins`) for the same seal-tier reason as `test-all-features`: no
@@ -98,13 +98,13 @@ test-machine-id:
 
 # Scoped to litmask + litmask-internal: `--workspace` would unify
 # features with litmask-cli (which activates both ciphers), defeating
-# the single-cipher property this recipe exists to test. `unstable-serde`
+# the single-cipher property this recipe exists to test. `serde`
 # is folded in so the masked-name decrypt path (a cipher-specific blob)
 # runs under aes-gcm; `--all-features` only ever exercises it under
 # chacha, which wins feature unification (litmask-internal/src/aead.rs).
 test-aes-gcm:
-    cargo nextest run -p litmask -p litmask-internal --no-default-features --features std,aes-gcm,unstable-serde
-    cargo test -p litmask -p litmask-internal --doc --no-default-features --features std,aes-gcm,unstable-serde
+    cargo nextest run -p litmask -p litmask-internal --no-default-features --features std,aes-gcm,serde
+    cargo test -p litmask -p litmask-internal --doc --no-default-features --features std,aes-gcm,serde
 
 # Run tests with --all-features so dual-cipher (chacha + aes-gcm)
 # code paths are exercised. Catches bugs like encrypt-with-one-cipher /

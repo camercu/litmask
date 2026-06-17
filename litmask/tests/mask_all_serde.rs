@@ -1,12 +1,12 @@
 //! Integration tests for `#[mask_all]`'s derive-swapping
-//! (`unstable-serde`): a plain `#[derive(Serialize)]` /
+//! (`serde`): a plain `#[derive(Serialize)]` /
 //! `#[derive(Deserialize)]` / `#[derive(Debug)]` on a type inside a
 //! `#[mask_all]` module is rewritten to litmask's masking derives, so
 //! the round-trip and `Debug` output stay byte-identical to the plain
 //! derives while the names are AEAD-masked in the binary (binary
 //! absence is pinned by the `strings` scrub in `example_scrub.rs`).
 
-#![cfg(feature = "unstable-serde")]
+#![cfg(feature = "serde")]
 
 mod common;
 
