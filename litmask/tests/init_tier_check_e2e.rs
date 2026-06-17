@@ -84,6 +84,10 @@ fn init_machine_form_against_external_seal_fails_to_compile() {
         stderr.contains("external"),
         "the diagnostic must name the sealed tier; stderr was {stderr:?}"
     );
+    assert!(
+        stderr.contains("LITMASK_MACHINE_ID"),
+        "the diagnostic must name the build env var that seals the wanted tier; stderr was {stderr:?}"
+    );
 }
 
 #[test]

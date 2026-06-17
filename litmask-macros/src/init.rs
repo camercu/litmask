@@ -70,6 +70,18 @@ impl Form {
             Self::MachineExternal => "init!(bind_to_machine + provider)",
         }
     }
+
+    /// The build-environment key channel(s) that seal this form's tier, so
+    /// the mismatch diagnostic can name the concrete remediation. These are
+    /// the `emit()`-read seal-input vars (not rustc-env), spelled here as
+    /// literals because they are part of litmask's stable build contract.
+    fn seal_hint(self) -> &'static str {
+        match self {
+            Self::External => "LITMASK_UNLOCK_KEY",
+            Self::Machine => "LITMASK_MACHINE_ID",
+            Self::MachineExternal => "LITMASK_MACHINE_ID and LITMASK_UNLOCK_KEY",
+        }
+    }
 }
 
 /// Classify the `init!` argument into its call form, returning — for the
@@ -140,9 +152,12 @@ pub(crate) fn check_tier(form: Form, tier: Option<&str>) -> Result<(), String> {
     match tier {
         Some(t) if SealTierTag::parse(t) == Some(want) => Ok(()),
         Some(other) => Err(format!(
-            "{} unlocks the `{}` seal tier, but this build sealed `{other}`",
+            "{} unlocks the `{}` seal tier, but this build sealed `{other}`; \
+             to seal `{}`, set {} in the build environment where build.rs runs",
             form.syntax(),
             want.as_str(),
+            want.as_str(),
+            form.seal_hint(),
         )),
         None => Err(format!(
             "{SEAL_TIER_VAR} is unset; this build did not run litmask_build::emit() in build.rs"
@@ -247,6 +262,11 @@ mod tests {
         let detail = check_tier(Form::External, Some(EMBEDDED_TIER)).unwrap_err();
         assert!(detail.contains(EXTERNAL_TIER));
         assert!(detail.contains(EMBEDDED_TIER));
+        // Remediation: name the build env var that seals the wanted tier.
+        assert!(
+            detail.contains("LITMASK_UNLOCK_KEY"),
+            "detail was {detail:?}"
+        );
     }
 
     #[test]
@@ -265,6 +285,10 @@ mod tests {
         let detail = check_tier(Form::Machine, Some(EMBEDDED_TIER)).unwrap_err();
         assert!(detail.contains(MACHINE_TIER));
         assert!(detail.contains(EMBEDDED_TIER));
+        assert!(
+            detail.contains("LITMASK_MACHINE_ID"),
+            "detail was {detail:?}"
+        );
     }
 
     #[test]
@@ -277,6 +301,15 @@ mod tests {
         let detail = check_tier(Form::MachineExternal, Some(MACHINE_TIER)).unwrap_err();
         assert!(detail.contains(MACHINE_EXTERNAL_TIER));
         assert!(detail.contains(MACHINE_TIER));
+        // Two-factor seal names both build env vars.
+        assert!(
+            detail.contains("LITMASK_MACHINE_ID"),
+            "detail was {detail:?}"
+        );
+        assert!(
+            detail.contains("LITMASK_UNLOCK_KEY"),
+            "detail was {detail:?}"
+        );
     }
 
     #[test]
