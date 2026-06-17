@@ -794,6 +794,40 @@ mod tests {
     }
 
     #[test]
+    fn out_of_scope_container_keys_are_reject_loud() {
+        // `into`/`from`/`try_from` delegate (de)serialization to a shadow
+        // type whose own derive owns the names, so masking can never reach
+        // them — they are permanently out of scope (§E.2.5), not deferred.
+        // This pins that commitment so a future parser change can't quietly
+        // start honoring them.
+        for key in ["into", "from", "try_from"] {
+            let ident = syn::Ident::new(key, proc_macro2::Span::call_site());
+            let di: syn::DeriveInput = syn::parse2(quote! {
+                #[serde(#ident = "Other")]
+                struct S { x: u8 }
+            })
+            .expect("parses");
+            let err = match parse_container("MaskDeserialize", &di.attrs) {
+                Ok(_) => panic!("expected `{key}` to be reject-loud"),
+                Err(err) => err,
+            };
+            assert!(err.to_string().contains("invalid-arg"), "got: {err}");
+        }
+    }
+
+    #[test]
+    fn out_of_scope_getter_field_key_is_reject_loud() {
+        // `getter` is a remote-derive field attr; same shadow-type
+        // reasoning as the container keys above.
+        let f = field(&quote! { #[serde(getter = "get_x")] x: u8 });
+        let err = match parse_field("MaskSerialize", &f.attrs) {
+            Ok(_) => panic!("expected `getter` to be reject-loud"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("invalid-arg"), "got: {err}");
+    }
+
+    #[test]
     fn field_rename_overrides_parent_rename_all() {
         let f = field(&quote! { #[serde(rename = "kept")] two_words: u8 });
         let attrs = parse_field("MaskSerialize", &f.attrs).expect("parses");

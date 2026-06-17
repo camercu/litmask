@@ -2787,6 +2787,9 @@ supportable `#[serde(...)]` attribute subset. _(Resolved: the subset in
 §E.2.5 has landed; `MaskDeserialize` and the `#[mask_all]` derive-swap
 ship alongside it.)_ The remaining deferred attributes —
 `flatten`, the enum representations `tag` / `untagged` / `content`,
-`getter` / `into` / `from` / `try_from`, explicit `borrow`, variant
-`alias`, and `with`-functions on generic types — are tracked for later
-consideration and stay reject-loud until then.
+explicit `borrow`, variant `alias`, and `with`-functions on generic
+types — are tracked for later consideration and stay reject-loud until
+then. `into` / `from` / `try_from` / `getter` are out of scope, not
+deferred: they delegate (de)serialization to a shadow type whose own
+derive embeds the names, so masking cannot reach them; they stay
+permanently reject-loud.

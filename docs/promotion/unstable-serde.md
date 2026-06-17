@@ -15,7 +15,7 @@ tests cover it"). Paths are relative to the repo root.
 | # | Gate | Status | Evidence |
 |---|---|---|---|
 | 1 | Real-world validation (genuine consumer or realistic e2e, not unit tests alone) | ✅ | `litmask/examples/mask_serde_demo.rs` is built and its compiled binary scrubbed end-to-end by `litmask/tests/example_scrub.rs::mask_serde_demo_names_and_fixtures_absent_from_binary` |
-| 2 | Settled surface (derive names, attributes, generated items final) | ⚠️ | Names `MaskSerialize` / `MaskDeserialize` final; subset in Appendix E §E.2.5 landed. One open call: reclassify `into`/`from`/`try_from`/`getter` from "deferred" to "out of scope" (see Open items) |
+| 2 | Settled surface (derive names, attributes, generated items final) | ✅ | Names `MaskSerialize` / `MaskDeserialize` final; subset in Appendix E §E.2.5 landed; `into`/`from`/`try_from`/`getter` reclassified out of scope in §E.3, pinned by `serde_attrs.rs::out_of_scope_*` tests — no implied future work remains |
 | 3 | Support matrix complete (every advertised row tested; every unsupported input explicitly rejected + that rejection tested) | ✅ | See [Support matrix](#support-matrix) below — all supported rows have twin-tests, all rejected rows have trybuild cases |
 | 4 | Honest, reviewed security model (understated guarantees, residuals named, no self-describing-lie surface) | ✅ | Residuals enumerated in SPEC §E.3 (plain-derive re-embed, self-describing-format runtime print, serde-internal strings); threat model §1.1; at-rest-only scope stated §E.2.3 |
 | 5 | Full build/feature matrix (both ciphers; claimed std/no_std; ecosystem interop; binary scrub; new runtime paths benched) | ✅ | All sub-items below green |
@@ -70,6 +70,10 @@ Every rejected row is a `compile_error!` pinned by a trybuild case.
 
 ## Open items blocking promotion
 
+All three resolved — gates 1–5 are green. Promotion (the
+`unstable-serde` → `serde` rename) is unblocked; see
+[Promotion procedure](#promotion-procedure).
+
 1. ~~**Gate 5 — aes-gcm × serde untested.**~~ Done: `test-aes-gcm` now
    folds in `unstable-serde` (`justfile`), so the serde twin tests run
    under `--no-default-features --features std,aes-gcm`.
@@ -78,12 +82,11 @@ Every rejected row is a `compile_error!` pinned by a trybuild case.
    per-name fill, then a `OnceLock` atomic load steady-state. A dedicated
    bench would only re-measure those primitives, so none was added (see
    the gate-5 bench row for the cited evidence).
-3. **Gate 2 — reclassify `into`/`from`/`try_from`/`getter`.** These
-   delegate (de)serialization to a shadow type whose own derive owns the
-   names, so masking cannot reach them from here — supporting them yields
-   no masking benefit. Recommend moving them in SPEC §E.2.5/§E.3 from
-   "deferred, tracked for later" to **out of scope** (permanently
-   reject-loud), so "settled surface" has no implied future work.
+3. ~~**Gate 2 — reclassify `into`/`from`/`try_from`/`getter`.**~~ Done:
+   SPEC §E.3 now marks them out of scope (not deferred), and
+   `serde_attrs.rs::out_of_scope_container_keys_are_reject_loud` /
+   `out_of_scope_getter_field_key_is_reject_loud` pin the permanent
+   rejection.
 
 The remaining deferred attributes — `flatten`, the enum representations
 `tag`/`untagged`/`content`, explicit `borrow`, and variant `alias` — stay
