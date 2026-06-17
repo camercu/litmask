@@ -1714,7 +1714,10 @@ or be removed in any release). Deliberately undocumented in the README and
 ARCHITECTURE until a real use case promotes it; stabilization renames the
 feature to `stack` (a breaking change by design). Its headline no-alloc
 property is not yet realized — the crate still links `alloc` unconditionally,
-so a fully heapless build does not exist today.
+so a fully heapless build does not exist today. Promotion to stable is
+governed by the shared bar in
+[ADR-0002](adr/0002-experimental-feature-promotion.md); the support matrix
+for this feature lives here and is its exit checklist.
 
 §2.1.9.1 — `mask_stack!` SHALL accept the same three literal kinds as
 `mask!` (§2.1.1.1) and SHALL be gated behind the `unstable-stack` cargo
@@ -2665,7 +2668,11 @@ deltas the build-sealed model introduced.
 Status: **EXPERIMENTAL**. Gated by the `unstable-serde` feature on the
 `litmask` crate. The `unstable-` prefix is the semver-exemption signal: this
 surface may change or be removed in any release. Stabilization renames the
-feature to `serde` (a breaking change by design).
+feature to `serde` (a breaking change by design) and is governed by the
+shared bar in
+[ADR-0002](adr/0002-experimental-feature-promotion.md) — most critically,
+a complete serde-attribute support matrix (every row a passing test or an
+explicit rejection).
 
 ### §E.1 Motivation
 
