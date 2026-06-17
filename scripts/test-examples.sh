@@ -30,6 +30,15 @@ for src in litmask/examples/*.rs; do
         found=$((found + 1))
         continue
     fi
+    # `stack_demo` requires the `unstable-stack` feature; it is
+    # Embedded-tier like the plain examples, so the same env-stripping
+    # applies — only the feature flag differs.
+    if [ "$name" = "stack_demo" ]; then
+        env -u LITMASK_UNLOCK_KEY -u LITMASK_MACHINE_ID \
+            cargo run --quiet --features unstable-stack --example "$name"
+        found=$((found + 1))
+        continue
+    fi
     # Seal-tier hinges on env presence: setting LITMASK_UNLOCK_KEY at
     # build selects the External tier and reseals the shared wrapper.
     # So only the runtime-sourced examples (those passing a provider to
