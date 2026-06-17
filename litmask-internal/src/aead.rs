@@ -69,21 +69,30 @@ impl fmt::Display for AeadError {
     }
 }
 
-/// Dispatch an AEAD operation across the compile-time-selected cipher.
+/// Run an AEAD operation against the compile-time-selected cipher.
 ///
-/// Stamps out the feature-gated match arms once so `aead_encrypt` and
-/// `aead_decrypt` share the same dispatch logic.
-macro_rules! dispatch_cipher {
-    ($cipher_id:expr, $key:expr, $nonce:expr, $data:expr, $method:ident) => {{
+/// The single home for the cipher-set decision: which `CipherId`s exist,
+/// their feature gating, and the `unreachable!()` fallbacks for ciphers
+/// not compiled in. It binds the keyed cipher to `$cipher` and evaluates
+/// `$op` (an `aead::Result`) in each arm, mapping any error to
+/// [`AeadError::AuthenticationFailed`]. Every AEAD entry point routes
+/// through here, so adding a cipher touches only this macro — not each
+/// operation. `$op` supplies the call shape (`encrypt`, `decrypt`, or the
+/// detached in-place form), which is why this cannot fix the method the
+/// way a plain `$method:ident` would.
+macro_rules! with_cipher {
+    ($cipher_id:expr, $key:expr, |$cipher:ident| $op:expr) => {{
         match $cipher_id {
             #[cfg(feature = "chacha20-poly1305")]
-            CipherId::ChaCha20Poly1305 => ChaCha20Poly1305::new(GenericArray::from_slice($key))
-                .$method(GenericArray::from_slice($nonce), $data)
-                .map_err(|_| AeadError::AuthenticationFailed),
+            CipherId::ChaCha20Poly1305 => {
+                let $cipher = ChaCha20Poly1305::new(GenericArray::from_slice($key));
+                $op.map_err(|_| AeadError::AuthenticationFailed)
+            }
             #[cfg(feature = "aes-gcm")]
-            CipherId::Aes256Gcm => Aes256Gcm::new(GenericArray::from_slice($key))
-                .$method(GenericArray::from_slice($nonce), $data)
-                .map_err(|_| AeadError::AuthenticationFailed),
+            CipherId::Aes256Gcm => {
+                let $cipher = Aes256Gcm::new(GenericArray::from_slice($key));
+                $op.map_err(|_| AeadError::AuthenticationFailed)
+            }
             #[cfg(not(feature = "chacha20-poly1305"))]
             CipherId::ChaCha20Poly1305 => unreachable!(),
             #[cfg(not(feature = "aes-gcm"))]
@@ -113,7 +122,8 @@ pub fn aead_encrypt(
     nonce: &[u8; NONCE_LEN],
     plaintext: &[u8],
 ) -> Result<Vec<u8>, AeadError> {
-    dispatch_cipher!(cipher_id, key, nonce, plaintext, encrypt)
+    with_cipher!(cipher_id, key, |cipher| cipher
+        .encrypt(GenericArray::from_slice(nonce), plaintext))
 }
 
 /// Decrypt `ciphertext || tag` with the AEAD cipher identified by
@@ -134,7 +144,8 @@ pub fn aead_decrypt(
     nonce: &[u8; NONCE_LEN],
     body: &[u8],
 ) -> Result<Vec<u8>, AeadError> {
-    dispatch_cipher!(cipher_id, key, nonce, body, decrypt)
+    with_cipher!(cipher_id, key, |cipher| cipher
+        .decrypt(GenericArray::from_slice(nonce), body))
 }
 
 /// Decrypt `buffer` in place against the detached `tag`, allocating
@@ -142,8 +153,6 @@ pub fn aead_decrypt(
 /// split from its tag (the caller owns the `nonce || ciphertext || tag`
 /// framing) and writes the recovered plaintext back over `buffer`, so a
 /// stack-resident `[u8; N]` can be decrypted without a heap round-trip.
-/// The detached call shape (`buffer` + `tag` rather than one `body`
-/// slice) is why this can't route through [`dispatch_cipher!`].
 ///
 /// # Errors
 ///
@@ -163,28 +172,10 @@ pub fn aead_decrypt_in_place(
     buffer: &mut [u8],
     tag: &[u8; TAG_LEN],
 ) -> Result<(), AeadError> {
-    match cipher_id {
-        #[cfg(feature = "chacha20-poly1305")]
-        CipherId::ChaCha20Poly1305 => ChaCha20Poly1305::new(GenericArray::from_slice(key))
-            .decrypt_in_place_detached(
-                GenericArray::from_slice(nonce),
-                &[],
-                buffer,
-                GenericArray::from_slice(tag),
-            )
-            .map_err(|_| AeadError::AuthenticationFailed),
-        #[cfg(feature = "aes-gcm")]
-        CipherId::Aes256Gcm => Aes256Gcm::new(GenericArray::from_slice(key))
-            .decrypt_in_place_detached(
-                GenericArray::from_slice(nonce),
-                &[],
-                buffer,
-                GenericArray::from_slice(tag),
-            )
-            .map_err(|_| AeadError::AuthenticationFailed),
-        #[cfg(not(feature = "chacha20-poly1305"))]
-        CipherId::ChaCha20Poly1305 => unreachable!(),
-        #[cfg(not(feature = "aes-gcm"))]
-        CipherId::Aes256Gcm => unreachable!(),
-    }
+    with_cipher!(cipher_id, key, |cipher| cipher.decrypt_in_place_detached(
+        GenericArray::from_slice(nonce),
+        &[],
+        buffer,
+        GenericArray::from_slice(tag),
+    ))
 }
