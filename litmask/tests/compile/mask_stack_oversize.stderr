@@ -1,0 +1,5 @@
+error: mask_stack! literal needs a 5000-byte stack buffer, over the 4096-byte LITMASK_STACK_LIMIT cap; use mask! for large secrets or raise LITMASK_STACK_LIMIT
+ --> tests/compile/mask_stack_oversize.rs:9:25
+  |
+9 | ...k!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

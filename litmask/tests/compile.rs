@@ -92,3 +92,15 @@ fn mask_deserialize_compile_fixtures() {
     t.compile_fail("tests/compile/mask_deserialize_serde_attr_field.rs");
     t.compile_fail("tests/compile/mask_deserialize_serde_attr_variant.rs");
 }
+
+/// Rejection fixtures for `mask_stack!` (`stack` feature). Same gate
+/// rationale as the serde fixtures: trybuild propagates the running
+/// build's features into the fixture project, so without the gate the
+/// fixture would fail on "cannot find macro `mask_stack`" instead of the
+/// intended `LITMASK_STACK_LIMIT` diagnostic.
+#[cfg(feature = "stack")]
+#[test]
+fn mask_stack_compile_fixtures() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/compile/mask_stack_oversize.rs");
+}
