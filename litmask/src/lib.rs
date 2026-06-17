@@ -167,7 +167,9 @@
 //!
 //! The buffer lives on the stack, so [`mask!`] remains the right choice
 //! for large literals; a literal whose buffer would exceed
-//! `LITMASK_STACK_LIMIT` (default 4096 bytes) is a compile error.
+//! `LITMASK_STACK_LIMIT` (default 4096 bytes) is a compile error. That
+//! cap is a build-environment knob — raise it for a build with
+//! `LITMASK_STACK_LIMIT=8192 cargo build`.
 //! `MaskCStr` borrows `core::ffi::CStr` from its own storage, so unlike
 //! `mask!(c"...")` (which needs `CString`) it works in `no_std` without an
 //! allocator. (All gated behind the `stack` feature.)
