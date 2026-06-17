@@ -68,7 +68,7 @@ pub fn __decrypt_stack_str<const N: usize>(
     wrapper: &[u8; WRAPPER_LEN],
     tier: &str,
 ) -> MaskStr<N> {
-    MaskStr(decrypt_into::<N>(blob, wrapper, tier))
+    MaskStr(decrypt_into::<N>(blob, wrapper, tier, 0))
 }
 
 /// `mask_stack!(b"...")` seam. Same governed unlock + in-place decrypt as
@@ -85,7 +85,7 @@ pub fn __decrypt_stack_bytes<const N: usize>(
     wrapper: &[u8; WRAPPER_LEN],
     tier: &str,
 ) -> MaskBytes<N> {
-    MaskBytes(decrypt_into::<N>(blob, wrapper, tier))
+    MaskBytes(decrypt_into::<N>(blob, wrapper, tier, 0))
 }
 
 /// A stack-resident masked C string — the output of `mask_stack!(c"...")`.
@@ -111,8 +111,8 @@ impl<const N: usize> Deref for MaskCStr<N> {
 
 /// `mask_stack!(c"...")` seam. The blob holds the `N - 1` payload bytes
 /// (the NUL terminator is stripped before sealing, like heap
-/// `mask!(c"...")`); decrypt them into the front of the `[u8; N]` buffer
-/// and leave the final byte as the `0` terminator a `&CStr` borrow needs.
+/// `mask!(c"...")`); `trailer = 1` leaves the final buffer byte as the `0`
+/// terminator a `&CStr` borrow needs.
 ///
 /// # Panics
 ///
@@ -124,29 +124,29 @@ pub fn __decrypt_stack_cstr<const N: usize>(
     wrapper: &[u8; WRAPPER_LEN],
     tier: &str,
 ) -> MaskCStr<N> {
-    let mask_key = super::mask_key_or_lazy_init(wrapper, tier);
-    let mut buf = Zeroizing::new([0u8; N]);
-    // Payload occupies `[0..N-1]`; `buf[N-1]` stays `0` as the C
-    // terminator. `N >= 1` always — the macro stamps `N = payload + 1`.
-    match decrypt_blob_into(mask_key.as_bytes(), blob, &mut buf[..N - 1]) {
-        Ok(()) => MaskCStr(buf),
-        Err(_) => crate::diagnostics::blob_failure(),
-    }
+    MaskCStr(decrypt_into::<N>(blob, wrapper, tier, 1))
 }
 
-/// Shared body for the stack seams: fetch the `mask_key` (governor or the
+/// Shared body for every stack seam: fetch the `mask_key` (governor or the
 /// lazy Embedded floor, exactly like [`crate::__internal::__decrypt`]) and
-/// decrypt into a fresh zeroizing `[u8; N]`. Any failure routes to the
+/// decrypt into the front `N - trailer` bytes of a fresh zeroizing
+/// `[u8; N]`. `trailer` is `1` for the NUL-terminated C-string buffer and
+/// `0` otherwise; the trailing bytes stay zero. Any failure routes to the
 /// bare / `diagnostics` panic the heap path uses, so no litmask-identifying
 /// text reaches a release binary.
+///
+/// `decrypt_blob_into` rejects a payload-length mismatch, so a macro vs.
+/// runtime disagreement on `trailer` surfaces here as a decrypt failure
+/// rather than silent truncation.
 fn decrypt_into<const N: usize>(
     blob: &[u8],
     wrapper: &[u8; WRAPPER_LEN],
     tier: &str,
+    trailer: usize,
 ) -> Zeroizing<[u8; N]> {
     let mask_key = super::mask_key_or_lazy_init(wrapper, tier);
     let mut buf = Zeroizing::new([0u8; N]);
-    match decrypt_blob_into(mask_key.as_bytes(), blob, buf.as_mut()) {
+    match decrypt_blob_into(mask_key.as_bytes(), blob, &mut buf[..N - trailer]) {
         Ok(()) => buf,
         Err(_) => crate::diagnostics::blob_failure(),
     }
