@@ -18,7 +18,7 @@ tests cover it"). Paths are relative to the repo root.
 | 2 | Settled surface (derive names, attributes, generated items final) | ⚠️ | Names `MaskSerialize` / `MaskDeserialize` final; subset in Appendix E §E.2.5 landed. One open call: reclassify `into`/`from`/`try_from`/`getter` from "deferred" to "out of scope" (see Open items) |
 | 3 | Support matrix complete (every advertised row tested; every unsupported input explicitly rejected + that rejection tested) | ✅ | See [Support matrix](#support-matrix) below — all supported rows have twin-tests, all rejected rows have trybuild cases |
 | 4 | Honest, reviewed security model (understated guarantees, residuals named, no self-describing-lie surface) | ✅ | Residuals enumerated in SPEC §E.3 (plain-derive re-embed, self-describing-format runtime print, serde-internal strings); threat model §1.1; at-rest-only scope stated §E.2.3 |
-| 5 | Full build/feature matrix (both ciphers; claimed std/no_std; ecosystem interop; binary scrub; new runtime paths benched) | ⚠️ | One sub-item left (bench); see below |
+| 5 | Full build/feature matrix (both ciphers; claimed std/no_std; ecosystem interop; binary scrub; new runtime paths benched) | ✅ | All sub-items below green |
 
 ### Gate 5 detail
 
@@ -29,7 +29,7 @@ tests cover it"). Paths are relative to the repo root.
 | `std` claimed; `no_std` not claimed | ✅ | §E.2.3 requires `std` (names leaked into `OnceLock<&'static str>`); no no_std obligation to test |
 | Ecosystem interop | ✅ | Wire/behavior identity pinned against real serde + `serde_json` twins across the matrix (e.g. `litmask/tests/mask_serde_rename.rs`); §E.2.1 documents the non-self-describing-format (bincode/postcard) shape contract |
 | Binary scrub proves the property | ✅ | `litmask/tests/example_scrub.rs::mask_serde_demo_names_and_fixtures_absent_from_binary` |
-| New runtime path benched | ❌ | **Gap.** The name-decrypt + `OnceLock` caching path (§E.2.3) is unbenched; `benches/litmask-bench/benches/decrypt.rs` covers `mask!` only. Either add a serde-name-decrypt bench, or document that the path reduces to the already-benched `mask!` decrypt plus a one-time cache fill and accept that as the evidence |
+| New runtime path benched | ✅ | The serde path adds no novel crypto cost: each name is decrypted once via the same per-blob AEAD-open as `mask!` (benched `decrypt_masked`, cold path `first_use_unlock` in `benches/litmask-bench/benches/decrypt.rs`), then cached in a `OnceLock<&'static str>` (§E.2.3) — so steady-state (de)serialization is an atomic load with zero crypto. No dedicated bench: it would only re-measure those primitives |
 
 ## Support matrix
 
@@ -73,10 +73,11 @@ Every rejected row is a `compile_error!` pinned by a trybuild case.
 1. ~~**Gate 5 — aes-gcm × serde untested.**~~ Done: `test-aes-gcm` now
    folds in `unstable-serde` (`justfile`), so the serde twin tests run
    under `--no-default-features --features std,aes-gcm`.
-2. **Gate 5 — serde runtime path unbenched.** Add a name-decrypt /
-   `OnceLock`-fill bench, or record in this checklist that the path reduces
-   to the benched `mask!` decrypt plus a one-time cache fill (and cite the
-   `mask!` bench as the evidence).
+2. ~~**Gate 5 — serde runtime path unbenched.**~~ Resolved by reduction:
+   the path is `mask!`'s benched per-blob decrypt for the one-time
+   per-name fill, then a `OnceLock` atomic load steady-state. A dedicated
+   bench would only re-measure those primitives, so none was added (see
+   the gate-5 bench row for the cited evidence).
 3. **Gate 2 — reclassify `into`/`from`/`try_from`/`getter`.** These
    delegate (de)serialization to a shadow type whose own derive owns the
    names, so masking cannot reach them from here — supporting them yields
