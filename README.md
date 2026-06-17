@@ -4,7 +4,7 @@
 [![docs.rs](https://img.shields.io/docsrs/litmask)](https://docs.rs/litmask)
 [![CI](https://github.com/camercu/litmask/actions/workflows/ci.yml/badge.svg)](https://github.com/camercu/litmask/actions/workflows/ci.yml)
 [![MSRV](https://img.shields.io/badge/rustc-1.88+-blue.svg)](https://github.com/camercu/litmask)
-[![License](https://img.shields.io/crates/l/litmask.svg)](#license)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 **Hide string literals from `strings(1)` and disassemblers.** AEAD-encrypt
 every string constant at compile time, decrypt at runtime. Drop-in
