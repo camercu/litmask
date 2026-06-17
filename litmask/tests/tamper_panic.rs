@@ -70,6 +70,8 @@ fn tampered_blob_panic_message_is_profile_split() {
 /// - `runtime/weak.rs` — `__weak_decode*` and the weak caches.
 /// - `runtime/cell.rs` — the once-cell every decrypt path borrows
 ///   its key (or cache) through.
+/// - `runtime/stack.rs` — the `mask_stack!` seams (`__decrypt_stack_*`),
+///   which decrypt into stack buffers through the same governed path.
 /// - `litmask/src/lib.rs` — crate root; re-exports + public macros.
 /// - `litmask/src/macro_plumbing.rs` — the `__decrypt_cstring_call!` /
 ///   `__weak_decode_cstr_call!` shims, whose `.unwrap()` stays bare.
@@ -101,6 +103,7 @@ fn no_custom_panic_messages_in_decryption_path() {
         (format!("{manifest}/src/runtime/governor.rs"), vec![]),
         (format!("{manifest}/src/runtime/weak.rs"), vec![]),
         (format!("{manifest}/src/runtime/cell.rs"), vec![]),
+        (format!("{manifest}/src/runtime/stack.rs"), vec![]),
         (format!("{manifest}/src/lib.rs"), vec![]),
         (format!("{manifest}/src/macro_plumbing.rs"), vec![]),
         (format!("{manifest}/../litmask-macros/src/mask.rs"), vec![]),

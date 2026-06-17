@@ -390,7 +390,7 @@ mod tests {
     fn over_stack_limit_triggers_only_above_cap() {
         assert!(over_stack_limit(4096, 4096).is_none(), "at cap is allowed");
         assert!(over_stack_limit(0, 4096).is_none());
-        let msg = over_stack_limit(4097, 4096).expect("over cap rejected");
+        let msg = over_stack_limit(4097, 4096).unwrap();
         assert!(msg.contains("4097"), "{msg}");
         assert!(msg.contains("4096"), "{msg}");
         assert!(msg.contains(STACK_LIMIT_VAR), "{msg}");
