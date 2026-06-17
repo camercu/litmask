@@ -110,16 +110,19 @@ pub fn decrypt_blob(
     mask_key: &[u8; KEY_LEN],
     blob: &[u8],
 ) -> Result<alloc::vec::Vec<u8>, DecryptError> {
-    let (nonce, body) = blob
-        .split_first_chunk::<NONCE_LEN>()
-        .filter(|(_, body)| body.len() >= TAG_LEN)
+    // [`decrypt_blob_into`] is the single decrypt primitive; this is its
+    // allocating convenience wrapper. The AEAD stream ciphers litmask uses
+    // produce ciphertext the same length as the plaintext, so the output
+    // is exactly the blob minus its nonce and tag; `checked_sub` surfaces a
+    // too-short blob as `BlobTooShort` (the same error the primitive would
+    // return) before allocating.
+    let plaintext_len = blob
+        .len()
+        .checked_sub(NONCE_LEN + TAG_LEN)
         .ok_or(DecryptError::BlobTooShort)?;
-    // The filter above guarantees `body` is at least TAG_LEN; assert
-    // this so future changes to the split that drop the filter trip
-    // a test-time panic instead of silently feeding a too-short body
-    // to the AEAD primitive.
-    debug_assert!(body.len() >= TAG_LEN);
-    aead_decrypt(crate::CURRENT_CIPHER, mask_key, nonce, body).map_err(DecryptError::from)
+    let mut out = alloc::vec![0u8; plaintext_len];
+    decrypt_blob_into(mask_key, blob, &mut out)?;
+    Ok(out)
 }
 
 /// Decrypt a per-string blob into a caller-provided `out` slice,
