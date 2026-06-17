@@ -92,6 +92,7 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
 /// accepted inputs and wire shapes identical.
 fn deserialize_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
+    container.reject_unsupported_tagging(MACRO_NAME)?;
     if container.transparent {
         return transparent_deserialize_body(input);
     }

@@ -138,6 +138,33 @@ feature).
   `ContentDeserializer`, `TaggedContentVisitor`), which §E.2.6 forbids
   referencing, so a large slice of that machinery would have to be
   replicated against public API in `litmask::__serde_support`.
+
+  **Spike 2a landed (parser seam).** The container parser now folds
+  `tag`/`content`/`untagged` into a `serde_attrs::Tagging` model
+  (`External`/`Internal`/`Adjacent`/`Untagged`); codegen reject-louds any
+  non-`External` form through the single guard
+  `ContainerAttrs::reject_unsupported_tagging`, called at both derive
+  entry points (`mask_serialize.rs` `try_expand`, `mask_deserialize.rs`
+  `deserialize_body`). That guard is the seam the codegen slices replace.
+  Sizing of the remaining work (the `__serde_support` surface to
+  replicate against public serde API, smallest subset that passes the
+  twins):
+  - **`Content`** — an owned enum buffering one deserialized value
+    (`Bool`/`U*`/`I*`/`F*`/`Str`/`Bytes`/`None`/`Some`/`Unit`/`Newtype`/`Seq`/`Map`),
+    built by a `ContentVisitor`. Needed by all three reprs to peek the
+    tag/variant before committing to a variant.
+  - **`ContentDeserializer`** — a `Deserializer` replaying a buffered
+    `Content` into the chosen variant's `Deserialize`. The bulk of the
+    code (every `deserialize_*` forward + `EnumAccess`/`VariantAccess`).
+  - **`TaggedContentVisitor`** — splits a map into `(tag, rest)` for
+    internally/adjacently tagged; the tag key compares against the
+    runtime-decrypted tag name (not a cleartext literal), the masking
+    point.
+  - **untagged** reduces to: buffer `Content`, then try each variant's
+    `Deserialize` over a `ContentRefDeserializer` until one succeeds.
+  No twin file is added yet (a `#[serde(tag=...)]` `MaskDeserialize` can't
+  compile while the guard rejects); the trybuild reject cases
+  (`compile/mask_*_serde_attr_container.rs`) remain the pinned contract.
 - **`flatten`** — masking value: moderate. Needs content-buffering plus a
   `FlatMapSerializer` equivalent, again replicated out of
   `serde::__private`. Additional snag: serde itself breaks `flatten` on

@@ -42,6 +42,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
     serde_attrs::reject_with_on_generic(input, MACRO_NAME)?;
     let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
+    container.reject_unsupported_tagging(MACRO_NAME)?;
     let body = serialize_body(input, &container)?;
 
     let struct_ident = &input.ident;
