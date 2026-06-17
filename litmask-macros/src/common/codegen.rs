@@ -14,7 +14,7 @@ use litmask_internal::{
 
 use super::artifact::load_out_dir_artifact;
 use super::path::{canonicalize_file_path, manifest_dir};
-#[cfg(feature = "stack")]
+#[cfg(feature = "unstable-stack")]
 use super::stack_limit::{over_stack_limit, stack_limit};
 
 /// AEAD-mask an arbitrary resolved name, emitting a runtime decrypt
@@ -207,14 +207,14 @@ fn seal_blob(mut plaintext: Vec<u8>, span: proc_macro2::Span) -> SealedBlob {
 /// AEAD-encrypt `plaintext` and emit a `mask_stack!("...")` expansion: a
 /// stack-resident `litmask::MaskStr<N>` decrypted in place, no heap
 /// allocation. `N` is the plaintext length, fixed at expansion.
-#[cfg(feature = "stack")]
+#[cfg(feature = "unstable-stack")]
 pub(crate) fn mask_stack_str(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
     mask_stack_call(span, plaintext, &quote! { __decrypt_stack_str }, 0)
 }
 
 /// `mask_stack!(b"...")` counterpart of [`mask_stack_str`], emitting a
 /// `litmask::MaskBytes<N>`.
-#[cfg(feature = "stack")]
+#[cfg(feature = "unstable-stack")]
 pub(crate) fn mask_stack_bytes(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
     mask_stack_call(span, plaintext, &quote! { __decrypt_stack_bytes }, 0)
 }
@@ -223,7 +223,7 @@ pub(crate) fn mask_stack_bytes(span: proc_macro2::Span, plaintext: Vec<u8>) -> T
 /// The NUL terminator is dropped from `plaintext` before sealing (like
 /// heap `mask!(c"...")`), so the inline buffer needs one extra byte for the
 /// terminator the `&CStr` borrow requires: `N = payload_len + 1`.
-#[cfg(feature = "stack")]
+#[cfg(feature = "unstable-stack")]
 pub(crate) fn mask_stack_cstr(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
     mask_stack_call(span, plaintext, &quote! { __decrypt_stack_cstr }, 1)
 }
@@ -236,7 +236,7 @@ pub(crate) fn mask_stack_cstr(span: proc_macro2::Span, plaintext: Vec<u8>) -> To
 ///
 /// The cap is checked **before** sealing, so an over-limit literal emits a
 /// `compile_error!` without touching the build's key artifacts.
-#[cfg(feature = "stack")]
+#[cfg(feature = "unstable-stack")]
 fn mask_stack_call(
     span: proc_macro2::Span,
     plaintext: Vec<u8>,

@@ -61,7 +61,7 @@ const EXCEPTIONS: &[&str] = &[
     "weak_mask_demo",
     "machine_id_provider",
     "mask_serde_demo",
-    // `required-features = ["stack"]`; scrubbed by
+    // `required-features = ["unstable-stack"]`; scrubbed by
     // `stack_demo_fixtures_and_identifiers_absent_from_binary`.
     "stack_demo",
 ];
@@ -500,12 +500,12 @@ fn mask_serde_demo_names_and_fixtures_absent_from_binary() {
 /// (`MaskStr` / `MaskBytes` / `MaskCStr`). Each fixture must be absent
 /// from the release binary — the stack guards decrypt at runtime, so the
 /// plaintext is never in `.rodata`. Sits in `EXCEPTIONS` because its
-/// `required-features = ["stack"]` makes the default-features `EXAMPLES`
+/// `required-features = ["unstable-stack"]` makes the default-features `EXAMPLES`
 /// loop unable to build it; the functional round-trip (running the binary
 /// and checking decrypted output) lives in `tests/mask_stack.rs`.
 #[test]
 fn stack_demo_fixtures_and_identifiers_absent_from_binary() {
-    common::build_example_with_features("stack_demo", Profile::Release, &["stack"]);
+    common::build_example_with_features("stack_demo", Profile::Release, &["unstable-stack"]);
     let path = common::example_path("stack_demo", Profile::Release);
     assert!(
         path.exists(),

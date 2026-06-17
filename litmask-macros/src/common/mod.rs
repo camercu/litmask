@@ -18,7 +18,7 @@ mod codegen;
 mod diagnostics;
 mod parse;
 mod path;
-#[cfg(feature = "stack")]
+#[cfg(feature = "unstable-stack")]
 mod stack_limit;
 
 pub(crate) use artifact::load_out_dir_artifact;
@@ -27,7 +27,7 @@ pub(crate) use artifact::load_out_dir_artifact;
 pub(crate) use codegen::{byte_string_literal, mask_bytes, mask_cstr, mask_ident, mask_str};
 #[cfg(feature = "unstable-serde")]
 pub(crate) use codegen::{mask_name, masked_static_name};
-#[cfg(feature = "stack")]
+#[cfg(feature = "unstable-stack")]
 pub(crate) use codegen::{mask_stack_bytes, mask_stack_cstr, mask_stack_str};
 pub(crate) use diagnostics::{FailTag, compile_error, env_failure};
 pub(crate) use parse::{StringLiteral, parse_string_literal, read_lit_str_path, require_lit_str};

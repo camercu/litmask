@@ -34,7 +34,7 @@ mod mask_include_str;
 mod mask_option_env;
 #[cfg(feature = "unstable-serde")]
 mod mask_serialize;
-#[cfg(feature = "stack")]
+#[cfg(feature = "unstable-stack")]
 mod mask_stack;
 #[cfg(feature = "unstable-serde")]
 mod serde_attrs;
@@ -119,7 +119,7 @@ pub fn mask(input: TokenStream) -> TokenStream {
 /// # Errors / Panics
 ///
 /// Same expansion-time and runtime contract as [`macro@mask`].
-#[cfg(feature = "stack")]
+#[cfg(feature = "unstable-stack")]
 #[proc_macro]
 pub fn mask_stack(input: TokenStream) -> TokenStream {
     mask_stack::expand(input)

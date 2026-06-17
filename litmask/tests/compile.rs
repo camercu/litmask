@@ -98,7 +98,7 @@ fn mask_deserialize_compile_fixtures() {
 /// build's features into the fixture project, so without the gate the
 /// fixture would fail on "cannot find macro `mask_stack`" instead of the
 /// intended `LITMASK_STACK_LIMIT` diagnostic.
-#[cfg(feature = "stack")]
+#[cfg(feature = "unstable-stack")]
 #[test]
 fn mask_stack_compile_fixtures() {
     let t = trybuild::TestCases::new();

@@ -129,7 +129,7 @@ pub(crate) fn blob_utf8_failure() -> ! {
 /// rejects interior NULs at parse time and the seam forces the trailing
 /// terminator — but `CStr::from_bytes_with_nul` forces the branch, which
 /// must follow the module's profile-split contract.
-#[cfg(feature = "stack")]
+#[cfg(feature = "unstable-stack")]
 pub(crate) fn blob_cstr_failure() -> ! {
     #[cfg(debug_assertions)]
     panic!(

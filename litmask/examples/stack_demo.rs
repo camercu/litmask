@@ -7,7 +7,7 @@
 //! inline `[u8; N]` — no allocation — and the guard derefs to `str`.
 //!
 //! ```sh
-//! cargo build --example stack_demo --features stack
+//! cargo build --example stack_demo --features unstable-stack
 //! strings target/debug/examples/stack_demo | grep "bird bath"
 //! # (no output — the plaintext is absent from the binary)
 //!

@@ -159,7 +159,7 @@
 //! best-effort like [`Zeroizing`] over a heap value.
 //!
 //! ```no_run
-//! # #[cfg(feature = "stack")] {
+//! # #[cfg(feature = "unstable-stack")] {
 //! let pw = litmask::mask_stack!("hunter2"); // `MaskStr` guard, wiped on drop
 //! assert_eq!(&*pw, "hunter2");              // derefs to `&str`
 //! # }
@@ -424,9 +424,9 @@ pub use litmask_macros::MaskDeserialize;
 /// let pw = litmask::mask_stack!("hunter2"); // `MaskStr<N>`, wiped on drop
 /// assert_eq!(&*pw, "hunter2"); // derefs to `str`
 /// ```
-#[cfg(feature = "stack")]
+#[cfg(feature = "unstable-stack")]
 pub use litmask_macros::mask_stack;
-#[cfg(feature = "stack")]
+#[cfg(feature = "unstable-stack")]
 pub use runtime::stack::{MaskBytes, MaskCStr, MaskStr};
 
 // The `MaskSerialize`/`MaskDeserialize` expansions reference serde's
@@ -556,7 +556,7 @@ macro_rules! mask_println {
 #[doc(hidden)]
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.
-    #[cfg(feature = "stack")]
+    #[cfg(feature = "unstable-stack")]
     pub use crate::runtime::stack::{
         __decrypt_stack_bytes, __decrypt_stack_cstr, __decrypt_stack_str,
     };
