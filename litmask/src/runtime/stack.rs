@@ -7,9 +7,11 @@
 //! gives `N = blob.len() - NONCE_LEN - TAG_LEN`).
 //!
 //! Unlike the heap `mask!` outputs (`String` / `Vec` / `CString`), these
-//! never touch the allocator, so no realloc/grow can leave an unscrubbed
-//! copy behind: the only plaintext bytes live in the guard and are
-//! zeroized when it drops.
+//! never touch the allocator at all — their distinguishing property. This
+//! is *not* a stronger wipe than the heap path: a `mask!` literal's length
+//! is fixed at compile time, so its buffer is a single exact-size
+//! allocation that `Zeroizing<mask!(...)>` overwrites just as completely.
+//! The point is keeping the plaintext off the heap entirely.
 //!
 //! `unsafe` is forbidden workspace-wide, so the `&str` view is produced by
 //! a *checked* conversion on every deref. The bytes are valid by
@@ -94,8 +96,9 @@ pub fn __decrypt_stack_bytes<const N: usize>(
 /// and is overwritten when the value drops.
 ///
 /// Unlike heap `mask!(c"...")` (which yields a `CString` and so needs
-/// `alloc`), this borrows `core::ffi::CStr` from its own inline buffer and
-/// works in `no_std` without an allocator.
+/// `alloc`), this borrows `core::ffi::CStr` from its own inline buffer, so
+/// the C-string form needs no allocator at the call site. The crate still
+/// links `alloc` today, so this is not yet a fully heapless build.
 pub struct MaskCStr<const N: usize>(Zeroizing<[u8; N]>);
 
 impl<const N: usize> Deref for MaskCStr<N> {

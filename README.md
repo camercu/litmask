@@ -140,9 +140,6 @@ rationale and the [Deployment Guide](docs/DEPLOYMENT.md) for host setup.
 | `mask!("...")`                | `String`         | string literals                         |
 | `mask!(b"...")`               | `Vec<u8>`        | byte string literals                    |
 | `mask!(c"...")`               | `CString`        | C string literals (`std`)               |
-| `mask_stack!("...")`          | `MaskStr<N>`     | string literals, zero-alloc (`stack`)   |
-| `mask_stack!(b"...")`         | `MaskBytes<N>`   | byte literals, zero-alloc (`stack`)     |
-| `mask_stack!(c"...")`         | `MaskCStr<N>`    | C string literals, `no_std` (`stack`)   |
 | `mask_format!("{}", x)`       | `String`         | `format!`                               |
 | `mask_print!("{}", x)`        | `()`             | `print!` (`std`)                        |
 | `mask_println!("{}", x)`      | `()`             | `println!` (`std`)                      |
@@ -164,13 +161,6 @@ rationale and the [Deployment Guide](docs/DEPLOYMENT.md) for host setup.
 `mask!` returns owned types because decryption happens at runtime. For `&str`,
 bind: `let s: &str = &mask!("...");`. If you absolutely need `&'static str`,
 use `weak_mask!`, but its key is recoverable statically from the binary.
-
-`mask_stack!` is the zero-allocation alternative: it decrypts into an inline
-`[u8; N]` buffer (size fixed at expansion, capped at `LITMASK_STACK_LIMIT`,
-default 4096 bytes) and the returned guard zeroizes that buffer on drop, so no
-allocator reuse can leave an unscrubbed copy behind. Gated behind the `stack`
-feature; `mask_stack!(c"...")` works in `no_std` because `MaskCStr` borrows
-`CStr` from its own storage.
 
 ## Debug derive
 
@@ -336,7 +326,6 @@ LITMASK_UNLOCK_KEY="$(litmask keygen)" cargo build --release
 | `chacha20-poly1305` | yes     | Default cipher                                      |
 | `aes-gcm`           | no      | AES-256-GCM (takes precedence when enabled)         |
 | `alloc`             | --      | `no_std` + allocator (required for `no_std` builds) |
-| `stack`             | no      | `mask_stack!` + `MaskStr`/`MaskBytes`/`MaskCStr` guards |
 | `machine-id`        | no      | `init!(bind_to_machine)` machine-ID binding              |
 | `unstable-serde`    | no      | EXPERIMENTAL `#[derive(MaskSerialize)]` + `#[derive(MaskDeserialize)]` (semver-exempt) |
 

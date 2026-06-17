@@ -85,16 +85,6 @@ stored.
 > host binary's concern. A library that calls `init!()` (or masks in a
 > `static`/constructor) seizes governance from the host and is a bug.
 
-### Heap vs. stack output (`stack` feature)
-
-`mask!` decrypts to a heap `String` / `Vec` / `CString`. The opt-in
-`mask_stack!` decrypts into an inline `[u8; N]` instead — same governed
-unlock path, but no allocation and a complete zeroize-on-drop (no
-allocator reuse can leak a copy). The buffer is stack-resident, so it is
-capped at `LITMASK_STACK_LIMIT` bytes (default 4096) and `mask!` stays the
-choice for large literals. `MaskCStr` borrows `core::ffi::CStr` and so
-works without an allocator, unlike `mask!(c"...")`.
-
 ## Map of the docs
 
 | Doc | Owns |

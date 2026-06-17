@@ -748,10 +748,11 @@ per call site (cached in a once-cell).
 `mask!(<macro>!(...))` form is rejected with the standard non-literal
 error from §1.9.6.
 
-`mask_stack!` (the `stack` feature, §2.1.9) is the zero-allocation
-variant: it accepts the same three literal kinds but decrypts into an
-inline stack buffer — `MaskStr<N>` / `MaskBytes<N>` / `MaskCStr<N>` — that
-zeroizes on drop, instead of a heap `String` / `Vec<u8>` / `CString`.
+`mask_stack!` (the experimental `unstable-stack` feature, §2.1.9) is the
+zero-allocation variant: it accepts the same three literal kinds but
+decrypts into an inline stack buffer — `MaskStr<N>` / `MaskBytes<N>` /
+`MaskCStr<N>` — that zeroizes on drop, instead of a heap `String` /
+`Vec<u8>` / `CString`.
 
 A dedicated family of compile-time-resolving masking macros handles
 stdlib equivalents. Each macro takes the same input as its stdlib
@@ -1705,10 +1706,19 @@ binary's plaintext under the standard scrub policy. (Caveat:
 panic sites; `mask_file!` masks only its own explicit user-written
 invocations, not the implicit panic-site embedding.)
 
-#### §2.1.9 mask_stack! macro (`stack` feature)
+#### §2.1.9 mask_stack! macro (`unstable-stack` feature)
+
+Status: **EXPERIMENTAL**. Gated by the `unstable-stack` feature; the
+`unstable-` prefix is the semver-exemption signal (this surface may change
+or be removed in any release). Deliberately undocumented in the README and
+ARCHITECTURE until a real use case promotes it; stabilization renames the
+feature to `stack` (a breaking change by design). Its headline no-alloc
+property is not yet realized — the crate still links `alloc` unconditionally,
+so a fully heapless build does not exist today.
 
 §2.1.9.1 — `mask_stack!` SHALL accept the same three literal kinds as
-`mask!` (§2.1.1.1) and SHALL be gated behind the `stack` cargo feature.
+`mask!` (§2.1.1.1) and SHALL be gated behind the `unstable-stack` cargo
+feature.
 
 §2.1.9.2 — Rather than the heap owned values of §2.1.1.2–§2.1.1.4,
 `mask_stack!` SHALL expand to a guard owning an inline `[u8; N]` whose
@@ -1728,11 +1738,13 @@ environment variable) SHALL be rejected at proc-macro time with a
 `compile_error!`. The cap guards against unbounded stack growth; large
 literals belong on the heap `mask!`.
 
-§2.1.9.5 — `MaskCStr` SHALL NOT require `alloc`: it borrows
-`core::ffi::CStr` from its own buffer (with the NUL terminator the blob
-omits restored at decrypt time), so `mask_stack!(c"...")` works under
-`no_std` without an allocator — unlike heap `mask!(c"...")`, which
-requires `CString` (§2.1.1.4).
+§2.1.9.5 — `MaskCStr` SHALL borrow `core::ffi::CStr` from its own buffer
+(with the NUL terminator the blob omits restored at decrypt time) rather
+than constructing a `CString`, so `mask_stack!(c"...")` needs no allocator
+_at the call site_ — unlike heap `mask!(c"...")`, which requires `CString`
+(§2.1.1.4). This is an API-shape property only: the `litmask` crate still
+links `alloc` unconditionally today (see §2.1.9 status), so it does NOT yet
+yield a fully heapless build.
 
 ### §2.2 Iteration 2 — Format string masking (mask_format!)
 

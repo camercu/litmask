@@ -148,15 +148,20 @@
 //! `&'static [u8]` for `b"..."`, `&'static CStr` for `c"..."`
 //! (`std` feature).
 //!
-//! ### Stack-backed outputs (`stack` feature)
+//! ### Stack-backed outputs (`unstable-stack` feature, experimental)
 //!
-//! `mask_stack!` is the zero-allocation alternative to [`mask!`]: it
-//! decrypts each literal into an inline `[u8; N]` (length fixed at
-//! expansion) instead of a heap `String` / `Vec` / `CString`, and the
-//! returned guard (`MaskStr` / `MaskBytes` / `MaskCStr`) zeroizes that
-//! buffer on drop. Because nothing is heap-allocated, no allocator reuse
-//! can leave an unscrubbed copy behind — the wipe is complete, not
-//! best-effort like [`Zeroizing`] over a heap value.
+//! **Experimental and semver-exempt** (`unstable-` prefix); may change or
+//! vanish in any release.
+//!
+//! `mask_stack!` decrypts each literal into an inline `[u8; N]` (length
+//! fixed at expansion) instead of a heap `String` / `Vec` / `CString`, and
+//! the returned guard (`MaskStr` / `MaskBytes` / `MaskCStr`) zeroizes that
+//! buffer on drop. Its distinguishing property is that the plaintext never
+//! touches the heap — *not* a more thorough wipe: because a [`mask!`]
+//! literal's length is known at compile time, its decrypt buffer is a
+//! single exact-size allocation (no growth, no realloc), so
+//! `Zeroizing<mask!("...")>` overwrites it just as completely. Reach for
+//! `mask_stack!` when you want the secret kept off the heap entirely.
 //!
 //! ```no_run
 //! # #[cfg(feature = "unstable-stack")] {
@@ -170,9 +175,11 @@
 //! `LITMASK_STACK_LIMIT` (default 4096 bytes) is a compile error. That
 //! cap is a build-environment knob — raise it for a build with
 //! `LITMASK_STACK_LIMIT=8192 cargo build`.
-//! `MaskCStr` borrows `core::ffi::CStr` from its own storage, so unlike
-//! `mask!(c"...")` (which needs `CString`) it works in `no_std` without an
-//! allocator. (All gated behind the `stack` feature.)
+//! `MaskCStr` borrows `core::ffi::CStr` from its own buffer instead of
+//! constructing a `CString`, so the C-string form needs no allocator *at
+//! the call site* (unlike `mask!(c"...")`). The crate as a whole still
+//! links `alloc` today, so this is not yet a fully heapless build. (All
+//! gated behind the `unstable-stack` feature.)
 //!
 //! ## Feature flags
 //!
