@@ -346,16 +346,18 @@ pub use litmask_macros::mask_all;
 
 /// # Examples
 ///
-/// `#[mask_all]` is the only context where this attribute is meaningful,
-/// so it cannot be shown standalone:
+/// `#[mask_all]` would swap this type's `#[derive(Debug)]` for
+/// [`MaskDebug`]; `#[unmasked_derive]` opts it back out to the plain
+/// derive:
 ///
-/// ```ignore
+/// ```
 /// #[litmask::mask_all]
 /// mod m {
-///     #[litmask::unmasked_derive] // keep the plain Debug
+///     #[litmask::unmasked_derive]
 ///     #[derive(Debug)]
-///     pub struct Plain;
+///     pub struct Marker;
 /// }
+/// assert_eq!(format!("{:?}", m::Marker), "Marker");
 /// ```
 pub use litmask_macros::unmasked_derive;
 
