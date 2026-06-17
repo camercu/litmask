@@ -1,4 +1,4 @@
-error: init! tier-mismatch: init!(provider) unlocks the `external` seal tier, but this build sealed `embedded`
+error: init! tier-mismatch: init!(provider) unlocks the `external` seal tier, but this build sealed `embedded`; to seal `external`, set LITMASK_UNLOCK_KEY in the build environment where build.rs runs
   --> tests/compile/init_external_against_embedded_seal.rs:13:13
    |
 13 |     let _ = init!(some_provider);
