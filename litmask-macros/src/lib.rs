@@ -76,13 +76,13 @@ mod weak_mask;
 ///
 /// # Errors
 ///
-/// - Non-literal input (including macro invocations such as
-///   `include_str!`, `concat!`, `env!`, or user-defined macros):
-///   `mask! accepts string, byte string, or C string literals`.
-/// - Use in `const` / `static` initializers: rustc's natural `E0015`
-///   (`mask!()` returns a runtime value).
-/// - Use in pattern positions (`match` arm, `if let`, `while let`):
-///   rustc's natural "expected pattern" diagnostic.
+/// Expansion fails with a `compile_error!` when the input is not one
+/// of the three accepted literal kinds — including macro invocations
+/// such as `include_str!`, `concat!`, `env!`, or user-defined macros.
+/// Two misuses surface as rustc's own diagnostics instead: a `const` /
+/// `static` initializer is `E0015` (`mask!()` is a runtime value), and
+/// a pattern position (`match` arm, `if let`, `while let`) is the
+/// natural "expected pattern" error.
 ///
 /// # Panics
 ///
@@ -188,10 +188,9 @@ pub fn init(input: TokenStream) -> TokenStream {
 ///
 /// # Errors
 ///
-/// - Non-string-literal argument: `mask_include_str! requires a
-///   string literal path`.
-/// - File read failure (missing, unreadable, etc.):
-///   `mask_include_str!: could not read PATH: REASON`.
+/// Expansion fails when the argument is not a string-literal path, or
+/// when the file cannot be read (missing, unreadable, etc.); the
+/// diagnostic names the path and the underlying cause.
 ///
 /// # Panics
 ///
@@ -217,10 +216,8 @@ pub fn mask_include_str(input: TokenStream) -> TokenStream {
 ///
 /// # Errors
 ///
-/// - Non-string-literal argument: `mask_include_bytes! requires a
-///   string literal path`.
-/// - File read failure: `mask_include_bytes!: could not read PATH:
-///   REASON`.
+/// Same conditions as [`macro@mask_include_str`]: a non-string-literal
+/// path argument, or a file that cannot be read.
 ///
 /// # Panics
 ///
@@ -241,14 +238,11 @@ pub fn mask_include_bytes(input: TokenStream) -> TokenStream {
 ///
 /// # Errors
 ///
-/// - Empty argument list: `mask_concat! requires at least one
-///   argument`.
-/// - Argument that is not a string literal / `concat!` /
-///   `include_str!` / `env!`: `mask_concat! arguments must be
-///   string literals or compile-time-resolvable string macros`.
-/// - Nested `include_str!` file-read failure or nested `env!` of
-///   an unset variable: propagated as a compile error with the
-///   underlying cause.
+/// Expansion fails on an empty argument list, on an argument that is
+/// neither a string literal nor a compile-time-resolvable string macro
+/// (`concat!` / `include_str!` / `env!`), or when a nested
+/// `include_str!` cannot read its file or a nested `env!` names an
+/// unset variable (the underlying cause is propagated).
 ///
 /// # Panics
 ///
@@ -265,10 +259,9 @@ pub fn mask_concat(input: TokenStream) -> TokenStream {
 ///
 /// # Errors
 ///
-/// - Non-string-literal argument: `mask_env! requires a string
-///   literal name`.
-/// - Env var unset: `mask_env!: environment variable NAME is not
-///   set`.
+/// Mirrors stdlib `env!`: expansion fails when the argument is not a
+/// string-literal name, or when the named variable is unset at build
+/// time.
 ///
 /// # Panics
 ///
@@ -287,13 +280,11 @@ pub fn mask_env(input: TokenStream) -> TokenStream {
 ///
 /// # Errors
 ///
-/// - Non-string-literal argument: `mask_option_env! requires a
-///   string literal name`.
-/// - Variable present but not valid UTF-8: `mask_option_env!
-///   unicode-failure: environment variable NAME is set but its value
-///   is not valid UTF-8` (matches stdlib `option_env!`, which also
-///   rejects non-Unicode values at compile time rather than yielding
-///   `None`).
+/// Expansion fails when the argument is not a string-literal name, or
+/// when the named variable is present but not valid UTF-8 — matching
+/// stdlib `option_env!`, which also rejects a non-Unicode value at
+/// compile time rather than yielding `None`. An *unset* variable is a
+/// legitimate runtime `None`, not an error.
 ///
 /// # Panics
 ///
@@ -323,7 +314,7 @@ pub fn mask_option_env(input: TokenStream) -> TokenStream {
 ///
 /// # Errors
 ///
-/// - Non-empty argument list: `mask_file! takes no arguments`.
+/// Expansion fails when given any arguments — `mask_file!` takes none.
 ///
 /// # Panics
 ///
