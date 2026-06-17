@@ -39,6 +39,19 @@ impl<const N: usize> Deref for MaskStr<N> {
     }
 }
 
+/// A stack-resident masked byte string — the output of
+/// `mask_stack!(b"...")`. Derefs to `[u8]`; the inline `[u8; N]` buffer is
+/// overwritten when the value drops.
+pub struct MaskBytes<const N: usize>(Zeroizing<[u8; N]>);
+
+impl<const N: usize> Deref for MaskBytes<N> {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
 /// `mask_stack!("...")` seam: unlock the wrapper's `mask_key` through the
 /// governing / lazy path (identical to [`crate::__internal::__decrypt`]),
 /// then decrypt `blob` straight into a stack `[u8; N]`, allocating nothing.
@@ -56,6 +69,23 @@ pub fn __decrypt_stack_str<const N: usize>(
     tier: &str,
 ) -> MaskStr<N> {
     MaskStr(decrypt_into::<N>(blob, wrapper, tier))
+}
+
+/// `mask_stack!(b"...")` seam. Same governed unlock + in-place decrypt as
+/// [`__decrypt_stack_str`]; no UTF-8 validation, since the output is raw
+/// bytes.
+///
+/// # Panics
+///
+/// Same policy as [`__decrypt_stack_str`].
+#[doc(hidden)]
+#[must_use]
+pub fn __decrypt_stack_bytes<const N: usize>(
+    blob: &[u8],
+    wrapper: &[u8; WRAPPER_LEN],
+    tier: &str,
+) -> MaskBytes<N> {
+    MaskBytes(decrypt_into::<N>(blob, wrapper, tier))
 }
 
 /// Shared body for the stack seams: fetch the `mask_key` (governor or the

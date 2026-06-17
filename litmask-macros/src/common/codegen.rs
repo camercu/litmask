@@ -214,6 +214,21 @@ fn seal_blob(mut plaintext: Vec<u8>, span: proc_macro2::Span) -> SealedBlob {
 /// allocation. `N` is the plaintext length, fixed at expansion.
 #[cfg(feature = "stack")]
 pub(crate) fn mask_stack_str(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
+    mask_stack_call(span, plaintext, &quote! { __decrypt_stack_str })
+}
+
+/// `mask_stack!(b"...")` counterpart of [`mask_stack_str`], emitting a
+/// [`litmask::MaskBytes<N>`].
+#[cfg(feature = "stack")]
+pub(crate) fn mask_stack_bytes(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
+    mask_stack_call(span, plaintext, &quote! { __decrypt_stack_bytes })
+}
+
+/// Shared emitter for the stack masking macros: seal the blob and call the
+/// named `__decrypt_stack_*` seam with the plaintext length as the `const`
+/// generic `N`. `seam` is the bare seam identifier in `::litmask::__internal`.
+#[cfg(feature = "stack")]
+fn mask_stack_call(span: proc_macro2::Span, plaintext: Vec<u8>, seam: &TokenStream) -> TokenStream {
     let sealed = seal_blob(plaintext, span);
     let blob_ident = &sealed.blob_ident;
     let const_def = &sealed.const_def;
@@ -222,7 +237,7 @@ pub(crate) fn mask_stack_str(span: proc_macro2::Span, plaintext: Vec<u8>) -> Tok
     quote! {
         {
             #const_def
-            ::litmask::__internal::__decrypt_stack_str::<#n>(
+            ::litmask::__internal::#seam::<#n>(
                 #blob_ident,
                 ::litmask::__wrapper_bytes!(),
                 ::litmask::__seal_tier!(),

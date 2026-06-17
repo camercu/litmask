@@ -23,6 +23,10 @@ use litmask::mask_stack;
 fn main() {
     let secret = mask_stack!("stack-resident secret: parsnip clavicle 8842");
     proprietary_gonculator(&secret);
+
+    // Byte-string form: decrypts into an inline `[u8; N]`, derefs to `[u8]`.
+    let raw = mask_stack!(b"stack-bytes secret: rutabaga 7731");
+    println!("{}", core::str::from_utf8(&raw).expect("fixture is UTF-8"));
 }
 
 fn proprietary_gonculator(data: &str) {
