@@ -126,10 +126,12 @@ Per-access cost of a masked literal under the External tier.
 `decrypt_masked` returns the owned `String` masking produces (AEAD open +
 its heap allocation). Two baselines bracket it: `plain_baseline`
 (`&'static str`, ~0 — read-only use) and `plain_owned` (`"…".to_string()`
-— the allocation a caller pays anyway). `first_use_unlock` is the
-one-time cost of recovering the `mask_key` (provider KDF + wrapper open);
-it includes one 16-byte decrypt, so subtract the 16 B `decrypt_masked`
-point to isolate the unlock.
+— the allocation a caller pays anyway). `decrypt_masked_stack_*` is the
+zero-alloc `mask_stack!` path (inline `MaskStr<N>`, no heap); its gap to
+`decrypt_masked` at the same size is the allocation `mask!` pays.
+`first_use_unlock` is the one-time cost of recovering the `mask_key`
+(provider KDF + wrapper open); it includes one 16-byte decrypt, so
+subtract the 16 B `decrypt_masked` point to isolate the unlock.
 
 ```text
 {runtime_table}

@@ -10,6 +10,10 @@
 //!     - `plain_owned` (`"…".to_string()`): the allocation a user pays
 //!       anyway when they need an owned `String`. The gap from it to
 //!       `decrypt_masked` isolates the *pure crypto* cost.
+//! - `decrypt_masked_stack_*`: the zero-alloc `mask_stack!` path —
+//!   decrypts into an inline `MaskStr<N>` with no heap allocation. The gap
+//!   to `decrypt_masked` at the same size is the allocation `mask!` pays;
+//!   the gap to `plain_baseline` is `mask_stack!`'s total overhead.
 //! - `first_use_unlock`: the one-time cost paid on the first masked
 //!   access for a wrapper — recover the `mask_key` (provider KDF + wrapper
 //!   AEAD-open) and cache it. It runs the real production path cold by
@@ -23,7 +27,7 @@
 //!
 //! Run via `just bench` (sets `LITMASK_UNLOCK_KEY` for build + run).
 
-use litmask::{EnvVarProvider, init};
+use litmask::{EnvVarProvider, MaskStr, init};
 
 fn main() {
     // One process-global governor for the whole run; the lazy path then
@@ -60,6 +64,26 @@ fn plain_owned(n: usize) -> String {
         4096 => litmask_bench::PLAIN_4096.to_owned(),
         _ => unreachable!(),
     }
+}
+
+// Stack-backed decrypt at each size. Returning the `MaskStr<N>` lets divan
+// drop it outside the timed region, matching how `decrypt_masked` excludes
+// the `String` drop — so the comparison is decrypt-only on both sides. `N`
+// is a compile-time const, so the sizes are three functions, not an arg
+// sweep.
+#[divan::bench]
+fn decrypt_masked_stack_16() -> MaskStr<16> {
+    litmask_bench::masked_stack_16()
+}
+
+#[divan::bench]
+fn decrypt_masked_stack_256() -> MaskStr<256> {
+    litmask_bench::masked_stack_256()
+}
+
+#[divan::bench]
+fn decrypt_masked_stack_4096() -> MaskStr<4096> {
+    litmask_bench::masked_stack_4096()
 }
 
 // `sample_size = 1` is load-bearing: divan runs the input generator

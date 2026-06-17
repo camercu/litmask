@@ -6,8 +6,9 @@ publish = false
 
 [dependencies]
 # `test-util` exposes the cache-reset hook the first-use benchmark needs
-# to re-measure the one-time unlock per sample.
-litmask = { path = "../../litmask", features = ["test-util"] }
+# to re-measure the one-time unlock per sample. `stack` enables the
+# zero-alloc `mask_stack!` benchmarks alongside the heap `mask!` ones.
+litmask = { path = "../../litmask", features = ["test-util", "stack"] }
 
 [build-dependencies]
 litmask-build = { path = "../../litmask-build" }
