@@ -61,6 +61,9 @@ const EXCEPTIONS: &[&str] = &[
     "weak_mask_demo",
     "machine_id_provider",
     "mask_serde_demo",
+    // `required-features = ["stack"]`; scrubbed by
+    // `stack_demo_fixtures_and_identifiers_absent_from_binary`.
+    "stack_demo",
 ];
 
 /// Arbitrary `LITMASK_UNLOCK_KEY` value for building the provider
@@ -490,6 +493,28 @@ fn mask_serde_demo_names_and_fixtures_absent_from_binary() {
             "relay-handle-7-zzyzx",
         ],
     );
+    common::assert_no_dirty_words(&path);
+}
+
+/// `stack_demo` exercises `mask_stack!` for all three literal kinds
+/// (`MaskStr` / `MaskBytes` / `MaskCStr`). Each fixture must be absent
+/// from the release binary — the stack guards decrypt at runtime, so the
+/// plaintext is never in `.rodata`. Sits in `EXCEPTIONS` because its
+/// `required-features = ["stack"]` makes the default-features `EXAMPLES`
+/// loop unable to build it; the functional round-trip (running the binary
+/// and checking decrypted output) lives in `tests/mask_stack.rs`.
+#[test]
+fn stack_demo_fixtures_and_identifiers_absent_from_binary() {
+    common::build_example_with_features("stack_demo", Profile::Release, &["stack"]);
+    let path = common::example_path("stack_demo", Profile::Release);
+    assert!(
+        path.exists(),
+        "stack_demo binary missing after build: {}",
+        path.display(),
+    );
+    common::assert_substring_absent(&path, "parsnip clavicle 8842");
+    common::assert_substring_absent(&path, "rutabaga 7731");
+    common::assert_substring_absent(&path, "kohlrabi 5519");
     common::assert_no_dirty_words(&path);
 }
 
