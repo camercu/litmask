@@ -83,6 +83,15 @@ machine-id = ["std", "dep:machine-uid"]
 # stabilizes as `serde`. `std` is load-bearing — the generated impl
 # caches decrypted names in `std::sync::OnceLock`.
 unstable-serde = ["std", "dep:serde", "litmask-macros/unstable-serde"]
+# Stack-backed, zero-alloc masking: `mask_stack!` decrypts each literal
+# into an inline `[u8; N]` (length known at expansion) via in-place
+# detached AEAD, never touching the heap, and zeroizes the buffer on
+# scope exit. Additive and `no_std`-friendly — it does NOT imply `std`
+# (the C-string form `MaskCStr` borrows `core::ffi::CStr`, so it works
+# without `alloc`, unlike heap `mask!(c"...")`). Gates the proc-macro via
+# `litmask-macros/stack`. This is zero-alloc *operation*, not zero-alloc
+# *compilation* — the crate still links `alloc`.
+stack = ["litmask-macros/stack"]
 # Build gate for the `file_provider` / `weak_mask_demo` examples (see
 # their `[[example]]` entries). Carries no code — it exists only so
 # `required-features` can keep those two examples out of the default
@@ -118,6 +127,13 @@ required-features = ["machine-id"]
 [[example]]
 name = "mask_serde_demo"
 required-features = ["unstable-serde"]
+
+# `mask_stack!` is gated behind the `stack` feature; pin it so the
+# example skips cleanly under a default `cargo build --examples` and the
+# scrub test builds it with `--features stack`.
+[[example]]
+name = "stack_demo"
+required-features = ["stack"]
 
 # `file_provider` and `weak_mask_demo` pass a runtime `KeyProvider` to
 # `init!` (the External form, `init!(provider)`), which only compiles

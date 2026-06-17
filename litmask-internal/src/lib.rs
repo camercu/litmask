@@ -27,7 +27,7 @@ compile_error!(
 mod aead;
 #[cfg(any(feature = "chacha20-poly1305", feature = "aes-gcm"))]
 pub use self::aead::CURRENT_CIPHER;
-pub use self::aead::{AeadError, aead_decrypt, aead_encrypt};
+pub use self::aead::{AeadError, aead_decrypt, aead_decrypt_in_place, aead_encrypt};
 
 mod machine_token;
 pub use machine_token::{
@@ -68,7 +68,7 @@ pub mod base64url;
 mod decrypt;
 pub use decrypt::DecryptError;
 #[cfg(any(feature = "chacha20-poly1305", feature = "aes-gcm"))]
-pub use decrypt::{decrypt_blob, decrypt_wrapper};
+pub use decrypt::{decrypt_blob, decrypt_blob_into, decrypt_wrapper};
 
 mod format_parser;
 pub use format_parser::{

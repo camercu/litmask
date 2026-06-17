@@ -28,6 +28,10 @@ aes-gcm = ["litmask-internal/aes-gcm"]
 # referencing `::litmask::__serde`, so the trait paths resolve in the
 # consumer crate, not in this one.
 unstable-serde = []
+# Gates the `mask_stack!` proc-macro (stack-backed, zero-alloc masking).
+# No dependency here — the macro only emits tokens referencing
+# `::litmask::` paths, which resolve in the consumer crate.
+stack = []
 
 [dependencies]
 litmask-internal.workspace = true

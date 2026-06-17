@@ -140,6 +140,13 @@ pub use litmask_macros::{
 #[cfg(feature = "unstable-serde")]
 pub use litmask_macros::{MaskDeserialize, MaskSerialize};
 
+/// Stack-backed, zero-alloc masking — see [`macro@mask_stack`] and
+/// [`MaskStr`]. Gated behind the `stack` feature.
+#[cfg(feature = "stack")]
+pub use litmask_macros::mask_stack;
+#[cfg(feature = "stack")]
+pub use runtime::stack::MaskStr;
+
 // The `MaskSerialize`/`MaskDeserialize` expansions reference serde's
 // traits through `::litmask::__serde::...` so consumers don't need a
 // direct serde dependency for the generated code to resolve.
@@ -236,6 +243,8 @@ macro_rules! mask_println {
 #[doc(hidden)]
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.
+    #[cfg(feature = "stack")]
+    pub use crate::runtime::stack::__decrypt_stack_str;
     pub use crate::runtime::weak::{__weak_decode, __weak_decode_bytes, WeakByteCell, WeakCell};
     #[cfg(feature = "std")]
     pub use crate::runtime::weak::{__weak_decode_cstr, WeakCStrCell};

@@ -133,7 +133,40 @@ pub(crate) fn mask_cstr(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStr
 ///
 /// `plaintext` is zeroized on return; callers MUST NOT rely on
 /// reading the buffer afterwards.
-fn mask_plaintext(mut plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKind) -> TokenStream {
+fn mask_plaintext(plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKind) -> TokenStream {
+    let sealed = seal_blob(plaintext, span);
+    let wrapper = quote! { ::litmask::__wrapper_bytes!() };
+    let seal_tier = quote! { ::litmask::__seal_tier!() };
+    let decrypt = decrypt_expr(kind, &sealed.blob_ident, &wrapper, &seal_tier);
+    let const_def = &sealed.const_def;
+
+    quote! {
+        {
+            #const_def
+            #decrypt
+        }
+    }
+}
+
+/// AEAD-encrypt `plaintext` under the build's `mask_key` (keyed on the
+/// call site, §1.5.2) and produce the `const __LITMASK_BLOB` definition
+/// plus the metadata a runtime decrypt expression needs. Shared by the
+/// heap [`mask_plaintext`] and the stack [`mask_stack_str`] emitters so
+/// the encryption / key-zeroization discipline lives in one place.
+struct SealedBlob {
+    /// Hygienic identifier the emitted `const` binds and the decrypt
+    /// expression reads.
+    blob_ident: syn::Ident,
+    /// `const __LITMASK_BLOB: &[u8; blob_len] = b"...";`
+    const_def: TokenStream,
+    /// Plaintext byte length = `blob_len - NONCE_LEN - TAG_LEN`. The
+    /// stack path stamps this as the `N` of its inline `[u8; N]`; the
+    /// heap path never reads it, so it only exists under `stack`.
+    #[cfg(feature = "stack")]
+    plaintext_len: usize,
+}
+
+fn seal_blob(mut plaintext: Vec<u8>, span: proc_macro2::Span) -> SealedBlob {
     let mut mask_key = load_out_dir_artifact::<KEY_LEN>(KEY_ARTIFACT);
     let mut seed = load_out_dir_artifact::<KEY_LEN>(SEED_ARTIFACT);
 
@@ -144,6 +177,7 @@ fn mask_plaintext(mut plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKin
     let nonce = nonce_for_call_site(&seed, &file, line, column, &plaintext);
     seed.zeroize();
 
+    let plaintext_len = plaintext.len();
     let ciphertext_and_tag = aead_encrypt(CURRENT_CIPHER, &mask_key, &nonce, &plaintext)
         .expect("AEAD encryption failed during litmask macro expansion");
     // The proc-macro server is a long-lived dylib; build-time key
@@ -157,21 +191,42 @@ fn mask_plaintext(mut plaintext: Vec<u8>, span: proc_macro2::Span, kind: MaskKin
     let blob_lit = byte_string_literal(&blob);
     let blob_len = blob.len();
     // Wire-format contract: every blob is `nonce (NONCE_LEN) ||
-    // ciphertext (plaintext.len()) || tag (TAG_LEN)`. plaintext was
-    // zeroized above, but its prior length equals blob_len - NONCE_LEN
-    // - TAG_LEN; assert the relationship so future changes to the
-    // concat shape trip a test-time panic.
+    // ciphertext (plaintext_len) || tag (TAG_LEN)`. Assert the
+    // relationship so future changes to the concat shape — or to the
+    // `plaintext_len` the stack path stamps as `N` — trip a test-time
+    // panic.
     debug_assert!(blob_len >= NONCE_LEN + TAG_LEN);
     debug_assert_eq!(blob_len, NONCE_LEN + ciphertext_and_tag.len());
+    debug_assert_eq!(plaintext_len, blob_len - NONCE_LEN - TAG_LEN);
     let blob_ident = syn::Ident::new("__LITMASK_BLOB", proc_macro2::Span::mixed_site());
-    let wrapper = quote! { ::litmask::__wrapper_bytes!() };
-    let seal_tier = quote! { ::litmask::__seal_tier!() };
-    let decrypt = decrypt_expr(kind, &blob_ident, &wrapper, &seal_tier);
+    let const_def = quote! { const #blob_ident: &[u8; #blob_len] = #blob_lit; };
+
+    SealedBlob {
+        blob_ident,
+        const_def,
+        #[cfg(feature = "stack")]
+        plaintext_len,
+    }
+}
+
+/// AEAD-encrypt `plaintext` and emit a `mask_stack!("...")` expansion: a
+/// stack-resident [`litmask::MaskStr<N>`] decrypted in place, no heap
+/// allocation. `N` is the plaintext length, fixed at expansion.
+#[cfg(feature = "stack")]
+pub(crate) fn mask_stack_str(span: proc_macro2::Span, plaintext: Vec<u8>) -> TokenStream {
+    let sealed = seal_blob(plaintext, span);
+    let blob_ident = &sealed.blob_ident;
+    let const_def = &sealed.const_def;
+    let n = sealed.plaintext_len;
 
     quote! {
         {
-            const #blob_ident: &[u8; #blob_len] = #blob_lit;
-            #decrypt
+            #const_def
+            ::litmask::__internal::__decrypt_stack_str::<#n>(
+                #blob_ident,
+                ::litmask::__wrapper_bytes!(),
+                ::litmask::__seal_tier!(),
+            )
         }
     }
 }

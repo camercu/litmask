@@ -12,7 +12,10 @@ use zeroize::Zeroizing;
 
 use crate::AeadError;
 #[cfg(any(feature = "chacha20-poly1305", feature = "aes-gcm"))]
-use crate::{FormatVersion, KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, aead_decrypt, parse_wrapper};
+use crate::{
+    FormatVersion, KEY_LEN, NONCE_LEN, TAG_LEN, WRAPPER_LEN, aead_decrypt, aead_decrypt_in_place,
+    parse_wrapper,
+};
 
 /// Errors surfaced by pure decryption helpers. Converted to panics by
 /// the runtime imperative shell; the typed form here lets unit tests
@@ -117,6 +120,46 @@ pub fn decrypt_blob(
     // to the AEAD primitive.
     debug_assert!(body.len() >= TAG_LEN);
     aead_decrypt(crate::CURRENT_CIPHER, mask_key, nonce, body).map_err(DecryptError::from)
+}
+
+/// Decrypt a per-string blob into a caller-provided `out` slice,
+/// allocating nothing — the zero-alloc counterpart of [`decrypt_blob`]
+/// for the stack-backed masking path.
+///
+/// `out.len()` MUST equal the blob's plaintext length (`blob.len() -
+/// NONCE_LEN - TAG_LEN`); the stack macro stamps that length as a `const`
+/// from the literal it sealed, so a mismatch is a wiring bug, surfaced as
+/// [`DecryptError::InvalidPayloadLength`] rather than silently truncating.
+///
+/// # Errors
+///
+/// Returns [`DecryptError::BlobTooShort`] when `blob` is shorter than
+/// `NONCE_LEN + TAG_LEN`, [`DecryptError::InvalidPayloadLength`] when
+/// `out` does not match the ciphertext length, and
+/// [`DecryptError::AuthenticationFailed`] when the AEAD tag check fails.
+/// On `AuthenticationFailed` the bytes left in `out` are unauthenticated
+/// and MUST NOT be read as plaintext.
+#[cfg(any(feature = "chacha20-poly1305", feature = "aes-gcm"))]
+pub fn decrypt_blob_into(
+    mask_key: &[u8; KEY_LEN],
+    blob: &[u8],
+    out: &mut [u8],
+) -> Result<(), DecryptError> {
+    let (nonce, body) = blob
+        .split_first_chunk::<NONCE_LEN>()
+        .ok_or(DecryptError::BlobTooShort)?;
+    // Split the trailing tag as a fixed-size chunk so it is typed
+    // `&[u8; TAG_LEN]` with no fallible conversion; a body shorter than
+    // the tag yields `None` → `BlobTooShort`.
+    let (ciphertext, tag) = body
+        .split_last_chunk::<TAG_LEN>()
+        .ok_or(DecryptError::BlobTooShort)?;
+    if out.len() != ciphertext.len() {
+        return Err(DecryptError::InvalidPayloadLength);
+    }
+    out.copy_from_slice(ciphertext);
+    aead_decrypt_in_place(crate::CURRENT_CIPHER, mask_key, nonce, out, tag)
+        .map_err(DecryptError::from)
 }
 
 #[cfg(all(test, feature = "chacha20-poly1305"))]
@@ -232,6 +275,56 @@ mod tests {
         assert_eq!(
             decrypt_blob(&mask_key, &blob),
             Err(DecryptError::BlobTooShort)
+        );
+    }
+
+    #[test]
+    fn blob_into_round_trips() {
+        let mask_key = [0x55u8; KEY_LEN];
+        let nonce = [0x66u8; NONCE_LEN];
+        let plaintext = b"the quick brown fox";
+        let blob = build_blob(&mask_key, &nonce, plaintext);
+        let mut out = [0u8; 19];
+        decrypt_blob_into(&mask_key, &blob, &mut out).expect("round-trip");
+        assert_eq!(&out, plaintext);
+    }
+
+    #[test]
+    fn blob_into_rejects_tampered_byte() {
+        let mask_key = [0x55u8; KEY_LEN];
+        let nonce = [0x66u8; NONCE_LEN];
+        let plaintext = b"secret";
+        let mut blob = build_blob(&mask_key, &nonce, plaintext);
+        blob[12] ^= 0x01;
+        let mut out = [0u8; 6];
+        assert_eq!(
+            decrypt_blob_into(&mask_key, &blob, &mut out),
+            Err(DecryptError::AuthenticationFailed)
+        );
+    }
+
+    #[test]
+    fn blob_into_rejects_too_short_input() {
+        let mask_key = [0x55u8; KEY_LEN];
+        let blob = alloc::vec![0u8; NONCE_LEN + TAG_LEN - 1];
+        let mut out = [0u8; 0];
+        assert_eq!(
+            decrypt_blob_into(&mask_key, &blob, &mut out),
+            Err(DecryptError::BlobTooShort)
+        );
+    }
+
+    #[test]
+    fn blob_into_rejects_wrong_out_len() {
+        let mask_key = [0x55u8; KEY_LEN];
+        let nonce = [0x66u8; NONCE_LEN];
+        let plaintext = b"secret";
+        let blob = build_blob(&mask_key, &nonce, plaintext);
+        // `out` shorter than the 6-byte payload.
+        let mut out = [0u8; 5];
+        assert_eq!(
+            decrypt_blob_into(&mask_key, &blob, &mut out),
+            Err(DecryptError::InvalidPayloadLength)
         );
     }
 

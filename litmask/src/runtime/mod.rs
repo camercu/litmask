@@ -25,6 +25,8 @@ use crate::provider::KeyProvider;
 pub(crate) mod cell;
 mod governor;
 mod mask_key_store;
+#[cfg(feature = "stack")]
+pub(crate) mod stack;
 pub(crate) mod weak;
 
 /// Crate-internal entry point for [`crate::test_util::reset_mask_key_cache`],

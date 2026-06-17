@@ -21,6 +21,8 @@ mod path;
 pub(crate) use artifact::load_out_dir_artifact;
 // `mask_name` is reachable only through the serde derives' identifier
 // codegen; gate its re-export so a non-serde build doesn't flag it unused.
+#[cfg(feature = "stack")]
+pub(crate) use codegen::mask_stack_str;
 pub(crate) use codegen::{byte_string_literal, mask_bytes, mask_cstr, mask_ident, mask_str};
 #[cfg(feature = "unstable-serde")]
 pub(crate) use codegen::{mask_name, masked_static_name};

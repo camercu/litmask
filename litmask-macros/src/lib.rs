@@ -34,6 +34,8 @@ mod mask_include_str;
 mod mask_option_env;
 #[cfg(feature = "unstable-serde")]
 mod mask_serialize;
+#[cfg(feature = "stack")]
+mod mask_stack;
 #[cfg(feature = "unstable-serde")]
 mod serde_attrs;
 mod unmasked;
@@ -95,6 +97,31 @@ mod weak_mask;
 #[proc_macro]
 pub fn mask(input: TokenStream) -> TokenStream {
     mask::expand(input)
+}
+
+/// Stack-backed, zero-alloc counterpart of [`macro@mask`]: decrypt a
+/// literal into an inline `[u8; N]` (length fixed at expansion) rather
+/// than a heap `String` / `Vec` / `CString`. The expansion returns a
+/// guard that derefs to the value and zeroizes its buffer on drop:
+///
+/// - `mask_stack!("...")` returns [`litmask::MaskStr<N>`] (derefs to `str`).
+///
+/// Because nothing is heap-allocated, no allocator reuse can leave an
+/// unscrubbed copy of the plaintext behind — the only copy lives in the
+/// guard and is wiped on drop.
+///
+/// Accepts the same three literal kinds as [`macro@mask`] (byte-string and
+/// C-string support land alongside `MaskBytes` / `MaskCStr`). Prefer
+/// [`macro@mask`] for large literals: the inline buffer lives on the stack
+/// (the `LITMASK_STACK_LIMIT` cap guards against accidental overflow).
+///
+/// # Errors / Panics
+///
+/// Same expansion-time and runtime contract as [`macro@mask`].
+#[cfg(feature = "stack")]
+#[proc_macro]
+pub fn mask_stack(input: TokenStream) -> TokenStream {
+    mask_stack::expand(input)
 }
 
 /// Install a process-global **governing provider** (ADR-0001) and eagerly

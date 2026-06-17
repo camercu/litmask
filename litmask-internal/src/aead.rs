@@ -18,7 +18,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::{CipherId, KEY_LEN, NONCE_LEN};
+use crate::{CipherId, KEY_LEN, NONCE_LEN, TAG_LEN};
 
 // Feature → import mapping for the shared AEAD trait surface:
 //
@@ -29,9 +29,9 @@ use crate::{CipherId, KEY_LEN, NONCE_LEN};
 // `Aead`, `KeyInit`, and `GenericArray` are re-exported identically by
 // both backend crates; importing from either path is sufficient.
 #[cfg(all(feature = "aes-gcm", not(feature = "chacha20-poly1305")))]
-use aes_gcm::aead::{Aead, generic_array::GenericArray};
+use aes_gcm::aead::{Aead, AeadInPlace, generic_array::GenericArray};
 #[cfg(feature = "chacha20-poly1305")]
-use chacha20poly1305::aead::{Aead, generic_array::GenericArray};
+use chacha20poly1305::aead::{Aead, AeadInPlace, generic_array::GenericArray};
 
 #[cfg(feature = "aes-gcm")]
 use aes_gcm::Aes256Gcm;
@@ -135,4 +135,56 @@ pub fn aead_decrypt(
     body: &[u8],
 ) -> Result<Vec<u8>, AeadError> {
     dispatch_cipher!(cipher_id, key, nonce, body, decrypt)
+}
+
+/// Decrypt `buffer` in place against the detached `tag`, allocating
+/// nothing. Mirrors [`aead_decrypt`] but takes the ciphertext already
+/// split from its tag (the caller owns the `nonce || ciphertext || tag`
+/// framing) and writes the recovered plaintext back over `buffer`, so a
+/// stack-resident `[u8; N]` can be decrypted without a heap round-trip.
+/// The detached call shape (`buffer` + `tag` rather than one `body`
+/// slice) is why this can't route through [`dispatch_cipher!`].
+///
+/// # Errors
+///
+/// Returns [`AeadError::AuthenticationFailed`] when the tag does not
+/// verify (wrong key, wrong nonce, or tampered bytes). On failure
+/// `buffer`'s contents are unspecified — the caller must treat a failed
+/// decrypt as yielding no plaintext.
+///
+/// # Panics
+///
+/// Panics with `unreachable!()` if called with a [`CipherId`] whose
+/// AEAD implementation is not compiled into this build.
+pub fn aead_decrypt_in_place(
+    cipher_id: CipherId,
+    key: &[u8; KEY_LEN],
+    nonce: &[u8; NONCE_LEN],
+    buffer: &mut [u8],
+    tag: &[u8; TAG_LEN],
+) -> Result<(), AeadError> {
+    match cipher_id {
+        #[cfg(feature = "chacha20-poly1305")]
+        CipherId::ChaCha20Poly1305 => ChaCha20Poly1305::new(GenericArray::from_slice(key))
+            .decrypt_in_place_detached(
+                GenericArray::from_slice(nonce),
+                &[],
+                buffer,
+                GenericArray::from_slice(tag),
+            )
+            .map_err(|_| AeadError::AuthenticationFailed),
+        #[cfg(feature = "aes-gcm")]
+        CipherId::Aes256Gcm => Aes256Gcm::new(GenericArray::from_slice(key))
+            .decrypt_in_place_detached(
+                GenericArray::from_slice(nonce),
+                &[],
+                buffer,
+                GenericArray::from_slice(tag),
+            )
+            .map_err(|_| AeadError::AuthenticationFailed),
+        #[cfg(not(feature = "chacha20-poly1305"))]
+        CipherId::ChaCha20Poly1305 => unreachable!(),
+        #[cfg(not(feature = "aes-gcm"))]
+        CipherId::Aes256Gcm => unreachable!(),
+    }
 }
