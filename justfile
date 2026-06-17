@@ -44,6 +44,9 @@ lint-clippy:
     # single env config compiles every example's `init!` form.
     cargo clippy --all-features --workspace --lib --tests --bins -- {{warnings}}
 
+# Intentionally non-blocking: no `-D warnings`. Stable clippy gains/changes
+# lints between releases, so denying here would fail the pinned-toolchain
+# gate on lints we don't control. Runs in a continue-on-error CI lane.
 lint-clippy-stable:
     cargo {{stable_toolchain}} clippy --all-targets --workspace
 
@@ -351,11 +354,12 @@ setup:
 pre-commit: fmt-check lint-typos lint-taplo lint-markdown
     cargo check --all-targets --workspace --quiet
 
-# Slower checks run on every git push via pre-commit. Mirrors `just
-# ci` so anything red in CI was already red locally; the gap that
-# previously skipped lint-taplo / check-no-default / test-examples
-# allowed taplo + no_std + example-bitrot regressions to land on
-# main.
+# Slower checks run on every git push via pre-commit. A fast subset of
+# `just ci`, not a full mirror: it skips the cross/no_std/single-cipher/
+# all-features lanes (test-no-default, test-aes-gcm, check-no-std,
+# check-cross, all-features tests) to keep push latency down, so those can
+# still go red in CI after a green push. Catches the common regressions
+# (lint, default-feature tests, examples, check-no-default, doc).
 pre-push:
     RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just lint test test-examples check-no-default doc
 
