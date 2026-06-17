@@ -105,13 +105,14 @@ pub fn mask(input: TokenStream) -> TokenStream {
 /// guard that derefs to the value and zeroizes its buffer on drop:
 ///
 /// - `mask_stack!("...")` returns `litmask::MaskStr<N>` (derefs to `str`).
+/// - `mask_stack!(b"...")` returns `litmask::MaskBytes<N>` (derefs to `[u8]`).
+/// - `mask_stack!(c"...")` returns `litmask::MaskCStr<N>` (derefs to `CStr`).
 ///
 /// Because nothing is heap-allocated, no allocator reuse can leave an
 /// unscrubbed copy of the plaintext behind — the only copy lives in the
 /// guard and is wiped on drop.
 ///
-/// Accepts the same three literal kinds as [`macro@mask`] (byte-string and
-/// C-string support land alongside `MaskBytes` / `MaskCStr`). Prefer
+/// Accepts the same three literal kinds as [`macro@mask`]. Prefer
 /// [`macro@mask`] for large literals: the inline buffer lives on the stack
 /// (the `LITMASK_STACK_LIMIT` cap guards against accidental overflow).
 ///
