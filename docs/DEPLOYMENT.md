@@ -55,13 +55,14 @@ orchestrator's env-var mechanism. The material must not be committed to
 version control. A single trailing newline is stripped, so the env and
 file channels agree on the same secret regardless of how it was written.
 
-Need fresh material? `litmask keygen` mints 32 random bytes as base64url
-on stdout — a high-entropy `LITMASK_UNLOCK_KEY` you can pipe into the
-build or stash in a secret store:
+Need fresh material? Install the helper once with `cargo install
+litmask-cli` (it puts a `litmask` binary on your `PATH`). `litmask keygen`
+then mints 32 random bytes as base64url on stdout — a high-entropy
+`LITMASK_UNLOCK_KEY` you can pipe into the build or stash in a secret
+store:
 
 ```sh
-LITMASK_UNLOCK_KEY="$(cargo run -q -p litmask-cli -- keygen)" \
-    cargo build --release
+LITMASK_UNLOCK_KEY="$(litmask keygen)" cargo build --release
 ```
 
 ### `FileProvider` (External tier)
@@ -87,7 +88,7 @@ The Machine tier seals the build's `unlock_key` to a host's machine ID at
 prints it) and build with the `machine-id` feature:
 
 ```sh
-LITMASK_MACHINE_ID="$(cargo run -q -p litmask-cli -- show-machine-id)" \
+LITMASK_MACHINE_ID="$(litmask show-machine-id)" \
     cargo build --release --features machine-id
 ```
 
@@ -110,8 +111,8 @@ sealed host **and** with the sealed external material — either factor wrong
 fails the wrapper's AEAD check:
 
 ```sh
-LITMASK_MACHINE_ID="$(cargo run -q -p litmask-cli -- show-machine-id)" \
-LITMASK_UNLOCK_KEY="$(cargo run -q -p litmask-cli -- keygen)" \
+LITMASK_MACHINE_ID="$(litmask show-machine-id)" \
+LITMASK_UNLOCK_KEY="$(litmask keygen)" \
     cargo build --release --features machine-id
 ```
 
@@ -220,7 +221,7 @@ happens in the build, not on the deployment host. The binary then runs on
 its sealed host with no config, key file, or CLI present:
 
 ```sh
-LITMASK_MACHINE_ID="$(cargo run -q -p litmask-cli -- show-machine-id)" \
+LITMASK_MACHINE_ID="$(litmask show-machine-id)" \
     cargo build --release --features machine-id
 
 scp target/release/my_app deploy@host:/opt/my_app/

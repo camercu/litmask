@@ -10,15 +10,53 @@
 //! nonce (no `init!` needed); stronger providers source the key from
 //! external runtime state via a governing `init!(provider)`.
 //!
+//! litmask needs a one-line `build.rs` (it generates the per-build keys
+//! every `mask!` reads), so add both crates and the build script before
+//! the first call — see the [README quick
+//! start](https://github.com/camercu/litmask#quick-start):
+//!
+//! ```sh
+//! cargo add litmask
+//! cargo add --build litmask-build
+//! ```
+//!
+//! ```ignore
+//! // build.rs
+//! fn main() { litmask_build::emit(); }
+//! ```
+//!
 //! ```no_run
-//! // The keyless Embedded tier self-initializes on the first `mask!()`.
+//! // src/main.rs — the keyless Embedded tier self-initializes on the
+//! // first `mask!()`.
 //! println!("{}", litmask::mask!("sensitive data"));
 //! ```
 //!
 //! For the project overview, the security-level ladder, the threat
 //! scope, and how litmask compares to `obfstr` / `litcrypt`, see the
-//! project README and `docs/ARCHITECTURE.md`. This module doc is the API
-//! reference.
+//! [project README](https://github.com/camercu/litmask#readme) and
+//! [`docs/ARCHITECTURE.md`](https://github.com/camercu/litmask/blob/main/docs/ARCHITECTURE.md).
+//! This module doc is the API reference.
+//!
+//! ## Choosing a macro
+//!
+//! The masking macros fall into three families (the sidebar lists every
+//! one; the README has the [exhaustive
+//! table](https://github.com/camercu/litmask#macros)):
+//!
+//! - **Real secrets** — [`mask!`] and its formatting / IO / inclusion
+//!   variants ([`mask_format!`], [`mask_concat!`], [`mask_env!`],
+//!   [`mask_include_str!`], `mask_write!`, `mask_println!`, …) decrypt
+//!   through the AEAD pipeline and return owned values.
+//! - **Bootstrap strings** — [`weak_mask!`] is the only macro usable
+//!   *before* the runtime is unlocked (`strings(1)`-resistance only,
+//!   returns `&'static`). Use it for the env-var names and paths a
+//!   provider itself needs.
+//! - **Zero-alloc** — `mask_stack!` (`stack` feature) decrypts into an
+//!   inline, self-zeroizing buffer instead of the heap.
+//!
+//! Two derives round these out: [`MaskDebug`] masks `Debug`
+//! type/field/variant names, and the experimental `unstable-serde` feature
+//! adds masked serde derives.
 //!
 //! ## Two-phase masking
 //!
@@ -55,7 +93,42 @@
 //! owner governs the whole graph and libraries need no configuration.
 //! There is no bare `init!()`; the governing forms are `init!(provider)`,
 //! `init!(bind_to_machine)`, and `init!(bind_to_machine + provider)`. See
-//! `docs/adr/0001-masking-crate-unlock-governance.md`.
+//! [ADR-0001](https://github.com/camercu/litmask/blob/main/docs/adr/0001-masking-crate-unlock-governance.md).
+//!
+//! ### Host setup for governed masking
+//!
+//! Install the CLI once (`cargo install litmask-cli` installs a `litmask`
+//! binary), mint an unlock key with it, thread the key through the *build*
+//! environment so every crate's `build.rs` seals against it, then install
+//! it at startup with one governing [`init!`]:
+//!
+//! ```sh
+//! key="$(litmask keygen)"
+//! LITMASK_UNLOCK_KEY="$key" cargo build --release
+//! ```
+//!
+//! ```ignore
+//! // src/main.rs — sealed External tier (compile-checked against the seal).
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let provider = litmask::EnvVarProvider::new("LITMASK_UNLOCK_KEY");
+//!     litmask::init!(provider)?; // one call unlocks the whole graph
+//!     println!("{}", litmask::mask!("now backed by a runtime key"));
+//!     Ok(())
+//! }
+//! ```
+//!
+//! `EnvVarProvider` re-sources the key at *run* time, so the same
+//! `LITMASK_UNLOCK_KEY` must be in the binary's environment when it starts,
+//! not only at build:
+//!
+//! ```sh
+//! LITMASK_UNLOCK_KEY="$key" ./target/release/my_app
+//! ```
+//!
+//! The Rust snippet is `ignore`d because `init!(provider)` only compiles
+//! once the build environment has sealed a key-bearing tier; the
+//! executable, test-exercised version lives in
+//! [`examples/file_provider.rs`](https://github.com/camercu/litmask/blob/main/litmask/examples/file_provider.rs).
 //!
 //! ## Return types
 //!
@@ -85,6 +158,13 @@
 //! can leave an unscrubbed copy behind — the wipe is complete, not
 //! best-effort like [`Zeroizing`] over a heap value.
 //!
+//! ```no_run
+//! # #[cfg(feature = "stack")] {
+//! let pw = litmask::mask_stack!("hunter2"); // `MaskStr` guard, wiped on drop
+//! assert_eq!(&*pw, "hunter2");              // derefs to `&str`
+//! # }
+//! ```
+//!
 //! The buffer lives on the stack, so [`mask!`] remains the right choice
 //! for large literals; a literal whose buffer would exceed
 //! `LITMASK_STACK_LIMIT` (default 4096 bytes) is a compile error.
@@ -92,8 +172,17 @@
 //! `mask!(c"...")` (which needs `CString`) it works in `no_std` without an
 //! allocator. (All gated behind the `stack` feature.)
 //!
-//! The crate is `#![no_std]` + `alloc` from day one. The default
-//! `std` feature gates only what genuinely requires `std`.
+//! ## Feature flags
+//!
+//! The crate is `#![no_std]` + `alloc` from day one; the default `std`
+//! feature gates only what genuinely requires `std`. `stack`,
+//! `machine-id`, `unstable-serde`, and the cipher toggle
+//! (`chacha20-poly1305` default vs `aes-gcm`) gate the rest. Each is
+//! documented at its definition in
+//! [`litmask/Cargo.toml`](https://github.com/camercu/litmask/blob/main/litmask/Cargo.toml);
+//! the [README feature
+//! table](https://github.com/camercu/litmask#features) is the canonical
+//! list.
 
 #![no_std]
 

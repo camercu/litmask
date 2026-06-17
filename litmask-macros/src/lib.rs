@@ -125,8 +125,9 @@ pub fn mask_stack(input: TokenStream) -> TokenStream {
     mask_stack::expand(input)
 }
 
-/// Install a process-global **governing provider** (ADR-0001) and eagerly
-/// unlock the host's own wrapper through it. Once installed, the lazy path
+/// Install a process-global **governing provider**
+/// ([ADR-0001](https://github.com/camercu/litmask/blob/main/docs/adr/0001-masking-crate-unlock-governance.md))
+/// and eagerly unlock the host's own wrapper through it. Once installed, the lazy path
 /// unlocks every other masking crate's wrapper through the same provider —
 /// governed masking across the dependency graph under a uniform seal.
 ///

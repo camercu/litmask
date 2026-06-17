@@ -292,7 +292,7 @@ re-sourced at **run** time by `init!(bind_to_machine)`, which recomputes the
 host ID locally — no env var or key file to deliver at runtime:
 
 ```sh
-LITMASK_MACHINE_ID="$(cargo run -q -p litmask-cli -- show-machine-id)" \
+LITMASK_MACHINE_ID="$(litmask show-machine-id)" \
     cargo build --release --features machine-id
 
 ./target/release/my_app   # decrypts only on this host
@@ -314,7 +314,8 @@ or copy the token to whoever does the sealing.
 
 ## CLI
 
-The `litmask` CLI is a small build-time helper with two subcommands:
+Install the build-time helper with `cargo install litmask-cli`; it puts a
+`litmask` binary on your `PATH` with two subcommands:
 
 | Command           | Output                                                         |
 | ----------------- | -------------------------------------------------------------- |
@@ -324,8 +325,7 @@ The `litmask` CLI is a small build-time helper with two subcommands:
 `keygen` is a plain generator you can pipe into a build or a secret store:
 
 ```sh
-LITMASK_UNLOCK_KEY="$(cargo run -q -p litmask-cli -- keygen)" \
-    cargo build --release
+LITMASK_UNLOCK_KEY="$(litmask keygen)" cargo build --release
 ```
 
 ## Features
