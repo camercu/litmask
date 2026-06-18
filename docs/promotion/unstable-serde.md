@@ -165,6 +165,29 @@ feature).
   No twin file is added yet (a `#[serde(tag=...)]` `MaskDeserialize` can't
   compile while the guard rejects); the trybuild reject cases
   (`compile/mask_*_serde_attr_container.rs`) remain the pinned contract.
+
+  **Agreed scope when a consumer appears — serialize-only.** Cost and
+  masking value split by _direction_, not by repr: the `ContentDeserializer`
+  bulk and the §E.2.6 byte-identical-error coupling are entirely a
+  _deserialize_ problem (the tag can sit anywhere in the map, so the whole
+  map must be buffered and replayed). _Serialize_ never buffers for
+  struct/unit variants — it just emits the tag field inline. So the
+  worthwhile slice is **`MaskSerialize`-only**:
+  - internally tagged (struct/unit/newtype-of-struct): `serialize_struct`
+    with a prepended masked `tag → variant_name` field — pure codegen,
+    no `__serde_support`.
+  - adjacently tagged (any variant): `serialize_struct` of two masked-key
+    fields (`tag → variant`, `content → inner`) — trivial.
+  - untagged: nothing on the wire to mask → **reclassify out of scope**
+    (like `into`/`from`), not deferred.
+  - `MaskDeserialize` + tagging stays reject-loud (the deserialize tax is
+    unpaid); needs a SPEC §E carve-out + a loud `MaskDeserialize` error
+    naming the asymmetry vs the §E.3 "pair the derives" doctrine.
+
+  **Not built — gated on ADR-0002 gate 1 (real consumer).** No consumer
+  emits tagged enums today, so building even the cheap serialize half now
+  would be speculative surface. Parked behind the 2a seam until a genuine
+  consumer lands; the serialize-only shape above is the agreed drop-in.
 - **`flatten`** — masking value: moderate. Needs content-buffering plus a
   `FlatMapSerializer` equivalent, again replicated out of
   `serde::__private`. Additional snag: serde itself breaks `flatten` on
