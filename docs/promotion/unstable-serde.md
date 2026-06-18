@@ -125,12 +125,33 @@ feature).
   `litmask/tests/mask_serde_with.rs::with_on_concrete_field_in_generic_container_matches_plain`
   (the common over-broad-reject unblock) and `::with_on_generic_field_matches_plain`.
 
-### Medium effort
+### Medium effort — re-scoped: not the cheap codegen it looked
 
-- **explicit `borrow`** — masking value: neutral (lifetime control).
-  Implicit borrow for `&str`/`&[u8]`/`Option<…>` is already handled via
-  the `'de: 'a` bound (§E.2.6); explicit `#[serde(borrow)]` is the
-  less-common override. Moderate visitor/lifetime plumbing.
+- **explicit `borrow`** — masking value: neutral (lifetime control; names
+  mask normally regardless). Implicit borrow for `&str`/`&[u8]`/`Option<…>`
+  already works via the `'de: 'a` bound (§E.2.6). Investigating the
+  explicit override turned up a split, and the cheap-looking options are
+  both traps:
+  - **Naturally-borrowing types** (a user `Wrapper<'a>` whose own
+    `Deserialize` borrows under `'de: 'a`): pure codegen — parse `borrow`,
+    add the field's lifetimes to `borrowed_lifetimes`
+    (`mask_deserialize/generics.rs:71`). Faithful.
+  - **`Cow<'a, str>` / `Cow<'a, [u8]>`** — the _most common_ `borrow` use
+    case ([serde #1852](https://github.com/serde-rs/serde/issues/1852),
+    [#928](https://github.com/serde-rs/serde/issues/928)). serde's `Cow`
+    `Deserialize` impl owns by default; `#[serde(borrow)]` borrows only
+    because the _derive_ routes it through a `serde::__private` path —
+    the same prohibition (§E.2.6) that gates enum tagging. (Behavior
+    certain; exact helper name not pinned down.)
+  - **A pure no-op is strictly worst:** dropping the `'de: 'a` bound makes
+    a borrow-requiring user type fail to compile (masked rejects what plain
+    accepts), while `Cow` compiles and silently _owns_ — values compare
+    equal under `PartialEq` so twins pass, but the zero-copy is gone
+    (ADR-0002 silent gap).
+  - **Honest cheap slice when wanted:** add the `'de: 'a` bound (compiles
+    for every case, faithful for naturally-borrowing types) **and**
+    reject-loud on `Cow<…>` borrow fields (syntactically detectable). Not
+    built — neutral masking value, no consumer (ADR-0002 gate 1).
 
 ### High effort — separate projects
 
