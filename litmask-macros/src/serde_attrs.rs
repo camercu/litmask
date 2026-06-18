@@ -173,9 +173,11 @@ pub(crate) struct ContainerAttrs {
     /// but not yet emitted — see [`Tagging`] and
     /// [`ContainerAttrs::reject_unsupported_tagging`].
     pub(crate) tagging: Tagging,
-    /// Span of the first tagging key seen, so the deferred-reject error
-    /// underlines that key (matching the pre-spike `unsupported` span).
-    tagging_span: Option<proc_macro2::Span>,
+    /// The first tagging key seen (`(span, name)`), so the deferred-reject
+    /// error underlines that key (matching the pre-spike `unsupported`
+    /// span) and names what the user actually wrote — e.g. `content` for
+    /// the invalid `content`-without-`tag` form, not a phantom `tag`.
+    tagging_key: Option<(proc_macro2::Span, String)>,
 }
 
 impl ContainerAttrs {
@@ -183,14 +185,13 @@ impl ContainerAttrs {
     /// lands. Mirrors [`unsupported`]'s message/tag so the deferred forms
     /// stay indistinguishable from any other not-yet-supported key.
     pub(crate) fn reject_unsupported_tagging(&self, macro_name: &str) -> syn::Result<()> {
-        let key = match self.tagging {
-            Tagging::External => return Ok(()),
-            Tagging::Internal { .. } | Tagging::Adjacent { .. } => "tag",
-            Tagging::Untagged => "untagged",
-        };
-        let span = self
-            .tagging_span
-            .unwrap_or_else(proc_macro2::Span::call_site);
+        if self.tagging == Tagging::External {
+            return Ok(());
+        }
+        let (span, key) = self
+            .tagging_key
+            .clone()
+            .unwrap_or_else(|| (proc_macro2::Span::call_site(), String::from("tag")));
         Err(compile_error(
             span,
             macro_name,
@@ -358,15 +359,18 @@ pub(crate) fn parse_container(
             out.transparent = true;
             Ok(())
         } else if meta.path.is_ident("tag") {
-            out.tagging_span.get_or_insert_with(|| meta.path.span());
+            out.tagging_key
+                .get_or_insert_with(|| (meta.path.span(), "tag".to_string()));
             tag = Some(meta.value()?.parse::<LitStr>()?.value());
             Ok(())
         } else if meta.path.is_ident("content") {
-            out.tagging_span.get_or_insert_with(|| meta.path.span());
+            out.tagging_key
+                .get_or_insert_with(|| (meta.path.span(), "content".to_string()));
             content = Some(meta.value()?.parse::<LitStr>()?.value());
             Ok(())
         } else if meta.path.is_ident("untagged") {
-            out.tagging_span.get_or_insert_with(|| meta.path.span());
+            out.tagging_key
+                .get_or_insert_with(|| (meta.path.span(), "untagged".to_string()));
             untagged = true;
             Ok(())
         } else {
@@ -881,6 +885,22 @@ mod tests {
             container(&quote! {})
                 .reject_unsupported_tagging("MaskDeserialize")
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn content_without_tag_reject_names_content_not_tag() {
+        // `content` without `tag` is invalid in serde and modeled as an
+        // empty-tag Adjacent so it still reject-louds; the diagnostic must
+        // name the key the user actually wrote (`content`), not `tag`.
+        let attrs = container(&quote! { #[serde(content = "c")] });
+        let err = attrs
+            .reject_unsupported_tagging("MaskDeserialize")
+            .expect_err("content-only must reject");
+        assert!(err.to_string().contains("content"), "got: {err}");
+        assert!(
+            !err.to_string().contains("tag"),
+            "should not name a phantom `tag`: {err}",
         );
     }
 
