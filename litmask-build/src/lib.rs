@@ -132,7 +132,7 @@ pub fn emit() {
     // (untracked by rustc), so declare the rebuild dependency here — the
     // same mechanism the seed/machine-id vars use. Unconditional: emitting
     // it costs nothing when the var is unset, and `litmask-build` cannot
-    // see the consumer's `stack` feature.
+    // see the consumer's `unstable-stack` feature.
     println!("cargo:rerun-if-env-changed=LITMASK_STACK_LIMIT");
 
     // Presence-driven tier selection (§2.4): which build inputs are set

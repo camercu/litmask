@@ -51,8 +51,8 @@
 //!   *before* the runtime is unlocked (`strings(1)`-resistance only,
 //!   returns `&'static`). Use it for the env-var names and paths a
 //!   provider itself needs.
-//! - **Zero-alloc** — `mask_stack!` (`stack` feature) decrypts into an
-//!   inline, self-zeroizing buffer instead of the heap.
+//! - **Zero-alloc** — `mask_stack!` (`unstable-stack` feature) decrypts
+//!   into an inline, self-zeroizing buffer instead of the heap.
 //!
 //! Two derives round these out: [`MaskDebug`] masks `Debug`
 //! type/field/variant names, and the `serde` feature adds masked serde
@@ -422,8 +422,8 @@ pub use litmask_macros::MaskSerialize;
 pub use litmask_macros::MaskDeserialize;
 
 /// Stack-backed, zero-alloc masking — see [`macro@mask_stack`],
-/// [`MaskStr`], [`MaskBytes`], and [`MaskCStr`]. Gated behind the `stack`
-/// feature.
+/// [`MaskStr`], [`MaskBytes`], and [`MaskCStr`]. Gated behind the
+/// `unstable-stack` feature.
 ///
 /// # Examples
 ///

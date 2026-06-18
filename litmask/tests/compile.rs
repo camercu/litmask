@@ -92,7 +92,7 @@ fn mask_deserialize_compile_fixtures() {
     t.compile_fail("tests/compile/mask_deserialize_serde_attr_variant.rs");
 }
 
-/// Rejection fixtures for `mask_stack!` (`stack` feature). Same gate
+/// Rejection fixtures for `mask_stack!` (`unstable-stack` feature). Same gate
 /// rationale as the serde fixtures: trybuild propagates the running
 /// build's features into the fixture project, so without the gate the
 /// fixture would fail on "cannot find macro `mask_stack`" instead of the
