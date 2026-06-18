@@ -255,9 +255,12 @@ fn no_message_panics_outside_gated_diagnostics() {
 /// `.expect`/`panic!` calls run at PROC-MACRO TIME inside rustc and never
 /// reach a user binary, so the policy is an explicit allowlist of
 /// expansion-time call sites rather than the runtime crate's
-/// gated-diagnostics rule. Scoped to the files that emit the `mask!()`
-/// decryption tokens (the rest of the macro crate is full of legitimate
-/// expansion-time `.expect`s on `syn` parsing).
+/// gated-diagnostics rule. The named emission-path files are scanned
+/// strictly (any message-panic must be allowlisted); the rest of the macro
+/// crate is full of legitimate expansion-time `.expect`s on `syn` parsing,
+/// so a whole-crate sweep over those flags only litmask-IDENTIFYING text
+/// (the only thing that matters for §1.9.5 opacity). The sweep means a
+/// newly-added file can never be silently missed by the hand list.
 #[test]
 fn macro_expansion_path_panics_are_allowlisted() {
     let macros = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../litmask-macros/src");
@@ -296,6 +299,26 @@ fn macro_expansion_path_panics_are_allowlisted() {
             hits.push(format!("{rel}:{line}  {text}"));
         }
     }
+
+    // Whole-crate sweep so a new file can never be silently missed by the
+    // hand list above. Outside the strictly-scanned files, only a
+    // litmask-identifying message reaching emitted tokens would breach
+    // §1.9.5; a generic expansion-time `.expect` on `syn` never ships, so
+    // filter to messages naming litmask.
+    let scanned: std::collections::HashSet<std::path::PathBuf> =
+        scans.iter().map(|(rel, _)| macros.join(rel)).collect();
+    for path in rs_files(&macros) {
+        if scanned.contains(&path) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).expect("read macro source");
+        for (line, matched) in message_panic_hits(&text, &[], false) {
+            if matched.to_ascii_lowercase().contains("litmask") {
+                hits.push(format!("{}:{line}  {matched}", path.display()));
+            }
+        }
+    }
+
     assert!(
         hits.is_empty(),
         "macro emission path leaks non-allowlisted message-panic text: {hits:#?}",
