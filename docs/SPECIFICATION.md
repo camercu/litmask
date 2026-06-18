@@ -2738,7 +2738,7 @@ struct (named-field, tuple, newtype, unit) or enum.
   | `deny_unknown_fields` | container | unknown string key → `unknown_field` error |
   | `bound` / `bound(serialize=,deserialize=)` | container | replaces the default per-param trait bound |
   | `transparent` | container | single-field struct (de)serializes as that field |
-  | `with` / `serialize_with` / `deserialize_with` | named field | routes through user fns; reject-loud on a generic type |
+  | `with` / `serialize_with` / `deserialize_with` | named field | routes through user fns; supported on a generic type (the adapter carries the impl's bounds) |
 
   Every other key — notably `flatten`, the enum representations `tag` /
   `untagged` / `content`, container `getter` / `into` / `from` /
@@ -2782,9 +2782,8 @@ Residuals (documented, not defects):
 
 The supported `#[serde(...)]` subset is fixed by §E.2.5. Beyond it, the
 deferred attributes — `flatten`, the enum representations `tag` /
-`untagged` / `content`, explicit `borrow`, and
-`with`-functions on generic types — are not yet supported and stay
-reject-loud; they may land in a future minor release. `into` / `from` /
+`untagged` / `content`, and explicit `borrow` — are not yet supported and
+stay reject-loud; they may land in a future minor release. `into` / `from` /
 `try_from` / `getter` are out of scope, not deferred: they delegate
 (de)serialization to a shadow type whose own derive embeds the names, so
 masking cannot reach them; they stay permanently reject-loud.

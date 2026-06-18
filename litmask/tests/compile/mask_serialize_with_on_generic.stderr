@@ -1,5 +1,0 @@
-error: MaskSerialize! invalid-arg: `#[serde(with/serialize_with/deserialize_with)]` is not yet supported on a generic type
-  --> tests/compile/mask_serialize_with_on_generic.rs:13:5
-   |
-13 |     #[serde(serialize_with = "to_wire")]
-   |     ^

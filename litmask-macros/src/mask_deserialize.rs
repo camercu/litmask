@@ -59,7 +59,6 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 }
 
 fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
-    serde_attrs::reject_with_on_generic(input, MACRO_NAME)?;
     let body = deserialize_body(input)?;
     let struct_ident = &input.ident;
     let DeGenerics {

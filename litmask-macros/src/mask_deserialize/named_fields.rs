@@ -40,19 +40,47 @@ fn default_value_expr(default: Option<&serde_attrs::DefaultSource>) -> TokenStre
     }
 }
 
-/// A local `Deserialize` adapter wrapping `ty`, whose `deserialize`
-/// calls the `deserialize_with` function `path(deserializer)`. Block-
-/// scoped at each use site, so the fixed name never collides. Non-
-/// generic only (a local item cannot name outer generic params).
-fn de_with_wrapper(ty: &syn::Type, path: &syn::Path) -> TokenStream2 {
+/// The container context a `deserialize_with` adapter needs to name the
+/// impl's generics (a local item cannot capture an outer `T`). Carries the
+/// container's `'de`-threaded, `Deserialize<'de>`-bounded generics fragments
+/// (see [`DeGenerics`]) so the adapter can be generic over the same params.
+pub(super) struct DeWithCtx<'a> {
+    ident: &'a syn::Ident,
+    de_impl: &'a TokenStream2,
+    de_ty: &'a TokenStream2,
+    ty: &'a TokenStream2,
+    where_clause: &'a TokenStream2,
+}
+
+/// A local `Deserialize` adapter wrapping `fty`, whose `deserialize` calls
+/// the `deserialize_with` function `path(deserializer)`. Block-scoped at
+/// each use site, so the fixed name never collides. Generic over the
+/// container's parameters (see [`DeWithCtx`]) so the field type may itself
+/// be one of them; the value is read back through the `__value` field.
+fn de_with_wrapper(ctx: &DeWithCtx, fty: &syn::Type, path: &syn::Path) -> TokenStream2 {
+    let DeWithCtx {
+        ident,
+        de_impl,
+        de_ty,
+        ty,
+        where_clause,
+    } = ctx;
     quote! {
-        struct __DeserializeWith(#ty);
-        impl<'de> ::litmask::__serde::Deserialize<'de> for __DeserializeWith {
+        struct __DeserializeWith #de_impl #where_clause {
+            __value: #fty,
+            __marker: ::core::marker::PhantomData<#ident #ty>,
+            __lifetime: ::core::marker::PhantomData<&'de ()>,
+        }
+        impl #de_impl ::litmask::__serde::Deserialize<'de> for __DeserializeWith #de_ty #where_clause {
             fn deserialize<__D>(__d: __D) -> ::core::result::Result<Self, __D::Error>
             where
                 __D: ::litmask::__serde::Deserializer<'de>,
             {
-                ::core::result::Result::Ok(__DeserializeWith(#path(__d)?))
+                ::core::result::Result::Ok(__DeserializeWith {
+                    __value: #path(__d)?,
+                    __marker: ::core::marker::PhantomData,
+                    __lifetime: ::core::marker::PhantomData,
+                })
             }
         }
     }
@@ -167,10 +195,6 @@ pub(super) fn named_fields_visitor(
         visitor,
     } = cx;
 
-    let expecting = expecting_body(shape, variant_name.as_ref());
-    let visit_seq = named_visit_seq(infos, construct, shape, variant_name.as_ref());
-    let visit_map = named_visit_map(infos, names_fn, construct);
-
     let generics = split_de_generics(input);
     let DeGenerics {
         de_impl,
@@ -178,6 +202,17 @@ pub(super) fn named_fields_visitor(
         ty,
         where_clause,
     } = &generics;
+    let with_ctx = DeWithCtx {
+        ident: struct_ident,
+        de_impl,
+        de_ty,
+        ty,
+        where_clause,
+    };
+
+    let expecting = expecting_body(shape, variant_name.as_ref());
+    let visit_seq = named_visit_seq(infos, construct, shape, variant_name.as_ref(), &with_ctx);
+    let visit_map = named_visit_map(infos, names_fn, construct, &with_ctx);
 
     quote! {
         struct #visitor #de_impl #where_clause {
@@ -213,6 +248,7 @@ fn named_visit_seq(
     construct: &TokenStream2,
     shape: &str,
     variant_name: Option<&TokenStream2>,
+    with_ctx: &DeWithCtx,
 ) -> TokenStream2 {
     let de_count = infos.iter().filter(|info| !info.skip_de).count();
     let variant = variant_option(variant_name);
@@ -247,15 +283,18 @@ fn named_visit_seq(
                 }
             };
             let next_element = if let Some(path) = &info.deserialize_with {
-                let wrapper = de_with_wrapper(fty, path);
+                let wrapper = de_with_wrapper(with_ctx, fty, path);
+                let de_ty = with_ctx.de_ty;
                 quote! {
                     {
                         #wrapper
                         ::core::option::Option::map(
-                            ::litmask::__serde::de::SeqAccess::next_element::<__DeserializeWith>(
+                            ::litmask::__serde::de::SeqAccess::next_element::<
+                                __DeserializeWith #de_ty
+                            >(
                                 &mut __seq,
                             )?,
-                            |__w| __w.0,
+                            |__w| __w.__value,
                         )
                     }
                 }
@@ -305,6 +344,7 @@ fn named_visit_map(
     infos: &[NamedFieldInfo],
     names_fn: &syn::Ident,
     construct: &TokenStream2,
+    with_ctx: &DeWithCtx,
 ) -> TokenStream2 {
     let mut lets = Vec::new();
     let mut arms = Vec::new();
@@ -325,11 +365,14 @@ fn named_visit_map(
             let mut #value: ::core::option::Option<#fty> = ::core::option::Option::None;
         });
         let next_value = if let Some(path) = &info.deserialize_with {
-            let wrapper = de_with_wrapper(fty, path);
+            let wrapper = de_with_wrapper(with_ctx, fty, path);
+            let de_ty = with_ctx.de_ty;
             quote! {
                 {
                     #wrapper
-                    ::litmask::__serde::de::MapAccess::next_value::<__DeserializeWith>(&mut __map)?.0
+                    ::litmask::__serde::de::MapAccess::next_value::<
+                        __DeserializeWith #de_ty
+                    >(&mut __map)?.__value
                 }
             }
         } else {

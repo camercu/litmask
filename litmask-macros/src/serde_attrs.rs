@@ -562,41 +562,6 @@ fn rule_from_lit(macro_name: &str, lit: &LitStr) -> syn::Result<RenameRule> {
     })
 }
 
-/// Reject-loud a `with` / `serialize_with` / `deserialize_with` field on
-/// a generic type. The generated adapter is a local item, which cannot
-/// name the surrounding impl's generic parameters, so this shape is not
-/// supported yet (a documented limitation).
-pub(crate) fn reject_with_on_generic(
-    input: &syn::DeriveInput,
-    macro_name: &str,
-) -> syn::Result<()> {
-    if input.generics.params.is_empty() {
-        return Ok(());
-    }
-    let fields: Vec<&syn::Field> = match &input.data {
-        syn::Data::Struct(data) => data.fields.iter().collect(),
-        syn::Data::Enum(data) => data
-            .variants
-            .iter()
-            .flat_map(|variant| variant.fields.iter())
-            .collect(),
-        syn::Data::Union(_) => Vec::new(),
-    };
-    for field in fields {
-        let attrs = parse_field(macro_name, &field.attrs)?;
-        if attrs.serialize_with.is_some() || attrs.deserialize_with.is_some() {
-            return Err(compile_error(
-                field.span(),
-                macro_name,
-                FailTag::InvalidArg,
-                "`#[serde(with/serialize_with/deserialize_with)]` is not yet supported on a \
-                 generic type",
-            ));
-        }
-    }
-    Ok(())
-}
-
 /// Reject-loud any `#[serde(...)]` on unnamed (tuple) fields. The
 /// masking derives don't apply field attributes positionally yet, so
 /// honoring one silently (e.g. `serialize_with`, `skip`, `default`)

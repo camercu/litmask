@@ -87,3 +87,119 @@ fn with_functions_match_plain_derive_deserialize() {
     assert!(!masked.flag);
     assert_eq!(masked.label, "world");
 }
+
+// Case A — a `with`-fn on a *concrete* field of a *generic* container.
+// The adapter never names `T`, but the old blanket reject fired on any
+// generic container carrying a with-field. This is the common unblock.
+#[derive(MaskSerialize, MaskDeserialize, PartialEq, Debug)]
+struct GenericContainer<T> {
+    #[serde(with = "bool_as_int")]
+    flag: bool,
+    value: T,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+struct PlainContainer<T> {
+    #[serde(with = "bool_as_int")]
+    flag: bool,
+    value: T,
+}
+
+#[test]
+fn with_on_concrete_field_in_generic_container_matches_plain() {
+    let masked = GenericContainer {
+        flag: true,
+        value: "hi".to_string(),
+    };
+    let json = serde_json::to_string(&masked).expect("ser");
+    assert_eq!(
+        json,
+        serde_json::to_string(&PlainContainer {
+            flag: true,
+            value: "hi".to_string(),
+        })
+        .expect("plain ser"),
+    );
+    let back: GenericContainer<String> = serde_json::from_str(&json).expect("de");
+    assert_eq!(back, masked);
+}
+
+// Case B — a `with`-fn on a *generic-typed* field. serde drops the auto
+// `T: Serialize` bound on a with-field, so the user supplies it via
+// `#[serde(bound)]`; the masking adapter must carry that same bound (a
+// local item cannot name the outer `T`). `passthrough` is wire-identity.
+mod passthrough {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<T: Serialize, S: Serializer>(
+        value: &T,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        value.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<T, D::Error> {
+        T::deserialize(deserializer)
+    }
+}
+
+#[derive(MaskSerialize, MaskDeserialize, PartialEq, Debug)]
+#[serde(bound(
+    serialize = "T: serde::Serialize",
+    deserialize = "T: serde::Deserialize<'de>"
+))]
+struct GenericWithField<T> {
+    #[serde(with = "passthrough")]
+    value: T,
+    plain: u8,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+#[serde(bound(
+    serialize = "T: serde::Serialize",
+    deserialize = "T: serde::Deserialize<'de>"
+))]
+struct PlainWithField<T> {
+    #[serde(with = "passthrough")]
+    value: T,
+    plain: u8,
+}
+
+#[test]
+fn with_on_generic_field_matches_plain() {
+    // T = String
+    let masked = GenericWithField {
+        value: "hi".to_string(),
+        plain: 7,
+    };
+    let json = serde_json::to_string(&masked).expect("ser");
+    assert_eq!(
+        json,
+        serde_json::to_string(&PlainWithField {
+            value: "hi".to_string(),
+            plain: 7,
+        })
+        .expect("plain ser"),
+    );
+    let back: GenericWithField<String> = serde_json::from_str(&json).expect("de");
+    assert_eq!(back, masked);
+
+    // T = u32 — a second instantiation through the same adapter.
+    let m2 = GenericWithField {
+        value: 42u32,
+        plain: 1,
+    };
+    let j2 = serde_json::to_string(&m2).expect("ser");
+    assert_eq!(
+        j2,
+        serde_json::to_string(&PlainWithField {
+            value: 42u32,
+            plain: 1,
+        })
+        .expect("plain ser"),
+    );
+    let b2: GenericWithField<u32> = serde_json::from_str(&j2).expect("de");
+    assert_eq!(b2, m2);
+}

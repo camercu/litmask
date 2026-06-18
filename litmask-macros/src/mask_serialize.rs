@@ -40,20 +40,25 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 }
 
 fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
-    serde_attrs::reject_with_on_generic(input, MACRO_NAME)?;
     let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
     container.reject_unsupported_tagging(MACRO_NAME)?;
-    let body = serialize_body(input, &container)?;
 
     let struct_ident = &input.ident;
     // Bound every type param with `Serialize` (the plain derive's bound
     // model: `Envelope<T>` serializes iff `T: Serialize`), unless a
-    // `#[serde(bound)]` override supplies the predicates instead.
+    // `#[serde(bound)]` override supplies the predicates instead. Computed
+    // before the body so a `serialize_with` adapter on a generic field can
+    // reuse the same bound (see `WithCtx`).
     let generics = apply_bounds(
         input.generics.clone(),
         &syn::parse_quote!(::litmask::__serde::Serialize),
         container.bound.serialize.as_deref(),
     );
+    let with_ctx = WithCtx {
+        ident: struct_ident,
+        generics: &generics,
+    };
+    let body = serialize_body(input, &container, &with_ctx)?;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     Ok(quote! {
@@ -78,7 +83,11 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
 /// classification: each shape maps to the dedicated `Serializer`
 /// entry point the plain derive would call, which is what keeps the
 /// wire format byte-identical (§E.2.1).
-fn serialize_body(input: &DeriveInput, container: &ContainerAttrs) -> syn::Result<TokenStream2> {
+fn serialize_body(
+    input: &DeriveInput,
+    container: &ContainerAttrs,
+    with_ctx: &WithCtx,
+) -> syn::Result<TokenStream2> {
     if container.transparent {
         let access = transparent_field(input, MACRO_NAME)?.access;
         return Ok(quote! {
@@ -89,14 +98,14 @@ fn serialize_body(input: &DeriveInput, container: &ContainerAttrs) -> syn::Resul
     match &input.data {
         Data::Struct(data) => match &data.fields {
             Fields::Named(fields) => {
-                named_struct_body(&name, fields, container.rename_all.serialize)
+                named_struct_body(&name, fields, container.rename_all.serialize, with_ctx)
             }
             Fields::Unit => Ok(quote! {
                 ::litmask::__serde::Serializer::serialize_unit_struct(serializer, #name)
             }),
             Fields::Unnamed(fields) => tuple_struct_body(&name, fields),
         },
-        Data::Enum(data) => enum_body(&name, data, container),
+        Data::Enum(data) => enum_body(&name, data, container, with_ctx),
         Data::Union(_) => Err(compile_error(
             input.ident.span(),
             MACRO_NAME,
@@ -114,6 +123,7 @@ fn enum_body(
     name: &TokenStream2,
     data: &syn::DataEnum,
     container: &ContainerAttrs,
+    with_ctx: &WithCtx,
 ) -> syn::Result<TokenStream2> {
     if data.variants.is_empty() {
         // An uninhabited enum has no arms; `match *self {}` is how the
@@ -124,7 +134,7 @@ fn enum_body(
         .variants
         .iter()
         .enumerate()
-        .map(|(index, variant)| variant_arm(name, index, variant, container))
+        .map(|(index, variant)| variant_arm(name, index, variant, container, with_ctx))
         .collect::<syn::Result<Vec<_>>>()?;
     Ok(quote! {
         match self {
@@ -138,6 +148,7 @@ fn variant_arm(
     index: usize,
     variant: &syn::Variant,
     container: &ContainerAttrs,
+    with_ctx: &WithCtx,
 ) -> syn::Result<TokenStream2> {
     let vident = &variant.ident;
     let vattrs = serde_attrs::parse_variant(MACRO_NAME, &variant.attrs)?;
@@ -200,7 +211,9 @@ fn variant_arm(
                 }
             })
         }
-        Fields::Named(fields) => struct_variant_arm(name, vident, vindex, &vname, &vattrs, fields),
+        Fields::Named(fields) => {
+            struct_variant_arm(name, vident, vindex, &vname, &vattrs, fields, with_ctx)
+        }
     }
 }
 
@@ -215,6 +228,7 @@ fn struct_variant_arm(
     vname: &TokenStream2,
     vattrs: &serde_attrs::VariantAttrs,
     fields: &syn::FieldsNamed,
+    with_ctx: &WithCtx,
 ) -> syn::Result<TokenStream2> {
     let mut pattern_binds = Vec::with_capacity(fields.named.len());
     let mut serialize_fields = Vec::new();
@@ -243,6 +257,7 @@ fn struct_variant_arm(
                 ty: &field.ty,
                 skip_if: attrs.skip_serializing_if.as_ref(),
                 serialize_with: attrs.serialize_with.as_ref(),
+                with_ctx,
             },
             &mut len_adjusts,
         ));
@@ -305,6 +320,7 @@ fn named_struct_body(
     name: &TokenStream2,
     fields: &syn::FieldsNamed,
     rename_all: Option<RenameRule>,
+    with_ctx: &WithCtx,
 ) -> syn::Result<TokenStream2> {
     let mut serialize_fields = Vec::with_capacity(fields.named.len());
     let mut len_adjusts = Vec::new();
@@ -326,6 +342,7 @@ fn named_struct_body(
                 ty: &field.ty,
                 skip_if: attrs.skip_serializing_if.as_ref(),
                 serialize_with: attrs.serialize_with.as_ref(),
+                with_ctx,
             },
             &mut len_adjusts,
         ));
@@ -353,6 +370,8 @@ struct SerField<'a> {
     ty: &'a syn::Type,
     skip_if: Option<&'a syn::Path>,
     serialize_with: Option<&'a syn::Path>,
+    /// Container context for a `serialize_with` adapter on a generic type.
+    with_ctx: &'a WithCtx<'a>,
 }
 
 /// Emit one `serialize_field` statement, routing the value through a
@@ -368,9 +387,10 @@ fn serialize_struct_field(field: &SerField, len_adjusts: &mut Vec<TokenStream2>)
         ty,
         skip_if,
         serialize_with,
+        with_ctx,
     } = field;
     let serialize_value = if let Some(path) = serialize_with {
-        serialize_with_adapter(ty, path, value)
+        serialize_with_adapter(with_ctx, ty, path, value)
     } else {
         quote! { #value }
     };
@@ -386,14 +406,43 @@ fn serialize_struct_field(field: &SerField, len_adjusts: &mut Vec<TokenStream2>)
     }
 }
 
+/// The container context a `with` adapter needs to name the impl's
+/// generic parameters. A local item cannot capture an outer `T`, so the
+/// adapter is itself generic over the container's parameters (with the
+/// container's `Serialize` where-clause) and binds every otherwise-unused
+/// one through a `PhantomData<Container<…>>` — serde's own pattern.
+pub(crate) struct WithCtx<'a> {
+    ident: &'a syn::Ident,
+    /// The container generics already carrying the per-param `Serialize`
+    /// bound (or a `#[serde(bound)]` override), so the adapter's call to
+    /// the user `serialize_with` fn type-checks for a generic field.
+    generics: &'a syn::Generics,
+}
+
 /// A local `Serialize` adapter that serializes `value` (a `&Field`)
 /// through the `serialize_with` function `path(&field, serializer)`.
-/// Non-generic only — a local item cannot name outer generic params.
-fn serialize_with_adapter(ty: &syn::Type, path: &syn::Path, value: &TokenStream2) -> TokenStream2 {
+/// Generic over the container's parameters (see [`WithCtx`]) so the field
+/// type may itself be one of them.
+fn serialize_with_adapter(
+    ctx: &WithCtx,
+    ty: &syn::Type,
+    path: &syn::Path,
+    value: &TokenStream2,
+) -> TokenStream2 {
+    let mut generics = ctx.generics.clone();
+    generics.params.insert(0, syn::parse_quote!('__l));
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let ident = ctx.ident;
+    let (_, container_ty_generics, _) = ctx.generics.split_for_impl();
     quote! {
         &{
-            struct __SerializeWith<'__l>(&'__l #ty);
-            impl<'__l> ::litmask::__serde::Serialize for __SerializeWith<'__l> {
+            struct __SerializeWith #impl_generics #where_clause {
+                __value: &'__l #ty,
+                __marker: ::core::marker::PhantomData<#ident #container_ty_generics>,
+            }
+            impl #impl_generics ::litmask::__serde::Serialize
+                for __SerializeWith #ty_generics #where_clause
+            {
                 fn serialize<__S>(
                     &self,
                     __s: __S,
@@ -401,10 +450,15 @@ fn serialize_with_adapter(ty: &syn::Type, path: &syn::Path, value: &TokenStream2
                 where
                     __S: ::litmask::__serde::Serializer,
                 {
-                    #path(self.0, __s)
+                    #path(self.__value, __s)
                 }
             }
-            __SerializeWith(#value)
+            __SerializeWith {
+                __value: #value,
+                // Annotated with the concrete container type so the
+                // adapter's own `T` is bound to the outer `T` in scope.
+                __marker: ::core::marker::PhantomData::<#ident #container_ty_generics>,
+            }
         }
     }
 }

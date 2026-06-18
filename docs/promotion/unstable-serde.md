@@ -54,7 +54,7 @@ Every rejected row is a `compile_error!` pinned by a trybuild case.
 | `deny_unknown_fields` (container) | supported | `litmask/tests/mask_serde_alias.rs::deny_unknown_fields_*` |
 | `bound` / `bound(serialize=,deserialize=)` (container) | supported | `litmask/tests/mask_serde_bound.rs` |
 | `transparent` (container) | supported | `litmask/tests/mask_serde_transparent.rs` |
-| `with` / `serialize_with` / `deserialize_with` (named field) | supported | `litmask/tests/mask_serde_with.rs` |
+| `with` / `serialize_with` / `deserialize_with` (named field, incl. generic-typed field) | supported | `litmask/tests/mask_serde_with.rs` (`with_on_generic_field_matches_plain`) |
 | Generic types (per-param `Serialize`/`Deserialize<'de>` bound) | supported | `litmask/tests/mask_serde_bound.rs` |
 | `&str`/`&[u8]` (opt. `Option`) implicit borrow | supported | §E.2.6; deserialize tests `litmask/tests/mask_deserialize.rs` |
 | `#[mask_all]` derive swap (serde ↔ masked) | supported | `litmask/tests/mask_all_serde.rs` |
@@ -68,7 +68,6 @@ Every rejected row is a `compile_error!` pinned by a trybuild case.
 | `flatten` (field) | rejected (`invalid-arg`) | `litmask/tests/compile/mask_serialize_serde_attr_field.rs` (+ deserialize) |
 | `tag` / `untagged` / `content` (container) | rejected (`invalid-arg`) | `litmask/tests/compile/mask_serialize_serde_attr_container.rs` (+ deserialize) |
 | `other` (variant) | rejected (`invalid-arg`) | `litmask/tests/compile/mask_serialize_serde_attr_variant.rs` (+ deserialize) |
-| `with`/`serialize_with`/`deserialize_with` on a generic type | rejected (`invalid-arg`) | `serde_attrs.rs::reject_with_on_generic`; compile case `litmask/tests/compile/mask_serialize_with_on_generic.rs` |
 | `#[serde(...)]` on a tuple field | rejected (`invalid-arg`) | `serde_attrs.rs::reject_tuple_field_attrs`; compile case `litmask/tests/compile/mask_serialize_skip_tuple_field.rs` |
 | Any other unsupported key (`getter`/`into`/`from`/`try_from`/explicit `borrow`) | rejected (`invalid-arg`) | `serde_attrs.rs::unsupported` + unit `unsupported_key_is_reject_loud` |
 
@@ -106,7 +105,7 @@ Effort is relative; "masking value" is whether the attribute actually
 moves schema vocabulary out of the binary (the whole point of the
 feature).
 
-### Done — landed post-stabilization
+### Done — variant `alias`
 
 - **variant `alias`** — masking value: high (alias names are wire
   vocabulary). Implemented by threading a variant-keyed `AliasMatch`
@@ -114,15 +113,20 @@ feature).
   identifier visitor, reusing the field-alias machinery. Twins:
   `litmask/tests/mask_serde_alias.rs::variant_alias_*`.
 
-### Medium effort
+### Done — `with` on a generic type
 
 - **`with`/`serialize_with`/`deserialize_with` on a generic type** —
   masking value: neutral (routes values through user fns; names still
-  masked normally). Reject-loud today because the generated adapter is a
-  local item that cannot name the surrounding impl's generic parameters
-  (`serde_attrs.rs::reject_with_on_generic`, ~`:472`). Fix: emit the
-  adapter so it carries the impl generics (or inline the call). Closes a
-  documented limitation rather than adding new surface.
+  masked normally). The generated `__SerializeWith`/`__DeserializeWith`
+  adapter is now generic over the container's parameters with the impl's
+  bound (and a `PhantomData<Container<…>>` binding unused params), so a
+  local item no longer needs to name an outer `T`. The blanket
+  `reject_with_on_generic` is removed. Twins:
+  `litmask/tests/mask_serde_with.rs::with_on_concrete_field_in_generic_container_matches_plain`
+  (the common over-broad-reject unblock) and `::with_on_generic_field_matches_plain`.
+
+### Medium effort
+
 - **explicit `borrow`** — masking value: neutral (lifetime control).
   Implicit borrow for `&str`/`&[u8]`/`Option<…>` is already handled via
   the `'de: 'a` bound (§E.2.6); explicit `#[serde(borrow)]` is the
