@@ -57,33 +57,82 @@ fn tampered_blob_panic_message_is_profile_split() {
     );
 }
 
-/// Net `{` minus `}` on a line, ignoring braces inside `//` line comments
-/// and double-quoted strings — the realistic miscount sources when
-/// brace-matching a module to strip it.
-fn brace_delta(line: &str) -> i32 {
-    let mut depth = 0i32;
-    let mut chars = line.chars().peekable();
-    let mut in_str = false;
-    while let Some(c) = chars.next() {
-        if in_str {
-            match c {
-                '\\' => {
-                    chars.next();
+/// Counts `{` minus `}` while ignoring braces that live inside strings,
+/// char literals, or comments — the realistic miscount sources when
+/// brace-matching a module to strip it. Block-comment state is carried
+/// across lines so a multi-line `/* … */` cannot leak a stray brace.
+#[derive(Default)]
+struct BraceScanner {
+    in_block_comment: bool,
+}
+
+impl BraceScanner {
+    /// Net `{` minus `}` contributed by `line`, honoring carried
+    /// block-comment state and skipping braces inside `"…"` / `r#"…"#`
+    /// strings, `'{'` char literals, `//` line comments, and `/* … */`
+    /// block comments.
+    fn delta(&mut self, line: &str) -> i32 {
+        let chars: Vec<char> = line.chars().collect();
+        let mut depth = 0i32;
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
+            if self.in_block_comment {
+                if c == '*' && chars.get(i + 1) == Some(&'/') {
+                    self.in_block_comment = false;
+                    i += 2;
+                } else {
+                    i += 1;
                 }
-                '"' => in_str = false,
-                _ => {}
+                continue;
             }
-            continue;
+            match c {
+                '/' if chars.get(i + 1) == Some(&'/') => break,
+                '/' if chars.get(i + 1) == Some(&'*') => {
+                    self.in_block_comment = true;
+                    i += 2;
+                }
+                // String literal (plain or raw). Skip to the closing quote,
+                // honoring `\"` escapes; raw strings have no escapes but the
+                // escape skip is harmless on them. Good enough for the test
+                // sources we scan; a raw string containing a `"` is not used.
+                '"' => {
+                    i += 1;
+                    while i < chars.len() {
+                        match chars[i] {
+                            '\\' => i += 2,
+                            '"' => {
+                                i += 1;
+                                break;
+                            }
+                            _ => i += 1,
+                        }
+                    }
+                }
+                // Char literal vs lifetime: `'\\…'` (escape) or `'x'` (one
+                // char then a closing quote) is a literal whose contents we
+                // skip; a bare `'a` is a lifetime, so the quote is ordinary.
+                '\'' if chars.get(i + 1) == Some(&'\\') => {
+                    i += 2;
+                    while i < chars.len() && chars[i] != '\'' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                '\'' if chars.get(i + 2) == Some(&'\'') => i += 3,
+                '{' => {
+                    depth += 1;
+                    i += 1;
+                }
+                '}' => {
+                    depth -= 1;
+                    i += 1;
+                }
+                _ => i += 1,
+            }
         }
-        match c {
-            '"' => in_str = true,
-            '/' if chars.peek() == Some(&'/') => break,
-            '{' => depth += 1,
-            '}' => depth -= 1,
-            _ => {}
-        }
+        depth
     }
-    depth
 }
 
 /// Drop `#[cfg(test)]` / `#[cfg(all(test, …))]` modules so the scan sees
@@ -98,11 +147,12 @@ fn strip_test_modules(src: &str) -> String {
     let mut i = 0;
     while i < lines.len() {
         if attr.is_match(lines[i]) {
+            let mut scanner = BraceScanner::default();
             let mut depth = 0i32;
             let mut opened = false;
             while i < lines.len() {
-                depth += brace_delta(lines[i]);
-                if lines[i].contains('{') {
+                depth += scanner.delta(lines[i]);
+                if depth > 0 {
                     opened = true;
                 }
                 i += 1;
@@ -126,8 +176,11 @@ fn strip_test_modules(src: &str) -> String {
 /// `#[cfg(debug_assertions)]` (compiled out of release).
 fn message_panic_hits(src: &str, allow: &[&str], gating_exempts: bool) -> Vec<(usize, String)> {
     // `(?s)` + `\s*` so a message rustfmt wrapped onto its own line still
-    // matches; a per-line regex would let the wrapped form slip past.
-    let re = regex::Regex::new(r#"(?s)(?:\.expect|panic!)\(\s*"[^"]+""#).expect("regex");
+    // matches; a per-line regex would let the wrapped form slip past. The
+    // raw-string alternative (`r#*".*?"#*`) catches `panic!(r#"…"#)`, which a
+    // plain-quote pattern would miss — a leak hiding behind a raw literal.
+    let re = regex::Regex::new(r##"(?s)(?:\.expect|panic!)\(\s*(?:"[^"]+"|r#*".*?"#*)"##)
+        .expect("regex");
     let stripped = strip_test_modules(src);
     let lines: Vec<&str> = stripped.lines().collect();
     let mut hits = Vec::new();
@@ -260,9 +313,23 @@ fn message_panic_scan_detects_and_exempts() {
         message_panic_hits("fn f() { panic!(\"litmask leak\"); }", &[], false).len(),
         1,
     );
+    // Raw-string message in shippable code → caught (a plain-quote regex
+    // would miss `r#"…"#`, letting a leak hide behind a raw literal).
+    assert_eq!(
+        message_panic_hits("fn f() { panic!(r#\"litmask leak\"#); }", &[], false).len(),
+        1,
+    );
     // Same panic inside a test module → stripped, not caught.
     let in_test = "#[cfg(test)]\nmod tests {\n    fn t() { panic!(\"litmask leak\"); }\n}\n";
     assert!(message_panic_hits(in_test, &[], false).is_empty());
+    // A `}` inside a char literal must not prematurely close a test module
+    // (an early strip would leak the panic below it into the scanned code).
+    let char_brace = "#[cfg(test)]\nmod t {\n    fn x() { let c = '}'; }\n    fn y() { panic!(\"litmask leak\"); }\n}\n";
+    assert!(message_panic_hits(char_brace, &[], false).is_empty());
+    // A `}` inside a block comment likewise must not close the module early.
+    let block_brace =
+        "#[cfg(test)]\nmod t {\n    /* } */\n    fn y() { panic!(\"litmask leak\"); }\n}\n";
+    assert!(message_panic_hits(block_brace, &[], false).is_empty());
     // Debug-gated message → exempt only when gating is allowed.
     let gated = "    #[cfg(debug_assertions)]\n    panic!(\"litmask leak\");\n";
     assert!(message_panic_hits(gated, &[], true).is_empty());
