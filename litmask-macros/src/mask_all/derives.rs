@@ -6,7 +6,7 @@
 //! name as a `&'static str`).
 //!
 //! `Debug` swaps unconditionally (`MaskDebug` is ungated); `Serialize` /
-//! `Deserialize` swap only when litmask is built with `serde`,
+//! `Deserialize` swap only when litmask is built with `unstable-serde`,
 //! because their masking derives live behind that feature.
 //!
 //! A type carrying the [`OPT_OUT`] marker attribute is left untouched and
@@ -26,7 +26,7 @@ const OPT_OUT: &str = "unmasked_derive";
 /// Map a derive's last path segment to its litmask masking
 /// counterpart, or `None` when the derive is not one litmask masks.
 /// `serde_enabled` gates the serde pair: the masking derives only
-/// exist when litmask is compiled with `serde`, so swapping
+/// exist when litmask is compiled with `unstable-serde`, so swapping
 /// to them otherwise would reference an absent symbol.
 fn masked_counterpart(last_segment: &str, serde_enabled: bool) -> Option<Path> {
     let target = match last_segment {

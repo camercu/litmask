@@ -5,7 +5,7 @@
 //! deriving plain `serde::Serialize` — masking field names changes the
 //! binary's `.rodata`, never the serialized wire format.
 
-#![cfg(feature = "serde")]
+#![cfg(feature = "unstable-serde")]
 
 mod common;
 

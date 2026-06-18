@@ -9,7 +9,7 @@
 //! Regenerate `.stderr` snapshots after an intentional message change:
 //! `TRYBUILD=overwrite cargo test --test compile`. The
 //! `mask_serialize_*` fixtures additionally need
-//! `--features serde`.
+//! `--features unstable-serde`.
 
 #[test]
 fn compile_fixtures() {
@@ -62,12 +62,12 @@ fn compile_fixtures() {
     t.compile_fail("tests/compile/init_bare_removed.rs");
 }
 
-/// Rejection fixtures for `#[derive(MaskSerialize)]` (`serde`
+/// Rejection fixtures for `#[derive(MaskSerialize)]` (`unstable-serde`
 /// feature). Gated on the feature: trybuild propagates the
 /// running test build's enabled features into the fixture project, so
 /// without the gate the fixtures would fail on "cannot find derive
 /// macro" instead of the intended grammar diagnostics.
-#[cfg(feature = "serde")]
+#[cfg(feature = "unstable-serde")]
 #[test]
 fn mask_serialize_compile_fixtures() {
     let t = trybuild::TestCases::new();
@@ -79,10 +79,10 @@ fn mask_serialize_compile_fixtures() {
     t.compile_fail("tests/compile/mask_serialize_transparent_multi_field.rs");
 }
 
-/// Rejection fixtures for `#[derive(MaskDeserialize)]` (`serde`
+/// Rejection fixtures for `#[derive(MaskDeserialize)]` (`unstable-serde`
 /// feature). Same feature gate rationale as the
 /// `MaskSerialize` fixtures above.
-#[cfg(feature = "serde")]
+#[cfg(feature = "unstable-serde")]
 #[test]
 fn mask_deserialize_compile_fixtures() {
     let t = trybuild::TestCases::new();

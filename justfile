@@ -98,13 +98,13 @@ test-machine-id:
 
 # Scoped to litmask + litmask-internal: `--workspace` would unify
 # features with litmask-cli (which activates both ciphers), defeating
-# the single-cipher property this recipe exists to test. `serde`
+# the single-cipher property this recipe exists to test. `unstable-serde`
 # is folded in so the masked-name decrypt path (a cipher-specific blob)
 # runs under aes-gcm; `--all-features` only ever exercises it under
 # chacha, which wins feature unification (litmask-internal/src/aead.rs).
 test-aes-gcm:
-    cargo nextest run -p litmask -p litmask-internal --no-default-features --features std,aes-gcm,serde
-    cargo test -p litmask -p litmask-internal --doc --no-default-features --features std,aes-gcm,serde
+    cargo nextest run -p litmask -p litmask-internal --no-default-features --features std,aes-gcm,unstable-serde
+    cargo test -p litmask -p litmask-internal --doc --no-default-features --features std,aes-gcm,unstable-serde
 
 # Run tests with --all-features so dual-cipher (chacha + aes-gcm)
 # code paths are exercised. Catches bugs like encrypt-with-one-cipher /

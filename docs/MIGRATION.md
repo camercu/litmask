@@ -55,20 +55,6 @@ let s: &'static str = litmask::weak_mask!("my secret");
 +let key: Vec<u8> = litmask::mask!(b"\xde\xad");
 ```
 
-## Upgrading litmask
-
-**`unstable-serde` → `serde`.** The masked serde derives
-(`MaskSerialize` / `MaskDeserialize`) have graduated from experimental;
-the Cargo feature dropped its `unstable-` prefix. Rename it wherever you
-enable it:
-
-```diff
--litmask = { version = "...", features = ["unstable-serde"] }
-+litmask = { version = "...", features = ["serde"] }
-```
-
-No code changes — the derives, attributes, and behavior are unchanged.
-
 ## What changes vs. each crate
 
 | | `litcrypt` v1 / v2 | `obfstr` | `litmask` |

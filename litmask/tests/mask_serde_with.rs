@@ -1,9 +1,9 @@
 //! `#[serde(with)]` / `serialize_with` / `deserialize_with` support in
-//! `MaskSerialize` / `MaskDeserialize` (`serde`). The field
+//! `MaskSerialize` / `MaskDeserialize` (`unstable-serde`). The field
 //! value is routed through user functions; compared against a
 //! plain-serde twin (§E.2.1/§E.2.6).
 
-#![cfg(feature = "serde")]
+#![cfg(feature = "unstable-serde")]
 // serde's serialize_with signature dictates `&T` even for `Copy` / where
 // `&str` would do — these helpers must match it, so the lints don't apply.
 #![allow(clippy::trivially_copy_pass_by_ref, clippy::ptr_arg)]

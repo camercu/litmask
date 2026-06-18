@@ -39,7 +39,7 @@ strings target/release/my_app | grep "pricing oracle"   # no output
 | File / env / path inputs | No                  | No             | **`mask_include_str!`, `mask_env!`, `mask_concat!`, …** |
 | Module-level masking     | No                  | No             | **`#[mask_all]`** (whole module, deep rewrite)         |
 | `Debug` name masking     | No                  | No             | **`#[derive(MaskDebug)]`**                             |
-| serde name masking       | No                  | No             | **`MaskSerialize` / `MaskDeserialize`**                |
+| serde name masking       | No                  | No             | **`MaskSerialize` / `MaskDeserialize`** (experimental) |
 | Key model                | Compile-time random | Single env var | **Layered: `mask_key` + runtime `unlock_key`**         |
 | Dependency-graph unlock  | No                  | No             | **Governed masking — one `init!`, uniform seal**       |
 | Machine-ID binding       | No                  | No             | **`init!(bind_to_machine)`**                           |
@@ -188,13 +188,13 @@ masking.
 
 See `examples/mask_debug_demo.rs` and SPECIFICATION.md §2.14.
 
-## Serde integration
+## Serde integration (experimental)
 
 The plain serde derives embed every field name and the struct name as
 cleartext in the binary — `strings(1)` reveals your schema vocabulary even
 when every field value is masked (`Deserialize` is the larger leak: `FIELDS`
 arrays, field-matching arms, and `missing field` diagnostics all carry the
-names). The `serde` feature adds `#[derive(MaskSerialize)]` and
+names). The `unstable-serde` feature adds `#[derive(MaskSerialize)]` and
 `#[derive(MaskDeserialize)]`, which mask the names through the same AEAD
 pipeline as `mask!` while keeping behavior identical to the plain derives —
 byte-identical serialized output, same accepted inputs, same error messages:
@@ -216,7 +216,7 @@ to the plain derive — `rename`/`rename_all`, `skip*`, `default`, `alias`,
 `with`, `deny_unknown_fields`, `transparent`, and more; SPECIFICATION.md
 Appendix E lists the full set.
 
-Current limitations:
+Current limitations (the `unstable-` prefix means semver-exempt):
 
 - Any other `#[serde(...)]` key (e.g. `flatten`, enum `tag` / `untagged`
   / `content`) is a compile error rather than a silent cleartext fallback,
@@ -327,7 +327,7 @@ LITMASK_UNLOCK_KEY="$(litmask keygen)" cargo build --release
 | `aes-gcm`           | no      | AES-256-GCM (takes precedence when enabled)         |
 | `alloc`             | --      | `no_std` + allocator (required for `no_std` builds) |
 | `machine-id`        | no      | `init!(bind_to_machine)` machine-ID binding              |
-| `serde`             | no      | `#[derive(MaskSerialize)]` + `#[derive(MaskDeserialize)]` |
+| `unstable-serde`    | no      | EXPERIMENTAL `#[derive(MaskSerialize)]` + `#[derive(MaskDeserialize)]` (semver-exempt) |
 
 ## Documentation
 

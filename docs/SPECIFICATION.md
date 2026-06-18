@@ -1360,7 +1360,7 @@ Runtime crate (`litmask`):
   re-exported proc-macros)
 - `zeroize` (`UnlockKey`/`MaskKey` zero-on-drop)
 - `once_cell` (`race`/`alloc` features, backing the `no_std` once-cell)
-- `machine-uid` (behind `machine-id`), `serde` (behind `serde`)
+- `machine-uid` (behind `machine-id`), `serde` (behind `unstable-serde`)
 
 Proc-macro crate (`litmask-macros`, re-exported by `litmask`):
 
@@ -2426,7 +2426,7 @@ vocabulary to `strings(1)` even when every field _value_ is masked.
 `mask!`.
 
 `MaskDebug` is an ungated, always-available surface: unlike
-`MaskSerialize` (Appendix E, which needs the `serde` feature and `std`),
+`MaskSerialize` (Appendix E, which needs the `unstable-serde` feature and `std`),
 the `core::fmt` builder API takes `&str` rather than
 `&'static str`, so no decrypt-once leak — and therefore no `std`
 requirement — exists. The derive works in every build configuration,
@@ -2585,7 +2585,7 @@ the spec:
 - Caching of decrypted strings
 - Zero-copy `&'static str` returns
 - Key rotation at runtime
-- Programmatic config parsing (`serde` feature)
+- Programmatic config parsing (`unstable-serde` feature)
 - Control-flow obfuscation
 - NetBSD, DragonFly BSD, Illumos platform CI
 
@@ -2664,13 +2664,18 @@ deltas the build-sealed model introduced.
   `rerun-if-env-changed` on the factor vars covers tier flips, and a fresh/release
   build always shows it.
 
-## Appendix E — Masked serde integration (`serde`)
+## Appendix E — Experimental: masked serde integration (`unstable-serde`)
 
-Status: **STABLE**. Gated by the `serde` feature on the `litmask` crate.
-Graduated from the `unstable-serde` experiment through the bar in
-[ADR-0002](adr/0002-experimental-feature-promotion.md); the support
-matrix (every row a passing test or an explicit rejection) was filled
-before promotion.
+Status: **EXPERIMENTAL**. Gated by the `unstable-serde` feature on the
+`litmask` crate. The `unstable-` prefix is the semver-exemption signal: this
+surface may change or be removed in any release. Stabilization renames the
+feature to `serde` (a breaking change by design) and is governed by the
+shared bar in
+[ADR-0002](adr/0002-experimental-feature-promotion.md) — most critically,
+a complete serde-attribute support matrix (every row a passing test or an
+explicit rejection). The matrix is filled; the open gate is real-world
+validation (ADR-0002 gate 1): no genuine consumer has exercised the
+surface yet, so promotion is deferred.
 
 ### §E.1 Motivation
 
@@ -2715,7 +2720,7 @@ struct (named-field, tuple, newtype, unit) or enum.
   `deserialize_enum` `FIELDS`/`VARIANTS`), which runtime-decrypted names
   can only satisfy by leaking. The leak is bounded (one allocation per name
   per process, plus one slice per name group) and consistent with the §1.1
-  threat model (binary at rest, not process memory). `serde`
+  threat model (binary at rest, not process memory). `unstable-serde`
   therefore requires `std`.
 - **§E.2.4 Init semantics.** Name decryption follows `mask!`'s runtime
   policy: lazy Embedded-floor initialization, §1.9.5 profile-split panic on
@@ -2768,7 +2773,7 @@ struct (named-field, tuple, newtype, unit) or enum.
   that live there are replicated against public API in the `#[doc(hidden)]`
   `litmask::__serde_support` module.
 
-### §E.3 Residual exposure and unsupported attributes
+### §E.3 Residual exposure, unsupported attributes, and stabilization
 
 Residuals (documented, not defects):
 
@@ -2787,3 +2792,8 @@ stay reject-loud; they may land in a future minor release. `into` / `from` /
 `try_from` / `getter` are out of scope, not deferred: they delegate
 (de)serialization to a shadow type whose own derive embeds the names, so
 masking cannot reach them; they stay permanently reject-loud.
+
+Stabilization (the rename to `serde`) is governed by ADR-0002. The
+support matrix is complete, but gate 1 (real-world validation by a
+genuine consumer, not in-repo tests alone) is not yet met, so the
+feature stays `unstable-serde`.

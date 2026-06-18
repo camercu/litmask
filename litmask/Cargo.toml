@@ -76,12 +76,13 @@ alloc = ["chacha20-poly1305"]
 # itself works under `no_std + alloc` via the `WeakCell` shim
 # (see `litmask::runtime::WeakCell`).
 machine-id = ["std", "dep:machine-uid"]
-# Masked serde integration (`#[derive(MaskSerialize)]` /
-# `#[derive(MaskDeserialize)]`): field and struct names are AEAD-masked
-# at compile time and leak-cached at first (de)serialize. `std` is
-# load-bearing — the generated impl caches decrypted names in
-# `std::sync::OnceLock`.
-serde = ["std", "dep:serde", "litmask-macros/serde"]
+# EXPERIMENTAL masked serde integration (semver-exempt while `unstable-`):
+# `#[derive(MaskSerialize)]` / `#[derive(MaskDeserialize)]` AEAD-mask field
+# and struct names at compile time and leak-cache them at first
+# (de)serialize. `std` is load-bearing — the generated impl caches
+# decrypted names in `std::sync::OnceLock`. Gates the proc-macro via
+# `litmask-macros/unstable-serde`.
+unstable-serde = ["std", "dep:serde", "litmask-macros/unstable-serde"]
 # EXPERIMENTAL stack-backed masking (semver-exempt while `unstable-`):
 # `mask_stack!` decrypts each literal into an inline `[u8; N]` (length
 # known at expansion) via in-place detached AEAD, never touching the heap,
@@ -125,7 +126,7 @@ required-features = ["machine-id"]
 # `cargo build --examples` with default features instead of failing.
 [[example]]
 name = "mask_serde_demo"
-required-features = ["serde"]
+required-features = ["unstable-serde"]
 
 # `mask_stack!` is gated behind the `unstable-stack` feature; pin it so the
 # example skips cleanly under a default `cargo build --examples` and the

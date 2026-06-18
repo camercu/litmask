@@ -1,12 +1,14 @@
 # Promotion checklist — `unstable-serde` → `serde`
 
-**Status: COMPLETED (2026-06-17).** All gates green; the feature was
-renamed `unstable-serde` → `serde` and SPEC Appendix E promoted to
-STABLE. This file is retained as the historical promotion record.
+**Status: BLOCKED on gate 1.** Gates 2–5 are green and the support
+matrix is complete, but ADR-0002 gate 1 (real-world validation by a
+genuine consumer) is unmet — only in-repo tests exercise the surface. The
+feature stays `unstable-serde`; promotion is deferred until a real
+consumer lands.
 
 Tracks `unstable-serde` against the shared bar in
-[ADR-0002](../adr/0002-experimental-feature-promotion.md). The promotion
-renamed the feature `unstable-serde` → `serde` (a breaking change by
+[ADR-0002](../adr/0002-experimental-feature-promotion.md). Promotion will
+rename the feature `unstable-serde` → `serde` (a breaking change by
 design, MINOR pre-1.0). The normative surface lives in SPEC Appendix E;
 this file is the exit checklist and cites the evidence for each gate.
 
@@ -18,7 +20,7 @@ tests cover it"). Paths are relative to the repo root.
 
 | # | Gate | Status | Evidence |
 |---|---|---|---|
-| 1 | Real-world validation (genuine consumer or realistic e2e, not unit tests alone) | ✅ | `litmask/examples/mask_serde_demo.rs` is built and its compiled binary scrubbed end-to-end by `litmask/tests/example_scrub.rs::mask_serde_demo_names_and_fixtures_absent_from_binary` |
+| 1 | Real-world validation (genuine consumer or realistic e2e, not unit tests alone) | ❌ | **Unmet.** `litmask/examples/mask_serde_demo.rs` (scrubbed by `litmask/tests/example_scrub.rs::mask_serde_demo_names_and_fixtures_absent_from_binary`) is an in-repo demo, not a genuine consumer. No real downstream user has exercised the surface — this gate stays open and blocks promotion |
 | 2 | Settled surface (derive names, attributes, generated items final) | ✅ | Names `MaskSerialize` / `MaskDeserialize` final; subset in Appendix E §E.2.5 landed; `into`/`from`/`try_from`/`getter` reclassified out of scope in §E.3, pinned by `serde_attrs.rs::out_of_scope_*` tests — no implied future work remains |
 | 3 | Support matrix complete (every advertised row tested; every unsupported input explicitly rejected + that rejection tested) | ✅ | See [Support matrix](#support-matrix) below — all supported rows have twin-tests, all rejected rows have trybuild cases |
 | 4 | Honest, reviewed security model (understated guarantees, residuals named, no self-describing-lie surface) | ✅ | Residuals enumerated in SPEC §E.3 (plain-derive re-embed, self-describing-format runtime print, serde-internal strings); threat model §1.1; at-rest-only scope stated §E.2.3 |
@@ -73,9 +75,12 @@ Every rejected row is a `compile_error!` pinned by a trybuild case.
 
 ## Open items blocking promotion
 
-All three resolved — gates 1–5 are green. Promotion (the
-`unstable-serde` → `serde` rename) is unblocked; see
-[Promotion procedure](#promotion-procedure-completed).
+**Gate 1 — real-world validation unmet.** No genuine consumer has
+exercised the masked serde derives; only in-repo tests and the
+`mask_serde_demo` example do. Per ADR-0002 gate 1, in-repo tests alone do
+not satisfy this gate. Promotion stays deferred until a real downstream
+consumer adopts the surface. The historical gate-5/gate-2 items below are
+resolved and kept for the record.
 
 1. ~~**Gate 5 — aes-gcm × serde untested.**~~ Done: `test-aes-gcm` now
    folds in `unstable-serde` (`justfile`), so the serde twin tests run
@@ -228,14 +233,13 @@ feature).
   would add surface with zero masking benefit and could mislead. Keep
   permanently reject-loud.
 
-## Promotion procedure (completed)
+## Promotion procedure (when gate 1 clears)
 
-1. ✅ Renamed the feature `unstable-serde` → `serde` in
-   `litmask/Cargo.toml` and `litmask-macros/Cargo.toml`.
-2. ✅ Updated gating in code (`#[cfg(feature = "serde")]`), examples'
+1. Rename the feature `unstable-serde` → `serde` in `litmask/Cargo.toml`
+   and `litmask-macros/Cargo.toml`.
+2. Update gating in code (`#[cfg(feature = "serde")]`), examples'
    `required-features`, the scrub test's feature list, and the
    `test-aes-gcm` lane.
-3. ✅ Promoted SPEC Appendix E from EXPERIMENTAL to STABLE; this file is
-   kept as the historical record.
-4. ✅ Noted the rename as a breaking change in `docs/MIGRATION.md`.
-5. ✅ Marked this checklist complete (status banner at top).
+3. Promote SPEC Appendix E from EXPERIMENTAL to STABLE.
+4. Note the rename as a breaking change in `docs/MIGRATION.md`.
+5. Flip the status banner at top to COMPLETED.

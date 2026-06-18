@@ -5,10 +5,10 @@
 //! apart from the universal `common` utilities every macro imports.
 
 use proc_macro2::TokenStream;
-#[cfg(feature = "serde")]
+#[cfg(feature = "unstable-serde")]
 use quote::quote;
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "unstable-serde")]
 use crate::common::{FailTag, compile_error};
 
 /// Shared `#[proc_macro_derive]` entry shim: parse the input as
@@ -48,7 +48,7 @@ pub(crate) fn with_trait_bounds(mut generics: syn::Generics, bound: &syn::Path) 
 /// The single contained field of a `#[serde(transparent)]` struct: how
 /// to access it on `self` (`#access` in `self.#access`), its type (for
 /// the delegating deserialize), and its ident when the struct is named.
-#[cfg(feature = "serde")]
+#[cfg(feature = "unstable-serde")]
 pub(crate) struct TransparentField<'a> {
     pub(crate) access: TokenStream,
     pub(crate) ty: &'a syn::Type,
@@ -58,7 +58,7 @@ pub(crate) struct TransparentField<'a> {
 /// Validate and extract the single field of a `#[serde(transparent)]`
 /// struct. Errors loud if the input is not a struct with exactly one
 /// field (the shape serde's `transparent` requires).
-#[cfg(feature = "serde")]
+#[cfg(feature = "unstable-serde")]
 pub(crate) fn transparent_field<'a>(
     input: &'a syn::DeriveInput,
     macro_name: &str,
@@ -97,7 +97,7 @@ pub(crate) fn transparent_field<'a>(
 /// override, fall back to [`with_trait_bounds`] (the default per-param
 /// `T: Bound`); with an override, add exactly the user's predicates and
 /// skip the default — matching serde's `bound` semantics.
-#[cfg(feature = "serde")]
+#[cfg(feature = "unstable-serde")]
 pub(crate) fn apply_bounds(
     generics: syn::Generics,
     default_bound: &syn::Path,

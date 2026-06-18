@@ -107,16 +107,17 @@ works in `no_std` + `alloc`).
 _Avoid_: "debug mask", "masked debug derive" (the derive masks names,
 not formatted values).
 
-**`MaskSerialize`** (`serde` feature): Derive
+**`MaskSerialize`** (EXPERIMENTAL, `unstable-serde` feature): Derive
 macro generating a `serde::Serialize` impl whose type, field, and enum
 variant names go through the same AEAD pipeline as `mask!` instead of
 landing as cleartext in the binary. Output is byte-identical to the plain
 serde derive; names decrypt once at first serialization and stay
-cached (leaked) for the process lifetime.
+cached (leaked) for the process lifetime. Semver-exempt until the
+feature stabilizes as `serde`.
 _Avoid_: "serde mask", "masked serde derive" (the derive masks names,
 not serialized data).
 
-**`MaskDeserialize`** (`serde` feature): Derive
+**`MaskDeserialize`** (EXPERIMENTAL, `unstable-serde` feature): Derive
 macro generating a `serde::Deserialize` impl whose type, field, and enum
 variant names go through the same AEAD pipeline as `mask!` instead of
 landing as cleartext in the binary. The plain serde derive leaks the
@@ -126,7 +127,7 @@ field-visitor match arms, `expecting()` strings, and
 identical to the plain serde derive: same accepted inputs, equal values,
 byte-identical error messages, for every serde format. Names decrypt once
 at first deserialization and stay cached (leaked) for the process
-lifetime.
+lifetime. Semver-exempt until the feature stabilizes as `serde`.
 _Avoid_: "serde unmask", "masked deserialize derive" (the derive masks
 names, not deserialized data).
 

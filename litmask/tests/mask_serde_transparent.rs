@@ -1,9 +1,9 @@
 //! `#[serde(transparent)]` support in `MaskSerialize` /
-//! `MaskDeserialize` (`serde`): the struct (de)serializes as
+//! `MaskDeserialize` (`unstable-serde`): the struct (de)serializes as
 //! its single field with no wrapper on the wire. Compared against a
 //! plain-serde twin (§E.2.1/§E.2.6).
 
-#![cfg(feature = "serde")]
+#![cfg(feature = "unstable-serde")]
 
 mod common;
 
