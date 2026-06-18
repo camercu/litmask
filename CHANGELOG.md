@@ -1,3 +1,23 @@
+## [0.19.0](https://github.com/camercu/litmask/compare/v0.18.0...v0.19.0) (2026-06-18)
+
+### Features
+
+* **serde:** accept variant-level #[serde(alias)] in MaskDeserialize ([8ac7799](https://github.com/camercu/litmask/commit/8ac77996c5ffd8528933be6bae9ef42829ed6636))
+* **serde:** support with-fns on a generic type in masked derives ([8d3babd](https://github.com/camercu/litmask/commit/8d3babd5e775d4fe4e55ac1905ebbefea4647433))
+* **stack:** add mask_stack!(b"...") yielding MaskBytes<N> ([28ce159](https://github.com/camercu/litmask/commit/28ce1594dc87f8de38fb5745e88bac9c06847d7c))
+* **stack:** add mask_stack!(c"...") yielding MaskCStr<N> ([ea71355](https://github.com/camercu/litmask/commit/ea71355e7b54218c1a0fdac88e3cbbdac799f105))
+* **stack:** add stack-backed mask_stack! for string literals ([0f0a965](https://github.com/camercu/litmask/commit/0f0a965cf31d575d6c06ad9349238f5ecb9be4f3))
+* **stack:** cap mask_stack! buffer at LITMASK_STACK_LIMIT ([27db7fc](https://github.com/camercu/litmask/commit/27db7fc729838d4eedee6b664f5ac5af05b1e71a))
+
+### Bug Fixes
+
+* **macros:** name build env var in tier-mismatch error ([d665758](https://github.com/camercu/litmask/commit/d6657589ab8454f34f420f7b21a03b9e07dab836))
+* **serde:** name the actual key in the tagging reject ([d35a891](https://github.com/camercu/litmask/commit/d35a89142be99175e4b7a264d1af3cecd816b961))
+
+### Performance Improvements
+
+* **internal:** drop dead zero-fill from decrypt_blob ([71a2ddd](https://github.com/camercu/litmask/commit/71a2dddaeddd9b193822161d4599924883fef276))
+
 ## [0.18.0](https://github.com/camercu/litmask/compare/v0.17.1...v0.18.0) (2026-06-16)
 
 ### Features
