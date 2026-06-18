@@ -10,7 +10,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::DeriveInput;
 
-use super::generics::{DeGenerics, split_de_generics};
+use super::generics::DeGenerics;
 use super::identifier::{AliasMatch, build_alias_match};
 use super::{MACRO_NAME, expecting_body, seq_access_binding, variant_option};
 use crate::serde_attrs::{self, RenameRule};
@@ -167,6 +167,7 @@ pub(super) struct NamedFieldsCx {
 /// absent from the wire and filled with `Default::default()`.
 pub(super) fn named_fields_visitor(
     input: &DeriveInput,
+    generics: &DeGenerics,
     infos: &[NamedFieldInfo],
     cx: &NamedFieldsCx,
 ) -> TokenStream2 {
@@ -179,13 +180,12 @@ pub(super) fn named_fields_visitor(
         visitor,
     } = cx;
 
-    let generics = split_de_generics(input);
     let DeGenerics {
         de_impl,
         de_ty,
         ty,
         where_clause,
-    } = &generics;
+    } = generics;
     let with_ctx = DeWithCtx {
         ident: struct_ident,
         de_impl,

@@ -61,14 +61,21 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 }
 
 fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
-    let body = deserialize_body(input)?;
+    // Parse the container's `#[serde(...)]` once and compute the
+    // `'de`-threaded generics once, then thread both through every shape
+    // body and visitor builder rather than re-deriving them at each. The
+    // parse is idempotent, so re-deriving only risked drift between sites
+    // and wasted expansion work. Mirrors `mask_serialize`'s threading.
+    let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
+    let generics = split_de_generics(input, &container);
+    let body = deserialize_body(input, &container, &generics)?;
     let struct_ident = &input.ident;
     let DeGenerics {
         de_impl,
         ty,
         where_clause,
         ..
-    } = split_de_generics(input);
+    } = &generics;
 
     Ok(quote! {
         #[automatically_derived]
@@ -91,18 +98,21 @@ fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
 /// classification: each shape maps to the dedicated `Deserializer`
 /// entry point the plain derive would call, which is what keeps
 /// accepted inputs and wire shapes identical.
-fn deserialize_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
-    let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
+fn deserialize_body(
+    input: &DeriveInput,
+    container: &ContainerAttrs,
+    generics: &DeGenerics,
+) -> syn::Result<TokenStream2> {
     if container.transparent {
         return transparent_deserialize_body(input);
     }
     match &input.data {
         Data::Struct(data) => match &data.fields {
-            Fields::Named(fields) => named_struct_body(input, fields),
-            Fields::Unit => unit_struct_body(input),
-            Fields::Unnamed(fields) => tuple_struct_body(input, fields),
+            Fields::Named(fields) => named_struct_body(input, container, generics, fields),
+            Fields::Unit => Ok(unit_struct_body(input, container, generics)),
+            Fields::Unnamed(fields) => tuple_struct_body(input, container, generics, fields),
         },
-        Data::Enum(data) => enum_body(input, data),
+        Data::Enum(data) => enum_body(input, container, generics, data),
         Data::Union(_) => Err(compile_error(
             input.ident.span(),
             MACRO_NAME,
@@ -129,13 +139,6 @@ fn transparent_deserialize_body(input: &DeriveInput) -> syn::Result<TokenStream2
     Ok(quote! {
         ::core::result::Result::Ok(#construct)
     })
-}
-
-/// Resolve the container's deserialize-side name (after `#[serde(rename
-/// = ...)]`) plus the span to key its masking blob on.
-fn container_de_name(input: &DeriveInput) -> syn::Result<(proc_macro2::Span, String)> {
-    let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
-    Ok((input.ident.span(), container.deserialize_name(&input.ident)))
 }
 
 /// Resolve each variant's deserialize-side name. `parent` is the
@@ -268,14 +271,18 @@ fn seq_field_lets<'a>(
     })
 }
 
-fn named_struct_body(input: &DeriveInput, fields: &syn::FieldsNamed) -> syn::Result<TokenStream2> {
+fn named_struct_body(
+    input: &DeriveInput,
+    container: &ContainerAttrs,
+    generics: &DeGenerics,
+    fields: &syn::FieldsNamed,
+) -> syn::Result<TokenStream2> {
     let struct_ident = &input.ident;
-    let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
     let infos = named_field_infos(fields, container.rename_all.deserialize)?;
     let de_names = de_names_of(&infos);
     let names_fn = quote::format_ident!("__litmask_names");
     let aliases_fn = quote::format_ident!("__litmask_aliases");
-    let type_name_fn = type_name_fn(&type_name_tuple(input, &container));
+    let type_name_fn = type_name_fn(&type_name_tuple(input, container));
     let names_fn_decl = names_list_fn(&names_fn, &de_names);
     let (aliases_decl, alias_match) = build_aliases(&aliases_fn, &infos);
     let field_identifier = identifier_block(
@@ -288,6 +295,7 @@ fn named_struct_body(input: &DeriveInput, fields: &syn::FieldsNamed) -> syn::Res
     let visitor_ident = quote::format_ident!("__Visitor");
     let visitor = named_fields_visitor(
         input,
+        generics,
         &infos,
         &NamedFieldsCx {
             construct: quote! { #struct_ident },
@@ -315,19 +323,22 @@ fn named_struct_body(input: &DeriveInput, fields: &syn::FieldsNamed) -> syn::Res
     })
 }
 
-fn unit_struct_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
+fn unit_struct_body(
+    input: &DeriveInput,
+    container: &ContainerAttrs,
+    generics: &DeGenerics,
+) -> TokenStream2 {
     let struct_ident = &input.ident;
-    let type_name_fn = type_name_fn(&container_de_name(input)?);
-    let generics = split_de_generics(input);
-    let visitor = visitor_decl(input, &generics);
+    let type_name_fn = type_name_fn(&type_name_tuple(input, container));
+    let visitor = visitor_decl(input, generics);
     let visitor_expr = visitor_expr();
     let DeGenerics {
         de_impl,
         de_ty,
         ty,
         where_clause,
-    } = &generics;
-    Ok(quote! {
+    } = generics;
+    quote! {
         #type_name_fn
 
         #visitor
@@ -359,7 +370,7 @@ fn unit_struct_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
             __litmask_type_name(),
             #visitor_expr,
         )
-    })
+    }
 }
 
 /// Tuple-struct dispatch mirrors serde's: exactly one field is a
@@ -369,11 +380,13 @@ fn unit_struct_body(input: &DeriveInput) -> syn::Result<TokenStream2> {
 /// path, which is what non-self-describing formats call.
 fn tuple_struct_body(
     input: &DeriveInput,
+    container: &ContainerAttrs,
+    generics: &DeGenerics,
     fields: &syn::FieldsUnnamed,
 ) -> syn::Result<TokenStream2> {
     let struct_ident = &input.ident;
     serde_attrs::reject_tuple_field_attrs(MACRO_NAME, fields)?;
-    let type_name_fn = type_name_fn(&container_de_name(input)?);
+    let type_name_fn = type_name_fn(&type_name_tuple(input, container));
     let field_tys: Vec<&syn::Type> = fields.unnamed.iter().map(|field| &field.ty).collect();
     let field_count = field_tys.len();
     let bindings: Vec<syn::Ident> = (0..field_count)
@@ -420,14 +433,13 @@ fn tuple_struct_body(
         }
     };
 
-    let generics = split_de_generics(input);
-    let visitor = visitor_decl(input, &generics);
+    let visitor = visitor_decl(input, generics);
     let DeGenerics {
         de_impl,
         de_ty,
         ty,
         where_clause,
-    } = &generics;
+    } = generics;
     Ok(quote! {
         #type_name_fn
 
@@ -472,12 +484,16 @@ fn tuple_struct_body(
 /// point for its variant kind. Tuple and struct variants declare
 /// their own visitor inside the arm's block, exactly as serde's
 /// expansion scopes them.
-fn enum_body(input: &DeriveInput, data: &syn::DataEnum) -> syn::Result<TokenStream2> {
+fn enum_body(
+    input: &DeriveInput,
+    container: &ContainerAttrs,
+    generics: &DeGenerics,
+    data: &syn::DataEnum,
+) -> syn::Result<TokenStream2> {
     let enum_ident = &input.ident;
-    let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
     let de_names = variant_de_names(data, container.rename_all.deserialize)?;
     let names_fn = quote::format_ident!("__litmask_names");
-    let type_name_fn = type_name_fn(&type_name_tuple(input, &container));
+    let type_name_fn = type_name_fn(&type_name_tuple(input, container));
     let names_fn_decl = names_list_fn(&names_fn, &de_names);
     let valiases_fn = quote::format_ident!("__litmask_variant_aliases");
     let (valiases_decl, valias_match) = variant_aliases(data, &valiases_fn)?;
@@ -505,7 +521,7 @@ fn enum_body(input: &DeriveInput, data: &syn::DataEnum) -> syn::Result<TokenStre
             .variants
             .iter()
             .enumerate()
-            .map(|(index, variant)| variant_arm(input, index, variant, &container))
+            .map(|(index, variant)| variant_arm(input, container, generics, index, variant))
             .collect::<syn::Result<Vec<_>>>()?;
         quote! {
             match ::litmask::__serde::de::EnumAccess::variant(__data)? {
@@ -514,15 +530,14 @@ fn enum_body(input: &DeriveInput, data: &syn::DataEnum) -> syn::Result<TokenStre
         }
     };
 
-    let generics = split_de_generics(input);
-    let visitor = visitor_decl(input, &generics);
+    let visitor = visitor_decl(input, generics);
     let visitor_expr = visitor_expr();
     let DeGenerics {
         de_impl,
         de_ty,
         ty,
         where_clause,
-    } = &generics;
+    } = generics;
 
     Ok(quote! {
         #type_name_fn
@@ -572,9 +587,10 @@ fn enum_body(input: &DeriveInput, data: &syn::DataEnum) -> syn::Result<TokenStre
 /// shadowed inner `__Field`, from colliding with the enum-level ones.
 fn variant_arm(
     input: &DeriveInput,
+    container: &ContainerAttrs,
+    generics: &DeGenerics,
     index: usize,
     variant: &syn::Variant,
-    container: &ContainerAttrs,
 ) -> syn::Result<TokenStream2> {
     let enum_ident = &input.ident;
     let vident = &variant.ident;
@@ -610,6 +626,7 @@ fn variant_arm(
         }
         Fields::Unnamed(fields) => tuple_variant_arm(
             input,
+            generics,
             vident,
             &field_variant,
             &variant_name_fn,
@@ -618,6 +635,7 @@ fn variant_arm(
         ),
         Fields::Named(fields) => struct_variant_arm(
             input,
+            generics,
             fields,
             &StructVariantCx {
                 vident,
@@ -636,6 +654,7 @@ fn variant_arm(
 /// positionally, dispatched via `tuple_variant`.
 fn tuple_variant_arm(
     input: &DeriveInput,
+    generics: &DeGenerics,
     vident: &syn::Ident,
     field_variant: &syn::Ident,
     variant_name_fn: &TokenStream2,
@@ -658,13 +677,12 @@ fn tuple_variant_arm(
     );
     let seq_binding = seq_access_binding(field_count);
     let expecting = expecting_body("tuple variant", Some(variant_name_call));
-    let generics = split_de_generics(input);
     let DeGenerics {
         de_impl,
         de_ty,
         ty,
         where_clause,
-    } = &generics;
+    } = generics;
     Ok(quote! {
         (__Field::#field_variant, __variant) => {
             #variant_name_fn
@@ -729,6 +747,7 @@ struct StructVariantCx<'a> {
 
 fn struct_variant_arm(
     input: &DeriveInput,
+    generics: &DeGenerics,
     fields: &syn::FieldsNamed,
     cx: &StructVariantCx,
 ) -> syn::Result<TokenStream2> {
@@ -758,6 +777,7 @@ fn struct_variant_arm(
     let visitor_ident = quote::format_ident!("__VariantVisitor");
     let visitor = named_fields_visitor(
         input,
+        generics,
         &infos,
         &NamedFieldsCx {
             construct: quote! { #enum_ident::#vident },

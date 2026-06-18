@@ -8,9 +8,8 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{Data, DeriveInput};
 
-use super::MACRO_NAME;
 use crate::derive_support::apply_bounds;
-use crate::serde_attrs;
+use crate::serde_attrs::ContainerAttrs;
 
 /// The four generics fragments every generated visitor needs, with
 /// the `'de` lifetime threaded ahead of the type's own params and
@@ -28,20 +27,16 @@ pub(super) struct DeGenerics {
     pub(super) where_clause: TokenStream2,
 }
 
-pub(super) fn split_de_generics(input: &DeriveInput) -> DeGenerics {
+pub(super) fn split_de_generics(input: &DeriveInput, container: &ContainerAttrs) -> DeGenerics {
     // A `#[serde(bound)]` override replaces the default `T:
-    // Deserialize<'de>` predicate. Parsing here keeps every generated
-    // visitor's generics consistent without threading the bound through
-    // each builder; the container is already validated by the time this
-    // runs (a bad bound surfaces from the body parse first).
-    let bound = serde_attrs::parse_container(MACRO_NAME, &input.attrs)
-        .unwrap_or_default()
-        .bound
-        .deserialize;
+    // Deserialize<'de>` predicate; otherwise each type param is bounded
+    // `Deserialize<'de>` (the plain derive's model). The container is
+    // parsed once at the entry point and threaded in, so every generated
+    // visitor reads the same bound without re-parsing.
     let generics = apply_bounds(
         input.generics.clone(),
         &syn::parse_quote!(::litmask::__serde::Deserialize<'de>),
-        bound.as_deref(),
+        container.bound.deserialize.as_deref(),
     );
     let mut de_generics = generics.clone();
     let borrowed = borrowed_lifetimes(input);
