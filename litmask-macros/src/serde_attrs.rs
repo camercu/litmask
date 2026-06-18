@@ -137,25 +137,6 @@ pub(crate) struct BoundOverride {
     pub(crate) deserialize: Option<Vec<syn::WherePredicate>>,
 }
 
-/// The enum representation a container requests. `External` (serde's
-/// default) is the only form the masking derives currently emit; the
-/// other three are parsed into this model but reject-loud at codegen
-/// (`reject_unsupported_tagging`) until their `Content`-buffering
-/// machinery lands (SPEC §E.2.5 deferred).
-#[derive(Default, Debug, PartialEq)]
-pub(crate) enum Tagging {
-    #[default]
-    External,
-    Internal {
-        tag: String,
-    },
-    Adjacent {
-        tag: String,
-        content: String,
-    },
-    Untagged,
-}
-
 /// Container-level (`struct` / `enum`) serde attributes.
 #[derive(Default)]
 pub(crate) struct ContainerAttrs {
@@ -169,39 +150,6 @@ pub(crate) struct ContainerAttrs {
     /// `#[serde(transparent)]`: (de)serialize as the single contained
     /// field, with no struct wrapper on the wire.
     pub(crate) transparent: bool,
-    /// Enum representation from `tag`/`content`/`untagged`. Parsed here
-    /// but not yet emitted — see [`Tagging`] and
-    /// [`ContainerAttrs::reject_unsupported_tagging`].
-    pub(crate) tagging: Tagging,
-    /// The first tagging key seen (`(span, name)`), so the deferred-reject
-    /// error underlines that key (matching the pre-spike `unsupported`
-    /// span) and names what the user actually wrote — e.g. `content` for
-    /// the invalid `content`-without-`tag` form, not a phantom `tag`.
-    tagging_key: Option<(proc_macro2::Span, String)>,
-}
-
-impl ContainerAttrs {
-    /// Reject-loud on a non-default enum representation until its codegen
-    /// lands. Mirrors [`unsupported`]'s message/tag so the deferred forms
-    /// stay indistinguishable from any other not-yet-supported key.
-    pub(crate) fn reject_unsupported_tagging(&self, macro_name: &str) -> syn::Result<()> {
-        if self.tagging == Tagging::External {
-            return Ok(());
-        }
-        let (span, key) = self
-            .tagging_key
-            .clone()
-            .unwrap_or_else(|| (proc_macro2::Span::call_site(), String::from("tag")));
-        Err(compile_error(
-            span,
-            macro_name,
-            FailTag::InvalidArg,
-            &format!(
-                "`#[serde({key})]` is not yet supported; keep a plain derive \
-                 (or `#[unmasked_derive]` under `#[mask_all]`)"
-            ),
-        ))
-    }
 }
 
 /// Field-level serde attributes.
@@ -339,9 +287,6 @@ pub(crate) fn parse_container(
     attrs: &[Attribute],
 ) -> syn::Result<ContainerAttrs> {
     let mut out = ContainerAttrs::default();
-    let mut tag: Option<String> = None;
-    let mut content: Option<String> = None;
-    let mut untagged = false;
     parse_serde(attrs, |meta| {
         if meta.path.is_ident("rename") {
             out.rename = parse_rename(&meta)?;
@@ -358,49 +303,17 @@ pub(crate) fn parse_container(
         } else if meta.path.is_ident("transparent") {
             out.transparent = true;
             Ok(())
-        } else if meta.path.is_ident("tag") {
-            out.tagging_key
-                .get_or_insert_with(|| (meta.path.span(), "tag".to_string()));
-            tag = Some(meta.value()?.parse::<LitStr>()?.value());
-            Ok(())
-        } else if meta.path.is_ident("content") {
-            out.tagging_key
-                .get_or_insert_with(|| (meta.path.span(), "content".to_string()));
-            content = Some(meta.value()?.parse::<LitStr>()?.value());
-            Ok(())
-        } else if meta.path.is_ident("untagged") {
-            out.tagging_key
-                .get_or_insert_with(|| (meta.path.span(), "untagged".to_string()));
-            untagged = true;
-            Ok(())
         } else {
+            // Alternate enum representations (`tag` / `content` /
+            // `untagged`) fall through to `unsupported`: the masking derives
+            // only emit serde's default external tagging, so any other
+            // representation is rejected here at parse time — before codegen,
+            // so every parse path rejects it without a separate guard, and
+            // with the same message as any other unsupported key.
             Err(unsupported(macro_name, &meta))
         }
     })?;
-    out.tagging = resolve_tagging(tag, content, untagged);
     Ok(out)
-}
-
-/// Fold the raw `tag`/`content`/`untagged` keys into a [`Tagging`].
-/// `content` without `tag` is invalid in serde; it is modeled as an
-/// (empty-tag) `Adjacent` so codegen still reject-louds rather than
-/// silently treating it as `External`.
-fn resolve_tagging(tag: Option<String>, content: Option<String>, untagged: bool) -> Tagging {
-    if untagged {
-        Tagging::Untagged
-    } else if let Some(tag) = tag {
-        match content {
-            Some(content) => Tagging::Adjacent { tag, content },
-            None => Tagging::Internal { tag },
-        }
-    } else if let Some(content) = content {
-        Tagging::Adjacent {
-            tag: String::new(),
-            content,
-        }
-    } else {
-        Tagging::External
-    }
 }
 
 /// Parse `bound = "preds"` or `bound(serialize = "...", deserialize =
@@ -849,54 +762,37 @@ mod tests {
         parse_container("MaskDeserialize", &di.attrs).expect("container parses")
     }
 
-    #[test]
-    fn tagging_models_each_representation() {
-        // `tag`/`content`/`untagged` now parse into the Tagging model
-        // (spike 2a) even though codegen still reject-louds them.
-        assert_eq!(container(&quote! {}).tagging, Tagging::External);
-        assert_eq!(
-            container(&quote! { #[serde(tag = "t")] }).tagging,
-            Tagging::Internal { tag: "t".into() },
-        );
-        assert_eq!(
-            container(&quote! { #[serde(tag = "t", content = "c")] }).tagging,
-            Tagging::Adjacent {
-                tag: "t".into(),
-                content: "c".into(),
-            },
-        );
-        assert_eq!(
-            container(&quote! { #[serde(untagged)] }).tagging,
-            Tagging::Untagged,
-        );
+    /// Parse a container's `#[serde(...)]`, expecting a reject. A `match`
+    /// rather than `expect_err` so `ContainerAttrs` need not be `Debug`.
+    fn container_err(src: &proc_macro2::TokenStream) -> syn::Error {
+        let di: syn::DeriveInput =
+            syn::parse2(quote! { #src enum E { V } }).expect("fixture parses");
+        match parse_container("MaskDeserialize", &di.attrs) {
+            Ok(_) => panic!("container must reject"),
+            Err(err) => err,
+        }
     }
 
     #[test]
-    fn unsupported_tagging_is_reject_loud_at_codegen() {
-        // The parser accepts the representation; the codegen guard is what
-        // keeps it reject-loud until the Content machinery lands.
-        let attrs = container(&quote! { #[serde(tag = "t")] });
-        let err = attrs
-            .reject_unsupported_tagging("MaskDeserialize")
-            .expect_err("non-external tagging must reject");
-        assert!(err.to_string().contains("invalid-arg"), "got: {err}");
-        // External stays fine.
-        assert!(
-            container(&quote! {})
-                .reject_unsupported_tagging("MaskDeserialize")
-                .is_ok()
-        );
+    fn external_tagging_is_the_only_accepted_representation() {
+        // serde's default (no tagging keys) is what the masking derives
+        // emit, so it parses cleanly; the alternate representations reject.
+        container(&quote! {});
+        for src in [
+            quote! { #[serde(tag = "t")] },
+            quote! { #[serde(tag = "t", content = "c")] },
+            quote! { #[serde(untagged)] },
+        ] {
+            let err = container_err(&src);
+            assert!(err.to_string().contains("invalid-arg"), "got: {err}");
+        }
     }
 
     #[test]
     fn content_without_tag_reject_names_content_not_tag() {
-        // `content` without `tag` is invalid in serde and modeled as an
-        // empty-tag Adjacent so it still reject-louds; the diagnostic must
-        // name the key the user actually wrote (`content`), not `tag`.
-        let attrs = container(&quote! { #[serde(content = "c")] });
-        let err = attrs
-            .reject_unsupported_tagging("MaskDeserialize")
-            .expect_err("content-only must reject");
+        // `content` without `tag` is invalid in serde; the reject must name
+        // the key the user actually wrote (`content`), not a phantom `tag`.
+        let err = container_err(&quote! { #[serde(content = "c")] });
         assert!(err.to_string().contains("content"), "got: {err}");
         assert!(
             !err.to_string().contains("tag"),

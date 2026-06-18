@@ -41,7 +41,6 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 
 fn try_expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let container = serde_attrs::parse_container(MACRO_NAME, &input.attrs)?;
-    container.reject_unsupported_tagging(MACRO_NAME)?;
 
     let struct_ident = &input.ident;
     // Bound every type param with `Serialize` (the plain derive's bound
