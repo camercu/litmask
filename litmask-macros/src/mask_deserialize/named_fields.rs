@@ -12,7 +12,7 @@ use syn::DeriveInput;
 
 use super::generics::{DeGenerics, split_de_generics};
 use super::identifier::{AliasMatch, build_alias_match};
-use super::{MACRO_NAME, expecting_body, variant_option};
+use super::{MACRO_NAME, expecting_body, seq_access_binding, variant_option};
 use crate::serde_attrs::{self, RenameRule};
 
 /// Per-named-field deserialize info: the construction ident/type plus
@@ -297,13 +297,7 @@ fn named_visit_seq(
         }
         field_inits.push(quote! { #ident: #local });
     }
-    // A struct with no readable fields never touches its SeqAccess;
-    // binding it `mut` would warn, `_` mirrors serde's expansion.
-    let seq_binding = if de_count == 0 {
-        quote! { _ }
-    } else {
-        quote! { mut __seq }
-    };
+    let seq_binding = seq_access_binding(de_count);
     quote! {
         #[inline]
         fn visit_seq<__A>(

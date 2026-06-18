@@ -199,6 +199,17 @@ fn variant_option(variant_name: Option<&TokenStream2>) -> TokenStream2 {
     }
 }
 
+/// The `visit_seq` accessor binding. A struct/variant with no readable
+/// fields never touches its `SeqAccess`, so bind it `_` (binding `mut`
+/// would warn); otherwise bind `mut __seq`. Mirrors serde's expansion.
+fn seq_access_binding(field_count: usize) -> TokenStream2 {
+    if field_count == 0 {
+        quote! { _ }
+    } else {
+        quote! { mut __seq }
+    }
+}
+
 /// `expecting()` body rendering `"<shape> <Name>"` (structs) or
 /// `"<shape> <Name>::<Variant>"` (variants) from decrypted names.
 fn expecting_body(shape: &str, variant_name: Option<&TokenStream2>) -> TokenStream2 {
@@ -370,11 +381,7 @@ fn tuple_struct_body(
         .collect();
 
     let seq_lets = seq_field_lets(&bindings, &field_tys, "tuple struct", None, field_count);
-    let seq_binding = if field_count == 0 {
-        quote! { _ }
-    } else {
-        quote! { mut __seq }
-    };
+    let seq_binding = seq_access_binding(field_count);
 
     let visit_newtype = (field_count == 1).then(|| {
         let fty = field_tys[0];
@@ -649,11 +656,7 @@ fn tuple_variant_arm(
         Some(variant_name_call),
         field_count,
     );
-    let seq_binding = if field_count == 0 {
-        quote! { _ }
-    } else {
-        quote! { mut __seq }
-    };
+    let seq_binding = seq_access_binding(field_count);
     let expecting = expecting_body("tuple variant", Some(variant_name_call));
     let generics = split_de_generics(input);
     let DeGenerics {
