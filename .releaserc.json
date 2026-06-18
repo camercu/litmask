@@ -94,7 +94,8 @@
       "semantic-release-cargo",
       {
         "publish": true,
-        "alwaysVerifyToken": true
+        "alwaysVerifyToken": true,
+        "publishArgs": ["--workspace"]
       }
     ],
     "@semantic-release/changelog",

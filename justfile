@@ -438,12 +438,11 @@ fuzz duration="10":
 
 # Invoked by .github/workflows/release.yml after a successful CI run on
 # main. semantic-release reads .releaserc.json; the
-# `semantic-release-cargo` plugin is configured with
-# `{ publish: false, alwaysVerifyToken: false }`, so its `prepare` hook
-# still runs (version bump in Cargo.toml + Cargo.lock) but the
-# crates.io push is skipped. The workflow already exports
-# CARGO_REGISTRY_TOKEN, so enabling crates.io publishes is a one-line
-# edit: flip `publish` to `true` in .releaserc.json.
+# `semantic-release-cargo` plugin (`publish: true`) bumps every crate's
+# version in its `prepare` hook, then publishes the whole workspace with
+# `cargo publish --workspace` (dep-ordered, index-aware — a recent-cargo
+# feature). The workflow runs this step with `RUSTUP_TOOLCHAIN=stable` so
+# the publish floats to latest while CI stays pinned at the MSRV.
 release:
     npm ci
     npx semantic-release
