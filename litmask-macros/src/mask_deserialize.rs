@@ -45,7 +45,9 @@ mod identifier;
 mod named_fields;
 
 use generics::{DeGenerics, split_de_generics, visitor_decl, visitor_expr};
-use identifier::{AliasMatch, IdentifierKind, identifier_block, names_list_fn, type_name_fn};
+use identifier::{
+    AliasMatch, IdentifierKind, build_alias_match, identifier_block, names_list_fn, type_name_fn,
+};
 use named_fields::{
     NamedFieldsCx, build_aliases, de_names_of, named_field_infos, named_fields_visitor,
 };
@@ -166,26 +168,22 @@ fn variant_aliases(
     data: &syn::DataEnum,
     names_fn: &syn::Ident,
 ) -> syn::Result<(TokenStream2, Option<AliasMatch>)> {
-    let mut flat: Vec<(proc_macro2::Span, String)> = Vec::new();
-    let mut entries: Vec<(usize, usize)> = Vec::new();
-    for (variant_index, variant) in data.variants.iter().enumerate() {
-        let attrs = serde_attrs::parse_variant(MACRO_NAME, &variant.attrs)?;
-        for alias in &attrs.aliases {
-            entries.push((variant_index, flat.len()));
-            flat.push((variant.ident.span(), alias.clone()));
-        }
-    }
-    if flat.is_empty() {
-        return Ok((TokenStream2::new(), None));
-    }
-    let decl = names_list_fn(names_fn, &flat);
-    Ok((
-        decl,
-        Some(AliasMatch {
-            names_fn: names_fn.clone(),
-            entries,
-        }),
-    ))
+    // Variants have no skip concept, so the alias target is the variant's
+    // declaration-order index directly. Aliases are owned by the parsed
+    // `VariantAttrs`, so collect them before borrowing into the builder.
+    let owned: Vec<(usize, proc_macro2::Span, Vec<String>)> = data
+        .variants
+        .iter()
+        .enumerate()
+        .map(|(variant_index, variant)| {
+            let attrs = serde_attrs::parse_variant(MACRO_NAME, &variant.attrs)?;
+            Ok((variant_index, variant.ident.span(), attrs.aliases))
+        })
+        .collect::<syn::Result<_>>()?;
+    let groups = owned
+        .iter()
+        .map(|(index, span, aliases)| (*index, *span, aliases.as_slice()));
+    Ok(build_alias_match(names_fn, groups))
 }
 
 /// The container's deserialize type-name tuple `(span, resolved name)`.

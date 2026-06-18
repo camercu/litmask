@@ -11,7 +11,7 @@ use quote::quote;
 use syn::DeriveInput;
 
 use super::generics::{DeGenerics, split_de_generics};
-use super::identifier::{AliasMatch, names_list_fn};
+use super::identifier::{AliasMatch, build_alias_match};
 use super::{MACRO_NAME, expecting_body, variant_option};
 use crate::serde_attrs::{self, RenameRule};
 
@@ -131,30 +131,14 @@ pub(super) fn build_aliases(
     names_fn: &syn::Ident,
     infos: &[NamedFieldInfo],
 ) -> (TokenStream2, Option<AliasMatch>) {
-    let mut flat: Vec<(proc_macro2::Span, String)> = Vec::new();
-    let mut entries: Vec<(usize, usize)> = Vec::new();
-    let mut field_index = 0usize;
-    for info in infos {
-        if info.skip_de {
-            continue;
-        }
-        for alias in &info.aliases {
-            entries.push((field_index, flat.len()));
-            flat.push((info.de_name.0, alias.clone()));
-        }
-        field_index += 1;
-    }
-    if flat.is_empty() {
-        return (TokenStream2::new(), None);
-    }
-    let decl = names_list_fn(names_fn, &flat);
-    (
-        decl,
-        Some(AliasMatch {
-            names_fn: names_fn.clone(),
-            entries,
-        }),
-    )
+    // Skipped fields are absent from the identifier set, so the alias
+    // target is the field's index *among the non-skipped fields*.
+    let groups = infos
+        .iter()
+        .filter(|info| !info.skip_de)
+        .enumerate()
+        .map(|(field_index, info)| (field_index, info.de_name.0, info.aliases.as_slice()));
+    build_alias_match(names_fn, groups)
 }
 
 /// Configuration distinguishing the two named-fields contexts: a

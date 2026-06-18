@@ -163,6 +163,37 @@ pub(super) struct AliasMatch {
     pub(super) entries: Vec<(usize, usize)>,
 }
 
+/// Assemble the masked alias-name function plus the [`AliasMatch`] from a
+/// sequence of `(target index, name span, aliases)` groups, where the
+/// target index is the `__Field` variant each group's aliases resolve to
+/// (a field's slot among the non-skipped fields, or a variant's
+/// declaration-order index). Shared by the field- and variant-alias
+/// builders; returns `(empty tokens, None)` when no aliases exist.
+pub(super) fn build_alias_match<'a>(
+    names_fn: &Ident,
+    groups: impl IntoIterator<Item = (usize, proc_macro2::Span, &'a [String])>,
+) -> (TokenStream2, Option<AliasMatch>) {
+    let mut flat: Vec<(proc_macro2::Span, String)> = Vec::new();
+    let mut entries: Vec<(usize, usize)> = Vec::new();
+    for (target, span, aliases) in groups {
+        for alias in aliases {
+            entries.push((target, flat.len()));
+            flat.push((span, alias.clone()));
+        }
+    }
+    if flat.is_empty() {
+        return (TokenStream2::new(), None);
+    }
+    let decl = names_list_fn(names_fn, &flat);
+    (
+        decl,
+        Some(AliasMatch {
+            names_fn: names_fn.clone(),
+            entries,
+        }),
+    )
+}
+
 /// Build the `visit_str` / `visit_bytes` comparison arms for an
 /// identifier visitor: one per primary name, plus one per
 /// `#[serde(alias)]` mapping back to its field's variant.
