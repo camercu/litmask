@@ -93,6 +93,31 @@ pub fn decrypt_wrapper(
         .map_err(|_| DecryptError::InvalidPayloadLength)
 }
 
+/// The `(nonce, ciphertext, tag)` view of a per-string blob.
+#[cfg(any(feature = "chacha20-poly1305", feature = "aes-gcm"))]
+type BlobParts<'a> = (&'a [u8; NONCE_LEN], &'a [u8], &'a [u8; TAG_LEN]);
+
+/// Split a per-string blob into its `(nonce, ciphertext, tag)` parts.
+///
+/// `blob` is `nonce (12) || ciphertext (n) || tag (16)`. Returns
+/// [`DecryptError::BlobTooShort`] when `blob` is shorter than
+/// `NONCE_LEN + TAG_LEN` (so callers reject under-length input before
+/// allocating). Shared by both decrypt entry points so the bounds
+/// invariant lives in one place.
+#[cfg(any(feature = "chacha20-poly1305", feature = "aes-gcm"))]
+fn split_blob(blob: &[u8]) -> Result<BlobParts<'_>, DecryptError> {
+    let (nonce, body) = blob
+        .split_first_chunk::<NONCE_LEN>()
+        .ok_or(DecryptError::BlobTooShort)?;
+    // Split the trailing tag as a fixed-size chunk so it is typed
+    // `&[u8; TAG_LEN]` with no fallible conversion; a body shorter than
+    // the tag yields `None` → `BlobTooShort`.
+    let (ciphertext, tag) = body
+        .split_last_chunk::<TAG_LEN>()
+        .ok_or(DecryptError::BlobTooShort)?;
+    Ok((nonce, ciphertext, tag))
+}
+
 /// Decrypt a per-string blob.
 ///
 /// `blob` is `nonce (12) || ciphertext (n) || tag (16)`. The blob
@@ -110,18 +135,17 @@ pub fn decrypt_blob(
     mask_key: &[u8; KEY_LEN],
     blob: &[u8],
 ) -> Result<alloc::vec::Vec<u8>, DecryptError> {
-    // [`decrypt_blob_into`] is the single decrypt primitive; this is its
-    // allocating convenience wrapper. The AEAD stream ciphers litmask uses
-    // produce ciphertext the same length as the plaintext, so the output
-    // is exactly the blob minus its nonce and tag; `checked_sub` surfaces a
-    // too-short blob as `BlobTooShort` (the same error the primitive would
-    // return) before allocating.
-    let plaintext_len = blob
-        .len()
-        .checked_sub(NONCE_LEN + TAG_LEN)
-        .ok_or(DecryptError::BlobTooShort)?;
-    let mut out = alloc::vec![0u8; plaintext_len];
-    decrypt_blob_into(mask_key, blob, &mut out)?;
+    // Fill an exactly-sized buffer with the ciphertext, then decrypt it in
+    // place. `with_capacity` + `extend_from_slice` copies the ciphertext
+    // once with no zero-fill — the AEAD stream ciphers litmask uses are
+    // length-preserving, so the plaintext is exactly the ciphertext length.
+    // The returned `Vec` is the bare plaintext with no trailing NUL; callers
+    // that need a C string (`CString::new`) append the terminator themselves.
+    let (nonce, ciphertext, tag) = split_blob(blob)?;
+    let mut out = alloc::vec::Vec::with_capacity(ciphertext.len());
+    out.extend_from_slice(ciphertext);
+    aead_decrypt_in_place(crate::CURRENT_CIPHER, mask_key, nonce, &mut out, tag)
+        .map_err(DecryptError::from)?;
     Ok(out)
 }
 
@@ -148,15 +172,7 @@ pub fn decrypt_blob_into(
     blob: &[u8],
     out: &mut [u8],
 ) -> Result<(), DecryptError> {
-    let (nonce, body) = blob
-        .split_first_chunk::<NONCE_LEN>()
-        .ok_or(DecryptError::BlobTooShort)?;
-    // Split the trailing tag as a fixed-size chunk so it is typed
-    // `&[u8; TAG_LEN]` with no fallible conversion; a body shorter than
-    // the tag yields `None` → `BlobTooShort`.
-    let (ciphertext, tag) = body
-        .split_last_chunk::<TAG_LEN>()
-        .ok_or(DecryptError::BlobTooShort)?;
+    let (nonce, ciphertext, tag) = split_blob(blob)?;
     if out.len() != ciphertext.len() {
         return Err(DecryptError::InvalidPayloadLength);
     }
