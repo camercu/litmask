@@ -184,7 +184,7 @@
 //! ## Feature flags
 //!
 //! The crate is `#![no_std]` + `alloc` from day one; the default `std`
-//! feature gates only what genuinely requires `std`. `stack`,
+//! feature gates only what genuinely requires `std`. `unstable-stack`,
 //! `machine-id`, `serde`, and the cipher toggle
 //! (`chacha20-poly1305` default vs `aes-gcm`) gate the rest. Each is
 //! documented at its definition in
