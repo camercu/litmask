@@ -230,9 +230,10 @@ pub(crate) fn mask_stack_cstr(span: proc_macro2::Span, plaintext: Vec<u8>) -> To
 
 /// Shared emitter for the stack masking macros: enforce the stack-size
 /// cap, then seal the blob and call the named `__decrypt_stack_*` seam
-/// with `N = plaintext_len + n_extra` as the `const` generic. `seam` is the
-/// bare seam identifier in `::litmask::__internal`; `n_extra` is `1` for
-/// the NUL-terminated C-string buffer, `0` otherwise.
+/// with `N = plaintext_len + trailer` as the `const` generic. `seam` is the
+/// bare seam identifier in `::litmask::__internal`; `trailer` is `1` for
+/// the NUL-terminated C-string buffer, `0` otherwise (matching the runtime
+/// `decrypt_into` `trailer`).
 ///
 /// The cap is checked **before** sealing, so an over-limit literal emits a
 /// `compile_error!` without touching the build's key artifacts.
@@ -241,9 +242,9 @@ fn mask_stack_call(
     span: proc_macro2::Span,
     plaintext: Vec<u8>,
     seam: &TokenStream,
-    n_extra: usize,
+    trailer: usize,
 ) -> TokenStream {
-    let n = plaintext.len() + n_extra;
+    let n = plaintext.len() + trailer;
     let limit = match stack_limit() {
         Ok(limit) => limit,
         Err(message) => return syn::Error::new(span, message).to_compile_error(),
