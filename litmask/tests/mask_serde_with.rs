@@ -203,3 +203,54 @@ fn with_on_generic_field_matches_plain() {
     let b2: GenericWithField<u32> = serde_json::from_str(&j2).expect("de");
     assert_eq!(b2, m2);
 }
+
+// A `with`-fn on a *borrowed* field of a *lifetime-generic* container.
+// This was rejected pre-fix (`reject_with_on_generic` fired on any
+// non-empty generics list, lifetimes included). It exercises the adapter
+// carrying a container lifetime: `__SerializeWith<'__l, 'a>` /
+// `__DeserializeWith<'de, 'a>` must stay well-formed with a `&'a`-bearing
+// field type.
+mod cow_str {
+    use std::borrow::Cow;
+
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &Cow<str>, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(value)
+    }
+
+    pub fn deserialize<'de, 'a, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Cow<'a, str>, D::Error> {
+        Ok(Cow::Owned(String::deserialize(deserializer)?))
+    }
+}
+
+#[derive(MaskSerialize, MaskDeserialize, PartialEq, Debug)]
+struct BorrowedWith<'a> {
+    #[serde(with = "cow_str")]
+    text: std::borrow::Cow<'a, str>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+struct PlainBorrowedWith<'a> {
+    #[serde(with = "cow_str")]
+    text: std::borrow::Cow<'a, str>,
+}
+
+#[test]
+fn with_on_borrowed_field_in_lifetime_container_matches_plain() {
+    let masked = BorrowedWith {
+        text: std::borrow::Cow::Borrowed("hi"),
+    };
+    let json = serde_json::to_string(&masked).expect("ser");
+    assert_eq!(
+        json,
+        serde_json::to_string(&PlainBorrowedWith {
+            text: std::borrow::Cow::Borrowed("hi"),
+        })
+        .expect("plain ser"),
+    );
+    let back: BorrowedWith = serde_json::from_str(&json).expect("de");
+    assert_eq!(back, masked);
+}
