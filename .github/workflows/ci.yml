@@ -20,7 +20,7 @@ jobs:
     name: Canonical gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Parse .tool-versions
         id: tools
@@ -113,7 +113,7 @@ jobs:
     name: Latest stable advisory
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -138,7 +138,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Parse .tool-versions
         id: tools
@@ -166,7 +166,7 @@ jobs:
     name: Fuzz (10s budget)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@nightly
 
@@ -198,7 +198,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@nightly
 
@@ -223,7 +223,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: smoke (${{ matrix.name }})
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Parse .tool-versions
         id: tools
@@ -257,7 +257,7 @@ jobs:
       - name: Install dependencies
         run: dnf install -y gcc make git
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         run: |
@@ -278,7 +278,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Parse .tool-versions
         id: tools
@@ -318,7 +318,7 @@ jobs:
     runs-on: ubuntu-latest
     name: smoke (${{ matrix.os.name }})
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: cross-platform-actions/action@v1.2.0
         with:
           operating_system: ${{ matrix.os.name }}
@@ -351,7 +351,7 @@ jobs:
     name: Commitlint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
