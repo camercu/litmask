@@ -610,6 +610,124 @@ macro_rules! mask_eprintln {
     };
 }
 
+/// Panic with a `mask_format!`-encrypted message.
+///
+/// Thin wrapper: `mask_panic!("fmt", args)` expands to
+/// `panic!("{}", mask_format!("fmt", args))`. The no-argument form
+/// `mask_panic!()` forwards to `panic!()` (the default "explicit
+/// panic" message, nothing to mask).
+///
+/// Mirrors what `#[mask_all]` does to a bare `panic!` inside its
+/// scope; this is the standalone form for code outside a masked
+/// module.
+///
+/// **Security note:** the decrypted message is emitted in the clear to
+/// the panic handler (typically stderr) and may be captured by a panic
+/// hook. litmask protects the literal at rest in the binary; once the
+/// panic fires, the message is unprotected.
+///
+/// Available in `no_std` + `alloc` builds.
+///
+/// # Examples
+///
+/// ```should_panic
+/// litmask::mask_panic!("invariant {} violated", "X");
+/// ```
+#[macro_export]
+macro_rules! mask_panic {
+    () => {
+        ::core::panic!()
+    };
+    ($($args:tt)+) => {
+        ::core::panic!("{}", $crate::mask_format!($($args)+))
+    };
+}
+
+/// `todo!` with a `mask_format!`-encrypted message.
+///
+/// Thin wrapper: `mask_todo!("fmt", args)` expands to
+/// `todo!("{}", mask_format!("fmt", args))`. The stdlib "not yet
+/// implemented" prefix stays in cleartext (ubiquitous boilerplate, not
+/// a user secret); only the supplied message is masked. The
+/// no-argument form `mask_todo!()` forwards to `todo!()`.
+///
+/// **Security note:** see [`mask_panic!`] — the decrypted message is
+/// emitted in the clear when the panic fires.
+///
+/// Available in `no_std` + `alloc` builds.
+///
+/// # Examples
+///
+/// ```should_panic
+/// litmask::mask_todo!("wire up {}", "the backend");
+/// ```
+#[macro_export]
+macro_rules! mask_todo {
+    () => {
+        ::core::todo!()
+    };
+    ($($args:tt)+) => {
+        ::core::todo!("{}", $crate::mask_format!($($args)+))
+    };
+}
+
+/// `unimplemented!` with a `mask_format!`-encrypted message.
+///
+/// Thin wrapper: `mask_unimplemented!("fmt", args)` expands to
+/// `unimplemented!("{}", mask_format!("fmt", args))`. The stdlib "not
+/// implemented" prefix stays in cleartext; only the supplied message
+/// is masked. The no-argument form `mask_unimplemented!()` forwards to
+/// `unimplemented!()`.
+///
+/// **Security note:** see [`mask_panic!`] — the decrypted message is
+/// emitted in the clear when the panic fires.
+///
+/// Available in `no_std` + `alloc` builds.
+///
+/// # Examples
+///
+/// ```should_panic
+/// litmask::mask_unimplemented!("variant {} not handled", 3);
+/// ```
+#[macro_export]
+macro_rules! mask_unimplemented {
+    () => {
+        ::core::unimplemented!()
+    };
+    ($($args:tt)+) => {
+        ::core::unimplemented!("{}", $crate::mask_format!($($args)+))
+    };
+}
+
+/// `unreachable!` with a `mask_format!`-encrypted message.
+///
+/// Thin wrapper: `mask_unreachable!("fmt", args)` expands to
+/// `unreachable!("{}", mask_format!("fmt", args))`. The stdlib
+/// "internal error: entered unreachable code" prefix stays in
+/// cleartext; only the supplied message is masked. The no-argument
+/// form `mask_unreachable!()` forwards to `unreachable!()`.
+///
+/// **Security note:** see [`mask_panic!`] — the decrypted message is
+/// emitted in the clear when the panic fires.
+///
+/// Available in `no_std` + `alloc` builds.
+///
+/// # Examples
+///
+/// ```should_panic
+/// let state = "corrupt";
+/// litmask::mask_unreachable!("parser reached {state} state");
+/// ```
+#[macro_export]
+macro_rules! mask_unreachable {
+    () => {
+        ::core::unreachable!()
+    };
+    ($($args:tt)+) => {
+        ::core::unreachable!("{}", $crate::mask_format!($($args)+))
+    };
+}
+
 #[doc(hidden)]
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.

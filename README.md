@@ -147,6 +147,10 @@ rationale and the [Deployment Guide](docs/DEPLOYMENT.md) for host setup.
 | `mask_eprintln!("{}", x)`     | `()`             | `eprintln!` (`std`)                     |
 | `mask_write!(dst, "{}", x)`   | `Result`         | `write!`                                |
 | `mask_writeln!(dst, "{}", x)` | `Result`         | `writeln!`                              |
+| `mask_panic!("{}", x)`        | `!`              | `panic!`                                |
+| `mask_todo!("{}", x)`         | `!`              | `todo!`                                 |
+| `mask_unimplemented!("{}",x)` | `!`              | `unimplemented!`                        |
+| `mask_unreachable!("{}", x)`  | `!`              | `unreachable!`                          |
 | `mask_concat!(a, b)`          | `String`         | `concat!`                               |
 | `mask_env!("VAR")`            | `String`         | `env!`                                  |
 | `mask_option_env!("VAR")`     | `Option<String>` | `option_env!`                           |

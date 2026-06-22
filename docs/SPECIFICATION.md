@@ -706,6 +706,10 @@ mask_eprint!(template, args...) // masked print to stderr (std)
 mask_eprintln!(template, args...)// masked println to stderr (std)
 mask_write!(dst, template, args...)  // masked write to any writer
 mask_writeln!(dst, template, args...)// masked writeln to any writer
+mask_panic!(template, args...)  // panic! with masked message
+mask_todo!(template, args...)   // todo! with masked message
+mask_unimplemented!(template, args...) // unimplemented! with masked message
+mask_unreachable!(template, args...)   // unreachable! with masked message
 unmasked!(literal)          // explicit opt-out, returns literal unchanged
 weak_mask!(literal)         // XOR-with-nonce-derived-key obfuscation; weaker than mask!
 mask_include_str!("path")   // file contents → masked String
@@ -802,6 +806,23 @@ implementor (the caller must have the appropriate trait in scope).
 `mask_writeln!(dst)` with no format arguments writes a bare newline.
 Available in `no_std` + `alloc` builds. Same security note: once
 written, the destination controls confidentiality, not litmask.
+
+`mask_panic!`, `mask_todo!`, `mask_unimplemented!`, and
+`mask_unreachable!` are declarative-macro wrappers that forward a
+`mask_format!`-encrypted message to the corresponding `core` panic
+macro. They exist as standalone convenience wrappers, by symmetry with
+the `mask_print!` / `mask_write!` families, so a consumer can mask a
+diverging-path message without entering a `#[mask_all]` module;
+`#[mask_all]` already rewrites the bare `panic!` family (§2.3.2) inside
+its scope. The stdlib macro's own boilerplate prefix stays in cleartext
+— `todo!`'s "not yet implemented: ", `unimplemented!`'s "not
+implemented: ", `unreachable!`'s "internal error: entered unreachable
+code: " — since it is ubiquitous stdlib text rather than a user secret;
+only the supplied message is masked. The no-argument forms
+(`mask_panic!()`, `mask_todo!()`, …) forward to the bare stdlib macro
+(nothing to mask). Available in `no_std` + `alloc` builds (they expand
+through `::core::`). Same security note: when the panic fires, the
+decrypted message is emitted in the clear to the panic handler.
 
 `unmasked!` accepts any of the above literal kinds and returns them unchanged
 (preserving original type: `&str`, `&[u8; N]`, or `&CStr`). It exists to mark
