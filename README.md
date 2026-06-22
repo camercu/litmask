@@ -14,7 +14,7 @@ macros, layered key management, `no_std` ready.
 use litmask::{mask, mask_println};
 
 fn main() {
-    // proprietary LLM system prompt — present at runtime, absent from the binary's `strings`
+    // example proprietary LLM prompt — present at runtime, absent from binary's `strings`
     let system_prompt = mask!("You're ACME's pricing oracle; channel Warren Buffett.");
     mask_println!("prompt loaded: {system_prompt}"); // mask_println! hides its input too
 }
@@ -29,22 +29,22 @@ strings target/release/my_app | grep "pricing oracle"   # no output
 
 ## Why litmask
 
-|                          | `obfstr`            | `litcrypt`     | **`litmask`**                                          |
-| ------------------------ | ------------------- | -------------- | ------------------------------------------------------ |
-| Cipher                   | XOR                 | XOR            | **ChaCha20-Poly1305 / AES-256-GCM**                    |
-| Tamper detection         | No                  | No             | **Yes (AEAD)**                                         |
-| Per-string nonces        | Compile-time random | None           | **Per-build, authenticated**                           |
-| Literal types            | `str`               | `str`          | **str / bytes / cstr**                                 |
-| Format strings           | No                  | No             | **`mask_format!`**                                     |
+|                          | `obfstr`            | `litcrypt`     | **`litmask`**                                           |
+| ------------------------ | ------------------- | -------------- | ------------------------------------------------------- |
+| Cipher                   | XOR                 | XOR            | **ChaCha20-Poly1305 / AES-256-GCM**                     |
+| Tamper detection         | No                  | No             | **Yes (AEAD)**                                          |
+| Per-string nonces        | Compile-time random | None           | **Per-build, authenticated**                            |
+| Literal types            | `str`               | `str`          | **str / bytes / cstr**                                  |
+| Format strings           | No                  | No             | **`mask_format!`**                                      |
 | File / env / path inputs | No                  | No             | **`mask_include_str!`, `mask_env!`, `mask_concat!`, …** |
-| Module-level masking     | No                  | No             | **`#[mask_all]`** (whole module, deep rewrite)         |
-| `Debug` name masking     | No                  | No             | **`#[derive(MaskDebug)]`**                             |
-| serde name masking       | No                  | No             | **`MaskSerialize` / `MaskDeserialize`** (experimental) |
-| Key model                | Compile-time random | Single env var | **Layered: `mask_key` + runtime `unlock_key`**         |
-| Dependency-graph unlock  | No                  | No             | **Governed masking — one `init!`, uniform seal**       |
-| Machine-ID binding       | No                  | No             | **`init!(bind_to_machine)`**                           |
-| `no_std`                 | Limited             | No             | **Yes** (requires `alloc`)                             |
-| Reproducible builds      | No                  | No             | **Yes**                                                |
+| Module-level masking     | No                  | No             | **`#[mask_all]`** (whole module, deep rewrite)          |
+| `Debug` name masking     | No                  | No             | **`#[derive(MaskDebug)]`**                              |
+| serde name masking       | No                  | No             | **`MaskSerialize` / `MaskDeserialize`** (experimental)  |
+| Key model                | Compile-time random | Single env var | **Layered: `mask_key` + runtime `unlock_key`**          |
+| Dependency-graph unlock  | No                  | No             | **Governed masking — one `init!`, uniform seal**        |
+| Machine-ID binding       | No                  | No             | **`init!(bind_to_machine)`**                            |
+| `no_std`                 | Limited             | No             | **Yes** (requires `alloc`)                              |
+| Reproducible builds      | No                  | No             | **Yes**                                                 |
 
 ## Quick start
 
@@ -107,10 +107,10 @@ write.
 
 ## Libraries and governed masking
 
-litmask composes across a dependency graph. The rule for **library
+`litmask` composes across a dependency graph. The rule for **library
 authors** is one line:
 
-> **If your crate uses litmask internally, never call `init!()` — only
+> **If your crate uses `litmask` internally, never call `init!()` — only
 > `mask!()`.** Unlocking is the _host binary's_ job, not the library's.
 
 A library just `mask!()`s its own strings. Whoever links the final binary
@@ -190,7 +190,7 @@ See `examples/mask_debug_demo.rs` and SPECIFICATION.md §2.14.
 
 ## Serde integration (experimental)
 
-The plain serde derives embed every field name and the struct name as
+The plain `serde` derives embed every field name and the struct name as
 cleartext in the binary — `strings(1)` reveals your schema vocabulary even
 when every field value is masked (`Deserialize` is the larger leak: `FIELDS`
 arrays, field-matching arms, and `missing field` diagnostics all carry the
@@ -222,7 +222,7 @@ Current limitations (the `unstable-` prefix means semver-exempt):
   / `content`) is a compile error rather than a silent cleartext fallback,
   as are unions; `with` / `serialize_with` / `deserialize_with` is not yet
   supported on a generic type.
-- A plain serde derive or plain `Debug` on the same struct re-embeds every
+- A plain `serde` derive or plain `Debug` on the same struct re-embeds every
   name and defeats the masking (use `#[derive(MaskDebug)]` for `Debug`).
 
 See `examples/mask_serde_demo.rs` and SPECIFICATION.md Appendix E.
@@ -320,13 +320,13 @@ LITMASK_UNLOCK_KEY="$(litmask keygen)" cargo build --release
 
 ## Features
 
-| Feature             | Default |                                                     |
-| ------------------- | ------- | --------------------------------------------------- |
-| `std`               | yes     | `EnvVarProvider`, `FileProvider`, `mask!(c"...")`   |
-| `chacha20-poly1305` | yes     | Default cipher                                      |
-| `aes-gcm`           | no      | AES-256-GCM (takes precedence when enabled)         |
-| `alloc`             | --      | `no_std` + allocator (required for `no_std` builds) |
-| `machine-id`        | no      | `init!(bind_to_machine)` machine-ID binding              |
+| Feature             | Default |                                                                                        |
+| ------------------- | ------- | -------------------------------------------------------------------------------------- |
+| `std`               | yes     | `EnvVarProvider`, `FileProvider`, `mask!(c"...")`                                      |
+| `chacha20-poly1305` | yes     | Default cipher                                                                         |
+| `aes-gcm`           | no      | AES-256-GCM (takes precedence when enabled)                                            |
+| `alloc`             | --      | `no_std` + allocator (required for `no_std` builds)                                    |
+| `machine-id`        | no      | `init!(bind_to_machine)` machine-ID binding                                            |
 | `unstable-serde`    | no      | EXPERIMENTAL `#[derive(MaskSerialize)]` + `#[derive(MaskDeserialize)]` (semver-exempt) |
 
 ## Documentation
