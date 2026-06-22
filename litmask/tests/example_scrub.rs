@@ -54,6 +54,7 @@ const EXAMPLES: &[&str] = &[
     "mask_all_demo",
     "mask_debug_demo",
     "mask_print_e2e",
+    "mask_eprint_e2e",
 ];
 
 const EXCEPTIONS: &[&str] = &[

@@ -560,6 +560,56 @@ macro_rules! mask_println {
     };
 }
 
+/// Print a `mask_format!`-encrypted format string to stderr.
+///
+/// Thin wrapper: `mask_eprint!("fmt", args)` expands to
+/// `eprint!("{}", mask_format!("fmt", args))`.
+///
+/// **Security note:** the decrypted text is printed in the clear to
+/// stderr. litmask protects literals at rest in the binary; once
+/// printed, the output is unprotected.
+///
+/// # Examples
+///
+/// ```
+/// litmask::mask_eprint!("error code {}\n", 7);
+/// ```
+#[cfg(feature = "std")]
+#[macro_export]
+macro_rules! mask_eprint {
+    ($($args:tt)*) => {
+        ::std::eprint!("{}", $crate::mask_format!($($args)*))
+    };
+}
+
+/// Print a `mask_format!`-encrypted format string plus newline to
+/// stderr.
+///
+/// Thin wrapper: `mask_eprintln!("fmt", args)` expands to
+/// `eprintln!("{}", mask_format!("fmt", args))`. The no-argument form
+/// `mask_eprintln!()` prints a bare newline (no masking needed).
+///
+/// **Security note:** the decrypted text is printed in the clear to
+/// stderr. litmask protects literals at rest in the binary; once
+/// printed, the output is unprotected.
+///
+/// # Examples
+///
+/// ```
+/// let user = "alice";
+/// litmask::mask_eprintln!("login failed for {user}");
+/// ```
+#[cfg(feature = "std")]
+#[macro_export]
+macro_rules! mask_eprintln {
+    () => {
+        ::std::eprintln!()
+    };
+    ($($args:tt)*) => {
+        ::std::eprintln!("{}", $crate::mask_format!($($args)*))
+    };
+}
+
 #[doc(hidden)]
 pub mod __internal {
     //! Symbols required by macro expansion. Not part of the stable API.

@@ -143,6 +143,8 @@ rationale and the [Deployment Guide](docs/DEPLOYMENT.md) for host setup.
 | `mask_format!("{}", x)`       | `String`         | `format!`                               |
 | `mask_print!("{}", x)`        | `()`             | `print!` (`std`)                        |
 | `mask_println!("{}", x)`      | `()`             | `println!` (`std`)                      |
+| `mask_eprint!("{}", x)`       | `()`             | `eprint!` (`std`)                       |
+| `mask_eprintln!("{}", x)`     | `()`             | `eprintln!` (`std`)                     |
 | `mask_write!(dst, "{}", x)`   | `Result`         | `write!`                                |
 | `mask_writeln!(dst, "{}", x)` | `Result`         | `writeln!`                              |
 | `mask_concat!(a, b)`          | `String`         | `concat!`                               |

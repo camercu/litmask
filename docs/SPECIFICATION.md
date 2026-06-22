@@ -702,6 +702,8 @@ mask!(literal)              // dispatches on literal kind
 mask_format!(template, args...) // masked format string
 mask_print!(template, args...)  // masked print to stdout (std)
 mask_println!(template, args...)// masked println to stdout (std)
+mask_eprint!(template, args...) // masked print to stderr (std)
+mask_eprintln!(template, args...)// masked println to stderr (std)
 mask_write!(dst, template, args...)  // masked write to any writer
 mask_writeln!(dst, template, args...)// masked writeln to any writer
 unmasked!(literal)          // explicit opt-out, returns literal unchanged
@@ -784,6 +786,14 @@ a compile error directing users toward `mask!` for runtime-decrypted strings.
 arguments prints a bare newline (no masking involved). The decrypted
 text is written in the clear to stdout — litmask protects literals at
 rest in the binary; once printed, the output is unprotected.
+
+`mask_eprint!` and `mask_eprintln!` are the stderr counterparts, wrapping
+`eprint!` / `eprintln!`. Same `std` gating, same bare-newline form
+(`mask_eprintln!()`), same security note. They exist as standalone
+convenience wrappers so a consumer can mask a diagnostic written to
+stderr without entering a `#[mask_all]` module; `#[mask_all]` already
+rewrites bare `eprint!` / `eprintln!` calls (§2.3.2) for code inside its
+scope.
 
 `mask_write!` and `mask_writeln!` are declarative-macro wrappers around
 `mask_format!` that write to an arbitrary destination via `write!` /
