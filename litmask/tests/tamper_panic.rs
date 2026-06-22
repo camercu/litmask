@@ -231,6 +231,14 @@ fn rs_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
 /// — the single place actionable text is allowed, compiled out of release.
 #[test]
 fn no_message_panics_outside_gated_diagnostics() {
+    // `mask_panic!`'s expansion is `panic!("{}", $crate::mask_format!(..))`:
+    // a consumer-facing `macro_rules!` *template*, not a litmask runtime
+    // call site. It expands in the consumer crate, and its only static
+    // string is the generic `"{}"` placeholder — no litmask-identifying
+    // text reaches any binary. Exempt that one line by its unmistakable
+    // `mask_format!`-forwarding shape; edition 2024 forbids the
+    // literal-free `panic!(expr)` form, so the `"{}"` is unavoidable.
+    const ALLOW: &[&str] = &["$crate::mask_format!"];
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut hits: Vec<String> = Vec::new();
     for path in rs_files(&src) {
@@ -240,7 +248,7 @@ fn no_message_panics_outside_gated_diagnostics() {
         // message-panic is a violation — centralizing keeps the policy in
         // one auditable file.
         let is_diagnostics = path.file_name().is_some_and(|n| n == "diagnostics.rs");
-        for (line, text) in message_panic_hits(&text, &[], is_diagnostics) {
+        for (line, text) in message_panic_hits(&text, ALLOW, is_diagnostics) {
             hits.push(format!("{}:{line}  {text}", path.display()));
         }
     }
@@ -365,5 +373,15 @@ fn message_panic_scan_detects_and_exempts() {
             false
         )
         .is_empty()
+    );
+    // The `mask_panic!` wrapper exemption is tight: the
+    // `$crate::mask_format!`-forwarding line is exempt, but a sibling
+    // litmask-identifying `panic!` on its own line is still caught (the
+    // allow matches neither that line nor its match text).
+    let wrapper = "macro_rules! mask_panic {\n    ($($args:tt)+) => { ::core::panic!(\"{}\", $crate::mask_format!($($args)+)) };\n}\nfn leak() { panic!(\"litmask tampered\"); }\n";
+    assert_eq!(
+        message_panic_hits(wrapper, &["$crate::mask_format!"], false),
+        vec![(4, "panic!(\"litmask tampered\"".to_string())],
+        "wrapper line must be exempt while a real leak on another line is still caught",
     );
 }
