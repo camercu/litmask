@@ -809,4 +809,36 @@ mod no_std_tests {
         crate::mask_write!(buf, "write {}", 99).unwrap();
         assert_eq!(buf, "write 99");
     }
+
+    // Locks the "Available in `no_std` + `alloc` builds" claim on the
+    // panic family's rustdoc: these expand through `::core::` and must
+    // carry the masked message without pulling in `std`.
+    fn panic_message(f: impl FnOnce() + std::panic::UnwindSafe) -> alloc::string::String {
+        use alloc::string::{String, ToString as _};
+        let prev = std::panic::take_hook();
+        std::panic::set_hook(std::boxed::Box::new(|_| {}));
+        let payload = std::panic::catch_unwind(f).err().unwrap();
+        std::panic::set_hook(prev);
+        if let Some(s) = payload.downcast_ref::<String>() {
+            s.clone()
+        } else if let Some(s) = payload.downcast_ref::<&str>() {
+            s.to_string()
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn mask_panic_compiles_under_no_std() {
+        let msg = panic_message(|| crate::mask_panic!("invariant {} broke", 7));
+        assert_eq!(msg, "invariant 7 broke");
+    }
+
+    #[test]
+    fn mask_panic_family_keeps_stdlib_prefix_under_no_std() {
+        // `mask_todo!` / `mask_unreachable!` share the panic family's
+        // expansion shape; one prefix-keeping member proves the rest.
+        let msg = panic_message(|| crate::mask_unreachable!("state {}", 3));
+        assert_eq!(msg, "internal error: entered unreachable code: state 3");
+    }
 }
