@@ -9,9 +9,10 @@ mod common;
 
 use std::ffi::CString;
 
+use common::assert_panic_msg;
 use litmask::{
     mask, mask_concat, mask_env, mask_file, mask_format, mask_include_bytes, mask_include_str,
-    mask_option_env,
+    mask_option_env, mask_panic, mask_todo, mask_unimplemented, mask_unreachable,
 };
 
 #[test]
@@ -112,4 +113,43 @@ fn mask_include_str_matches_include_str() {
 fn mask_include_bytes_matches_include_bytes() {
     let v: Vec<u8> = mask_include_bytes!("../examples/fixtures/binary_blob.bin");
     assert_eq!(v, include_bytes!("../examples/fixtures/binary_blob.bin"));
+}
+
+// The panic family diverges instead of returning a value, so parity is
+// asserted on the panic *payload*: `mask_x!(args)` must unwind with the
+// same message `x!(args)` would. Comparing against the real stdlib
+// macro (not a hardcoded string) keeps the stdlib boilerplate prefix —
+// `todo!`'s "not yet implemented: ", etc. — tracked automatically, so an
+// upstream prefix change surfaces here rather than silently drifting.
+
+#[test]
+fn mask_panic_matches_panic() {
+    assert_eq!(
+        assert_panic_msg(|| mask_panic!("reactor {} critical", 4)),
+        assert_panic_msg(|| panic!("reactor {} critical", 4)),
+    );
+}
+
+#[test]
+fn mask_todo_matches_todo() {
+    assert_eq!(
+        assert_panic_msg(|| mask_todo!("wire {}", "backend")),
+        assert_panic_msg(|| todo!("wire {}", "backend")),
+    );
+}
+
+#[test]
+fn mask_unimplemented_matches_unimplemented() {
+    assert_eq!(
+        assert_panic_msg(|| mask_unimplemented!("variant {}", 3)),
+        assert_panic_msg(|| unimplemented!("variant {}", 3)),
+    );
+}
+
+#[test]
+fn mask_unreachable_matches_unreachable() {
+    assert_eq!(
+        assert_panic_msg(|| mask_unreachable!("state {}", "X")),
+        assert_panic_msg(|| unreachable!("state {}", "X")),
+    );
 }
