@@ -1,0 +1,17 @@
+# Test-health ratchet. Warn-only by design: these thresholds surface a
+# test that turns slow or starts leaking a child handle without failing
+# CI, so a regression shows up in the run output instead of creeping in
+# unnoticed. Tighten to a hard gate (terminate-after / leak result=fail)
+# only once the suite's timing is stable enough to budget against.
+
+[profile.default]
+# Flags a test exceeding 60s as SLOW. The slowest legitimate test today
+# is the dirty-word scrub at ~20s warm (it builds every example in
+# release, then strings-scans the binaries); 60s leaves cold-CI headroom
+# above that so only a genuine balloon or hang trips the marker. No
+# terminate-after: warn-only, the test still runs to completion.
+slow-timeout = { period = "60s" }
+
+# Leaks are already surfaced: nextest's default leak-timeout (100ms,
+# warn-only) prints "leaky" for any test whose spawned process keeps the
+# output handle open past exit. Left at the default rather than restated.
