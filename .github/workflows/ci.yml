@@ -329,7 +329,21 @@ jobs:
 
             case "$(uname)" in
               OpenBSD)
-                sudo pkg_add rust
+                # pkg_add has no built-in mirror retry; a truncated
+                # download (transient mirror flake) aborts the whole
+                # install and records a partial-rust-* package. Retry a
+                # few times, clearing any partial between attempts —
+                # parallel to the curl --retry on the other branch.
+                n=0
+                until sudo pkg_add rust; do
+                  n=$((n + 1))
+                  if [ "$n" -ge 3 ]; then
+                    echo "pkg_add rust failed after $n attempts" >&2
+                    exit 1
+                  fi
+                  sudo pkg_delete -q 'partial-rust-*' 2>/dev/null || true
+                  sleep 5
+                done
                 ;;
               *)
                 curl --proto '=https' --tlsv1.2 -sSf --retry 3 --retry-delay 5 \
