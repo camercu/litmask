@@ -1,3 +1,10 @@
+## [0.20.0](https://github.com/camercu/litmask/compare/v0.19.0...v0.20.0) (2026-06-26)
+
+### Features
+
+* **litmask:** add mask_eprint!/mask_eprintln! stderr wrappers ([f76516b](https://github.com/camercu/litmask/commit/f76516b2c2c54ea33d8b319f1bb7bc65d5f0b93a))
+* **litmask:** add masked panic family macros ([e522454](https://github.com/camercu/litmask/commit/e52245427dfe74357d03d20477b9309419cd2b0f))
+
 ## [0.19.0](https://github.com/camercu/litmask/compare/v0.18.0...v0.19.0) (2026-06-18)
 
 ### Features
