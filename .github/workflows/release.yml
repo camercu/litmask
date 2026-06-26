@@ -45,7 +45,7 @@ jobs:
       # newer main HEAD is bounded by the concurrency group above,
       # which serializes release runs so a later push triggers its own
       # gated release.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: main
