@@ -828,16 +828,29 @@ mod no_std_tests {
         }
     }
 
+    // Cover every member of the family: the stdlib panic macros all live
+    // in `core`, so each masked wrapper must work under `no_std` too.
+
     #[test]
-    fn mask_panic_compiles_under_no_std() {
+    fn mask_panic_under_no_std() {
         let msg = panic_message(|| crate::mask_panic!("invariant {} broke", 7));
         assert_eq!(msg, "invariant 7 broke");
     }
 
     #[test]
-    fn mask_panic_family_keeps_stdlib_prefix_under_no_std() {
-        // `mask_todo!` / `mask_unreachable!` share the panic family's
-        // expansion shape; one prefix-keeping member proves the rest.
+    fn mask_todo_under_no_std() {
+        let msg = panic_message(|| crate::mask_todo!("wire {}", "backend"));
+        assert_eq!(msg, "not yet implemented: wire backend");
+    }
+
+    #[test]
+    fn mask_unimplemented_under_no_std() {
+        let msg = panic_message(|| crate::mask_unimplemented!("variant {}", 3));
+        assert_eq!(msg, "not implemented: variant 3");
+    }
+
+    #[test]
+    fn mask_unreachable_under_no_std() {
         let msg = panic_message(|| crate::mask_unreachable!("state {}", 3));
         assert_eq!(msg, "internal error: entered unreachable code: state 3");
     }
