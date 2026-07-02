@@ -230,6 +230,28 @@ fn machine_seal_id(env_value: &str) -> String {
         .to_owned()
 }
 
+/// Reject empty External-tier material at build time (§1.6.3: the
+/// material is arbitrary-length but non-empty). An unpopulated CI
+/// secret expands to an empty string, which would otherwise silently
+/// seal the External tier under a key derived from zero bytes — known
+/// to anyone. The trim mirrors `derive_external_unlock_key`'s
+/// single-trailing-newline strip, so "empty" means what the KDF would
+/// actually see.
+///
+/// # Panics
+///
+/// Panics at build time if the value trims to zero bytes, naming the
+/// misconfiguration and both fixes.
+fn require_external_material(material: &str) -> &str {
+    assert!(
+        !strip_trailing_newline(material.as_bytes()).is_empty(),
+        "LITMASK_UNLOCK_KEY is set but empty — an unpopulated secret often expands to an \
+         empty string; unset it to seal the keyless Embedded tier, or supply real material \
+         (e.g. from `litmask keygen`)"
+    );
+    material
+}
+
 impl BuildArtifacts {
     /// Derive the full artifact set from a build seed and the selected
     /// keying `tier`. Pure: same seed + tier in, byte-identical fields
@@ -266,9 +288,10 @@ impl BuildArtifacts {
             SealTier::Embedded => {
                 derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &wrapper_nonce)
             }
-            SealTier::External(material) => {
-                derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, material.as_bytes())
-            }
+            SealTier::External(material) => derive_external_unlock_key(
+                EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
+                require_external_material(material).as_bytes(),
+            ),
             // Machine: unlock_key = derive_machine_id_key(host id, nonce).
             // The salt is the wrapper nonce (derived inside the KDF), so
             // the runtime recomputes the identical key from the embedded
@@ -300,7 +323,7 @@ impl BuildArtifacts {
                 );
                 let external_key = derive_external_unlock_key(
                     EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
-                    material.as_bytes(),
+                    require_external_material(material).as_bytes(),
                 );
                 derive_two_factor_unlock_key(
                     TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT,
@@ -519,6 +542,31 @@ mod tests {
         // A raw id with no check group must be rejected at build time,
         // not silently sealed and surfaced as a runtime decrypt failure.
         let _ = machine_seal_id("host-id-abc");
+    }
+
+    /// An unpopulated CI secret expands to an empty string; sealing the
+    /// External tier under KDF(zero bytes) would ship a binary whose
+    /// "secret" everyone knows. Reject at build time (§1.6.3).
+    #[test]
+    #[should_panic(expected = "LITMASK_UNLOCK_KEY is set but empty")]
+    fn external_seal_rejects_empty_material() {
+        let _ = BuildArtifacts::derive(&[0u8; KEY_LEN], &external(""));
+    }
+
+    /// "Empty" means what the KDF sees: a lone trailing newline trims to
+    /// nothing, so it must be rejected the same as `""`.
+    #[test]
+    #[should_panic(expected = "LITMASK_UNLOCK_KEY is set but empty")]
+    fn external_seal_rejects_newline_only_material() {
+        let _ = BuildArtifacts::derive(&[0u8; KEY_LEN], &external("\n"));
+    }
+
+    /// The two-factor tier's external factor takes the same material
+    /// channel, so it must apply the same non-empty guard.
+    #[test]
+    #[should_panic(expected = "LITMASK_UNLOCK_KEY is set but empty")]
+    fn machine_external_seal_rejects_empty_external_material() {
+        let _ = BuildArtifacts::derive(&[0u8; KEY_LEN], &machine_external("host-id-abc", ""));
     }
 
     fn persist_path(dir: &TempDir) -> PathBuf {

@@ -40,7 +40,8 @@ The External tier seals the build under the unlock **material** you put
 in `LITMASK_UNLOCK_KEY` at build time, then re-supplies that same
 material at runtime. The provider derives the key from the raw bytes
 (`unlock_key = KDF("litmask-unlock-v1", material)`); it is not an encoded
-key, so the material can be any byte string of any length:
+key, so the material can be any non-empty byte string (an empty value —
+the classic unpopulated-CI-secret expansion — fails the build):
 
 ```sh
 # Build seals the External tier under this material.

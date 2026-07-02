@@ -548,8 +548,11 @@ External-tier unlock **material** is different: the `EnvVarProvider` /
 key. A provider strips a single trailing newline (so editor- and
 shell-appended newlines do not fork the secret) and normalizes the bytes
 through `UnlockKey::derive` — `unlock_key = KDF("litmask-unlock-v1",
-material)`. There is no encoding step and no length constraint on the
-material.
+material)`. There is no encoding step and no upper length constraint on
+the material, but it MUST be non-empty after the trim: `emit()` rejects
+an empty `LITMASK_UNLOCK_KEY` at build time (an unpopulated CI secret
+expands to an empty string, which would otherwise seal the External
+tier under a key derived from zero bytes).
 
 #### §1.6.4 UnlockKey lifecycle
 
