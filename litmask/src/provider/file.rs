@@ -19,19 +19,22 @@ use crate::provider::KeyProvider;
 /// the External form and only compiles against an externally-sealed
 /// build, whereas litmask's own doctests build at the Embedded tier.
 ///
-/// The file contents are treated as raw external material of any
-/// length and normalized into the `unlock_key` via [`UnlockKey::derive`]
-/// — no encoding or length constraint. A single trailing newline is
-/// stripped so a key file saved by an editor and an env var carrying
+/// The file contents are treated as raw external material and
+/// normalized into the `unlock_key` via [`UnlockKey::derive`] — no
+/// encoding step, no upper length constraint. A single trailing newline
+/// is stripped so a key file saved by an editor and an env var carrying
 /// the same secret derive the identical key. Errors map:
 ///
 /// | Condition | Error |
 /// |---|---|
 /// | Path does not exist | [`KeyError::NotFound`] |
 /// | Path exists but is unreadable by this process | [`KeyError::Permission`] |
+/// | Contents are empty after the newline trim | [`KeyError::InvalidFormat`] |
 ///
-/// File contents never fail to parse: any bytes are valid material, so
-/// there is no `InvalidFormat` surface here.
+/// The empty case is always a misconfiguration (a touched-but-never-
+/// populated key file): `emit()` refuses to seal empty material
+/// (§1.6.3), so no valid seal can match it. Any other byte sequence is
+/// valid material.
 ///
 /// The in-memory copy of the file bytes is wiped immediately after the
 /// key is derived, via a `Zeroizing` wrapper around the read buffer.
@@ -68,7 +71,7 @@ impl KeyProvider for FileProvider {
         // borrow would break the contract loudly (the Counted<T>
         // unit test asserts the buffer's drop runs).
         let buffer = Zeroizing::new(read_file_bytes(&self.path)?);
-        Ok(derive_key_from_buffer(buffer))
+        derive_key_from_buffer(buffer)
     }
 }
 
@@ -97,14 +100,15 @@ fn read_file_bytes(path: &std::path::Path) -> Result<alloc::vec::Vec<u8>, KeyErr
 ///
 /// A single trailing newline is stripped during derivation (editors
 /// append one when saving) so the file and env channels agree on one
-/// secret; the trim lives inside [`UnlockKey::derive`]. Any bytes are
-/// valid material — derivation is infallible.
+/// secret; the trim lives inside [`UnlockKey::derive`]. Material that
+/// trims to zero bytes is rejected as [`KeyError::InvalidFormat`] (see
+/// the type-level table); any other bytes are valid material.
 #[allow(clippy::needless_pass_by_value)]
-fn derive_key_from_buffer<Z>(buffer: Z) -> UnlockKey
+fn derive_key_from_buffer<Z>(buffer: Z) -> Result<UnlockKey, KeyError>
 where
     Z: AsRef<[u8]> + Zeroize,
 {
-    UnlockKey::derive(buffer.as_ref())
+    super::derive_nonempty_material(buffer.as_ref())
 }
 
 #[cfg(test)]
@@ -117,7 +121,7 @@ mod tests {
     fn derive_key_from_buffer_derives_and_zeroizes_input_exactly_once() {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let buf = Counted::new(b"operator material".to_vec(), &COUNTER);
-        let key = derive_key_from_buffer(buf);
+        let key = derive_key_from_buffer(buf).expect("non-empty material derives");
         assert_eq!(COUNTER.load(Ordering::SeqCst), 1);
         assert_eq!(key, UnlockKey::derive(b"operator material"));
     }
@@ -126,8 +130,10 @@ mod tests {
     fn derive_key_from_buffer_strips_one_trailing_newline() {
         static BARE: AtomicUsize = AtomicUsize::new(0);
         static NEWLINED: AtomicUsize = AtomicUsize::new(0);
-        let bare = derive_key_from_buffer(Counted::new(b"secret".to_vec(), &BARE));
-        let newlined = derive_key_from_buffer(Counted::new(b"secret\n".to_vec(), &NEWLINED));
+        let bare =
+            derive_key_from_buffer(Counted::new(b"secret".to_vec(), &BARE)).expect("derives");
+        let newlined =
+            derive_key_from_buffer(Counted::new(b"secret\n".to_vec(), &NEWLINED)).expect("derives");
         // A key file with the editor-appended newline derives the same
         // key as the bare secret — the file and env channels agree.
         assert_eq!(bare, newlined);
@@ -137,10 +143,33 @@ mod tests {
     fn derive_key_from_buffer_accepts_arbitrary_length() {
         static SHORT: AtomicUsize = AtomicUsize::new(0);
         static LONG: AtomicUsize = AtomicUsize::new(0);
-        // No length constraint: the KDF normalizes any-length material.
-        let short = derive_key_from_buffer(Counted::new(alloc::vec![0x01u8; 1], &SHORT));
-        let long = derive_key_from_buffer(Counted::new(alloc::vec![0x01u8; 4096], &LONG));
+        // No upper length constraint: the KDF normalizes any-length
+        // non-empty material.
+        let short =
+            derive_key_from_buffer(Counted::new(alloc::vec![0x01u8; 1], &SHORT)).expect("derives");
+        let long = derive_key_from_buffer(Counted::new(alloc::vec![0x01u8; 4096], &LONG))
+            .expect("derives");
         assert_ne!(short, long);
+    }
+
+    /// An empty key file (touched but never populated) can never open
+    /// any valid seal — build-side `emit()` refuses to seal empty
+    /// material (§1.6.3). Reject it as `InvalidFormat`, and still wipe
+    /// the buffer exactly once on the error path.
+    #[test]
+    fn derive_key_from_buffer_rejects_empty_material_and_still_zeroizes() {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let result = derive_key_from_buffer(Counted::new(alloc::vec::Vec::new(), &COUNTER));
+        assert!(matches!(result, Err(KeyError::InvalidFormat)));
+        assert_eq!(COUNTER.load(Ordering::SeqCst), 1);
+    }
+
+    /// A file holding only the editor-appended newline is empty material.
+    #[test]
+    fn derive_key_from_buffer_rejects_newline_only_material() {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let result = derive_key_from_buffer(Counted::new(b"\n".to_vec(), &COUNTER));
+        assert!(matches!(result, Err(KeyError::InvalidFormat)));
     }
 
     #[test]

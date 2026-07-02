@@ -2062,10 +2062,12 @@ provider that reads from the named environment variable.
 §2.5.2.3 — `EnvVarProvider::unlock_key()` SHALL return:
 
 - `Err(KeyError::NotFound)` if the env var is unset
+- `Err(KeyError::InvalidFormat)` if the value is empty after the
+  trailing-newline trim (an unpopulated secret can never open a valid
+  seal — `emit()` refuses to seal empty material, §1.6.3)
 - `Ok(UnlockKey)` otherwise, deriving the key from the variable's raw
   bytes via `UnlockKey::derive` after stripping a single trailing
-  newline. Any byte sequence is accepted as material, so there is no
-  `InvalidFormat` outcome.
+  newline. Any non-empty byte sequence is accepted as material.
 
 #### §2.5.3 FileProvider
 
@@ -2076,10 +2078,14 @@ provider that reads the file's bytes as raw unlock material.
 
 - `Err(KeyError::NotFound)` if the file does not exist
 - `Err(KeyError::Permission)` if the file exists but cannot be read
+- `Err(KeyError::InvalidFormat)` if the contents are empty after the
+  trailing-newline trim (a touched-but-never-populated key file can
+  never open a valid seal — `emit()` refuses to seal empty material,
+  §1.6.3)
 - `Ok(UnlockKey)` otherwise, deriving the key from the file's raw bytes
   via `UnlockKey::derive` after stripping a single trailing newline.
-  File contents are material of any length, so there is no
-  `InvalidFormat` outcome and no length check.
+  Any non-empty byte sequence is accepted; there is no upper length
+  constraint.
 
 §2.5.3.4 — `FileProvider` SHALL zero its in-memory copy of file contents
 immediately after extracting the key.

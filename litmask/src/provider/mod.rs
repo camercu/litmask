@@ -36,6 +36,26 @@ pub use file::FileProvider;
 #[cfg(feature = "machine-id")]
 pub(crate) use machine_id::MachineIdProvider;
 
+/// Normalize sourced external material into an [`UnlockKey`], rejecting
+/// material that trims to zero bytes (a single trailing newline is
+/// stripped by the KDF, so "empty" means what the KDF would see).
+///
+/// Build-side `emit()` refuses to seal empty material (§1.6.3), so
+/// empty material at runtime can never open any valid seal — it is
+/// always a misconfiguration (an unpopulated env var, a touched-but-
+/// empty key file). Naming it [`KeyError::InvalidFormat`] here keeps it
+/// from surfacing later as a generic wrapper-decrypt failure. One site,
+/// shared by every built-in external-material provider; custom
+/// providers calling [`UnlockKey::derive`] directly are outside this
+/// guard.
+#[cfg(feature = "std")]
+pub(crate) fn derive_nonempty_material(material: &[u8]) -> Result<UnlockKey, KeyError> {
+    if crate::internal::strip_trailing_newline(material).is_empty() {
+        return Err(KeyError::InvalidFormat);
+    }
+    Ok(UnlockKey::derive(material))
+}
+
 /// A source of `unlock_key` for the layered key strategy.
 ///
 /// The `&self` receiver permits stateful providers (cached lookups,

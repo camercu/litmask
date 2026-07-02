@@ -114,7 +114,8 @@ pub enum KeyError {
     /// etc.).
     Permission,
     /// The unlock-key bytes are malformed (wrong length, bad
-    /// encoding).
+    /// encoding, or external material that is empty after the
+    /// trailing-newline trim — an unpopulated secret).
     InvalidFormat,
     /// The provider's upstream dependency failed (e.g. `machine-uid`
     /// could not read a stable machine identifier on this host).

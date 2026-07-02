@@ -65,11 +65,14 @@ fn read_env_value(name: &str) -> Option<Zeroizing<alloc::string::String>> {
 /// Pure parser for an environment-variable value: maps the optional
 /// owned string to the canonical [`KeyError`] surface. `None`
 /// represents "env var unset" and produces [`KeyError::NotFound`];
-/// `Some(value)` is normalized into an [`UnlockKey`] via
-/// [`UnlockKey::derive`] over the raw bytes (any length, no encoding).
-/// `UnlockKey::derive` removes an editor-appended trailing newline as
-/// part of the derivation, so the env and file channels agree on one
-/// secret without trimming here.
+/// a value that is empty after the trailing-newline trim produces
+/// [`KeyError::InvalidFormat`] (an unpopulated secret can never open a
+/// valid seal — `emit()` refuses to seal empty material, §1.6.3); any
+/// other `Some(value)` is normalized into an [`UnlockKey`] via
+/// [`UnlockKey::derive`] over the raw bytes (no encoding, no other
+/// length constraint). `UnlockKey::derive` removes an editor-appended
+/// trailing newline as part of the derivation, so the env and file
+/// channels agree on one secret without trimming here.
 ///
 /// Takes ownership of a [`Zeroizing<String>`] so the plaintext material
 /// is wiped when this function returns, regardless of which branch
@@ -82,7 +85,7 @@ fn read_env_value(name: &str) -> Option<Zeroizing<alloc::string::String>> {
 fn parse_env_value(value: Option<Zeroizing<alloc::string::String>>) -> Result<UnlockKey, KeyError> {
     match value {
         None => Err(KeyError::NotFound),
-        Some(s) => Ok(UnlockKey::derive(s.as_bytes())),
+        Some(s) => super::derive_nonempty_material(s.as_bytes()),
     }
 }
 
@@ -128,6 +131,27 @@ mod tests {
         // check. The framework's KDF does the normalizing.
         let key = parse_env_value(Some(z("any operator secret"))).expect("derives");
         assert_eq!(key, UnlockKey::derive(b"any operator secret"));
+    }
+
+    /// An unpopulated secret expands to an empty string. Build-side
+    /// `emit()` refuses to seal empty material (§1.6.3), so empty here
+    /// can never open any valid seal — name the misconfiguration
+    /// instead of surfacing it later as a generic decrypt failure.
+    #[test]
+    fn parse_env_value_empty_material_yields_invalid_format() {
+        assert!(matches!(
+            parse_env_value(Some(z(""))),
+            Err(KeyError::InvalidFormat)
+        ));
+    }
+
+    /// "Empty" means what the KDF sees: a lone newline trims to nothing.
+    #[test]
+    fn parse_env_value_newline_only_material_yields_invalid_format() {
+        assert!(matches!(
+            parse_env_value(Some(z("\n"))),
+            Err(KeyError::InvalidFormat)
+        ));
     }
 
     #[test]
