@@ -65,23 +65,42 @@ impl KeyProvider for MachineIdProvider {
             ))))
         })?;
         // Wrap the machine id in Zeroizing so the heap copy of the
-        // identifier wipes when this function returns — without it,
+        // identifier wipes when the derivation returns — without it,
         // a stable host identifier would linger in the allocator
         // even though `UnlockKey` zeroizes the derived key.
-        let machine_id = Zeroizing::new(machine_id);
-        // `weak_mask!()` keeps both BLAKE3 context literals out of
-        // `strings(1)` output for user binaries. Each literal MUST match
-        // its `litmask_internal` const byte-for-byte (which
-        // `litmask-build` uses at seal time) or build ↔ runtime
-        // derivations diverge; pinned by the
-        // `weak_mask_literals_match_consts` test below.
-        Ok(UnlockKey::from_raw(derive_machine_id_key(
-            crate::weak_mask!("litmask-machine-id-v1"),
-            crate::weak_mask!("litmask-machine-id-salt-v1"),
-            machine_id.as_bytes(),
-            &self.nonce,
-        )))
+        derive_from_machine_id(Zeroizing::new(machine_id), &self.nonce)
     }
+}
+
+/// Pure derivation core of [`KeyProvider::unlock_key`]: rejects an
+/// empty machine id — a broken `machine_uid` read that no valid seal
+/// can match, since `emit()` refuses a token with an empty id
+/// (§2.9.3.3) — then derives under the canonical contexts. Extracted so
+/// the empty guard is unit-testable without a host whose `machine_uid`
+/// read is actually broken.
+///
+/// `weak_mask!()` keeps both BLAKE3 context literals out of
+/// `strings(1)` output for user binaries. Each literal MUST match its
+/// `litmask_internal` const byte-for-byte (which `litmask-build` uses
+/// at seal time) or build ↔ runtime derivations diverge; pinned by the
+/// `weak_mask_literals_match_consts` test below.
+// By-value is load-bearing (same idiom as file.rs's
+// `derive_key_from_buffer`): the `Zeroizing` drop wipes the host id
+// when this function returns, even on the error path.
+#[allow(clippy::needless_pass_by_value)]
+fn derive_from_machine_id(
+    machine_id: Zeroizing<alloc::string::String>,
+    nonce: &[u8; NONCE_LEN],
+) -> Result<UnlockKey, KeyError> {
+    if machine_id.is_empty() {
+        return Err(KeyError::InvalidFormat);
+    }
+    Ok(UnlockKey::from_raw(derive_machine_id_key(
+        crate::weak_mask!("litmask-machine-id-v1"),
+        crate::weak_mask!("litmask-machine-id-salt-v1"),
+        machine_id.as_bytes(),
+        nonce,
+    )))
 }
 
 /// Send + Sync wrapper around an upstream `machine-uid` failure.
@@ -153,6 +172,19 @@ mod tests {
     /// derivation over that id + the captured nonce; on hosts where
     /// `machine_uid` is unavailable, the call errors and the assertion is
     /// skipped (matches the integration test's tolerance).
+    /// An empty `machine_uid` read can never open a valid seal —
+    /// `emit()` rejects a token with an empty id (§2.9.3.3) — so name
+    /// the broken read instead of failing later with a generic
+    /// wrapper-decrypt error.
+    #[test]
+    fn empty_machine_id_yields_invalid_format() {
+        let result = derive_from_machine_id(
+            Zeroizing::new(alloc::string::String::new()),
+            &[0u8; NONCE_LEN],
+        );
+        assert!(matches!(result, Err(KeyError::InvalidFormat)));
+    }
+
     #[test]
     fn unlock_key_matches_const_context_derivation() {
         let Ok(host_id) = machine_uid::get() else {
