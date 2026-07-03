@@ -13,7 +13,8 @@ use litmask_internal::{base64url, encode_machine_id_token};
 
 /// Readable diagnostic for a failed machine-id lookup. Kept as a named
 /// constant so the message text is pinned by a unit test.
-const MACHINE_ID_UNAVAILABLE_MSG: &str = "could not read the machine ID (machine-uid failed)";
+const MACHINE_ID_UNAVAILABLE_MSG: &str =
+    "could not read the machine ID (machine-uid failed or returned an empty id)";
 
 /// Human guidance printed to **stderr** alongside the machine-id token.
 /// It explains what the stdout token is for. It rides stderr — not
@@ -132,6 +133,14 @@ struct MachineIdReport {
 /// 69), keeping stdout clean for callers piping the token.
 fn report_machine_id<E>(lookup: Result<String, E>) -> MachineIdReport {
     match lookup {
+        // An empty read is a broken read: minting a token for it would
+        // let a build seal an empty machine factor (emit() rejects that
+        // token too, but the mint is the earliest failure point).
+        Ok(id) if id.is_empty() => MachineIdReport {
+            stdout: None,
+            stderr: Some(MACHINE_ID_UNAVAILABLE_MSG.to_string()),
+            code: exit::UNAVAILABLE,
+        },
         Ok(id) => MachineIdReport {
             stdout: Some(encode_machine_id_token(&id)),
             stderr: Some(MACHINE_ID_GUIDANCE_MSG.to_string()),
@@ -175,6 +184,18 @@ mod tests {
         );
         assert_eq!(r.stderr.as_deref(), Some(MACHINE_ID_GUIDANCE_MSG));
         assert_eq!(r.code, exit::OK);
+    }
+
+    /// An empty id from `machine_uid` is a broken read, not a usable
+    /// machine id — minting a token for it would let a build seal an
+    /// empty machine factor (rejected there too, but fail at the
+    /// earliest point: the mint).
+    #[test]
+    fn report_machine_id_empty_read_is_unavailable() {
+        let r = report_machine_id(Ok::<_, std::io::Error>(String::new()));
+        assert_eq!(r.stdout, None);
+        assert_eq!(r.stderr.as_deref(), Some(MACHINE_ID_UNAVAILABLE_MSG));
+        assert_eq!(r.code, exit::UNAVAILABLE);
     }
 
     #[test]

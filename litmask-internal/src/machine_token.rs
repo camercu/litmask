@@ -48,6 +48,11 @@ pub enum MachineTokenError {
     /// The check group does not match the id it accompanies: the token
     /// was corrupted in transit (or never was a valid token).
     CheckMismatch,
+    /// The id half is empty — a broken `machine_uid` read minted the
+    /// token. An empty machine factor must never seal: the "host
+    /// binding" would hold on any machine with the same broken read
+    /// (the same class as empty `LITMASK_UNLOCK_KEY` material, §1.6.3).
+    EmptyId,
 }
 
 impl core::fmt::Display for MachineTokenError {
@@ -57,6 +62,7 @@ impl core::fmt::Display for MachineTokenError {
             Self::CheckMismatch => {
                 f.write_str("machine-id token check group mismatch (corrupted in transit?)")
             }
+            Self::EmptyId => f.write_str("machine-id token carries an empty id"),
         }
     }
 }
@@ -87,15 +93,19 @@ pub fn encode_machine_id_token(raw_id: &str) -> String {
 /// - [`MachineTokenError::Malformed`] if `token` has no separator.
 /// - [`MachineTokenError::CheckMismatch`] if the check group does not
 ///   match the accompanying id (corruption in transit).
+/// - [`MachineTokenError::EmptyId`] if the id half is empty (a broken
+///   `machine_uid` read; there is no machine id to seal).
 pub fn decode_machine_id_token(token: &str) -> Result<&str, MachineTokenError> {
     let (raw_id, check) = token
         .rsplit_once(SEPARATOR)
         .ok_or(MachineTokenError::Malformed)?;
-    if check_group(raw_id) == check {
-        Ok(raw_id)
-    } else {
-        Err(MachineTokenError::CheckMismatch)
+    if check_group(raw_id) != check {
+        return Err(MachineTokenError::CheckMismatch);
     }
+    if raw_id.is_empty() {
+        return Err(MachineTokenError::EmptyId);
+    }
+    Ok(raw_id)
 }
 
 #[cfg(test)]
@@ -122,6 +132,20 @@ mod tests {
         assert_eq!(
             decode_machine_id_token("no-check-group-here"),
             Err(MachineTokenError::Malformed)
+        );
+    }
+
+    /// A token whose id half is empty carries no machine id to seal —
+    /// a broken `machine_uid` read minted it. It must not decode: an
+    /// empty machine factor would seal a binary whose "host binding"
+    /// holds on any machine with the same broken read (the same class
+    /// as sealing under empty `LITMASK_UNLOCK_KEY` material, §1.6.3).
+    #[test]
+    fn rejects_an_empty_raw_id_even_with_a_valid_check_group() {
+        let token = encode_machine_id_token("");
+        assert_eq!(
+            decode_machine_id_token(&token),
+            Err(MachineTokenError::EmptyId)
         );
     }
 

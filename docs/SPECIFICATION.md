@@ -2318,15 +2318,16 @@ only, keeping a piped capture limited to the token itself.
 §2.9.3.3 — `litmask-build::emit()` SHALL accept the token form on
 `LITMASK_MACHINE_ID`, validating the check group and recovering the raw id
 before deriving the machine key. A value whose check group does not match,
-or that carries no check group, SHALL be rejected at build time — turning a
-mistyped id into an actionable build error rather than an opaque runtime
-`init` failure on the deploy host. A single trailing newline is stripped
-before validation, so a token sourced through a newline-bearing channel
-still validates.
+that carries no check group, or whose id half is empty (a broken
+`machine_uid` read — an empty machine factor must never seal) SHALL be
+rejected at build time — turning a mistyped id into an actionable build
+error rather than an opaque runtime `init` failure on the deploy host. A
+single trailing newline is stripped before validation, so a token sourced
+through a newline-bearing channel still validates.
 
-§2.9.3.4 — If the machine ID cannot be read, `show-machine-id` SHALL print a
-human-readable diagnostic to stderr (leaving stdout empty) and exit
-EX_UNAVAILABLE (69).
+§2.9.3.4 — If the machine ID cannot be read (including a read that returns
+an empty id), `show-machine-id` SHALL print a human-readable diagnostic to
+stderr (leaving stdout empty) and exit EX_UNAVAILABLE (69).
 
 §2.9.3.5 — `show-machine-id` SHALL take no arguments and SHALL NOT modify any
 file.
