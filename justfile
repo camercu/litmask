@@ -93,8 +93,14 @@ test-doc:
 test-no-default:
     cargo nextest run -p litmask -p litmask-internal --no-default-features --features alloc --lib
 
+# Examples are excluded (`--lib --tests --bins`) for the seal-tier
+# reason documented on `test-all-features`: the machine_id_provider
+# example's `init!(bind_to_machine)` only compiles against a `machine`
+# seal, and this recipe runs under whatever tier the ambient env sealed
+# (usually `embedded`). The example is exercised by
+# `tests/example_scrub.rs` / `tests/machine_tier_e2e.rs` instead.
 test-machine-id:
-    cargo nextest run -p litmask --features machine-id
+    cargo nextest run -p litmask --features machine-id --lib --tests --bins
 
 # Scoped to litmask + litmask-internal: `--workspace` would unify
 # features with litmask-cli (which activates both ciphers), defeating
@@ -396,6 +402,7 @@ ci mode="":
     step test-no-default
     step check-no-default
     step test-aes-gcm
+    step test-machine-id
     step check-no-std
     step check-cross
     printf '\n══ ci-coverage (background) ══\n'
