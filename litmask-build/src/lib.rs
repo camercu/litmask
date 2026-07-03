@@ -42,7 +42,8 @@ use litmask_internal::{
     TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, WRAPPER_ARTIFACT, WRAPPER_BODY_LEN, WRAPPER_LEN,
     WRAPPER_PLAINTEXT_LEN, aead_encrypt, assemble_wrapper, base64url, decode_machine_id_token,
     derive_embedded_unlock_key, derive_external_unlock_key, derive_machine_id_key,
-    derive_two_factor_unlock_key, nonce_for_wrapper, strip_trailing_newline,
+    derive_two_factor_unlock_key, is_empty_external_material, nonce_for_wrapper,
+    strip_trailing_newline,
 };
 
 /// The keying tier `emit()` seals, selected purely from which build
@@ -234,9 +235,9 @@ fn machine_seal_id(env_value: &str) -> String {
 /// material is arbitrary-length but non-empty). An unpopulated CI
 /// secret expands to an empty string, which would otherwise silently
 /// seal the External tier under a key derived from zero bytes — known
-/// to anyone. The trim mirrors `derive_external_unlock_key`'s
-/// single-trailing-newline strip, so "empty" means what the KDF would
-/// actually see.
+/// to anyone. Emptiness is judged by [`is_empty_external_material`] —
+/// the same predicate the runtime providers reject on, so build and
+/// runtime agree on what unpopulated material is.
 ///
 /// # Panics
 ///
@@ -244,7 +245,7 @@ fn machine_seal_id(env_value: &str) -> String {
 /// misconfiguration and both fixes.
 fn require_external_material(material: &str) -> &str {
     assert!(
-        !strip_trailing_newline(material.as_bytes()).is_empty(),
+        !is_empty_external_material(material.as_bytes()),
         "LITMASK_UNLOCK_KEY is set but empty — an unpopulated secret often expands to an \
          empty string; unset it to seal the keyless Embedded tier, or supply real material \
          (e.g. from `litmask keygen`)"

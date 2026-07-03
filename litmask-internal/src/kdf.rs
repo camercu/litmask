@@ -131,6 +131,23 @@ pub fn strip_trailing_newline(material: &[u8]) -> &[u8] {
     }
 }
 
+/// Whether external key material is empty *as the KDF sees it* — empty
+/// after the single-trailing-newline strip ([`strip_trailing_newline`]).
+/// An unpopulated secret lands here: a CI variable that expanded to `""`,
+/// a touched-but-empty key file, a lone editor-appended newline.
+///
+/// The build seal (`litmask-build::emit`) rejects empty material so it
+/// can never seal under a key derived from zero bytes; the runtime
+/// providers reject it so an unpopulated secret surfaces as a named
+/// misconfiguration rather than a generic decrypt failure. Both call
+/// this, so "empty" means the same thing on both sides — the same
+/// build↔runtime agreement [`strip_trailing_newline`] exists for, kept
+/// beside it so the two halves live at one site.
+#[must_use]
+pub fn is_empty_external_material(material: &[u8]) -> bool {
+    strip_trailing_newline(material).is_empty()
+}
+
 /// Derive the machine-tier 32-byte `unlock_key` from the host machine
 /// id and the build's wrapper nonce.
 ///
@@ -520,6 +537,22 @@ mod tests {
         // newline is treated as the editor footgun.
         assert_eq!(strip_trailing_newline(b"secret "), b"secret ");
         assert_eq!(strip_trailing_newline(b""), b"");
+    }
+
+    /// Empty *as the KDF sees it*: after the at-most-one-newline strip.
+    /// Locks the build↔runtime agreement on what unpopulated material is,
+    /// so a divergence here (which would make seals un-openable) is a
+    /// test failure, not a silent field bug.
+    #[test]
+    fn is_empty_external_material_matches_the_kdf_view() {
+        assert!(is_empty_external_material(b""));
+        assert!(is_empty_external_material(b"\n"));
+        assert!(is_empty_external_material(b"\r\n"));
+        // Only one newline is stripped, so a second is real material.
+        assert!(!is_empty_external_material(b"\n\n"));
+        // Trailing spaces/tabs are real material, matching the strip.
+        assert!(!is_empty_external_material(b" "));
+        assert!(!is_empty_external_material(b"secret"));
     }
 
     /// The external-tier context must domain-separate from both the

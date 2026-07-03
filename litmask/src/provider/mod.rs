@@ -50,7 +50,7 @@ pub(crate) use machine_id::MachineIdProvider;
 /// guard.
 #[cfg(feature = "std")]
 pub(crate) fn derive_nonempty_material(material: &[u8]) -> Result<UnlockKey, KeyError> {
-    if crate::internal::strip_trailing_newline(material).is_empty() {
+    if crate::internal::is_empty_external_material(material) {
         return Err(KeyError::InvalidFormat);
     }
     Ok(UnlockKey::derive(material))
