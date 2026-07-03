@@ -92,9 +92,49 @@ impl StringLiteral {
             input.span(),
             macro_name,
             FailTag::NonLiteral,
-            "accepts string, byte string, or C string literals",
+            &non_literal_detail(macro_name, input),
         ))
     }
+}
+
+/// The stdlib macro → dedicated `mask_*!` counterpart table (§2.1.1.5).
+/// Single source for both `#[mask_all]`'s rewrite classification and the
+/// `mask!` non-literal hint, so the two surfaces cannot drift.
+pub(crate) fn masked_counterpart(macro_name: &str) -> Option<&'static str> {
+    Some(match macro_name {
+        "include_str" => "mask_include_str",
+        "include_bytes" => "mask_include_bytes",
+        "concat" => "mask_concat",
+        "env" => "mask_env",
+        "option_env" => "mask_option_env",
+        "file" => "mask_file",
+        "format" => "mask_format",
+        _ => return None,
+    })
+}
+
+/// Detail line for the non-literal rejection. For `mask!` specifically,
+/// when the offending argument is an invocation of a stdlib macro with a
+/// dedicated `mask_*!` counterpart, the detail names the counterpart —
+/// the rejection is deliberate (`mask!` takes no macro arguments,
+/// §2.1.1.5) but the fix is not otherwise discoverable from the error.
+/// `unmasked!` / `weak_mask!` / `mask_stack!` keep the plain detail: for
+/// those, the counterpart would be the wrong suggestion.
+fn non_literal_detail(macro_name: &str, input: ParseStream) -> String {
+    const PLAIN: &str = "accepts string, byte string, or C string literals";
+    if macro_name != "mask" {
+        return PLAIN.to_string();
+    }
+    input
+        .fork()
+        .parse::<syn::Macro>()
+        .ok()
+        .and_then(|m| m.path.segments.last().map(|s| s.ident.to_string()))
+        .and_then(|name| {
+            masked_counterpart(&name)
+                .map(|masked| format!("{PLAIN}; for {name}!(...) use {masked}!(...)"))
+        })
+        .unwrap_or_else(|| PLAIN.to_string())
 }
 
 impl ToTokens for StringLiteral {

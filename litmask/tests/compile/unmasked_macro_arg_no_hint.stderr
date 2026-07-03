@@ -1,0 +1,5 @@
+error: unmasked! non-literal: accepts string, byte string, or C string literals
+ --> tests/compile/unmasked_macro_arg_no_hint.rs:8:23
+  |
+8 |     let _ = unmasked!(include_str!("examples/fixtures/noc_list.txt"));
+  |                       ^^^^^^^^^^^

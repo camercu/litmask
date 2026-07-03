@@ -1534,7 +1534,10 @@ terminator.
 §2.1.1.5 — `mask!` SHALL produce a compile error when given a literal of any
 other type (e.g., integer, float, bool, char), a non-literal expression, or
 any macro invocation. Use the dedicated `mask_include_str!` / `mask_concat!` /
-`mask_env!` macros for compile-time-resolving inputs.
+`mask_env!` macros for compile-time-resolving inputs. When the rejected
+argument is an invocation of a stdlib macro with a dedicated `mask_*!`
+counterpart, the diagnostic detail names that counterpart (pinned by the
+`mask_rejects_*` compile fixtures).
 
 §2.1.1.6 — Invalid literal types SHALL be rejected with the
 `mask! non-literal` tag (§1.9.6).

@@ -56,6 +56,8 @@ fn compile_fixtures() {
     t.compile_fail("tests/compile/mask_file_with_args.rs");
     t.compile_fail("tests/compile/mask_rejects_include_str_shim.rs");
     t.compile_fail("tests/compile/mask_rejects_concat_shim.rs");
+    t.compile_fail("tests/compile/mask_rejects_format_arg.rs");
+    t.compile_fail("tests/compile/unmasked_macro_arg_no_hint.rs");
     t.compile_fail("tests/compile/init_external_against_embedded_seal.rs");
     t.compile_fail("tests/compile/init_machine_external_grammar_missing_provider.rs");
     t.compile_fail("tests/compile/init_machine_external_against_embedded_seal.rs");

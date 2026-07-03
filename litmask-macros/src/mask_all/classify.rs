@@ -101,25 +101,12 @@ pub(super) fn classify_macro(mac: &syn::Macro) -> MacroFamily {
         "println" | "eprintln" | "print" | "eprint" => MacroFamily::Output,
         "write" | "writeln" => MacroFamily::Write,
         "panic" | "todo" | "unimplemented" | "unreachable" => MacroFamily::Panic,
-        "include_str" => MacroFamily::RewriteToMasked {
-            masked_name: "mask_include_str",
+        // `format` matched its own arm above, so the shared counterpart
+        // table only reaches here for the six §2.3.2 rewrite macros.
+        name => match crate::common::masked_counterpart(name) {
+            Some(masked_name) => MacroFamily::RewriteToMasked { masked_name },
+            None => MacroFamily::UserDefined,
         },
-        "include_bytes" => MacroFamily::RewriteToMasked {
-            masked_name: "mask_include_bytes",
-        },
-        "concat" => MacroFamily::RewriteToMasked {
-            masked_name: "mask_concat",
-        },
-        "env" => MacroFamily::RewriteToMasked {
-            masked_name: "mask_env",
-        },
-        "option_env" => MacroFamily::RewriteToMasked {
-            masked_name: "mask_option_env",
-        },
-        "file" => MacroFamily::RewriteToMasked {
-            masked_name: "mask_file",
-        },
-        _ => MacroFamily::UserDefined,
     }
 }
 

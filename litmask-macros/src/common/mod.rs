@@ -30,5 +30,7 @@ pub(crate) use codegen::{mask_name, masked_static_name};
 #[cfg(feature = "unstable-stack")]
 pub(crate) use codegen::{mask_stack_bytes, mask_stack_cstr, mask_stack_str};
 pub(crate) use diagnostics::{FailTag, compile_error, env_failure};
-pub(crate) use parse::{StringLiteral, parse_string_literal, read_lit_str_path, require_lit_str};
+pub(crate) use parse::{
+    StringLiteral, masked_counterpart, parse_string_literal, read_lit_str_path, require_lit_str,
+};
 pub(crate) use path::{canonicalize_file_path, include_relative_path, manifest_dir};

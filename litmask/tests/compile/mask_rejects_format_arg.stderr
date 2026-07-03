@@ -1,0 +1,5 @@
+error: mask! non-literal: accepts string, byte string, or C string literals; for format!(...) use mask_format!(...)
+ --> tests/compile/mask_rejects_format_arg.rs:8:27
+  |
+8 |     let _: String = mask!(format!("hello {user}"));
+  |                           ^^^^^^
