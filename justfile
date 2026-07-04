@@ -3,6 +3,13 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 warnings := "-D warnings"
 stable_toolchain := "+stable"
 
+# cargo driver. Defaults to plain `cargo`; set RTK_CARGO="rtk cargo" (see the
+# `ci-rtk` target) to route the compile-heavy recipes through rtk for
+# token-compressed output. Only used where rtk compresses the subcommand and the
+# output is for reading — recipes whose output is consumed (coverage lcov,
+# tool-version parsing) stay on plain cargo.
+cargo := env("RTK_CARGO", "cargo")
+
 default:
     @just --list
 
@@ -35,14 +42,14 @@ clean: _profraw-purge
 lint: fmt-check lint-clippy lint-typos lint-taplo lint-markdown lint-actions lint-deny
 
 lint-clippy:
-    cargo clippy --all-targets --workspace -- {{warnings}}
+    {{cargo}} clippy --all-targets --workspace -- {{warnings}}
     # Second pass under --all-features: feature-gated modules (the
     # `serde` proc-macro derives, `machine-id` paths) are not
     # compiled by the default-feature pass above, so without this they
     # escape clippy entirely. Examples are excluded (`--lib --tests
     # --bins`) for the same seal-tier reason as `test-all-features`: no
     # single env config compiles every example's `init!` form.
-    cargo clippy --all-features --workspace --lib --tests --bins -- {{warnings}}
+    {{cargo}} clippy --all-features --workspace --lib --tests --bins -- {{warnings}}
 
 # Intentionally non-blocking: no `-D warnings`. Stable clippy gains/changes
 # lints between releases, so denying here would fail the pinned-toolchain
@@ -82,16 +89,16 @@ lint-deny:
 test: test-unit test-doc
 
 test-unit:
-    cargo nextest run --workspace
+    {{cargo}} nextest run --workspace
 
 test-doc:
-    cargo test --workspace --doc
+    {{cargo}} test --workspace --doc
 
 # Unit tests only — integration tests and examples import std-gated
 # types (FileProvider, EnvVarProvider) that don't compile under
 # no-default-features.
 test-no-default:
-    cargo nextest run -p litmask -p litmask-internal --no-default-features --features alloc --lib
+    {{cargo}} nextest run -p litmask -p litmask-internal --no-default-features --features alloc --lib
 
 # Examples are excluded (`--lib --tests --bins`) for the seal-tier
 # reason documented on `test-all-features`: the machine_id_provider
@@ -100,7 +107,7 @@ test-no-default:
 # (usually `embedded`). The example is exercised by
 # `tests/example_scrub.rs` / `tests/machine_tier_e2e.rs` instead.
 test-machine-id:
-    cargo nextest run -p litmask --features machine-id --lib --tests --bins
+    {{cargo}} nextest run -p litmask --features machine-id --lib --tests --bins
 
 # Scoped to litmask + litmask-internal: `--workspace` would unify
 # features with litmask-cli (which activates both ciphers), defeating
@@ -109,7 +116,7 @@ test-machine-id:
 # runs under aes-gcm; `--all-features` only ever exercises it under
 # chacha, which wins feature unification (litmask-internal/src/aead.rs).
 test-aes-gcm:
-    cargo nextest run -p litmask -p litmask-internal --no-default-features --features std,aes-gcm,unstable-serde
+    {{cargo}} nextest run -p litmask -p litmask-internal --no-default-features --features std,aes-gcm,unstable-serde
     cargo test -p litmask -p litmask-internal --doc --no-default-features --features std,aes-gcm,unstable-serde
 
 # Run tests with --all-features so dual-cipher (chacha + aes-gcm)
@@ -129,7 +136,7 @@ test-aes-gcm:
 # instead built and scrubbed with tailored features + env by
 # `litmask/tests/example_scrub.rs`, and run by `just test-examples`.
 test-all-features:
-    cargo nextest run --workspace --all-features --lib --tests --bins
+    {{cargo}} nextest run --workspace --all-features --lib --tests --bins
 
 # Latest-stable sanity check. Skips the trybuild compile_fixtures
 # harness because rustc's diagnostic text drifts between minor
@@ -178,16 +185,31 @@ alias cov-html := coverage-html
 coverage-lcov: (coverage "--lcov --output-path target/llvm-cov/lcov.info")
 alias cov-lcov := coverage-lcov
 
+# ── Mutation testing ────────────────────────────────────────
+
+# Mutation testing (cargo-mutants): perturb the source (flip a
+# comparison, delete a statement, swap a return) and re-run the suite. A
+# surviving mutant = a behavior no test would catch — an efficacy gap
+# coverage can't see. Slow (rebuild + retest per mutant) and on-demand —
+# not in `just ci`. Runs the nextest suite per mutant; examples are
+# excluded (`--lib --tests --bins`) for the same seal-tier reason as
+# `test-all-features` / `ci-coverage`: no single env config compiles
+# every example's `init!` form, so a whole-workspace mutant build would
+# `compile_error!`. Pass flags through to scope a run, e.g.
+# `just mutants --file litmask-internal/src/kdf.rs` or `just mutants -p litmask`.
+mutants *flags:
+    cargo mutants --test-tool nextest --all-features {{flags}} -- --lib --tests --bins
+
 # ── Building / checking ─────────────────────────────────────
 
 build:
-    cargo build --workspace --all-targets
+    {{cargo}} build --workspace --all-targets
 
 # Generate cargo's built-in timing report for crate compilation.
 # Opens target/cargo-timings/cargo-timing.html showing per-crate
 # compile durations, parallelism, and the critical path.
 build-timings:
-    cargo build --workspace --all-targets --timings
+    {{cargo}} build --workspace --all-targets --timings
 
 # ── Benchmarking ────────────────────────────────────────────
 
@@ -313,6 +335,7 @@ check-tool-versions:
             markdownlint-cli2) actual=$(markdownlint-cli2 --version 2>&1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/^v//') ;;
             actionlint)    actual=$(actionlint --version | head -1) ;;
             cargo-llvm-cov) actual=$(cargo llvm-cov --version | awk '{print $2}') ;;
+            cargo-mutants) actual=$(cargo mutants --version | awk '{print $2}') ;;
             cargo-semver-checks) actual=$(cargo semver-checks --version | awk '{print $2}') ;;
             cargo-fuzz) actual=$(cargo fuzz --version 2>/dev/null | awk '{print $2}') ;;
             hyperfine) actual=$(hyperfine --version | awk '{print $2}') ;;
@@ -361,7 +384,7 @@ setup:
 # fast tier of `just lint` (fmt + typos + taplo + markdown); the heavier
 # checks (clippy, deny, tests) live in `just pre-push`.
 pre-commit: fmt-check lint-typos lint-taplo lint-markdown
-    cargo check --all-targets --workspace --quiet
+    {{cargo}} check --all-targets --workspace --quiet
 
 # Slower checks run on every git push via pre-commit. A fast subset of
 # `just ci`, not a full mirror: it skips the cross/no_std/single-cipher/
@@ -376,6 +399,12 @@ pre-push:
 
 # Pass `timed` (see `ci-timed`) to print per-step wall-clock timings.
 # The step list lives here once; `ci-timed` reuses it via dependency.
+# Agent-facing CI: same steps as `ci`, but routes the compile-heavy recipes
+# (clippy/nextest/test/build/check) through rtk for token-compressed output.
+# Prefer this over `ci` when an agent runs the suite. Same pass/fail semantics.
+ci-rtk:
+    RTK_CARGO="rtk cargo" just ci
+
 ci mode="":
     #!/usr/bin/env bash
     set -euo pipefail
