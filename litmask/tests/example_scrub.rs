@@ -13,8 +13,9 @@
 //!
 //! The forbidden list lives in `tests/common/mod.rs`. Add an entry
 //! when a new identifiable term enters the codebase. The list is not a
-//! proof of leak-freedom; high-entropy-fixture strings checks (see
-//! `mask_round_trip.rs`) provide the positive security signal.
+//! proof of leak-freedom; the high-entropy-fixture strings checks in
+//! this file (e.g. `quote_fixtures_absent_from_canonical_examples`)
+//! provide the positive security signal.
 
 mod common;
 
