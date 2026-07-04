@@ -178,7 +178,9 @@ base64url-encoded, printed to stdout (nothing on stderr). A pure
 generator: pipe it into `LITMASK_UNLOCK_KEY` to seal an **external**-tier
 build, or stash it in a secret store. The bytes are material, not a
 finished **unlock key** — `EnvVarProvider`/`FileProvider` still run the
-unlock KDF over them.
+unlock KDF over them. Validated material is an [`UnlockMaterial`]:
+non-empty after the trailing-newline strip (an unpopulated secret is
+rejected), the one form the unlock KDF accepts.
 
 **`litmask show-machine-id`**: Prints this host's **machine-id token** to
 stdout, with usage prose on stderr. The token is the value a consumer
@@ -189,8 +191,10 @@ followed by `.` and a short checksum — `raw_id "." base64url(BLAKE3(raw_id)
 [..5])`. The in-band checksum lets `emit()` reject an id mistyped or
 mangled in transit _before_ it seals a binary nobody can open.
 `LITMASK_MACHINE_ID` requires this token form; `emit()` decodes and
-validates it, then derives the **machine** key from the bare raw id.
-_Avoid_: "machine-id checksum", "fingerprint".
+validates it, then derives the **machine** key from the bare raw id. A
+decoded id is a [`MachineId`] — non-empty by construction (an empty id is
+a broken read, rejected at decode), so the machine KDF cannot be handed
+one. _Avoid_: "machine-id checksum", "fingerprint".
 
 ### Usage patterns
 
