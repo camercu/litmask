@@ -123,7 +123,12 @@ mod tests {
         let buf = Counted::new(b"operator material".to_vec(), &COUNTER);
         let key = derive_key_from_buffer(buf).expect("non-empty material derives");
         assert_eq!(COUNTER.load(Ordering::SeqCst), 1);
-        assert_eq!(key, UnlockKey::derive(b"operator material"));
+        assert_eq!(
+            key,
+            UnlockKey::derive(
+                crate::internal::UnlockMaterial::new(b"operator material").expect("non-empty")
+            )
+        );
     }
 
     #[test]

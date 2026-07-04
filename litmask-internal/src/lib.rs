@@ -36,11 +36,11 @@ pub use machine_token::{
 
 mod kdf;
 pub use kdf::{
-    EMBEDDED_UNLOCK_DERIVATION_CONTEXT, EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
+    EMBEDDED_UNLOCK_DERIVATION_CONTEXT, EXTERNAL_UNLOCK_DERIVATION_CONTEXT, EmptyMaterial,
     MACHINE_ID_DERIVATION_CONTEXT, MACHINE_ID_SALT_DERIVATION_CONTEXT,
-    TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, WEAK_XOR_KEY_LEN, derive_embedded_unlock_key,
-    derive_external_unlock_key, derive_machine_id_key, derive_two_factor_unlock_key,
-    derive_weak_xor_key, is_empty_external_material, strip_trailing_newline,
+    TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, UnlockMaterial, WEAK_XOR_KEY_LEN,
+    derive_embedded_unlock_key, derive_external_unlock_key, derive_machine_id_key,
+    derive_two_factor_unlock_key, derive_weak_xor_key, strip_trailing_newline,
 };
 
 mod nonce;

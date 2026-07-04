@@ -130,7 +130,12 @@ mod tests {
         // UnlockKey::derive — no base64url decode, no 32-byte length
         // check. The framework's KDF does the normalizing.
         let key = parse_env_value(Some(z("any operator secret"))).expect("derives");
-        assert_eq!(key, UnlockKey::derive(b"any operator secret"));
+        assert_eq!(
+            key,
+            UnlockKey::derive(
+                crate::internal::UnlockMaterial::new(b"any operator secret").expect("non-empty")
+            )
+        );
     }
 
     /// An unpopulated secret expands to an empty string. Build-side

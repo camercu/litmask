@@ -8,7 +8,7 @@
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::error::KeyError;
-use crate::internal::{KEY_LEN, base64url};
+use crate::internal::{KEY_LEN, UnlockMaterial, base64url};
 
 /// The runtime-supplied key that decrypts the embedded `mask_key`
 /// wrapper.
@@ -88,22 +88,23 @@ impl UnlockKey {
         Self(bytes)
     }
 
-    /// Normalize arbitrary-length external material into the 32-byte
-    /// `unlock_key` via `KDF("litmask-unlock-v1", material)` — the
-    /// single derivation §2.2 mandates for every external factor
-    /// (env, file, custom provider). The seal side (`litmask-build`)
-    /// chains the identical KDF, so build and runtime agree.
+    /// Derive the 32-byte `unlock_key` from validated external material
+    /// via `KDF("litmask-unlock-v1", material)` — the single derivation
+    /// §2.2 mandates for every external factor (env, file, custom
+    /// provider). The seal side (`litmask-build`) chains the identical
+    /// KDF, so build and runtime agree.
     ///
-    /// A single trailing newline is stripped inside the KDF, so callers
-    /// pass raw material verbatim — env vars, key files, and the build
-    /// seal all converge on one secret without pre-trimming.
+    /// Takes an [`UnlockMaterial`], so the non-empty guarantee and the
+    /// single-trailing-newline normalization are already applied at its
+    /// construction — this derivation cannot be handed an empty secret,
+    /// and every channel converges on one secret without re-trimming.
     ///
     /// `weak_mask!()` keeps the BLAKE3 context literal out of
     /// `strings(1)` in user binaries; it MUST decode to
     /// `litmask_internal::EXTERNAL_UNLOCK_DERIVATION_CONTEXT` (pinned by
     /// the `derive_weak_mask_literal_matches_const` test).
     #[must_use]
-    pub fn derive(material: &[u8]) -> Self {
+    pub fn derive(material: UnlockMaterial<'_>) -> Self {
         Self(crate::internal::derive_external_unlock_key(
             crate::weak_mask!("litmask-unlock-v1"),
             material,
@@ -188,7 +189,8 @@ mod tests {
     #[test]
     fn derive_matches_external_unlock_kdf() {
         use crate::internal::{EXTERNAL_UNLOCK_DERIVATION_CONTEXT, derive_external_unlock_key};
-        let material = b"operator-supplied secret of arbitrary length";
+        let material = UnlockMaterial::new(b"operator-supplied secret of arbitrary length")
+            .expect("non-empty");
         let key = UnlockKey::derive(material);
         assert_eq!(
             key.as_bytes(),
@@ -200,8 +202,8 @@ mod tests {
     fn derive_accepts_arbitrary_length_material() {
         // Any-length material is the point of the external tier — no
         // 32-byte/base64url constraint, the KDF normalizes it.
-        let short = UnlockKey::derive(b"x");
-        let long = UnlockKey::derive(&[0x5au8; 1024]);
+        let short = UnlockKey::derive(UnlockMaterial::new(b"x").expect("non-empty"));
+        let long = UnlockKey::derive(UnlockMaterial::new(&[0x5au8; 1024]).expect("non-empty"));
         assert_ne!(short, long);
     }
 

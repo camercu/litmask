@@ -87,25 +87,25 @@ pub fn derive_embedded_unlock_key(context: &str, wrapper_nonce: &[u8; NONCE_LEN]
 /// context fails to decrypt under the new one.
 pub const EXTERNAL_UNLOCK_DERIVATION_CONTEXT: &str = "litmask-unlock-v1";
 
-/// Derive the External-tier `unlock_key` from runtime key material.
+/// Derive the External-tier `unlock_key` from validated key material.
 ///
-/// `BLAKE3::derive_key(context, strip_trailing_newline(material))`.
-/// Unlike the Embedded path, `material` is arbitrary-length operator
-/// input, so the derivation normalizes it to a fixed 32-byte key —
-/// callers pass raw bytes with no pre-hashing. Build and runtime call
-/// this with the same material to reach the identical key. Domain-
-/// separated from [`derive_embedded_unlock_key`] and
+/// `BLAKE3::derive_key(context, material.as_bytes())`. Unlike the
+/// Embedded path, the material is arbitrary-length operator input, so
+/// the derivation normalizes it to a fixed 32-byte key. Build and
+/// runtime call this with the same material to reach the identical key.
+/// Domain-separated from [`derive_embedded_unlock_key`] and
 /// [`derive_machine_id_key`] by its distinct context.
 ///
-/// The single-trailing-newline normalization ([`strip_trailing_newline`])
-/// is applied here, inside the derivation, so every external channel
-/// (env var, key file, build seal) agrees on one secret without each
-/// call site repeating the strip — and so the at-most-one-newline
-/// invariant cannot drift between them. Callers MUST NOT pre-strip:
-/// doing so would remove a second newline that is part of the secret.
+/// Takes an [`UnlockMaterial`], not raw bytes: normalization (the
+/// single-trailing-newline strip) and the non-empty guarantee live in
+/// [`UnlockMaterial::new`], the one construction site every external
+/// channel (env var, key file, build seal) passes through — so the
+/// at-most-one-newline and non-empty invariants cannot drift between
+/// them, and an empty seal is unrepresentable here rather than rejected
+/// piecemeal by each caller.
 #[must_use]
-pub fn derive_external_unlock_key(context: &str, material: &[u8]) -> [u8; KEY_LEN] {
-    blake3::derive_key(context, strip_trailing_newline(material))
+pub fn derive_external_unlock_key(context: &str, material: UnlockMaterial<'_>) -> [u8; KEY_LEN] {
+    blake3::derive_key(context, material.as_bytes())
 }
 
 /// Strip a single trailing line ending (`\r\n` or `\n`) from external
@@ -131,21 +131,58 @@ pub fn strip_trailing_newline(material: &[u8]) -> &[u8] {
     }
 }
 
-/// Whether external key material is empty *as the KDF sees it* — empty
-/// after the single-trailing-newline strip ([`strip_trailing_newline`]).
-/// An unpopulated secret lands here: a CI variable that expanded to `""`,
-/// a touched-but-empty key file, a lone editor-appended newline.
+/// External unlock material that is guaranteed non-empty and normalized
+/// (at most one trailing newline stripped). Constructed once at each
+/// external channel's edge via [`UnlockMaterial::new`]; the type then
+/// carries the guarantee to [`derive_external_unlock_key`], so no
+/// downstream code re-checks or re-normalizes and an empty secret cannot
+/// reach the KDF.
 ///
-/// The build seal (`litmask-build::emit`) rejects empty material so it
-/// can never seal under a key derived from zero bytes; the runtime
-/// providers reject it so an unpopulated secret surfaces as a named
-/// misconfiguration rather than a generic decrypt failure. Both call
-/// this, so "empty" means the same thing on both sides — the same
-/// build↔runtime agreement [`strip_trailing_newline`] exists for, kept
-/// beside it so the two halves live at one site.
-#[must_use]
-pub fn is_empty_external_material(material: &[u8]) -> bool {
-    strip_trailing_newline(material).is_empty()
+/// Borrows its bytes so the caller's zeroizing buffer stays the single
+/// owner of the plaintext secret.
+#[derive(Clone, Copy)]
+pub struct UnlockMaterial<'a>(&'a [u8]);
+
+/// Raw external material that was empty as the KDF would see it — empty
+/// after the single-trailing-newline strip. An unpopulated secret (a CI
+/// variable that expanded to `""`, a touched-but-empty key file, a lone
+/// editor newline) produces this. The build seal treats it as a fatal
+/// misconfiguration; the runtime providers map it to a named key error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EmptyMaterial;
+
+impl core::fmt::Display for EmptyMaterial {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("external unlock material is empty")
+    }
+}
+
+impl core::error::Error for EmptyMaterial {}
+
+impl<'a> UnlockMaterial<'a> {
+    /// Validate and normalize raw external material: strip at most one
+    /// trailing newline, then reject the empty result. The strip lives
+    /// here — the single site — so build and runtime derive over
+    /// byte-identical material without either repeating it (a second
+    /// strip would remove a newline that is part of the secret).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EmptyMaterial`] when the material is empty after the
+    /// strip — an unpopulated secret, which no valid seal can match.
+    pub fn new(raw: &'a [u8]) -> Result<Self, EmptyMaterial> {
+        let normalized = strip_trailing_newline(raw);
+        if normalized.is_empty() {
+            return Err(EmptyMaterial);
+        }
+        Ok(Self(normalized))
+    }
+
+    /// The normalized, guaranteed-non-empty material bytes.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0
+    }
 }
 
 /// Derive the machine-tier 32-byte `unlock_key` from the host machine
@@ -384,49 +421,55 @@ mod tests {
         assert_ne!(embedded, machine);
     }
 
+    /// Non-empty material for terse test call sites.
+    fn mat(raw: &[u8]) -> UnlockMaterial<'_> {
+        UnlockMaterial::new(raw).expect("non-empty test material")
+    }
+
     #[test]
     fn derive_external_unlock_key_is_deterministic() {
         let material = b"operator-supplied-secret";
         assert_eq!(
-            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, material),
-            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, material)
+            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, mat(material)),
+            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, mat(material))
         );
     }
 
     #[test]
     fn derive_external_unlock_key_differs_across_material() {
-        let a = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"material-A");
-        let b = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"material-B");
+        let a = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, mat(b"material-A"));
+        let b = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, mat(b"material-B"));
         assert_ne!(a, b);
     }
 
     #[test]
     fn derive_external_unlock_key_accepts_arbitrary_length_material() {
-        let short = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"x");
-        let long = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, &[0x5au8; 1024]);
+        let short = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, mat(b"x"));
+        let long =
+            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, mat(&[0x5au8; 1024]));
         assert_eq!(short.len(), KEY_LEN);
         assert_eq!(long.len(), KEY_LEN);
         assert!(long.iter().any(|&b| b != 0));
     }
 
-    /// The newline-normalization invariant lives inside the external KDF,
-    /// not at each call site: material carrying an editor-appended `\n` or
-    /// `\r\n` derives the same key as the bare secret, so every external
-    /// channel (env, file, build seal) agrees without repeating a strip.
-    /// Only one newline is removed — a second is part of the secret.
+    /// The newline-normalization invariant lives in [`UnlockMaterial::new`],
+    /// the single construction site every external channel (env, file,
+    /// build seal) passes through: material carrying an editor-appended
+    /// `\n` or `\r\n` derives the same key as the bare secret. Only one
+    /// newline is removed — a second is part of the secret.
     #[test]
-    fn derive_external_unlock_key_strips_one_trailing_newline() {
-        let bare = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"secret");
+    fn unlock_material_normalizes_one_trailing_newline() {
+        let bare = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, mat(b"secret"));
         assert_eq!(
-            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"secret\n"),
+            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, mat(b"secret\n")),
             bare,
         );
         assert_eq!(
-            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"secret\r\n"),
+            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, mat(b"secret\r\n")),
             bare,
         );
         assert_ne!(
-            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"secret\n\n"),
+            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, mat(b"secret\n\n")),
             bare,
         );
     }
@@ -539,20 +582,26 @@ mod tests {
         assert_eq!(strip_trailing_newline(b""), b"");
     }
 
-    /// Empty *as the KDF sees it*: after the at-most-one-newline strip.
-    /// Locks the build↔runtime agreement on what unpopulated material is,
-    /// so a divergence here (which would make seals un-openable) is a
-    /// test failure, not a silent field bug.
+    /// [`UnlockMaterial::new`] rejects material that is empty *as the KDF
+    /// sees it* — after the at-most-one-newline strip. Locks the
+    /// build↔runtime agreement on what unpopulated material is, so a
+    /// divergence (which would make seals un-openable) is a test failure,
+    /// not a silent field bug.
     #[test]
-    fn is_empty_external_material_matches_the_kdf_view() {
-        assert!(is_empty_external_material(b""));
-        assert!(is_empty_external_material(b"\n"));
-        assert!(is_empty_external_material(b"\r\n"));
+    fn unlock_material_new_rejects_empty_after_strip() {
+        assert_eq!(UnlockMaterial::new(b"").err(), Some(EmptyMaterial));
+        assert_eq!(UnlockMaterial::new(b"\n").err(), Some(EmptyMaterial));
+        assert_eq!(UnlockMaterial::new(b"\r\n").err(), Some(EmptyMaterial));
+    }
+
+    #[test]
+    fn unlock_material_new_accepts_non_empty_and_normalizes() {
         // Only one newline is stripped, so a second is real material.
-        assert!(!is_empty_external_material(b"\n\n"));
+        assert_eq!(mat(b"\n\n").as_bytes(), b"\n");
         // Trailing spaces/tabs are real material, matching the strip.
-        assert!(!is_empty_external_material(b" "));
-        assert!(!is_empty_external_material(b"secret"));
+        assert_eq!(mat(b" ").as_bytes(), b" ");
+        assert_eq!(mat(b"secret\n").as_bytes(), b"secret");
+        assert_eq!(mat(b"secret").as_bytes(), b"secret");
     }
 
     /// The external-tier context must domain-separate from both the
@@ -562,7 +611,7 @@ mod tests {
     #[test]
     fn derive_external_unlock_key_domain_separated_from_other_contexts() {
         let bytes = [0x11u8; NONCE_LEN];
-        let external = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, &bytes);
+        let external = derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, mat(&bytes));
         let embedded = derive_embedded_unlock_key(EMBEDDED_UNLOCK_DERIVATION_CONTEXT, &bytes);
         let machine = derive_machine_id_key(
             MACHINE_ID_DERIVATION_CONTEXT,

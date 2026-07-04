@@ -55,7 +55,10 @@ fn derives_canonical_unlock_key_from_file_bytes() {
     let from_file = FileProvider::new(&path)
         .unlock_key()
         .expect("derive from file");
-    assert_eq!(from_file, UnlockKey::derive(b"operator material"));
+    assert_eq!(
+        from_file,
+        UnlockKey::derive(litmask::UnlockMaterial::new(b"operator material").expect("non-empty"))
+    );
 }
 
 #[test]

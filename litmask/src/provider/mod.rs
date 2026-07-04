@@ -36,23 +36,22 @@ pub use file::FileProvider;
 #[cfg(feature = "machine-id")]
 pub(crate) use machine_id::MachineIdProvider;
 
-/// Normalize sourced external material into an [`UnlockKey`], rejecting
-/// material that trims to zero bytes (a single trailing newline is
-/// stripped by the KDF, so "empty" means what the KDF would see).
+/// Normalize sourced external material into an [`UnlockKey`], mapping the
+/// empty-material rejection to [`KeyError::InvalidFormat`].
 ///
-/// Build-side `emit()` refuses to seal empty material (§1.6.3), so
-/// empty material at runtime can never open any valid seal — it is
-/// always a misconfiguration (an unpopulated env var, a touched-but-
-/// empty key file). Naming it [`KeyError::InvalidFormat`] here keeps it
-/// from surfacing later as a generic wrapper-decrypt failure. One site,
-/// shared by every built-in external-material provider; custom
-/// providers calling [`UnlockKey::derive`] directly are outside this
-/// guard.
+/// The rejection itself lives in [`UnlockMaterial::new`], the typed edge
+/// that build and every provider (including custom ones — they cannot
+/// call [`UnlockKey::derive`] without first constructing an
+/// [`UnlockMaterial`]) pass through, so an unpopulated secret can never
+/// reach the KDF. Build-side `emit()` refuses to seal empty material
+/// (§1.6.3), so empty at runtime can never open a valid seal anyway;
+/// naming it here keeps it from surfacing later as a generic
+/// wrapper-decrypt failure. This helper only adapts the error type for
+/// the built-in std providers.
 #[cfg(feature = "std")]
 pub(crate) fn derive_nonempty_material(material: &[u8]) -> Result<UnlockKey, KeyError> {
-    if crate::internal::is_empty_external_material(material) {
-        return Err(KeyError::InvalidFormat);
-    }
+    let material =
+        crate::internal::UnlockMaterial::new(material).map_err(|_| KeyError::InvalidFormat)?;
     Ok(UnlockKey::derive(material))
 }
 

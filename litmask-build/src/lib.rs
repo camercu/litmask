@@ -39,11 +39,10 @@ use litmask_internal::{
     CURRENT_CIPHER, EMBEDDED_UNLOCK_DERIVATION_CONTEXT, EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
     FormatVersion, KEY_ARTIFACT, KEY_LEN, MACHINE_ID_DERIVATION_CONTEXT,
     MACHINE_ID_SALT_DERIVATION_CONTEXT, SEED_ARTIFACT, SealTierTag,
-    TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, WRAPPER_ARTIFACT, WRAPPER_BODY_LEN, WRAPPER_LEN,
-    WRAPPER_PLAINTEXT_LEN, aead_encrypt, assemble_wrapper, base64url, decode_machine_id_token,
-    derive_embedded_unlock_key, derive_external_unlock_key, derive_machine_id_key,
-    derive_two_factor_unlock_key, is_empty_external_material, nonce_for_wrapper,
-    strip_trailing_newline,
+    TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, UnlockMaterial, WRAPPER_ARTIFACT, WRAPPER_BODY_LEN,
+    WRAPPER_LEN, WRAPPER_PLAINTEXT_LEN, aead_encrypt, assemble_wrapper, base64url,
+    decode_machine_id_token, derive_embedded_unlock_key, derive_external_unlock_key,
+    derive_machine_id_key, derive_two_factor_unlock_key, nonce_for_wrapper, strip_trailing_newline,
 };
 
 /// The keying tier `emit()` seals, selected purely from which build
@@ -231,26 +230,26 @@ fn machine_seal_id(env_value: &str) -> String {
         .to_owned()
 }
 
-/// Reject empty External-tier material at build time (§1.6.3: the
-/// material is arbitrary-length but non-empty). An unpopulated CI
-/// secret expands to an empty string, which would otherwise silently
-/// seal the External tier under a key derived from zero bytes — known
-/// to anyone. Emptiness is judged by [`is_empty_external_material`] —
-/// the same predicate the runtime providers reject on, so build and
-/// runtime agree on what unpopulated material is.
+/// Validate External-tier material for sealing (§1.6.3: arbitrary-length
+/// but non-empty), returning the typed [`UnlockMaterial`] the derivation
+/// consumes. An unpopulated CI secret expands to an empty string, which
+/// would otherwise silently seal the External tier under a key derived
+/// from zero bytes — known to anyone. The non-empty check is
+/// [`UnlockMaterial::new`], the same edge the runtime providers construct
+/// through, so build and runtime agree on what unpopulated material is.
 ///
 /// # Panics
 ///
-/// Panics at build time if the value trims to zero bytes, naming the
-/// misconfiguration and both fixes.
-fn require_external_material(material: &str) -> &str {
-    assert!(
-        !is_empty_external_material(material.as_bytes()),
-        "LITMASK_UNLOCK_KEY is set but empty — an unpopulated secret often expands to an \
-         empty string; unset it to seal the keyless Embedded tier, or supply real material \
-         (e.g. from `litmask keygen`)"
-    );
-    material
+/// Panics at build time if the value is empty after the newline strip,
+/// naming the misconfiguration and both fixes.
+fn external_seal_material(material: &str) -> UnlockMaterial<'_> {
+    UnlockMaterial::new(material.as_bytes()).unwrap_or_else(|_| {
+        panic!(
+            "LITMASK_UNLOCK_KEY is set but empty — an unpopulated secret often expands to an \
+             empty string; unset it to seal the keyless Embedded tier, or supply real material \
+             (e.g. from `litmask keygen`)"
+        )
+    })
 }
 
 impl BuildArtifacts {
@@ -291,7 +290,7 @@ impl BuildArtifacts {
             }
             SealTier::External(material) => derive_external_unlock_key(
                 EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
-                require_external_material(material).as_bytes(),
+                external_seal_material(material),
             ),
             // Machine: unlock_key = derive_machine_id_key(host id, nonce).
             // The salt is the wrapper nonce (derived inside the KDF), so
@@ -324,7 +323,7 @@ impl BuildArtifacts {
                 );
                 let external_key = derive_external_unlock_key(
                     EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
-                    require_external_material(material).as_bytes(),
+                    external_seal_material(material),
                 );
                 derive_two_factor_unlock_key(
                     TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT,
@@ -1021,8 +1020,10 @@ mod tests {
             b"host-id-abc",
             &nonce,
         );
-        let external_key =
-            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"secret");
+        let external_key = derive_external_unlock_key(
+            EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
+            UnlockMaterial::new(b"secret").expect("non-empty"),
+        );
         let expected = derive_two_factor_unlock_key(
             TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT,
             &machine_key,
@@ -1149,8 +1150,10 @@ mod tests {
         use litmask_internal::decrypt_wrapper;
         let seed = [0x71u8; KEY_LEN];
         let artifacts = BuildArtifacts::derive(&seed, &external("operator secret"));
-        let expected =
-            derive_external_unlock_key(EXTERNAL_UNLOCK_DERIVATION_CONTEXT, b"operator secret");
+        let expected = derive_external_unlock_key(
+            EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
+            UnlockMaterial::new(b"operator secret").expect("non-empty"),
+        );
         assert_eq!(
             artifacts.unlock_key, expected,
             "external unlock_key must be the KDF of the raw material",
