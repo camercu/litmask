@@ -229,10 +229,19 @@ mod tests {
         assert_eq!(err, UnknownFormatVersion(0x99));
     }
 
+    /// Pins the absolute V1 wrapper byte sizes as a wire-format
+    /// compatibility contract. The `const _` guards above assert the
+    /// *relationships* (e.g. `WRAPPER_LEN == NONCE_LEN + WRAPPER_BODY_LEN`)
+    /// but not the magnitudes — bumping `KEY_LEN` or `NONCE_LEN` keeps every
+    /// relationship valid while silently changing the on-binary layout. This
+    /// test makes any such size drift a conscious, breaking change.
     #[test]
-    fn wrapper_len_is_sixty_one() {
+    fn wrapper_byte_sizes_are_the_v1_wire_contract() {
+        // 61 = nonce(12) + body(49)
         assert_eq!(WRAPPER_LEN, 61);
+        // 49 = plaintext(33) + tag(16)
         assert_eq!(WRAPPER_BODY_LEN, 49);
+        // 33 = version(1) + key(32)
         assert_eq!(WRAPPER_PLAINTEXT_LEN, 33);
     }
 
