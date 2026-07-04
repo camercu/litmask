@@ -26,5 +26,9 @@ Thumbs.db
 *.profraw
 *.profdata
 
+# Mutation testing output (cargo-mutants)
+/mutants.out/
+/mutants.out.old/
+
 # Claude Code local config
 /.claude/
