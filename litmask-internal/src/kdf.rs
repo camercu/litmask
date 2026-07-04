@@ -1,6 +1,6 @@
 //! Key derivation: machine-id key and weak XOR key.
 
-use crate::{KEY_LEN, NONCE_LEN, WRAPPER_LEN, wrapper_nonce};
+use crate::{KEY_LEN, MachineId, NONCE_LEN, WRAPPER_LEN, wrapper_nonce};
 
 /// BLAKE3 `derive_key` domain separator for the machine-id key
 /// derivation. The runtime `MachineIdProvider` and the build-time
@@ -213,13 +213,14 @@ impl<'a> UnlockMaterial<'a> {
 pub fn derive_machine_id_key(
     context: &str,
     salt_context: &str,
-    machine_id: &[u8],
+    machine_id: &MachineId<'_>,
     wrapper_nonce: &[u8; NONCE_LEN],
 ) -> [u8; KEY_LEN] {
+    let id = machine_id.as_bytes();
     let salt = blake3::derive_key(salt_context, wrapper_nonce);
     let mut hasher = blake3::Hasher::new_derive_key(context);
-    hasher.update(&(machine_id.len() as u64).to_le_bytes());
-    hasher.update(machine_id);
+    hasher.update(&(id.len() as u64).to_le_bytes());
+    hasher.update(id);
     hasher.update(&salt);
     *hasher.finalize().as_bytes()
 }
@@ -301,6 +302,12 @@ pub fn derive_weak_xor_key(wrapper: &[u8; WRAPPER_LEN]) -> [u8; WEAK_XOR_KEY_LEN
 mod tests {
     use super::*;
 
+    /// A validated [`MachineId`] from test bytes (all fixtures are ASCII,
+    /// so the UTF-8 conversion is infallible here).
+    fn mid(raw: &[u8]) -> MachineId<'_> {
+        MachineId::new(core::str::from_utf8(raw).expect("utf8 test id")).expect("non-empty test id")
+    }
+
     /// Helper: derive the machine key under the canonical contexts so the
     /// tests below pin behavior (salt-source, id-source, nonce-source),
     /// not the literal context strings.
@@ -308,7 +315,7 @@ mod tests {
         derive_machine_id_key(
             MACHINE_ID_DERIVATION_CONTEXT,
             MACHINE_ID_SALT_DERIVATION_CONTEXT,
-            machine_id,
+            &mid(machine_id),
             nonce,
         )
     }
@@ -372,7 +379,7 @@ mod tests {
         let swapped = derive_machine_id_key(
             MACHINE_ID_SALT_DERIVATION_CONTEXT,
             MACHINE_ID_DERIVATION_CONTEXT,
-            machine_id,
+            &mid(machine_id),
             &nonce,
         );
         assert_ne!(canonical, swapped);
@@ -415,7 +422,7 @@ mod tests {
         let machine = derive_machine_id_key(
             MACHINE_ID_DERIVATION_CONTEXT,
             MACHINE_ID_SALT_DERIVATION_CONTEXT,
-            &bytes,
+            &mid(&bytes),
             &bytes,
         );
         assert_ne!(embedded, machine);
@@ -534,7 +541,7 @@ mod tests {
         let machine = derive_machine_id_key(
             MACHINE_ID_DERIVATION_CONTEXT,
             MACHINE_ID_SALT_DERIVATION_CONTEXT,
-            &m,
+            &mid(&m),
             &nonce,
         );
         assert_ne!(two_factor, machine);
@@ -616,7 +623,7 @@ mod tests {
         let machine = derive_machine_id_key(
             MACHINE_ID_DERIVATION_CONTEXT,
             MACHINE_ID_SALT_DERIVATION_CONTEXT,
-            &bytes,
+            &mid(&bytes),
             &bytes,
         );
         assert_ne!(external, embedded);

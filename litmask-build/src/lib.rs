@@ -38,11 +38,11 @@ use zeroize::{Zeroize, Zeroizing};
 use litmask_internal::{
     CURRENT_CIPHER, EMBEDDED_UNLOCK_DERIVATION_CONTEXT, EXTERNAL_UNLOCK_DERIVATION_CONTEXT,
     FormatVersion, KEY_ARTIFACT, KEY_LEN, MACHINE_ID_DERIVATION_CONTEXT,
-    MACHINE_ID_SALT_DERIVATION_CONTEXT, SEED_ARTIFACT, SealTierTag,
+    MACHINE_ID_SALT_DERIVATION_CONTEXT, MachineId, SEED_ARTIFACT, SealTierTag,
     TWO_FACTOR_UNLOCK_DERIVATION_CONTEXT, UnlockMaterial, WRAPPER_ARTIFACT, WRAPPER_BODY_LEN,
     WRAPPER_LEN, WRAPPER_PLAINTEXT_LEN, aead_encrypt, assemble_wrapper, base64url,
-    decode_machine_id_token, derive_embedded_unlock_key, derive_external_unlock_key,
-    derive_machine_id_key, derive_two_factor_unlock_key, nonce_for_wrapper, strip_trailing_newline,
+    derive_embedded_unlock_key, derive_external_unlock_key, derive_machine_id_key,
+    derive_two_factor_unlock_key, nonce_for_wrapper, strip_trailing_newline,
 };
 
 /// The keying tier `emit()` seals, selected purely from which build
@@ -201,33 +201,32 @@ struct BuildArtifacts {
     wrapper: [u8; WRAPPER_LEN],
 }
 
-/// Recover the raw machine id from the `LITMASK_MACHINE_ID` value, which
-/// is a self-checking token minted by `litmask show-machine-id` (§2.9.3).
+/// Recover the validated [`MachineId`] from the `LITMASK_MACHINE_ID`
+/// value, which is a self-checking token minted by `litmask
+/// show-machine-id` (§2.9.3).
 ///
 /// A single trailing newline is stripped first — exactly as the External
 /// tier trims its material — so a token sourced through a newline-bearing
 /// channel (a file read, `echo`) still validates. The check group is then
-/// verified and the raw id returned; the runtime `MachineIdProvider`
-/// recomputes that same raw id via `machine_uid::get()`, so build and
-/// runtime stay in lock-step.
+/// verified and the id returned as a [`MachineId`] (non-empty by
+/// construction); the runtime `MachineIdProvider` recomputes that same id
+/// via `machine_uid::get()`, so build and runtime stay in lock-step.
 ///
 /// # Panics
 ///
 /// Panics at build time if the value is not a valid token (no check
-/// group, or a check mismatch from a mistyped id). Rejecting here turns
-/// what would otherwise be an opaque runtime `decryption_failed` on the
-/// deploy host into an actionable build error (§2.9.3).
-fn machine_seal_id(env_value: &str) -> String {
+/// group, a check mismatch from a mistyped id, or an empty id). Rejecting
+/// here turns what would otherwise be an opaque runtime `decryption_failed`
+/// on the deploy host into an actionable build error (§2.9.3).
+fn machine_seal_id(env_value: &str) -> MachineId<'_> {
     let trimmed = strip_trailing_newline(env_value.as_bytes());
     let token = core::str::from_utf8(trimmed).expect("LITMASK_MACHINE_ID is UTF-8");
-    decode_machine_id_token(token)
-        .unwrap_or_else(|e| {
-            panic!(
-                "LITMASK_MACHINE_ID is not a valid `litmask show-machine-id` token ({e}); \
-                 capture it with `litmask show-machine-id` on the target host"
-            )
-        })
-        .to_owned()
+    MachineId::from_token(token).unwrap_or_else(|e| {
+        panic!(
+            "LITMASK_MACHINE_ID is not a valid `litmask show-machine-id` token ({e}); \
+             capture it with `litmask show-machine-id` on the target host"
+        )
+    })
 }
 
 /// Validate External-tier material for sealing (§1.6.3: arbitrary-length
@@ -303,7 +302,7 @@ impl BuildArtifacts {
             SealTier::Machine(machine_id) => derive_machine_id_key(
                 MACHINE_ID_DERIVATION_CONTEXT,
                 MACHINE_ID_SALT_DERIVATION_CONTEXT,
-                machine_seal_id(machine_id).as_bytes(),
+                &machine_seal_id(machine_id),
                 &wrapper_nonce,
             ),
             // MachineExternal: the §2.3 two-factor composition. Each
@@ -318,7 +317,7 @@ impl BuildArtifacts {
                 let machine_key = derive_machine_id_key(
                     MACHINE_ID_DERIVATION_CONTEXT,
                     MACHINE_ID_SALT_DERIVATION_CONTEXT,
-                    machine_seal_id(machine_id).as_bytes(),
+                    &machine_seal_id(machine_id),
                     &wrapper_nonce,
                 );
                 let external_key = derive_external_unlock_key(
@@ -527,13 +526,16 @@ mod tests {
     #[test]
     fn machine_seal_id_decodes_a_valid_token_to_its_raw_id() {
         let token = encode_machine_id_token("host-id-abc");
-        assert_eq!(machine_seal_id(&token), "host-id-abc");
+        assert_eq!(machine_seal_id(&token).as_str(), "host-id-abc");
     }
 
     #[test]
     fn machine_seal_id_strips_a_trailing_newline_before_decoding() {
         let token = encode_machine_id_token("host-id-abc");
-        assert_eq!(machine_seal_id(&format!("{token}\n")), "host-id-abc");
+        assert_eq!(
+            machine_seal_id(&format!("{token}\n")).as_str(),
+            "host-id-abc"
+        );
     }
 
     #[test]
@@ -1017,7 +1019,7 @@ mod tests {
         let machine_key = derive_machine_id_key(
             MACHINE_ID_DERIVATION_CONTEXT,
             MACHINE_ID_SALT_DERIVATION_CONTEXT,
-            b"host-id-abc",
+            &MachineId::new("host-id-abc").expect("non-empty"),
             &nonce,
         );
         let external_key = derive_external_unlock_key(
@@ -1089,7 +1091,7 @@ mod tests {
         let expected = derive_machine_id_key(
             MACHINE_ID_DERIVATION_CONTEXT,
             MACHINE_ID_SALT_DERIVATION_CONTEXT,
-            b"host-id-abc",
+            &MachineId::new("host-id-abc").expect("non-empty"),
             &nonce_for_wrapper(&seed),
         );
         assert_eq!(

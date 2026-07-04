@@ -85,27 +85,74 @@ pub fn encode_machine_id_token(raw_id: &str) -> String {
     token
 }
 
+/// A validated, non-empty host machine id — the raw identifier the
+/// machine tier derives its key from. Guaranteed non-empty at
+/// construction, so the empty-id footgun (a broken `machine_uid` read,
+/// an unpopulated token) is unrepresentable where the key is derived
+/// ([`derive_machine_id_key`](crate::derive_machine_id_key)) instead of
+/// re-checked at each build / runtime / CLI site.
+///
+/// Borrows its bytes: the raw id comes either from a token slice
+/// (`from_token`) or a host read (`new`), and the caller owns the
+/// backing buffer.
+#[derive(Clone, Copy)]
+pub struct MachineId<'a>(&'a str);
+
+impl<'a> MachineId<'a> {
+    /// Validate a raw host id (e.g. `machine_uid::get()`'s output),
+    /// rejecting empty — a broken read that no seal can match.
+    ///
+    /// # Errors
+    ///
+    /// [`MachineTokenError::EmptyId`] if `raw` is empty.
+    pub fn new(raw: &'a str) -> Result<Self, MachineTokenError> {
+        if raw.is_empty() {
+            return Err(MachineTokenError::EmptyId);
+        }
+        Ok(Self(raw))
+    }
+
+    /// Recover the machine id from a self-checking token (§2.9.3),
+    /// validating the check group before accepting the id.
+    ///
+    /// # Errors
+    ///
+    /// - [`MachineTokenError::Malformed`] if `token` has no separator.
+    /// - [`MachineTokenError::CheckMismatch`] if the check group does not
+    ///   match the accompanying id (corruption in transit).
+    /// - [`MachineTokenError::EmptyId`] if the id half is empty.
+    pub fn from_token(token: &'a str) -> Result<Self, MachineTokenError> {
+        let (raw_id, check) = token
+            .rsplit_once(SEPARATOR)
+            .ok_or(MachineTokenError::Malformed)?;
+        if check_group(raw_id) != check {
+            return Err(MachineTokenError::CheckMismatch);
+        }
+        Self::new(raw_id)
+    }
+
+    /// The validated non-empty machine id.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0
+    }
+
+    /// The validated non-empty machine id as bytes, for the KDF.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+}
+
 /// Decode a self-checking token back to its raw machine id, validating
-/// the check group.
+/// the check group. Thin `&str`-returning wrapper over
+/// [`MachineId::from_token`] for callers that want the id, not the type.
 ///
 /// # Errors
 ///
-/// - [`MachineTokenError::Malformed`] if `token` has no separator.
-/// - [`MachineTokenError::CheckMismatch`] if the check group does not
-///   match the accompanying id (corruption in transit).
-/// - [`MachineTokenError::EmptyId`] if the id half is empty (a broken
-///   `machine_uid` read; there is no machine id to seal).
+/// See [`MachineId::from_token`].
 pub fn decode_machine_id_token(token: &str) -> Result<&str, MachineTokenError> {
-    let (raw_id, check) = token
-        .rsplit_once(SEPARATOR)
-        .ok_or(MachineTokenError::Malformed)?;
-    if check_group(raw_id) != check {
-        return Err(MachineTokenError::CheckMismatch);
-    }
-    if raw_id.is_empty() {
-        return Err(MachineTokenError::EmptyId);
-    }
-    Ok(raw_id)
+    MachineId::from_token(token).map(|id| id.0)
 }
 
 #[cfg(test)]

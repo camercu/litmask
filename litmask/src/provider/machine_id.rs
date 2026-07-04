@@ -5,7 +5,7 @@
 use zeroize::Zeroizing;
 
 use crate::error::KeyError;
-use crate::internal::{NONCE_LEN, WRAPPER_LEN, derive_machine_id_key, parse_wrapper};
+use crate::internal::{MachineId, NONCE_LEN, WRAPPER_LEN, derive_machine_id_key, parse_wrapper};
 use crate::key::UnlockKey;
 use crate::provider::KeyProvider;
 
@@ -92,13 +92,13 @@ fn derive_from_machine_id(
     machine_id: Zeroizing<alloc::string::String>,
     nonce: &[u8; NONCE_LEN],
 ) -> Result<UnlockKey, KeyError> {
-    if machine_id.is_empty() {
-        return Err(KeyError::InvalidFormat);
-    }
+    // An empty read is a broken read; `MachineId::new` rejects it so the
+    // empty-id footgun is unrepresentable at `derive_machine_id_key`.
+    let machine_id = MachineId::new(&machine_id).map_err(|_| KeyError::InvalidFormat)?;
     Ok(UnlockKey::from_raw(derive_machine_id_key(
         crate::weak_mask!("litmask-machine-id-v1"),
         crate::weak_mask!("litmask-machine-id-salt-v1"),
-        machine_id.as_bytes(),
+        &machine_id,
         nonce,
     )))
 }
@@ -143,10 +143,12 @@ mod tests {
         machine_id: &[u8],
         mask_key: [u8; KEY_LEN],
     ) -> [u8; WRAPPER_LEN] {
+        let machine_id =
+            MachineId::new(core::str::from_utf8(machine_id).expect("utf8")).expect("non-empty");
         let unlock_key = derive_machine_id_key(
             MACHINE_ID_DERIVATION_CONTEXT,
             MACHINE_ID_SALT_DERIVATION_CONTEXT,
-            machine_id,
+            &machine_id,
             &nonce,
         );
         let mut plaintext = [0u8; WRAPPER_PLAINTEXT_LEN];
@@ -166,12 +168,6 @@ mod tests {
         assert_eq!(provider.nonce, nonce);
     }
 
-    /// The runtime derivation must use the host's own machine id and the
-    /// captured nonce under the canonical contexts. When `machine_uid`
-    /// is available, `unlock_key()` must equal the const-context
-    /// derivation over that id + the captured nonce; on hosts where
-    /// `machine_uid` is unavailable, the call errors and the assertion is
-    /// skipped (matches the integration test's tolerance).
     /// An empty `machine_uid` read can never open a valid seal —
     /// `emit()` rejects a token with an empty id (§2.9.3.3) — so name
     /// the broken read instead of failing later with a generic
@@ -185,6 +181,12 @@ mod tests {
         assert!(matches!(result, Err(KeyError::InvalidFormat)));
     }
 
+    /// The runtime derivation must use the host's own machine id and the
+    /// captured nonce under the canonical contexts. When `machine_uid`
+    /// is available, `unlock_key()` must equal the const-context
+    /// derivation over that id + the captured nonce; on hosts where
+    /// `machine_uid` is unavailable, the call errors and the assertion is
+    /// skipped (matches the integration test's tolerance).
     #[test]
     fn unlock_key_matches_const_context_derivation() {
         let Ok(host_id) = machine_uid::get() else {
@@ -199,7 +201,7 @@ mod tests {
             &derive_machine_id_key(
                 MACHINE_ID_DERIVATION_CONTEXT,
                 MACHINE_ID_SALT_DERIVATION_CONTEXT,
-                host_id.as_bytes(),
+                &MachineId::new(&host_id).expect("non-empty"),
                 &nonce,
             )
         );

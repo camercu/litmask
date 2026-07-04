@@ -31,7 +31,7 @@ pub use self::aead::{AeadError, aead_decrypt, aead_decrypt_in_place, aead_encryp
 
 mod machine_token;
 pub use machine_token::{
-    CHECK_LEN, MachineTokenError, decode_machine_id_token, encode_machine_id_token,
+    CHECK_LEN, MachineId, MachineTokenError, decode_machine_id_token, encode_machine_id_token,
 };
 
 mod kdf;
