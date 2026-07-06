@@ -287,9 +287,12 @@ pub fn derive_weak_xor_key(wrapper: &[u8; WRAPPER_LEN]) -> [u8; WEAK_XOR_KEY_LEN
     let nonce: &[u8] = wrapper_nonce(wrapper);
     let mut rotated = [0u8; KEY_LEN];
     for i in 0..KEY_LEN {
+        // `u8::rotate_left` already reduces its amount mod 8, so the raw
+        // byte index is the position-dependent rotation schedule; an
+        // explicit `% 8` would be redundant.
         #[allow(clippy::cast_possible_truncation)]
-        let shift = (i as u32) % 8;
-        rotated[i] = nonce[i % NONCE_LEN].rotate_left(shift);
+        let amount = i as u32;
+        rotated[i] = nonce[i % NONCE_LEN].rotate_left(amount);
     }
     let hashed = blake3::keyed_hash(&rotated, nonce);
     let mut out = [0u8; WEAK_XOR_KEY_LEN];
