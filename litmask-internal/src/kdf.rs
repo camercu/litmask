@@ -629,4 +629,54 @@ mod tests {
         assert_ne!(external, embedded);
         assert_ne!(external, machine);
     }
+
+    /// Fixed wrapper nonce for the `weak_mask!` XOR-key vectors below.
+    /// Distinct ascending bytes so a wrong nonce index or rotation amount
+    /// produces a visibly different key.
+    fn weak_xor_wrapper(nonce: [u8; NONCE_LEN]) -> [u8; WRAPPER_LEN] {
+        let mut wrapper = [0u8; WRAPPER_LEN];
+        wrapper[..NONCE_LEN].copy_from_slice(&nonce);
+        wrapper
+    }
+
+    /// Golden vector: pins the exact 64-byte `weak_mask!` XOR key for a
+    /// fixed wrapper nonce. The key is a build↔runtime compatibility
+    /// contract — a `weak_mask!` payload sealed at build time only unmasks
+    /// if the runtime derives a byte-identical key — so any drift in the
+    /// rotation schedule, nonce indexing, or hash composition is BREAKING,
+    /// and this vector makes it loud. Bytes are captured from the trusted
+    /// implementation (BLAKE3 keyed_hash is not hand-computable), so this
+    /// is a regression pin, not an independent re-derivation.
+    #[test]
+    fn derive_weak_xor_key_golden_vector() {
+        let wrapper = weak_xor_wrapper([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+        // First 32 bytes = position-rotated nonce; last 32 = BLAKE3
+        // keyed_hash(rotated, nonce).
+        let expected: [u8; WEAK_XOR_KEY_LEN] = [
+            1, 4, 12, 32, 80, 192, 193, 4, 9, 20, 44, 96, 16, 64, 192, 2, 5, 12, 28, 64, 144, 65,
+            194, 6, 1, 4, 12, 32, 80, 192, 193, 4, 93, 156, 10, 6, 166, 190, 16, 209, 207, 166,
+            217, 223, 105, 247, 227, 21, 113, 157, 82, 219, 15, 10, 241, 181, 255, 96, 174, 217,
+            211, 199, 131, 121,
+        ];
+        assert_eq!(derive_weak_xor_key(&wrapper), expected);
+    }
+
+    /// Only the wrapper nonce feeds the XOR key, so a different nonce must
+    /// change it — guarding the nonce-indexing beyond the golden pin.
+    #[test]
+    fn derive_weak_xor_key_depends_on_nonce() {
+        let a = weak_xor_wrapper([0x01u8; NONCE_LEN]);
+        let b = weak_xor_wrapper([0x02u8; NONCE_LEN]);
+        assert_ne!(derive_weak_xor_key(&a), derive_weak_xor_key(&b));
+    }
+
+    /// `EmptyMaterial`'s Display is a user-facing error surface; pin its
+    /// exact text so a silent message change (or a no-op impl) is caught.
+    #[test]
+    fn empty_material_display_is_stable() {
+        assert_eq!(
+            alloc::format!("{EmptyMaterial}"),
+            "external unlock material is empty"
+        );
+    }
 }
