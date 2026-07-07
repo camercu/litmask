@@ -404,8 +404,14 @@ impl Profile {
     /// build-script invocation. Unset (or any other value) defaults
     /// to Debug — the more conservative behavior (persist enabled).
     fn from_env() -> Self {
-        match std::env::var("PROFILE").as_deref() {
-            Ok("release") => Profile::Release,
+        Self::from_profile_str(std::env::var("PROFILE").as_deref().ok())
+    }
+
+    /// Pure core of [`Profile::from_env`]: maps the optional `PROFILE`
+    /// value so tests can pin it without mutating the process environment.
+    fn from_profile_str(value: Option<&str>) -> Self {
+        match value {
+            Some("release") => Profile::Release,
             _ => Profile::Debug,
         }
     }
@@ -859,6 +865,23 @@ mod tests {
         assert_ne!(
             artifacts.unlock_key, old_stream_unlock,
             "unlock_key must be nonce-derived, not the seed's second key-stream block",
+        );
+    }
+
+    #[test]
+    fn profile_from_str_maps_release_and_defaults_to_debug() {
+        assert_eq!(Profile::from_profile_str(Some("release")), Profile::Release);
+        assert_eq!(Profile::from_profile_str(Some("debug")), Profile::Debug);
+        assert_eq!(Profile::from_profile_str(None), Profile::Debug);
+        assert_eq!(Profile::from_profile_str(Some("bogus")), Profile::Debug);
+    }
+
+    #[test]
+    fn profile_dir_of_climbs_to_target_profile_dir() {
+        let out = std::path::Path::new("/w/target/debug/build/litmask-abc123/out");
+        assert_eq!(
+            profile_dir_of(out),
+            std::path::PathBuf::from("/w/target/debug")
         );
     }
 
