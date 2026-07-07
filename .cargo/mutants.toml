@@ -1,0 +1,53 @@
+# cargo-mutants configuration — tuned so the mutation CI lane
+# (`just mutants-diff`, the "Mutation (diff)" job) is trustworthy signal,
+# not flaky noise.
+#
+# Why this lane does not produce flaky / false-positive failures:
+#
+#   1. Deterministic. Mutation is not stochastic — the same source + tests
+#      always yield the same caught/survived verdict for a given mutant.
+#
+#   2. Baseline-first (cargo-mutants default `--baseline run`): the
+#      unmutated tree is tested before any mutant. A flaky, slow, or broken
+#      suite fails that baseline, so the job reports "baseline failed" (a
+#      test-health signal) having tested ZERO mutants. A flaky test can
+#      never masquerade as a surviving mutant.
+#
+#   3. Generous timeouts (below): a mutant is only timed out on a genuine
+#      hang, never because a runner was briefly slow — so a mutant cannot
+#      flip between caught (timeout) and survived across runs.
+#
+#   4. Diff-scoped in CI (`--in-diff`): only the lines a PR changes are
+#      mutated, so an equivalent mutant already in the tree never
+#      re-surfaces; new noise is bounded to newly-changed code.
+#
+# Equivalent mutants are the only real "false positive": a mutation that
+# cannot change observable behaviour, so no test can kill it (e.g.
+# `x % 8` -> `x + 8` where a following `u8::rotate_left` already reduces
+# mod 8). Triage each ONCE: a real gap gets a test; a provably-equivalent
+# mutant is recorded in `exclude_re` below with its reason (or annotated
+# `#[mutants::skip]` at the source). After triage every remaining survivor
+# is a real, actionable gap — that is what earns the lane trust.
+
+# Anti-flake timeouts. The suite runs in well under a second, so the
+# auto-derived timeout would be tiny and a momentarily-slow runner could
+# straddle it. Floor and widen it: only a true hang trips these.
+minimum_test_timeout = 120
+timeout_multiplier = 5.0
+
+# Mutate real library/bin logic only. Examples are seal-tier-gated (no
+# single env config compiles every `init!` form), benches are a separate
+# throwaway workspace, and `test_util.rs` is test scaffolding (its wire
+# builders are exercised by every downstream round-trip test) — mutating
+# any of them is noise, not signal.
+exclude_globs = ["litmask/examples/**", "benches/**", "**/test_util.rs"]
+
+# Provably-equivalent mutants, each with a one-line reason, so the
+# suppression list is auditable and every non-excluded survivor stays a
+# real gap.
+exclude_re = [
+  # `FormatVersion` has only the `V1 = 0x01` variant, so `to_byte`
+  # (`self as u8`) is `1` for the sole input — the mutant is identical
+  # output, not a test gap. Remove this when a second variant lands.
+  "replace FormatVersion::to_byte -> u8 with 1",
+]

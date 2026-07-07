@@ -200,6 +200,23 @@ alias cov-lcov := coverage-lcov
 mutants *flags:
     cargo mutants --test-tool nextest --all-features {{flags}} -- --lib --tests --bins
 
+# Diff-scoped mutation: mutate only the lines changed vs a base ref
+# (default: the merge-base with `origin/main`), so new or changed code
+# gets an efficacy check without a whole-crate run. The sustainable
+# ratchet — runs per PR in CI (advisory) and locally before a push. An
+# empty diff is a clean no-op.
+mutants-diff base="origin/main":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    diff="$(mktemp)"
+    trap 'rm -f "$diff"' EXIT
+    git diff --merge-base "{{base}}" -- '*.rs' > "$diff"
+    if [ ! -s "$diff" ]; then
+        echo "mutants-diff: no Rust changes vs {{base}} — nothing to mutate"
+        exit 0
+    fi
+    cargo mutants --test-tool nextest --all-features --in-diff "$diff" -- --lib --tests --bins
+
 # ── Building / checking ─────────────────────────────────────
 
 build:
