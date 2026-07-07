@@ -160,6 +160,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn machine_token_error_display_is_stable() {
+        assert_eq!(
+            alloc::format!("{}", MachineTokenError::Malformed),
+            "not a self-checking machine-id token (no check group)"
+        );
+        assert_eq!(
+            alloc::format!("{}", MachineTokenError::CheckMismatch),
+            "machine-id token check group mismatch (corrupted in transit?)"
+        );
+        assert_eq!(
+            alloc::format!("{}", MachineTokenError::EmptyId),
+            "machine-id token carries an empty id"
+        );
+    }
+
+    #[test]
+    fn machine_id_as_str_returns_the_validated_id() {
+        assert_eq!(MachineId::new("host-xyz").unwrap().as_str(), "host-xyz");
+    }
+
+    /// Golden token: pins the exact self-checking encoding, so a broken
+    /// check-group derivation (empty, or the wrong bytes) is caught. A
+    /// round-trip through `from_token` cannot catch it — both sides would
+    /// share the same broken derivation and still agree.
+    #[test]
+    fn encode_machine_id_token_golden() {
+        assert_eq!(encode_machine_id_token("host-1"), "host-1.MiS58rI");
+    }
+
+    #[test]
     fn round_trips_a_raw_id() {
         let raw = "ABCDEF01-2345-6789-ABCD-EF0123456789";
         let token = encode_machine_id_token(raw);
