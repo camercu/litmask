@@ -250,6 +250,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn template_parse_error_display_is_stable() {
+        assert_eq!(
+            alloc::format!("{}", TemplateParseError::UnclosedPlaceholder),
+            "unclosed `{...}` placeholder in mask_format! template"
+        );
+        assert_eq!(
+            alloc::format!("{}", TemplateParseError::InvalidPositionalIndex),
+            "invalid positional index in mask_format! template"
+        );
+        assert_eq!(
+            alloc::format!("{}", TemplateParseError::InvalidChar('%')),
+            "unexpected `%` inside `{...}` placeholder in mask_format! template"
+        );
+    }
+
+    /// A big all-digit run inside a spec is a width reference only when it
+    /// is `$`-terminated. Without the `$` it is ordinary format-spec text,
+    /// so it must parse cleanly instead of being classified as a token
+    /// (and rejected as an overflowing index). Complements
+    /// `overflowing_positional_in_spec_returns_error`, which covers the
+    /// `$` case — together they pin the `$`-terminator requirement.
+    #[test]
+    fn big_digit_run_without_dollar_is_not_a_width_ref() {
+        assert!(parse_mask_format_template("{:6666666666666666666666>}").is_ok());
+    }
+
+    #[test]
     fn overflowing_positional_in_spec_returns_error() {
         let input = "{:>6666666666666666666666$}";
         assert!(matches!(
