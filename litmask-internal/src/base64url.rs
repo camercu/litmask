@@ -64,6 +64,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn decode_error_display_is_stable() {
+        assert_eq!(
+            alloc::format!("{}", DecodeError::Padded),
+            "padded input rejected"
+        );
+        assert_eq!(
+            alloc::format!("{}", DecodeError::Invalid),
+            "invalid encoding"
+        );
+    }
+
+    #[test]
     fn round_trip_random_bytes() {
         let cases: &[&[u8]] = &[
             &[],

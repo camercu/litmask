@@ -218,6 +218,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn unknown_format_version_display_is_stable() {
+        assert_eq!(
+            alloc::format!("{}", UnknownFormatVersion(0x99)),
+            "unknown format version: 0x99"
+        );
+    }
+
+    #[test]
     fn format_version_round_trips_through_byte() {
         assert_eq!(FormatVersion::V1.to_byte(), 0x01);
         assert_eq!(FormatVersion::try_from(0x01u8).unwrap(), FormatVersion::V1);

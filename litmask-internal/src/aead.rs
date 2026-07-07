@@ -179,3 +179,16 @@ pub fn aead_decrypt_in_place(
         GenericArray::from_slice(tag),
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aead_error_display_is_stable() {
+        assert_eq!(
+            alloc::format!("{}", AeadError::AuthenticationFailed),
+            "authentication failed"
+        );
+    }
+}

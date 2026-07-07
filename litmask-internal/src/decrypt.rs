@@ -191,6 +191,26 @@ mod tests {
     };
 
     #[test]
+    fn decrypt_error_display_is_stable() {
+        assert_eq!(
+            alloc::format!("{}", DecryptError::UnsupportedFormat),
+            "unsupported format version"
+        );
+        assert_eq!(
+            alloc::format!("{}", DecryptError::BlobTooShort),
+            "encrypted data too short"
+        );
+        assert_eq!(
+            alloc::format!("{}", DecryptError::AuthenticationFailed),
+            "authentication failed"
+        );
+        assert_eq!(
+            alloc::format!("{}", DecryptError::InvalidPayloadLength),
+            "invalid decrypted payload length"
+        );
+    }
+
+    #[test]
     fn wrapper_round_trip_succeeds() {
         let unlock_key = [0x11u8; KEY_LEN];
         let mask_key = [0x22u8; KEY_LEN];
