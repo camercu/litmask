@@ -29,6 +29,15 @@
 # `#[mutants::skip]` at the source). After triage every remaining survivor
 # is a real, actionable gap — that is what earns the lane trust.
 
+# Build only the library, test, and bin targets — never examples.
+# These are cargo *target selectors* (they precede `--`), so unlike
+# test-harness filters they stop the tier-gated examples from being
+# *compiled* at all. That matters because no single feature/env config
+# compiles every `init!` form (see `exclude_globs` note below), so a
+# `--all-features` example build cannot pass — it would break the
+# unmutated baseline before a single mutant is tested.
+additional_cargo_args = ["--lib", "--tests", "--bins"]
+
 # Anti-flake timeouts. The suite runs in well under a second, so the
 # auto-derived timeout would be tiny and a momentarily-slow runner could
 # straddle it. Floor and widen it: only a true hang trips these.

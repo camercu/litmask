@@ -191,14 +191,16 @@ alias cov-lcov := coverage-lcov
 # comparison, delete a statement, swap a return) and re-run the suite. A
 # surviving mutant = a behavior no test would catch — an efficacy gap
 # coverage can't see. Slow (rebuild + retest per mutant) and on-demand —
-# not in `just ci`. Runs the nextest suite per mutant; examples are
-# excluded (`--lib --tests --bins`) for the same seal-tier reason as
-# `test-all-features` / `ci-coverage`: no single env config compiles
-# every example's `init!` form, so a whole-workspace mutant build would
-# `compile_error!`. Pass flags through to scope a run, e.g.
-# `just mutants --file litmask-internal/src/kdf.rs` or `just mutants -p litmask`.
+# not in `just ci`. Runs the nextest suite per mutant. Examples are kept
+# out of the build via `additional_cargo_args = ["--lib","--tests","--bins"]`
+# in `.cargo/mutants.toml` (target selectors, so they stop examples
+# *compiling*) — no single env config compiles every example's `init!`
+# form, so a whole-workspace mutant build including examples would
+# `compile_error!` on the unmutated baseline. Pass flags through to scope
+# a run, e.g. `just mutants --file litmask-internal/src/kdf.rs` or
+# `just mutants -p litmask`.
 mutants *flags:
-    cargo mutants --test-tool nextest --all-features {{flags}} -- --lib --tests --bins
+    cargo mutants --test-tool nextest --all-features {{flags}}
 
 # Diff-scoped mutation: mutate only the lines changed vs a base ref
 # (default: the merge-base with `origin/main`), so new or changed code
@@ -215,7 +217,7 @@ mutants-diff base="origin/main":
         echo "mutants-diff: no Rust changes vs {{base}} — nothing to mutate"
         exit 0
     fi
-    cargo mutants --test-tool nextest --all-features --in-diff "$diff" -- --lib --tests --bins
+    cargo mutants --test-tool nextest --all-features --in-diff "$diff"
 
 # ── Building / checking ─────────────────────────────────────
 
