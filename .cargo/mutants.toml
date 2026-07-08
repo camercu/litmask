@@ -59,4 +59,15 @@ exclude_re = [
   # (`self as u8`) is `1` for the sole input — the mutant is identical
   # output, not a test gap. Remove this when a second variant lands.
   "replace FormatVersion::to_byte -> u8 with 1",
+  # `emit` is the build.rs entry point — pure orchestration (an imperative
+  # shell) that reads env, writes `OUT_DIR` artifacts, and emits rustc
+  # directives. Its effect is only observable through a full consumer build,
+  # not litmask-build's own unit tests; the units it delegates to (Profile,
+  # profile_dir_of, KDF, seal) are mutation-covered directly. Stubbing it to
+  # `()` is caught by every downstream build, not this crate's suite.
+  "replace emit with \\(\\)",
+  # `Drop for BuildArtifacts` zeroizes key material on drop. Scrubbed memory
+  # is not observable from a passing test, so no test can kill the stub —
+  # an equivalent mutant, not a gap.
+  "replace <impl Drop for BuildArtifacts>::drop with \\(\\)",
 ]
