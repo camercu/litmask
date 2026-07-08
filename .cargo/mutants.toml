@@ -70,4 +70,19 @@ exclude_re = [
   # is not observable from a passing test, so no test can kill the stub —
   # an equivalent mutant, not a gap.
   "replace <impl Drop for BuildArtifacts>::drop with \\(\\)",
+  # `reset_mask_key_cache` (the `test_util` shim and its crate-internal
+  # delegate) is test/bench-only scaffolding that forwards to
+  # `mask_key_store::clear`. That underlying behaviour — clearing drops the
+  # entries so the next `get_or_init` re-derives — is directly asserted by
+  # `mask_key_store::tests::clear_drops_cached_entries_so_next_get_reinits`;
+  # the wrappers add no logic to test, so stubbing them to `()` is caught
+  # nowhere. Testing the bare delegation would be a trivial tautology.
+  "replace (?:test_util::)?reset_mask_key_cache with \\(\\)",
+  # The `!=` guarding the no_std single-cell second-masking-crate diagnostic
+  # lives in `#[cfg(not(feature = \"std\"))]`, so it is dead code under the
+  # `--all-features` mutation lane (which selects `std`): the mutant compiles
+  # to an identical binary and cannot be killed here. It guards a debug-only
+  # diagnostic; a real check needs a dedicated no_std mutation lane, not this
+  # std one.
+  "replace != with == in get_or_init",
 ]
