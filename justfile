@@ -192,8 +192,8 @@ alias cov-lcov := coverage-lcov
 # surviving mutant = a behavior no test would catch — an efficacy gap
 # coverage can't see. Slow (rebuild + retest per mutant) and on-demand —
 # not in `just ci`. Runs the nextest suite per mutant. Examples are kept
-# out of the build via `additional_cargo_args = ["--lib","--tests","--bins"]`
-# in `.cargo/mutants.toml` (target selectors, so they stop examples
+# out of the build via `additional_cargo_args = ["--tests"]` in
+# `.cargo/mutants.toml` (a target selector, so it stops examples
 # *compiling*) — no single env config compiles every example's `init!`
 # form, so a whole-workspace mutant build including examples would
 # `compile_error!` on the unmutated baseline. Pass flags through to scope
