@@ -384,3 +384,93 @@ impl VisitMut for MaskAllWalker {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quote::quote;
+
+    /// Drive the walker over a module body and return the rewritten items
+    /// as a string. A masked string literal renders as
+    /// `:: litmask :: mask ! ("...")`; a skipped one stays bare. This
+    /// deliberately skips `process_module`'s diagnostic-item append step:
+    /// rendering a `SkipRecord` resolves spans through `proc_macro::Span`,
+    /// which panics outside a real proc-macro invocation. The rewrite
+    /// (mask-vs-skip) is what the walker's depth counters govern.
+    fn process(body: proc_macro2::TokenStream, strict: bool) -> String {
+        let module: syn::ItemMod = syn::parse2(quote!(mod m { #body })).expect("parse module");
+        let (_, mut items) = module.content.expect("inline module has content");
+        let mut walker = MaskAllWalker {
+            strict,
+            ..MaskAllWalker::default()
+        };
+        for item in &mut items {
+            walker.visit_item_mut(item);
+        }
+        quote!(#(#items)*).to_string()
+    }
+
+    #[test]
+    fn parse_attr_strict_accepts_only_empty_or_the_strict_keyword() {
+        assert!(!parse_attr_strict(quote!()).unwrap());
+        assert!(parse_attr_strict(quote!(strict)).unwrap());
+        // `strict` must be the sole token: a trailing token is an error,
+        // not a silent accept (the `ident == "strict" && is_empty` guard).
+        assert!(parse_attr_strict(quote!(strict extra)).is_err());
+        assert!(parse_attr_strict(quote!(loose)).is_err());
+    }
+
+    #[test]
+    fn masks_expression_literals_outside_skip_contexts() {
+        let out = process(quote! { fn f() { let _ = "plain"; } }, false);
+        assert!(
+            out.contains(r#"mask ! ("plain")"#),
+            "plain literal masked: {out}"
+        );
+    }
+
+    #[test]
+    fn const_and_static_depth_is_restored_so_following_code_is_masked() {
+        // Non-string const/static initializers keep the walker out of the
+        // skip-diagnostic path (recording a skip resolves a proc_macro
+        // span, which panics in a unit test) while still bumping and
+        // restoring the depth counters. The later fn literal must be
+        // masked: a `-=` -> `+=`/`/=` mutant that fails to restore the
+        // counter leaks the skip context forward, so "after" is pushed as
+        // a skip (panicking) instead of masked — either way this fails on
+        // the mutant and passes on the real walker.
+        let out = process(
+            quote! {
+                const C: u8 = 5;
+                static S: u8 = 6;
+                fn f() { let _ = "after"; }
+            },
+            false,
+        );
+        assert!(
+            out.contains(r#"mask ! ("after")"#),
+            "post-const/static literal masked: {out}"
+        );
+    }
+
+    #[test]
+    fn diagnostic_skip_macro_suppresses_its_body_then_restores() {
+        // `dbg!` is a SkipDiagnostic macro: skip_macro_depth is bumped
+        // while inside it and restored after, so a literal following the
+        // `dbg!` statement is masked again. Kills the visit_expr_macro_mut
+        // stub and its `-=` depth mutant.
+        let out = process(
+            quote! {
+                fn f() {
+                    println!("in_dbg {}", dbg!("x"));
+                    let _ = "after_dbg";
+                }
+            },
+            false,
+        );
+        assert!(
+            out.contains(r#"mask ! ("after_dbg")"#),
+            "post-dbg literal masked: {out}"
+        );
+    }
+}
