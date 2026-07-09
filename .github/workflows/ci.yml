@@ -356,7 +356,7 @@ jobs:
     name: smoke (${{ matrix.os.name }})
     steps:
       - uses: actions/checkout@v7
-      - uses: cross-platform-actions/action@v1.3.0
+      - uses: cross-platform-actions/action@v1
         with:
           operating_system: ${{ matrix.os.name }}
           version: ${{ matrix.os.version }}
