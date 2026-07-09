@@ -15,7 +15,7 @@ use crate::common::{canonicalize_file_path, manifest_dir};
 /// `litmask: skipped literal at <file>:<line>: <reason>` — see
 /// [`SkipRecord::note`]. This enum carries the reason only; the
 /// file/line travels alongside it in a [`SkipRecord`].
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum SkipReason {
     PatternPosition,
     ConstInitializer,
@@ -46,40 +46,51 @@ impl SkipReason {
     }
 }
 
-/// One skipped literal: reason + the source location of the
-/// literal itself (file and line, captured from the literal's
-/// span at push time). The diagnostic note is normatively
+/// One skipped literal: reason + the literal's own span. The
+/// diagnostic note is normatively
 /// `litmask: skipped literal at <file>:<line>: <reason>` per
 /// §2.3.1.4 amendment 2026-05-10; the file/line in the note
 /// identifies the *literal*, not the auto-generated
-/// `#[deprecated]` const or `compile_error!()` item that carries
-/// it. File paths are stripped of the consumer crate's
-/// `CARGO_MANIFEST_DIR` prefix so the diagnostic text stays
-/// stable across hosts and build environments.
-#[derive(Clone)]
+/// `#[deprecated]` const or `compile_error!()` item that carries it.
+///
+/// The span is stored raw and resolved to file/line only in
+/// [`note`](Self::note), at render time. Recording a skip is therefore
+/// pure — it never touches `proc_macro::Span`, which panics outside a
+/// real proc-macro invocation — so the walker's skip logic is unit
+/// testable via [`reason`](Self::reason). File/line resolution is the
+/// proc-macro-coupled shell, deferred to the one place that always runs
+/// inside a proc-macro expansion.
+#[derive(Clone, Copy)]
 pub(super) struct SkipRecord {
     reason: SkipReason,
-    file: String,
-    line: usize,
+    span: proc_macro2::Span,
 }
 
 impl SkipRecord {
-    /// Build a record from a literal's `proc_macro2::Span`. The
-    /// path is canonicalized against `CARGO_MANIFEST_DIR` (via the
-    /// cached [`manifest_dir`]) so absolute build-host paths don't
-    /// leak into the diagnostic text.
+    /// Record a skip for the literal at `span`. Pure: the span is kept
+    /// as-is and only resolved to file/line in [`note`](Self::note).
     pub(super) fn from_span(reason: SkipReason, span: proc_macro2::Span) -> Self {
-        let pm_span = span.unwrap();
-        let file = canonicalize_file_path(pm_span.file(), manifest_dir());
-        let line = pm_span.line();
-        Self { reason, file, line }
+        Self { reason, span }
     }
 
+    /// The skip's reason tag — the walker's classification of why this
+    /// literal was left unmasked. Test-only: production reads the reason
+    /// through [`note`](Self::note).
+    #[cfg(test)]
+    pub(super) fn reason(&self) -> SkipReason {
+        self.reason
+    }
+
+    /// Render the diagnostic note. Resolves the literal's span to a
+    /// `file:line` here (not at record time): the path is canonicalized
+    /// against `CARGO_MANIFEST_DIR` (via the cached [`manifest_dir`]) so
+    /// absolute build-host paths don't leak into the diagnostic text.
     fn note(&self) -> String {
+        let pm_span = self.span.unwrap();
+        let file = canonicalize_file_path(pm_span.file(), manifest_dir());
         format!(
             "litmask: skipped literal at {file}:{line}: {tag}",
-            file = self.file,
-            line = self.line,
+            line = pm_span.line(),
             tag = self.reason.tag(),
         )
     }

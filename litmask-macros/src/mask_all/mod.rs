@@ -410,6 +410,25 @@ mod tests {
         quote!(#(#items)*).to_string()
     }
 
+    /// Drive the walker and return the reasons it recorded for every
+    /// skipped literal, in walk order. Recording a skip is pure (the span
+    /// is resolved to file/line only at diagnostic-render time), so this
+    /// never touches `proc_macro::Span` and stays panic-free in a unit
+    /// test — the seam that makes the skip-context classification testable.
+    fn skip_reasons(body: proc_macro2::TokenStream) -> Vec<skip::SkipReason> {
+        let module: syn::ItemMod = syn::parse2(quote!(mod m { #body })).expect("parse module");
+        let (_, mut items) = module.content.expect("inline module has content");
+        let mut walker = MaskAllWalker::default();
+        for item in &mut items {
+            walker.visit_item_mut(item);
+        }
+        walker
+            .skipped
+            .iter()
+            .map(skip::SkipRecord::reason)
+            .collect()
+    }
+
     #[test]
     fn parse_attr_strict_accepts_only_empty_or_the_strict_keyword() {
         assert!(!parse_attr_strict(quote!()).unwrap());
@@ -471,6 +490,113 @@ mod tests {
         assert!(
             out.contains(r#"mask ! ("after_dbg")"#),
             "post-dbg literal masked: {out}"
+        );
+    }
+
+    #[test]
+    fn const_and_static_string_initializers_record_their_skip_reason() {
+        // A string expression inside a const / static initializer is left
+        // unmasked and recorded with the matching reason. This pins
+        // `current_skip_reason`'s const/static arms: a `> -> <` mutant
+        // makes the (unsigned) depth check unsatisfiable, so the reason
+        // flips to `None` and the literal is masked instead of recorded.
+        assert_eq!(
+            skip_reasons(quote! { const C: &str = "c"; }),
+            vec![skip::SkipReason::ConstInitializer],
+        );
+        assert_eq!(
+            skip_reasons(quote! { static S: &str = "s"; }),
+            vec![skip::SkipReason::StaticInitializer],
+        );
+    }
+
+    #[test]
+    fn pattern_position_string_literals_record_their_skip_reason() {
+        // A string literal in a match pattern is a `Pat::Lit`, recorded by
+        // `visit_pat_mut` (not the expression path) with `PatternPosition`.
+        // Stubbing that visitor to `()` drops the record entirely.
+        assert_eq!(
+            skip_reasons(quote! { fn f(x: &str) { match x { "p" => {} _ => {} } } }),
+            vec![skip::SkipReason::PatternPosition],
+        );
+    }
+
+    #[test]
+    fn rewritable_macros_are_rewritten_in_a_warnable_context() {
+        // A `println!` in ordinary (warnable) code is rewritten to the
+        // masked `mask_format!` form. `in_warnable_context` gates this, so
+        // a `-> false` / `&& -> ||` / `== -> !=` mutant that misreports the
+        // context leaves the macro (and its literal) un-rewritten.
+        let out = process(quote! { fn f() { println!("hi {}", 1); } }, false);
+        // The Output family wraps the call, masking the template into a
+        // `mask_format!` binding: its presence proves the rewrite fired.
+        assert!(
+            out.contains("mask_format"),
+            "println in warnable context is rewritten: {out}"
+        );
+    }
+
+    #[test]
+    fn rewritable_macros_are_left_alone_in_a_non_warnable_context() {
+        // The same `println!` inside a const initializer is NOT rewritten:
+        // `in_warnable_context` is false there (const_depth > 0). A
+        // `-> true` or `&& -> ||` mutant would misreport the context and
+        // rewrite the macro, so `mask_format` would appear.
+        let out = process(quote! { const C: () = { println!("x"); }; }, false);
+        assert!(
+            !out.contains("mask_format"),
+            "macro in const context is left alone: {out}"
+        );
+    }
+
+    #[test]
+    fn plain_derives_are_swapped_on_both_structs_and_enums() {
+        // visit_item_mut swaps `#[derive(Debug)]` for `MaskDebug` on both
+        // structs and enums; deleting either match arm leaves the plain
+        // derive, so the masking derive path is absent from the output.
+        let struct_out = process(quote! { #[derive(Debug)] struct S { secret: u8 } }, false);
+        assert!(
+            struct_out.contains("MaskDebug"),
+            "struct derive swapped: {struct_out}"
+        );
+        let enum_out = process(quote! { #[derive(Debug)] enum E { V(u8) } }, false);
+        assert!(
+            enum_out.contains("MaskDebug"),
+            "enum derive swapped: {enum_out}"
+        );
+    }
+
+    #[test]
+    fn skip_macro_expression_restores_depth_for_the_following_literal() {
+        // `mask!(...)` as an expression bumps skip_macro_depth while it is
+        // visited and restores it after; a later bare literal must still be
+        // masked. A `+=` -> `-=` bump mutant underflows (panics); an
+        // unbalanced `-=` -> `+=` unbump leaks the skip context so "after"
+        // is left bare. Either way this fails on the mutant.
+        let out = process(
+            quote! {
+                fn f() {
+                    let _ = mask!("a");
+                    let _ = "after";
+                }
+            },
+            false,
+        );
+        assert!(
+            out.contains(r#"mask ! ("after")"#),
+            "literal after a mask! expression is masked: {out}"
+        );
+    }
+
+    #[test]
+    fn nested_inline_modules_are_recursed_into() {
+        // A literal inside a nested inline `mod` is masked: `visit_item_mod_mut`
+        // must recurse via its own sub-walker. Stubbing it to `()` leaves
+        // the nested literal bare.
+        let out = process(quote! { mod inner { fn f() { let _ = "nested"; } } }, false);
+        assert!(
+            out.contains(r#"mask ! ("nested")"#),
+            "nested-module literal masked: {out}"
         );
     }
 }
