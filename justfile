@@ -36,6 +36,9 @@ clean: _profraw-purge
     # separate workspaces, so root `cargo clean` can't reach their target
     # dirs; the fixtures themselves are generated. Remove both.
     rm -rf benches/target benches/build-fixtures
+    # cargo-mutants output tree (results + its scratch build dir). Stale
+    # state here has produced phantom 0-caught runs, so purge it too.
+    rm -rf mutants.out mutants.out.old
 
 # ── Linting ─────────────────────────────────────────────────
 
