@@ -32,10 +32,12 @@ fmt-check:
 
 clean: _profraw-purge
     cargo clean
-    # The nested `benches/` workspace and the generated build fixtures are
-    # separate workspaces, so root `cargo clean` can't reach their target
-    # dirs; the fixtures themselves are generated. Remove both.
-    rm -rf benches/target benches/build-fixtures
+    # The nested `benches/` and `litmask/fuzz/` workspaces are separate,
+    # so root `cargo clean` can't reach their target dirs; the build
+    # fixtures are generated. Remove all three. (Fuzz `corpus/` and
+    # `artifacts/` are deliberately kept — accumulated inputs and crash
+    # reproducers are not throwaway build state.)
+    rm -rf benches/target benches/build-fixtures litmask/fuzz/target
     # cargo-mutants output tree (results + its scratch build dir). Stale
     # state here has produced phantom 0-caught runs, so purge it too.
     rm -rf mutants.out mutants.out.old
