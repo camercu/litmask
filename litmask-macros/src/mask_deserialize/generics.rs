@@ -162,3 +162,102 @@ pub(super) fn visitor_expr() -> TokenStream2 {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    fn ty(t: syn::Type) -> syn::Type {
+        t
+    }
+
+    #[test]
+    fn is_str_only_matches_the_bare_str_path() {
+        assert!(is_str(&ty(parse_quote!(str))));
+        // A single-segment `str` ident only — `String` and any qualified
+        // path are not the borrow-eligible `str`.
+        assert!(!is_str(&ty(parse_quote!(String))));
+        assert!(!is_str(&ty(parse_quote!(std::primitive::str))));
+    }
+
+    #[test]
+    fn is_slice_u8_matches_only_the_u8_slice() {
+        assert!(is_slice_u8(&ty(parse_quote!([u8]))));
+        assert!(!is_slice_u8(&ty(parse_quote!([u16]))));
+        // A non-slice type must fall through the `_ => false` arm.
+        assert!(!is_slice_u8(&ty(parse_quote!(str))));
+    }
+
+    #[test]
+    fn option_inner_unwraps_single_segment_option_only() {
+        // `Option<T>` (one segment, one type arg) yields `T`.
+        let option_i32: syn::Type = parse_quote!(Option<i32>);
+        let inner = option_inner(&option_i32).expect("Option<i32> unwraps");
+        assert_eq!(quote!(#inner).to_string(), "i32");
+
+        // Not an `Option` ident → no unwrap.
+        assert!(option_inner(&ty(parse_quote!(Vec<i32>))).is_none());
+        // Serde's rule is syntactic and un-qualified: a multi-segment
+        // `std::option::Option<T>` is deliberately not recognised.
+        assert!(option_inner(&ty(parse_quote!(std::option::Option<i32>))).is_none());
+        // A bare `Option` with no angle-bracketed args is not `Option<T>`.
+        assert!(option_inner(&ty(parse_quote!(Option))).is_none());
+        // An inherent-qualified `<Foo>::Option<i32>` keeps a single
+        // `Option<i32>` path segment but carries a qself, so it is not the
+        // plain `Option<T>` serde borrows through — the `qself.is_some()`
+        // guard (not the segment-count guard) is what must reject it.
+        assert!(option_inner(&ty(parse_quote!(<Foo>::Option<i32>))).is_none());
+    }
+
+    #[test]
+    fn implicitly_borrowed_reference_matches_serde_borrow_shapes() {
+        // The `is_str || is_slice_u8` disjunction: `&str` borrows via the
+        // str arm even though it is not a `&[u8]`.
+        assert!(implicitly_borrowed_reference(&ty(parse_quote!(&str))).is_some());
+        assert!(implicitly_borrowed_reference(&ty(parse_quote!(&[u8]))).is_some());
+        // `Option`-wrapped, one level of recursion.
+        assert!(implicitly_borrowed_reference(&ty(parse_quote!(Option<&str>))).is_some());
+        // A reference to anything else does not implicitly borrow.
+        assert!(implicitly_borrowed_reference(&ty(parse_quote!(&i32))).is_none());
+        assert!(implicitly_borrowed_reference(&ty(parse_quote!(i32))).is_none());
+    }
+
+    #[test]
+    fn borrowed_lifetimes_collects_only_borrowing_field_lifetimes() {
+        let borrowing: DeriveInput = parse_quote! {
+            struct S<'a> { name: &'a str, count: i32 }
+        };
+        let lifetimes = borrowed_lifetimes(&borrowing);
+        assert_eq!(lifetimes.len(), 1, "only the &'a str field borrows");
+        assert_eq!(lifetimes[0].to_string(), "'a");
+
+        // No borrow-eligible field → no lifetimes.
+        let owned: DeriveInput = parse_quote! {
+            struct T<'a> { owned: String, marker: core::marker::PhantomData<&'a ()> }
+        };
+        assert!(borrowed_lifetimes(&owned).is_empty());
+    }
+
+    #[test]
+    fn visitor_expr_and_decl_emit_the_visitor_carrier() {
+        assert!(visitor_expr().to_string().contains("__Visitor"));
+
+        let input: DeriveInput = parse_quote!(
+            struct Foo {
+                x: i32,
+            }
+        );
+        let container = ContainerAttrs::default();
+        let generics = split_de_generics(&input, &container);
+        let decl = visitor_decl(&input, &generics).to_string();
+        assert!(
+            decl.contains("struct __Visitor"),
+            "decl declares the carrier: {decl}"
+        );
+        assert!(
+            decl.contains("PhantomData"),
+            "decl pins the type + lifetime: {decl}"
+        );
+    }
+}
