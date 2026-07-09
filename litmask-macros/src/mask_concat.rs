@@ -182,3 +182,83 @@ fn stringify_lit(lit: &syn::Lit, negated: bool) -> Option<String> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    fn lit(l: syn::Lit) -> syn::Lit {
+        l
+    }
+
+    #[test]
+    fn stringify_lit_accepts_unnegated_primitives() {
+        assert_eq!(
+            stringify_lit(&lit(parse_quote!("hi")), false).as_deref(),
+            Some("hi")
+        );
+        assert_eq!(
+            stringify_lit(&lit(parse_quote!(42)), false).as_deref(),
+            Some("42")
+        );
+        assert_eq!(
+            stringify_lit(&lit(parse_quote!(2.5)), false).as_deref(),
+            Some("2.5")
+        );
+        assert_eq!(
+            stringify_lit(&lit(parse_quote!(true)), false).as_deref(),
+            Some("true")
+        );
+        assert_eq!(
+            stringify_lit(&lit(parse_quote!('z')), false).as_deref(),
+            Some("z")
+        );
+    }
+
+    #[test]
+    fn stringify_lit_negates_only_numeric_kinds() {
+        // Numeric literals carry the leading `-` through.
+        assert_eq!(
+            stringify_lit(&lit(parse_quote!(42)), true).as_deref(),
+            Some("-42")
+        );
+        assert_eq!(
+            stringify_lit(&lit(parse_quote!(2.5)), true).as_deref(),
+            Some("-2.5")
+        );
+        // The un-negated numeric arms must not prepend a `-`.
+        assert_eq!(
+            stringify_lit(&lit(parse_quote!(42)), false).as_deref(),
+            Some("42")
+        );
+        assert_eq!(
+            stringify_lit(&lit(parse_quote!(2.5)), false).as_deref(),
+            Some("2.5")
+        );
+    }
+
+    #[test]
+    fn stringify_lit_rejects_negated_non_numeric_kinds() {
+        // `-"s"`, `-true`, `-'c'` are not valid `concat!` literals: the
+        // negation guard must reject them (→ None), not silently drop the
+        // `-` and accept the underlying value.
+        assert_eq!(stringify_lit(&lit(parse_quote!("s")), true), None);
+        assert_eq!(stringify_lit(&lit(parse_quote!(true)), true), None);
+        assert_eq!(stringify_lit(&lit(parse_quote!('c')), true), None);
+    }
+
+    #[test]
+    fn resolve_expr_literal_handles_unary_negated_numbers() {
+        // End-to-end through the unary-`Neg` unwrapping: `-3` resolves,
+        // `-"x"` does not.
+        assert_eq!(
+            resolve_expr_literal(&parse_quote!(-3)).as_deref(),
+            Some("-3")
+        );
+        assert_eq!(resolve_expr_literal(&parse_quote!(3)).as_deref(), Some("3"));
+        assert_eq!(resolve_expr_literal(&parse_quote!(-"x")), None);
+        // A non-literal expression is not a concat primitive.
+        assert_eq!(resolve_expr_literal(&parse_quote!(foo())), None);
+    }
+}

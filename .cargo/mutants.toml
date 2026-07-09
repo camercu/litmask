@@ -87,4 +87,11 @@ exclude_re = [
   # diagnostic; a real check needs a dedicated no_std mutation lane, not this
   # std one.
   "replace != with == in get_or_init",
+  # `peek(Ident) && peek2(!)` routes a `mask_concat!` argument to the
+  # macro-branch vs the literal-branch. Flipping to `||` is equivalent:
+  # both branches reject every input the other would (a non-`ident!`,
+  # non-literal token), and `syn::parse2`'s full-consumption requirement
+  # collapses the only difference to unobservable error text/span — no
+  # input distinguishes them by parse success or resolved value.
+  "replace && with || in <impl Parse for MaskConcatArg>::parse",
 ]
