@@ -207,6 +207,16 @@ mutants *flags:
 # gets an efficacy check without a whole-crate run. The sustainable
 # ratchet — runs per PR in CI (advisory) and locally before a push. An
 # empty diff is a clean no-op.
+#
+# `--test-workspace` (unlike the whole-crate `mutants` recipe): a mutant
+# survives only if NO test in the workspace kills it. That is the correct,
+# trust-earning definition for CI — `litmask-macros` and `litmask-build`
+# are exercised *downstream* (trybuild / a consumer's build.rs), not by
+# their own suites, so a package-scoped diff run would report those
+# already-covered mutants as false survivors. Diff-scoping keeps the
+# per-mutant workspace-rebuild cost bounded to the handful of changed
+# lines, so the correct definition stays tractable here even though it is
+# impractical for a whole-crate run.
 mutants-diff base="origin/main":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -217,7 +227,7 @@ mutants-diff base="origin/main":
         echo "mutants-diff: no Rust changes vs {{base}} — nothing to mutate"
         exit 0
     fi
-    cargo mutants --test-tool nextest --all-features --in-diff "$diff"
+    cargo mutants --test-tool nextest --all-features --test-workspace=true --in-diff "$diff"
 
 # ── Building / checking ─────────────────────────────────────
 
