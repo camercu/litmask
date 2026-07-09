@@ -94,4 +94,19 @@ exclude_re = [
   # collapses the only difference to unobservable error text/span — no
   # input distinguishes them by parse success or resolved value.
   "replace && with \\|\\| in <impl Parse for MaskConcatArg>::parse",
+  # `current_skip_reason`'s pattern-position branch governs a maskable
+  # string *expression* seen while `pattern_depth > 0`. Pattern literals are
+  # `Pat::Lit`, recorded directly by `visit_pat_mut`, and no valid
+  # pattern-position expression carries a maskable string literal or a
+  # rewritable macro (a string range bound is not valid Rust), so the
+  # branch's threshold is never observed — the mutant is equivalent.
+  "replace > with < in MaskAllWalker::current_skip_reason",
+  # Stubbing `visit_expr_macro_mut` only stops `skip_macro_depth` from being
+  # bumped-then-restored; the counter still ends at zero, and the elided
+  # `visit_mut::visit_expr_macro_mut` recursion only descends into the macro
+  # *path* (no maskable node). syn never walks a macro's token stream, so no
+  # literal is ever visited while the counter is non-zero — nothing observes
+  # the difference. Equivalent. (The depth *balance* itself is covered by
+  # `skip_macro_expression_restores_depth_for_the_following_literal`.)
+  "replace <impl VisitMut for MaskAllWalker>::visit_expr_macro_mut with \\(\\)",
 ]
