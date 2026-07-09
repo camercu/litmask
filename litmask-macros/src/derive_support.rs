@@ -115,3 +115,52 @@ pub(crate) fn apply_bounds(
         None => with_trait_bounds(generics, default_bound),
     }
 }
+
+#[cfg(all(test, feature = "unstable-serde"))]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    #[test]
+    fn transparent_field_accepts_single_field_newtypes() {
+        let named: syn::DeriveInput = parse_quote!(
+            struct S {
+                inner: u8,
+            }
+        );
+        let tf = transparent_field(&named, "x").expect("single named field is transparent");
+        assert_eq!(tf.access.to_string(), "inner");
+        assert!(tf.named_ident.is_some());
+
+        let tuple: syn::DeriveInput = parse_quote!(
+            struct S(u8);
+        );
+        let tf = transparent_field(&tuple, "x").expect("single unnamed field is transparent");
+        assert_eq!(tf.access.to_string(), "0");
+        assert!(tf.named_ident.is_none());
+    }
+
+    #[test]
+    fn transparent_field_requires_exactly_one_field() {
+        // Two fields must be rejected, not silently made transparent over
+        // the first — `#[serde(transparent)]` is single-field only.
+        let two_tuple: syn::DeriveInput = parse_quote!(
+            struct S(u8, u16);
+        );
+        assert!(transparent_field(&two_tuple, "x").is_err());
+        let two_named: syn::DeriveInput = parse_quote!(
+            struct S {
+                a: u8,
+                b: u16,
+            }
+        );
+        assert!(transparent_field(&two_named, "x").is_err());
+        // A non-struct is rejected too.
+        let enum_input: syn::DeriveInput = parse_quote!(
+            enum E {
+                A,
+            }
+        );
+        assert!(transparent_field(&enum_input, "x").is_err());
+    }
+}

@@ -572,6 +572,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn as_named_arg_detects_only_simple_name_value_pairs() {
+        use syn::parse_quote;
+
+        // `name = value` with a bare single-segment ident is a named arg.
+        let (ident, _val) = as_named_arg(&parse_quote!(width = 5)).expect("named arg");
+        assert_eq!(ident.to_string(), "width");
+
+        // A non-assignment expression is positional.
+        assert!(as_named_arg(&parse_quote!(5 + 1)).is_none());
+        // A multi-segment path LHS is not a simple name.
+        assert!(as_named_arg(&parse_quote!(a::b = 5)).is_none());
+        // A turbofish'd single segment (`x::<T>`) is not a plain name.
+        assert!(as_named_arg(&parse_quote!(x::<T> = 5)).is_none());
+        // A qself-qualified single-segment LHS (`<Foo>::x`) must be
+        // rejected by the qself guard, not the segment-count guard.
+        assert!(as_named_arg(&parse_quote!(<Foo>::x = 5)).is_none());
+    }
+
+    #[test]
     fn fragments_reserve_sums_byte_lengths() {
         // §2.15.1.4: reserve == Σ compile-time fragment byte-lengths, so
         // literal-driven growth never reallocates (which would leave
