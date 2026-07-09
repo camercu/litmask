@@ -209,3 +209,46 @@ fn collect_string_literal_spans(tokens: &TokenStream2, out: &mut Vec<proc_macro2
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    #[test]
+    fn maybe_rewrite_masks_only_string_shaped_literals() {
+        // str / byte-str / c-str rewrite to a `mask!` call; other literal
+        // kinds and non-literals do not.
+        for src in [quote!("s"), quote!(b"s"), quote!(c"s")] {
+            let expr: Expr = syn::parse2(src.clone()).expect("literal expr");
+            let rewritten = maybe_rewrite_string_literal(&expr)
+                .unwrap_or_else(|| panic!("{src} should rewrite"));
+            assert!(
+                quote!(#rewritten).to_string().contains("mask !"),
+                "rewrite wraps in mask!: {src}"
+            );
+        }
+        assert!(maybe_rewrite_string_literal(&parse_quote!(42)).is_none());
+        assert!(maybe_rewrite_string_literal(&parse_quote!(true)).is_none());
+        assert!(maybe_rewrite_string_literal(&parse_quote!('c')).is_none());
+        // A non-literal expression is never rewritten.
+        assert!(maybe_rewrite_string_literal(&parse_quote!(foo())).is_none());
+    }
+
+    #[test]
+    fn string_literal_spans_finds_string_literals_including_nested_groups() {
+        // Two string literals among mixed args; numbers/idents are ignored.
+        assert_eq!(string_literal_spans(&quote!("a", 1, "b", foo)).len(), 2);
+        assert_eq!(string_literal_spans(&quote!(1, 2, 3)).len(), 0);
+        // Recurses into parens / brackets / braces (kills the Group arm).
+        assert_eq!(
+            string_literal_spans(&quote!(("x"), ["y"], { "z" })).len(),
+            3
+        );
+        // Raw and byte/c string forms classify as string-shaped too.
+        assert_eq!(
+            string_literal_spans(&quote!(r"raw", b"bytes", c"cstr")).len(),
+            3
+        );
+    }
+}
