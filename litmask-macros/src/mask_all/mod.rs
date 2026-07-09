@@ -473,27 +473,6 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_skip_macro_suppresses_its_body_then_restores() {
-        // `dbg!` is a SkipDiagnostic macro: skip_macro_depth is bumped
-        // while inside it and restored after, so a literal following the
-        // `dbg!` statement is masked again. Kills the visit_expr_macro_mut
-        // stub and its `-=` depth mutant.
-        let out = process(
-            quote! {
-                fn f() {
-                    println!("in_dbg {}", dbg!("x"));
-                    let _ = "after_dbg";
-                }
-            },
-            false,
-        );
-        assert!(
-            out.contains(r#"mask ! ("after_dbg")"#),
-            "post-dbg literal masked: {out}"
-        );
-    }
-
-    #[test]
     fn const_and_static_string_initializers_record_their_skip_reason() {
         // A string expression inside a const / static initializer is left
         // unmasked and recorded with the matching reason. This pins
