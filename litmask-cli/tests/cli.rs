@@ -43,6 +43,25 @@ fn help_flag_exits_success() {
 }
 
 #[test]
+fn help_about_line_names_both_subcommands() {
+    // The about line (first line of `--help`, also the crates.io
+    // description) must describe the whole surface — a line naming only
+    // machine-id reporting under-sells `keygen`, the first subcommand a
+    // new user reaches for.
+    let out = run(&["--help"]);
+    let stdout = String::from_utf8(out.stdout).expect("--help stdout is utf8");
+    let about = stdout.lines().next().expect("--help has an about line");
+    assert!(
+        about.contains("keygen"),
+        "about line must mention keygen: {about:?}"
+    );
+    assert!(
+        about.contains("machine ID"),
+        "about line must mention the machine ID: {about:?}"
+    );
+}
+
+#[test]
 fn version_flag_exits_success() {
     let out = run(&["--version"]);
     assert_eq!(out.status.code(), Some(0), "--version must exit 0");

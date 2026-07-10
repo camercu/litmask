@@ -1,6 +1,6 @@
 [package]
 name = "litmask-cli"
-description = "Command-line companion to the litmask crate; reports the host machine ID for machine-tier sealing."
+description = "Command-line companion to the litmask crate: mints unlock material (keygen) and reports the host machine ID for machine-tier sealing (show-machine-id)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
