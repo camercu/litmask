@@ -157,6 +157,16 @@ impl From<KeyError> for InitError {
     }
 }
 
+/// Empty external material is a malformed key by definition (§1.6.3);
+/// owning the mapping here means every provider — built-in or a custom
+/// one using `?` — surfaces it as the same [`KeyError::InvalidFormat`],
+/// so the empty-material contract cannot fork per call site.
+impl From<crate::internal::EmptyMaterial> for KeyError {
+    fn from(_: crate::internal::EmptyMaterial) -> Self {
+        Self::InvalidFormat
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,6 +178,18 @@ mod tests {
     #[case::invalid_format(KeyError::InvalidFormat, "invalid_format")]
     fn key_error_display_tag(#[case] err: KeyError, #[case] expected: &str) {
         assert_eq!(format!("{err}"), expected);
+    }
+
+    /// `EmptyMaterial → InvalidFormat` is owned by this `From` impl, so
+    /// every provider (built-in or third-party using `?`) maps the
+    /// empty-material rejection to the same variant — the contract
+    /// cannot fork per call site.
+    #[test]
+    fn empty_material_converts_to_invalid_format() {
+        assert!(matches!(
+            KeyError::from(crate::internal::EmptyMaterial),
+            KeyError::InvalidFormat
+        ));
     }
 
     #[rstest]

@@ -50,9 +50,9 @@ pub(crate) use machine_id::MachineIdProvider;
 /// the built-in std providers.
 #[cfg(feature = "std")]
 pub(crate) fn derive_nonempty_material(material: &[u8]) -> Result<UnlockKey, KeyError> {
-    let material =
-        crate::internal::UnlockMaterial::new(material).map_err(|_| KeyError::InvalidFormat)?;
-    Ok(UnlockKey::derive(material))
+    Ok(UnlockKey::derive(crate::internal::UnlockMaterial::new(
+        material,
+    )?))
 }
 
 /// A source of `unlock_key` for the layered key strategy.
@@ -93,9 +93,8 @@ pub(crate) fn derive_nonempty_material(material: &[u8]) -> Result<UnlockKey, Key
 ///
 /// impl KeyProvider for VaultProvider {
 ///     fn unlock_key(&self) -> Result<UnlockKey, KeyError> {
-///         let material = UnlockMaterial::new(&self.0)
-///             .map_err(|_| KeyError::InvalidFormat)?;
-///         Ok(UnlockKey::derive(material))
+///         // Empty material surfaces as KeyError::InvalidFormat via `?`.
+///         Ok(UnlockKey::derive(UnlockMaterial::new(&self.0)?))
 ///     }
 /// }
 /// ```
