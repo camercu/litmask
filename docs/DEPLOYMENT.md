@@ -85,12 +85,15 @@ permissions so only the application user can read it (`chmod 400`).
 ### Machine tier (`init!(bind_to_machine)`)
 
 The Machine tier seals the build's `unlock_key` to a host's machine ID at
-**build** time. Set `LITMASK_MACHINE_ID` to the target host's id (the CLI
-prints it) and build with the `machine-id` feature:
+**build** time. Enable the `machine-id` feature on the `litmask`
+dependency (`cargo add litmask --features machine-id` — it is litmask's
+feature, so `cargo build --features machine-id` alone would be rejected),
+then set `LITMASK_MACHINE_ID` to the target host's id (the CLI prints it)
+and build:
 
 ```sh
 LITMASK_MACHINE_ID="$(litmask show-machine-id)" \
-    cargo build --release --features machine-id
+    cargo build --release
 ```
 
 ```rust
@@ -114,7 +117,7 @@ fails the wrapper's AEAD check:
 ```sh
 LITMASK_MACHINE_ID="$(litmask show-machine-id)" \
 LITMASK_UNLOCK_KEY="$(litmask keygen)" \
-    cargo build --release --features machine-id
+    cargo build --release
 ```
 
 ```rust
@@ -218,12 +221,14 @@ dependency fingerprint is in your threat model; the stable
 ## Machine-tier deployment workflow
 
 The Machine tier is sealed at **build** time, so the per-host targeting
-happens in the build, not on the deployment host. The binary then runs on
-its sealed host with no config, key file, or CLI present:
+happens in the build, not on the deployment host (the `machine-id`
+feature enabled on the `litmask` dependency — see
+[Machine tier](#machine-tier-initbind_to_machine)). The binary then runs
+on its sealed host with no config, key file, or CLI present:
 
 ```sh
 LITMASK_MACHINE_ID="$(litmask show-machine-id)" \
-    cargo build --release --features machine-id
+    cargo build --release
 
 scp target/release/my_app deploy@host:/opt/my_app/
 ssh deploy@host '/opt/my_app/my_app'   # decrypts; no extra material
@@ -257,7 +262,7 @@ machine ID the target reports:
 
    ```sh
    LITMASK_MACHINE_ID="FB1128DE-C00C-5643-BCF4-5487AFA3245A.sE1d6WI" \
-       cargo build --release --features machine-id
+       cargo build --release
    ```
 
 ## Sysexits.h exit code reference

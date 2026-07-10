@@ -281,15 +281,17 @@ See [THREAT_MODEL.md](docs/THREAT_MODEL.md) for the per-macro coverage.
 
 ## Machine-ID binding
 
-The `machine-id` feature seals the build's `unlock_key` to a host's
-machine ID, so the binary decrypts only on the machine it was built for.
-The factor is supplied at **build** time via `LITMASK_MACHINE_ID` and
-re-sourced at **run** time by `init!(bind_to_machine)`, which recomputes the
-host ID locally — no env var or key file to deliver at runtime:
+The `machine-id` feature — enabled on the `litmask` dependency
+(`cargo add litmask --features machine-id`) — seals the build's
+`unlock_key` to a host's machine ID, so the binary decrypts only on the
+machine it was built for. The factor is supplied at **build** time via
+`LITMASK_MACHINE_ID` and re-sourced at **run** time by
+`init!(bind_to_machine)`, which recomputes the host ID locally — no env
+var or key file to deliver at runtime:
 
 ```sh
 LITMASK_MACHINE_ID="$(litmask show-machine-id)" \
-    cargo build --release --features machine-id
+    cargo build --release
 
 ./target/release/my_app   # decrypts only on this host
 ```
