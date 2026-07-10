@@ -168,25 +168,21 @@ mod tests {
     use super::*;
     use syn::parse_quote;
 
-    fn ty(t: syn::Type) -> syn::Type {
-        t
-    }
-
     #[test]
     fn is_str_only_matches_the_bare_str_path() {
-        assert!(is_str(&ty(parse_quote!(str))));
+        assert!(is_str(&parse_quote!(str)));
         // A single-segment `str` ident only — `String` and any qualified
         // path are not the borrow-eligible `str`.
-        assert!(!is_str(&ty(parse_quote!(String))));
-        assert!(!is_str(&ty(parse_quote!(std::primitive::str))));
+        assert!(!is_str(&parse_quote!(String)));
+        assert!(!is_str(&parse_quote!(std::primitive::str)));
     }
 
     #[test]
     fn is_slice_u8_matches_only_the_u8_slice() {
-        assert!(is_slice_u8(&ty(parse_quote!([u8]))));
-        assert!(!is_slice_u8(&ty(parse_quote!([u16]))));
+        assert!(is_slice_u8(&parse_quote!([u8])));
+        assert!(!is_slice_u8(&parse_quote!([u16])));
         // A non-slice type must fall through the `_ => false` arm.
-        assert!(!is_slice_u8(&ty(parse_quote!(str))));
+        assert!(!is_slice_u8(&parse_quote!(str)));
     }
 
     #[test]
@@ -197,30 +193,30 @@ mod tests {
         assert_eq!(quote!(#inner).to_string(), "i32");
 
         // Not an `Option` ident → no unwrap.
-        assert!(option_inner(&ty(parse_quote!(Vec<i32>))).is_none());
+        assert!(option_inner(&parse_quote!(Vec<i32>)).is_none());
         // Serde's rule is syntactic and un-qualified: a multi-segment
         // `std::option::Option<T>` is deliberately not recognised.
-        assert!(option_inner(&ty(parse_quote!(std::option::Option<i32>))).is_none());
+        assert!(option_inner(&parse_quote!(std::option::Option<i32>)).is_none());
         // A bare `Option` with no angle-bracketed args is not `Option<T>`.
-        assert!(option_inner(&ty(parse_quote!(Option))).is_none());
+        assert!(option_inner(&parse_quote!(Option)).is_none());
         // An inherent-qualified `<Foo>::Option<i32>` keeps a single
         // `Option<i32>` path segment but carries a qself, so it is not the
         // plain `Option<T>` serde borrows through — the `qself.is_some()`
         // guard (not the segment-count guard) is what must reject it.
-        assert!(option_inner(&ty(parse_quote!(<Foo>::Option<i32>))).is_none());
+        assert!(option_inner(&parse_quote!(<Foo>::Option<i32>)).is_none());
     }
 
     #[test]
     fn implicitly_borrowed_reference_matches_serde_borrow_shapes() {
         // The `is_str || is_slice_u8` disjunction: `&str` borrows via the
         // str arm even though it is not a `&[u8]`.
-        assert!(implicitly_borrowed_reference(&ty(parse_quote!(&str))).is_some());
-        assert!(implicitly_borrowed_reference(&ty(parse_quote!(&[u8]))).is_some());
+        assert!(implicitly_borrowed_reference(&parse_quote!(&str)).is_some());
+        assert!(implicitly_borrowed_reference(&parse_quote!(&[u8])).is_some());
         // `Option`-wrapped, one level of recursion.
-        assert!(implicitly_borrowed_reference(&ty(parse_quote!(Option<&str>))).is_some());
+        assert!(implicitly_borrowed_reference(&parse_quote!(Option<&str>)).is_some());
         // A reference to anything else does not implicitly borrow.
-        assert!(implicitly_borrowed_reference(&ty(parse_quote!(&i32))).is_none());
-        assert!(implicitly_borrowed_reference(&ty(parse_quote!(i32))).is_none());
+        assert!(implicitly_borrowed_reference(&parse_quote!(&i32)).is_none());
+        assert!(implicitly_borrowed_reference(&parse_quote!(i32)).is_none());
     }
 
     #[test]
