@@ -207,6 +207,77 @@ alias cov-lcov := coverage-lcov
 mutants *flags:
     cargo mutants --test-tool nextest --all-features {{flags}}
 
+# Fail-closed integrity check for `.cargo/mutants.toml`: the mutation
+# lane's filters must never be able to rot silently (an over-broad
+# `exclude_re` once matched EVERY mutant via an unescaped `||`, so runs
+# reported clean having tested nothing). All checks are relative /
+# structural — no committed absolute counts — so ordinary refactoring
+# (files shrinking, spawning, renaming) never trips them:
+#   1. Every workspace crate still yields >=1 discovered mutant
+#      (catches a catastrophic `exclude_globs`).
+#   2. Each `exclude_re` entry matches 1..=8 mutants of the unfiltered
+#      list: 0 = stale (function renamed/removed — delete the entry),
+#      >8 = over-broad (eating a subsystem, the `||` class).
+# Runs automatically before `mutants-diff`; run manually after any
+# config edit. Baseline vitality needs no check here: nextest exits
+# nonzero when zero tests run, which fails cargo-mutants' baseline.
+mutants-verify:
+    #!/usr/bin/env python3
+    import json, re, subprocess, sys, tomllib
+
+    def run(*args):
+        p = subprocess.run(args, capture_output=True, text=True)
+        if p.returncode != 0:
+            sys.exit(f"mutants-verify: `{' '.join(args)}` failed:\n{p.stderr}")
+        return p.stdout
+
+    def mutant_list(*flags):
+        out = run("cargo", "mutants", "--list", *flags)
+        return [line for line in out.splitlines() if line.strip()]
+
+    failures = []
+
+    # 1. Per-crate discovery (workspace members from cargo metadata, so a
+    #    new crate is covered without touching this recipe).
+    meta = json.loads(run("cargo", "metadata", "--no-deps", "--format-version", "1"))
+    crate_dirs = {
+        pkg["name"]: pkg["manifest_path"].removesuffix("/Cargo.toml").split("/")[-1]
+        for pkg in meta["packages"]
+    }
+    filtered = mutant_list()
+    for name, dir_ in sorted(crate_dirs.items()):
+        if not any(line.startswith(f"{dir_}/") for line in filtered):
+            failures.append(
+                f"crate `{name}` yields no mutants under the config — "
+                "an exclude_glob is eating it"
+            )
+
+    # 2. Per-entry exclude_re bounds, matched against the unfiltered list.
+    #    (Python `re` stands in for cargo-mutants' Rust regex engine; the
+    #    entries use only the shared subset: literals, escapes, (?:...).)
+    config = tomllib.load(open(".cargo/mutants.toml", "rb"))
+    unfiltered = mutant_list("--no-config")
+    for entry in config.get("exclude_re", []):
+        n = sum(1 for line in unfiltered if re.search(entry, line))
+        if n == 0:
+            failures.append(
+                f"exclude_re {entry!r} matches nothing — stale after a "
+                "rename/removal; delete or update it"
+            )
+        elif n > 8:
+            failures.append(
+                f"exclude_re {entry!r} matches {n} mutants — over-broad "
+                "(each entry should suppress one specific equivalent)"
+            )
+
+    if failures:
+        sys.exit("mutants-verify FAILED:\n  - " + "\n  - ".join(failures))
+    print(
+        f"mutants-verify OK: {len(filtered)} mutants discovered across "
+        f"{len(crate_dirs)} crates; {len(config.get('exclude_re', []))} "
+        "exclusions all within bounds"
+    )
+
 # Diff-scoped mutation: mutate only the lines changed vs a base ref
 # (default: the merge-base with `origin/main`), so new or changed code
 # gets an efficacy check without a whole-crate run. The sustainable
@@ -222,7 +293,7 @@ mutants *flags:
 # per-mutant workspace-rebuild cost bounded to the handful of changed
 # lines, so the correct definition stays tractable here even though it is
 # impractical for a whole-crate run.
-mutants-diff base="origin/main":
+mutants-diff base="origin/main": mutants-verify
     #!/usr/bin/env bash
     set -euo pipefail
     diff="$(mktemp)"

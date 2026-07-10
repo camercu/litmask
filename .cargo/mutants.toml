@@ -25,9 +25,18 @@
 # cannot change observable behaviour, so no test can kill it (e.g.
 # `x % 8` -> `x + 8` where a following `u8::rotate_left` already reduces
 # mod 8). Triage each ONCE: a real gap gets a test; a provably-equivalent
-# mutant is recorded in `exclude_re` below with its reason (or annotated
-# `#[mutants::skip]` at the source). After triage every remaining survivor
-# is a real, actionable gap — that is what earns the lane trust.
+# mutant is recorded in `exclude_re` below with its reason. After triage
+# every remaining survivor is a real, actionable gap — that is what earns
+# the lane trust.
+#
+# `exclude_re` over `#[mutants::skip]`, deliberately: the attribute must
+# resolve at compile time, which would add the `mutants` proc-macro crate
+# as a dependency of the published crates — not worth it for a
+# security-focused, dependency-minimal workspace. The cost is that these
+# regexes can rot (go stale after a rename, or over-match — an unescaped
+# `||` once matched EVERY mutant and silently disabled the whole suite);
+# `just mutants-verify` bounds each entry to 1..=8 matches and runs
+# before every `mutants-diff`, so that class of rot fails loudly.
 
 # Build the test targets only — never examples. `--tests` is a cargo
 # *target selector* (it precedes `--`), so unlike test-harness filters it

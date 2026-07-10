@@ -165,13 +165,15 @@ jobs:
   mutants-diff:
     # Diff-scoped mutation testing: mutates only the lines a PR changes
     # and checks the suite still goes red, catching new tests too weak to
-    # notice a bug (an efficacy gap coverage can't see). Advisory
-    # (continue-on-error): mutation can surface equivalent mutants that
-    # aren't real gaps. PR-only — needs a base ref to diff against.
+    # notice a bug (an efficacy gap coverage can't see). Split trust
+    # levels: harness *health* (`mutants-verify` — the config hasn't
+    # rotted into excluding everything) is a required step, while
+    # *survivors* are advisory (step-level continue-on-error) because
+    # mutation can surface equivalent mutants that aren't real gaps. A
+    # dead harness must never look green. PR-only — needs a base ref.
     name: Mutation (diff)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
         with:
@@ -196,7 +198,13 @@ jobs:
         with:
           tool: just@${{ steps.tools.outputs.just }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},cargo-mutants@${{ steps.tools.outputs.cargo_mutants }}
 
+      # Required: config integrity (fail-closed guard).
+      - name: just mutants-verify
+        run: just mutants-verify
+
+      # Advisory: surviving mutants on the changed lines.
       - name: just mutants-diff
+        continue-on-error: true
         run: just mutants-diff "origin/${{ github.base_ref }}"
 
   fuzz:
