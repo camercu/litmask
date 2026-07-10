@@ -93,6 +93,16 @@ consumers — verify with `just ci` (not just the crate's own tests).
   claims executable, cite evidence in decisions, no self-describing-lie
   surfaces (see "Documentation principles" below). When prose and code
   disagree, the code wins.
+- `litmask-macros`: functional core / imperative shell. `expand()` = thin
+  shell (parse → pure core decides as data → emit tokens / env / spans).
+  Unit-test cores in-crate; trybuild/scrub/e2e own compile + binary +
+  runtime proofs. Exemplars: `init::check_tier`,
+  `mask_env::env_error_tokens`, `mask_all/skip.rs` (deferred span).
+- Mutation testing: `docs/MUTATION.md`. Never trust freshly written
+  filter/exclusion/scope config — `just mutants-verify` + one known-kill
+  positive control after every change. Small-before-big for long runs.
+- Lint gate: `just lint` (not only fmt) before committing Rust — the
+  pre-commit hook checks fmt/typos/cargo-check, not clippy.
 
 ## Common tasks
 
