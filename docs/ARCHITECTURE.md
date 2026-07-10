@@ -97,6 +97,7 @@ stored.
 | `docs/THREAT_MODEL.md` | what litmask does and does **not** protect against |
 | `docs/MIGRATION.md` | migrating from `obfstr` / `litcrypt` |
 | `docs/SECURITY_AUDIT.md` | dependency and security review |
+| `docs/MUTATION.md` | mutation-testing workflow: scoping, fail-closed guard, positive controls |
 | `docs/adr/` | load-bearing architectural decisions |
 | `CLAUDE.md` / `AGENTS.md` | contributor & agent working agreement |
 
