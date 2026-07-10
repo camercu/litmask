@@ -82,15 +82,15 @@ mod tests {
     use super::*;
     use syn::parse_quote;
 
-    fn err_text(err: VarError, custom: Option<&LitStr>) -> String {
+    fn err_text(err: &VarError, custom: Option<&LitStr>) -> String {
         let name: LitStr = parse_quote!("MY_VAR");
-        env_error_tokens(&err, &name, custom).to_string()
+        env_error_tokens(err, &name, custom).to_string()
     }
 
     #[test]
     fn unset_with_custom_message_emits_it_verbatim() {
         let custom: LitStr = parse_quote!("please set MY_VAR");
-        let text = err_text(VarError::NotPresent, Some(&custom));
+        let text = err_text(&VarError::NotPresent, Some(&custom));
         assert!(
             text.contains("please set MY_VAR"),
             "user message verbatim: {text}"
@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn unset_without_custom_message_uses_the_formatted_diagnostic() {
-        let text = err_text(VarError::NotPresent, None);
+        let text = err_text(&VarError::NotPresent, None);
         assert!(
             text.contains("mask_env"),
             "falls back to the §1.9.6 format: {text}"
@@ -116,7 +116,7 @@ mod tests {
         // The custom message only applies to the unset case; a non-UTF-8
         // value is a different failure and keeps the §1.9.6 format.
         let custom: LitStr = parse_quote!("please set MY_VAR");
-        let text = err_text(VarError::NotUnicode("x".into()), Some(&custom));
+        let text = err_text(&VarError::NotUnicode("x".into()), Some(&custom));
         assert!(
             text.contains("mask_env"),
             "non-utf8 stays formatted: {text}"

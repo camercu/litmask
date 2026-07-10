@@ -648,7 +648,7 @@ mod tests {
     /// if the runtime derives a byte-identical key — so any drift in the
     /// rotation schedule, nonce indexing, or hash composition is BREAKING,
     /// and this vector makes it loud. Bytes are captured from the trusted
-    /// implementation (BLAKE3 keyed_hash is not hand-computable), so this
+    /// implementation (BLAKE3 `keyed_hash` is not hand-computable), so this
     /// is a regression pin, not an independent re-derivation.
     #[test]
     fn derive_weak_xor_key_golden_vector() {

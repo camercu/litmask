@@ -77,7 +77,7 @@ impl SkipRecord {
     /// literal was left unmasked. Test-only: production reads the reason
     /// through [`note`](Self::note).
     #[cfg(test)]
-    pub(super) fn reason(&self) -> SkipReason {
+    pub(super) fn reason(self) -> SkipReason {
         self.reason
     }
 
@@ -85,7 +85,7 @@ impl SkipRecord {
     /// `file:line` here (not at record time): the path is canonicalized
     /// against `CARGO_MANIFEST_DIR` (via the cached [`manifest_dir`]) so
     /// absolute build-host paths don't leak into the diagnostic text.
-    fn note(&self) -> String {
+    fn note(self) -> String {
         let pm_span = self.span.unwrap();
         let file = canonicalize_file_path(pm_span.file(), manifest_dir());
         format!(

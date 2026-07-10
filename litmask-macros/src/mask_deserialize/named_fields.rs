@@ -420,8 +420,8 @@ mod tests {
     /// Resolved deserialize names for the fields read from the wire, in
     /// declaration order — the composition of `named_field_infos` (attr
     /// parsing) and `de_names_of` (the skip filter).
-    fn de_names(fields: syn::FieldsNamed, parent: Option<RenameRule>) -> Vec<String> {
-        let infos = named_field_infos(&fields, parent).expect("valid fields");
+    fn de_names(fields: &syn::FieldsNamed, parent: Option<RenameRule>) -> Vec<String> {
+        let infos = named_field_infos(fields, parent).expect("valid fields");
         de_names_of(&infos)
             .into_iter()
             .map(|(_, name)| name)
@@ -439,14 +439,14 @@ mod tests {
         });
         // `gone` is filled from Default, so it is absent from the wire
         // identifier set; a field-level rename overrides the ident.
-        assert_eq!(de_names(fields, None), vec!["kept", "renamed"]);
+        assert_eq!(de_names(&fields, None), vec!["kept", "renamed"]);
     }
 
     #[test]
     fn de_names_apply_container_rename_all_absent_a_field_rename() {
         let fields: syn::FieldsNamed = parse_quote!({ first: u8, second: u8 });
         assert_eq!(
-            de_names(fields, Some(RenameRule::Upper)),
+            de_names(&fields, Some(RenameRule::Upper)),
             vec!["FIRST", "SECOND"]
         );
     }

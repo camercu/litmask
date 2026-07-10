@@ -397,7 +397,7 @@ mod tests {
     /// rendering a `SkipRecord` resolves spans through `proc_macro::Span`,
     /// which panics outside a real proc-macro invocation. The rewrite
     /// (mask-vs-skip) is what the walker's depth counters govern.
-    fn process(body: proc_macro2::TokenStream, strict: bool) -> String {
+    fn process(body: &proc_macro2::TokenStream, strict: bool) -> String {
         let module: syn::ItemMod = syn::parse2(quote!(mod m { #body })).expect("parse module");
         let (_, mut items) = module.content.expect("inline module has content");
         let mut walker = MaskAllWalker {
@@ -415,18 +415,14 @@ mod tests {
     /// is resolved to file/line only at diagnostic-render time), so this
     /// never touches `proc_macro::Span` and stays panic-free in a unit
     /// test — the seam that makes the skip-context classification testable.
-    fn skip_reasons(body: proc_macro2::TokenStream) -> Vec<skip::SkipReason> {
+    fn skip_reasons(body: &proc_macro2::TokenStream) -> Vec<skip::SkipReason> {
         let module: syn::ItemMod = syn::parse2(quote!(mod m { #body })).expect("parse module");
         let (_, mut items) = module.content.expect("inline module has content");
         let mut walker = MaskAllWalker::default();
         for item in &mut items {
             walker.visit_item_mut(item);
         }
-        walker
-            .skipped
-            .iter()
-            .map(skip::SkipRecord::reason)
-            .collect()
+        walker.skipped.iter().map(|r| r.reason()).collect()
     }
 
     #[test]
@@ -441,7 +437,7 @@ mod tests {
 
     #[test]
     fn masks_expression_literals_outside_skip_contexts() {
-        let out = process(quote! { fn f() { let _ = "plain"; } }, false);
+        let out = process(&quote! { fn f() { let _ = "plain"; } }, false);
         assert!(
             out.contains(r#"mask ! ("plain")"#),
             "plain literal masked: {out}"
@@ -459,7 +455,7 @@ mod tests {
         // a skip (panicking) instead of masked — either way this fails on
         // the mutant and passes on the real walker.
         let out = process(
-            quote! {
+            &quote! {
                 const C: u8 = 5;
                 static S: u8 = 6;
                 fn f() { let _ = "after"; }
@@ -480,11 +476,11 @@ mod tests {
         // makes the (unsigned) depth check unsatisfiable, so the reason
         // flips to `None` and the literal is masked instead of recorded.
         assert_eq!(
-            skip_reasons(quote! { const C: &str = "c"; }),
+            skip_reasons(&quote! { const C: &str = "c"; }),
             vec![skip::SkipReason::ConstInitializer],
         );
         assert_eq!(
-            skip_reasons(quote! { static S: &str = "s"; }),
+            skip_reasons(&quote! { static S: &str = "s"; }),
             vec![skip::SkipReason::StaticInitializer],
         );
     }
@@ -495,7 +491,7 @@ mod tests {
         // `visit_pat_mut` (not the expression path) with `PatternPosition`.
         // Stubbing that visitor to `()` drops the record entirely.
         assert_eq!(
-            skip_reasons(quote! { fn f(x: &str) { match x { "p" => {} _ => {} } } }),
+            skip_reasons(&quote! { fn f(x: &str) { match x { "p" => {} _ => {} } } }),
             vec![skip::SkipReason::PatternPosition],
         );
     }
@@ -506,7 +502,7 @@ mod tests {
         // masked `mask_format!` form. `in_warnable_context` gates this, so
         // a `-> false` / `&& -> ||` / `== -> !=` mutant that misreports the
         // context leaves the macro (and its literal) un-rewritten.
-        let out = process(quote! { fn f() { println!("hi {}", 1); } }, false);
+        let out = process(&quote! { fn f() { println!("hi {}", 1); } }, false);
         // The Output family wraps the call, masking the template into a
         // `mask_format!` binding: its presence proves the rewrite fired.
         assert!(
@@ -521,7 +517,7 @@ mod tests {
         // `in_warnable_context` is false there (const_depth > 0). A
         // `-> true` or `&& -> ||` mutant would misreport the context and
         // rewrite the macro, so `mask_format` would appear.
-        let out = process(quote! { const C: () = { println!("x"); }; }, false);
+        let out = process(&quote! { const C: () = { println!("x"); }; }, false);
         assert!(
             !out.contains("mask_format"),
             "macro in const context is left alone: {out}"
@@ -533,12 +529,12 @@ mod tests {
         // visit_item_mut swaps `#[derive(Debug)]` for `MaskDebug` on both
         // structs and enums; deleting either match arm leaves the plain
         // derive, so the masking derive path is absent from the output.
-        let struct_out = process(quote! { #[derive(Debug)] struct S { secret: u8 } }, false);
+        let struct_out = process(&quote! { #[derive(Debug)] struct S { secret: u8 } }, false);
         assert!(
             struct_out.contains("MaskDebug"),
             "struct derive swapped: {struct_out}"
         );
-        let enum_out = process(quote! { #[derive(Debug)] enum E { V(u8) } }, false);
+        let enum_out = process(&quote! { #[derive(Debug)] enum E { V(u8) } }, false);
         assert!(
             enum_out.contains("MaskDebug"),
             "enum derive swapped: {enum_out}"
@@ -553,7 +549,7 @@ mod tests {
         // unbalanced `-=` -> `+=` unbump leaks the skip context so "after"
         // is left bare. Either way this fails on the mutant.
         let out = process(
-            quote! {
+            &quote! {
                 fn f() {
                     let _ = mask!("a");
                     let _ = "after";
@@ -572,7 +568,10 @@ mod tests {
         // A literal inside a nested inline `mod` is masked: `visit_item_mod_mut`
         // must recurse via its own sub-walker. Stubbing it to `()` leaves
         // the nested literal bare.
-        let out = process(quote! { mod inner { fn f() { let _ = "nested"; } } }, false);
+        let out = process(
+            &quote! { mod inner { fn f() { let _ = "nested"; } } },
+            false,
+        );
         assert!(
             out.contains(r#"mask ! ("nested")"#),
             "nested-module literal masked: {out}"
