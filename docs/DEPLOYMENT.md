@@ -135,14 +135,16 @@ Implement `KeyProvider` for any key source (vault, HSM, network
 service):
 
 ```rust
-use litmask::{KeyProvider, UnlockKey, KeyError};
+use litmask::{KeyProvider, UnlockKey, UnlockMaterial, KeyError};
 
 struct VaultProvider { /* ... */ }
 
 impl KeyProvider for VaultProvider {
     fn unlock_key(&self) -> Result<UnlockKey, KeyError> {
-        // fetch 32 raw bytes from your vault
-        todo!()
+        let bytes: Vec<u8> = todo!("fetch the sealed material from your vault");
+        // Any non-empty bytes are valid material; empty surfaces as
+        // KeyError::InvalidFormat via `?`.
+        Ok(UnlockKey::derive(UnlockMaterial::new(&bytes)?))
     }
 }
 ```
