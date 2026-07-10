@@ -25,13 +25,13 @@ aes-gcm = ["dep:aes-gcm"]
 test-util = []
 
 [dependencies]
-aes-gcm = { version = "0.10", default-features = false, features = [
+aes-gcm = { version = "0.11", default-features = false, features = [
   "alloc",
   "aes",
 ], optional = true }
 base64ct = { version = "1", features = ["alloc"] }
 blake3 = { version = "1", default-features = false, features = ["pure"] }
-chacha20poly1305 = { version = "0.10", default-features = false, features = [
+chacha20poly1305 = { version = "0.11", default-features = false, features = [
   "alloc",
 ], optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc"] }
