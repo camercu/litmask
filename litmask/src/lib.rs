@@ -219,9 +219,10 @@ pub use error::{InitError, KeyError};
 pub use key::UnlockKey;
 
 pub use litmask_internal::KEY_LEN;
-// A custom `KeyProvider` constructs `UnlockMaterial` from its sourced
-// bytes before calling `UnlockKey::derive`, so both the type and its
-// empty-rejection error are part of the public surface.
+/// A custom [`KeyProvider`] constructs [`UnlockMaterial`] from its
+/// sourced bytes before calling [`UnlockKey::derive`], so both the type
+/// and its empty-rejection error ([`EmptyMaterial`]) are part of the
+/// public surface — see the vault-style example on [`KeyProvider`].
 pub use litmask_internal::{EmptyMaterial, UnlockMaterial};
 pub(crate) use provider::EmbeddedProvider;
 pub use provider::KeyProvider;

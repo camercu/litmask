@@ -63,8 +63,11 @@ pub(crate) fn derive_nonempty_material(material: &[u8]) -> Result<UnlockKey, Key
 ///
 /// # Examples
 ///
+/// A provider whose source hands it a base64url-encoded 32-byte key
+/// parses it with [`UnlockKey::from_base64url`]:
+///
 /// ```
-/// use litmask::{KeyProvider, UnlockKey, KeyError, KEY_LEN};
+/// use litmask::{KeyProvider, UnlockKey, KeyError};
 ///
 /// struct FixedProvider;
 ///
@@ -73,6 +76,26 @@ pub(crate) fn derive_nonempty_material(material: &[u8]) -> Result<UnlockKey, Key
 ///         UnlockKey::from_base64url(
 ///             "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 ///         )
+///     }
+/// }
+/// ```
+///
+/// A provider that sources raw material of arbitrary length (a vault
+/// blob, a passphrase) instead derives the key through the validated
+/// [`UnlockMaterial`](crate::UnlockMaterial) edge — the same KDF the
+/// build seals with, so material equal to the sealed
+/// `LITMASK_UNLOCK_KEY` unlocks the binary:
+///
+/// ```
+/// use litmask::{KeyProvider, UnlockKey, UnlockMaterial, KeyError};
+///
+/// struct VaultProvider(Vec<u8>);
+///
+/// impl KeyProvider for VaultProvider {
+///     fn unlock_key(&self) -> Result<UnlockKey, KeyError> {
+///         let material = UnlockMaterial::new(&self.0)
+///             .map_err(|_| KeyError::InvalidFormat)?;
+///         Ok(UnlockKey::derive(material))
 ///     }
 /// }
 /// ```
