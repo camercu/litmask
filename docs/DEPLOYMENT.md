@@ -137,14 +137,13 @@ service):
 ```rust
 use litmask::{KeyProvider, UnlockKey, UnlockMaterial, KeyError};
 
-struct VaultProvider { /* ... */ }
+/// Holds the sealed material fetched from your vault — any non-empty
+/// bytes; empty surfaces as `KeyError::InvalidFormat` via `?`.
+struct VaultProvider(Vec<u8>);
 
 impl KeyProvider for VaultProvider {
     fn unlock_key(&self) -> Result<UnlockKey, KeyError> {
-        let bytes: Vec<u8> = todo!("fetch the sealed material from your vault");
-        // Any non-empty bytes are valid material; empty surfaces as
-        // KeyError::InvalidFormat via `?`.
-        Ok(UnlockKey::derive(UnlockMaterial::new(&bytes)?))
+        Ok(UnlockKey::derive(UnlockMaterial::new(&self.0)?))
     }
 }
 ```
