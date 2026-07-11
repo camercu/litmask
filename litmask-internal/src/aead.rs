@@ -26,12 +26,18 @@ use crate::{CipherId, KEY_LEN, NONCE_LEN, TAG_LEN};
 //  aes-gcm only             → traits from aes-gcm,          Aes256Gcm cipher
 //  both features active     → traits from chacha20poly1305, both ciphers
 //
-// `Aead`, `KeyInit`, and `GenericArray` are re-exported identically by
-// both backend crates; importing from either path is sufficient.
+// The AEAD traits are re-exported identically by both backend crates;
+// importing from either path is sufficient. Keys, nonces, and tags cross
+// the trait boundary as `&hybrid_array::Array`, which fixed-size `&[u8; N]`
+// converts into infallibly via `From` (`aead` 0.6 dropped the old
+// `generic_array::GenericArray`; its `Array::from_slice` is deprecated, so
+// the `.into()` conversions below are load-bearing, not stylistic).
+// `AeadInOut` supplies the in-place `decrypt_inout_detached` that replaced
+// `AeadInPlace::decrypt_in_place_detached`.
 #[cfg(all(feature = "aes-gcm", not(feature = "chacha20-poly1305")))]
-use aes_gcm::aead::{Aead, AeadInPlace, generic_array::GenericArray};
+use aes_gcm::aead::{Aead, AeadInOut};
 #[cfg(feature = "chacha20-poly1305")]
-use chacha20poly1305::aead::{Aead, AeadInPlace, generic_array::GenericArray};
+use chacha20poly1305::aead::{Aead, AeadInOut};
 
 #[cfg(feature = "aes-gcm")]
 use aes_gcm::Aes256Gcm;
@@ -85,12 +91,12 @@ macro_rules! with_cipher {
         match $cipher_id {
             #[cfg(feature = "chacha20-poly1305")]
             CipherId::ChaCha20Poly1305 => {
-                let $cipher = ChaCha20Poly1305::new(GenericArray::from_slice($key));
+                let $cipher = ChaCha20Poly1305::new($key.into());
                 $op.map_err(|_| AeadError::AuthenticationFailed)
             }
             #[cfg(feature = "aes-gcm")]
             CipherId::Aes256Gcm => {
-                let $cipher = Aes256Gcm::new(GenericArray::from_slice($key));
+                let $cipher = Aes256Gcm::new($key.into());
                 $op.map_err(|_| AeadError::AuthenticationFailed)
             }
             #[cfg(not(feature = "chacha20-poly1305"))]
@@ -123,7 +129,7 @@ pub fn aead_encrypt(
     plaintext: &[u8],
 ) -> Result<Vec<u8>, AeadError> {
     with_cipher!(cipher_id, key, |cipher| cipher
-        .encrypt(GenericArray::from_slice(nonce), plaintext))
+        .encrypt(nonce.into(), plaintext))
 }
 
 /// Decrypt `ciphertext || tag` with the AEAD cipher identified by
@@ -144,8 +150,7 @@ pub fn aead_decrypt(
     nonce: &[u8; NONCE_LEN],
     body: &[u8],
 ) -> Result<Vec<u8>, AeadError> {
-    with_cipher!(cipher_id, key, |cipher| cipher
-        .decrypt(GenericArray::from_slice(nonce), body))
+    with_cipher!(cipher_id, key, |cipher| cipher.decrypt(nonce.into(), body))
 }
 
 /// Decrypt `buffer` in place against the detached `tag`, allocating
@@ -172,10 +177,10 @@ pub fn aead_decrypt_in_place(
     buffer: &mut [u8],
     tag: &[u8; TAG_LEN],
 ) -> Result<(), AeadError> {
-    with_cipher!(cipher_id, key, |cipher| cipher.decrypt_in_place_detached(
-        GenericArray::from_slice(nonce),
+    with_cipher!(cipher_id, key, |cipher| cipher.decrypt_inout_detached(
+        nonce.into(),
         &[],
-        buffer,
-        GenericArray::from_slice(tag),
+        buffer.into(),
+        tag.into(),
     ))
 }
