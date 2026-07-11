@@ -44,7 +44,11 @@ clean: _profraw-purge
 
 # ── Linting ─────────────────────────────────────────────────
 
-lint: fmt-check lint-clippy lint-typos lint-taplo lint-markdown lint-actions lint-deny lint-machete
+# Ordered cheap→expensive for fail-fast: the sub-second static checks
+# (typos/taplo/markdown/actions/machete, then the index-backed deny) run
+# before the two-pass clippy compile, so a typo or lockfile issue fails in
+# ~1s instead of after a full workspace clippy build.
+lint: fmt-check lint-typos lint-taplo lint-markdown lint-actions lint-machete lint-deny lint-clippy
 
 lint-clippy:
     {{cargo}} clippy --all-targets --workspace -- {{warnings}}
