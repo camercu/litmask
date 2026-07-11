@@ -31,6 +31,7 @@ pkgs.mkShell {
     just
     pre-commit
     cargo-deny
+    cargo-machete
     cargo-mutants
     cargo-nextest
     typos

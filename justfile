@@ -44,7 +44,7 @@ clean: _profraw-purge
 
 # ── Linting ─────────────────────────────────────────────────
 
-lint: fmt-check lint-clippy lint-typos lint-taplo lint-markdown lint-actions lint-deny
+lint: fmt-check lint-clippy lint-typos lint-taplo lint-markdown lint-actions lint-deny lint-machete
 
 lint-clippy:
     {{cargo}} clippy --all-targets --workspace -- {{warnings}}
@@ -85,6 +85,13 @@ lint-actions:
 
 lint-deny:
     cargo deny check advisories licenses bans sources
+
+# Flags dependencies declared in a Cargo.toml but never used in that
+# crate's source (e.g. a `blake3` that survived a refactor). Static,
+# so it needs no compile; complements `lint-deny` (which checks bans /
+# licenses / advisories, not unused deps).
+lint-machete:
+    cargo-machete
 
 # ── Testing ─────────────────────────────────────────────────
 
@@ -434,6 +441,7 @@ check-tool-versions:
             rust)          actual=$(rustc --version | awk '{print $2}') ;;
             just)          actual=$(just --version | awk '{print $2}') ;;
             cargo-deny)    actual=$(cargo-deny --version | awk '{print $2}') ;;
+            cargo-machete) actual=$(cargo-machete --version | awk '{print $1}') ;;
             cargo-nextest) actual=$(cargo nextest --version | head -1 | awk '{print $2}') ;;
             typos-cli)     actual=$(typos --version | awk '{print $2}') ;;
             taplo-cli)     actual=$(taplo --version | awk '{print $2}') ;;
