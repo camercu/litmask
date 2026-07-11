@@ -31,3 +31,5 @@ ignores:
   # Local Claude Code config and installed skills — agent tooling, not
   # project docs, and often third-party Markdown that won't conform.
   - .claude
+  # Transient harden-run working state (git-ignored), not project docs.
+  - .harden
