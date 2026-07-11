@@ -1107,7 +1107,8 @@ proc-macro SHALL include both:
 
 | Tag | Situation |
 |---|---|
-| `non-literal` | Argument required to be a string literal was not one. Covers `mask!`'s non-literal input, `mask_format!`'s non-literal template, `mask_include_str!` / `mask_include_bytes!` non-literal path, `mask_env!` / `mask_option_env!` non-literal name. |
+| `non-literal` | An argument _was supplied_ but is not the required string literal. Covers `mask!`'s non-literal input, `mask_format!`'s non-literal template, `mask_include_str!` / `mask_include_bytes!` non-literal path, `mask_env!` / `mask_option_env!` non-literal name. Distinct from `missing-arg`: something is there, of the wrong kind. |
+| `missing-arg` | A required string-literal argument is _absent_ — an empty invocation (`mask!()`, `mask_env!()`, `mask_format!()`, …). Distinct from `non-literal` because the fix differs: supply the argument, rather than change an existing one's kind. (`mask_concat!()` is exempt — zero arguments is a legal empty concatenation, mirroring stdlib `concat!()`.) |
 | `read-failure` | Path-taking macro (`mask_include_str!`, `mask_include_bytes!`) could not read the referenced file. |
 | `unset` | `mask_env!` was given a name that resolves to no environment variable. (`mask_option_env!`'s unset case is a runtime `None`, not a compile error.) |
 | `unicode-failure` | Environment-variable value is set but not valid UTF-8. |

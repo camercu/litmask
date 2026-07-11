@@ -1,0 +1,7 @@
+error: mask_include_str! missing-arg: requires a string literal path
+ --> tests/compile/mask_include_str_missing_arg.rs:7:13
+  |
+7 |     let _ = mask_include_str!();
+  |             ^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `mask_include_str` (in Nightly builds, run with -Z macro-backtrace for more info)

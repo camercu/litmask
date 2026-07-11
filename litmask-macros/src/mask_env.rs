@@ -27,6 +27,15 @@ impl Parse for MaskEnvInput {
         let non_literal = |span: proc_macro2::Span| {
             compile_error(span, MACRO_NAME, FailTag::NonLiteral, NON_LITERAL_DETAIL)
         };
+        // Nothing supplied is missing-arg, not non-literal (§1.9.6).
+        if input.is_empty() {
+            return Err(compile_error(
+                input.span(),
+                MACRO_NAME,
+                FailTag::MissingArg,
+                NON_LITERAL_DETAIL,
+            ));
+        }
         let name: LitStr = input.parse().map_err(|e| non_literal(e.span()))?;
         let custom_msg = if input.peek(Token![,]) {
             input.parse::<Token![,]>()?;

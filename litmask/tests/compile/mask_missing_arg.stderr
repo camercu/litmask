@@ -1,0 +1,7 @@
+error: mask! missing-arg: accepts string, byte string, or C string literals
+ --> tests/compile/mask_missing_arg.rs:7:13
+  |
+7 |     let _ = mask!();
+  |             ^^^^^^^
+  |
+  = note: this error originates in the macro `mask` (in Nightly builds, run with -Z macro-backtrace for more info)

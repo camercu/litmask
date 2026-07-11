@@ -1,0 +1,7 @@
+error: mask_env! missing-arg: requires a string literal name
+ --> tests/compile/mask_env_missing_arg.rs:6:21
+  |
+6 |     let _: String = mask_env!();
+  |                     ^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `mask_env` (in Nightly builds, run with -Z macro-backtrace for more info)

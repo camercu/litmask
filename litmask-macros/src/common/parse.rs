@@ -18,6 +18,16 @@ pub(crate) fn require_lit_str(
     macro_name: &str,
     detail: &str,
 ) -> Result<LitStr, syn::Error> {
+    // Empty input is a distinct failure from a present-but-wrong argument:
+    // the fix is to supply one, not to change its kind (§1.9.6 missing-arg).
+    if input.is_empty() {
+        return Err(compile_error(
+            proc_macro2::Span::call_site(),
+            macro_name,
+            FailTag::MissingArg,
+            detail,
+        ));
+    }
     match syn::parse::<LitStr>(input) {
         Ok(lit) => Ok(lit),
         Err(e) => Err(compile_error(
@@ -79,6 +89,16 @@ pub(crate) enum StringLiteral {
 
 impl StringLiteral {
     pub(crate) fn parse_from(input: ParseStream, macro_name: &str) -> syn::Result<Self> {
+        // Nothing supplied is missing-arg, not non-literal (§1.9.6): the two
+        // have different fixes (supply one vs. change its kind).
+        if input.is_empty() {
+            return Err(compile_error(
+                input.span(),
+                macro_name,
+                FailTag::MissingArg,
+                &non_literal_detail(macro_name, input),
+            ));
+        }
         if input.peek(LitStr) {
             return input.parse().map(Self::Str);
         }

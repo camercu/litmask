@@ -61,6 +61,15 @@ struct MaskFormatInput {
 
 impl Parse for MaskFormatInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        // Nothing supplied is missing-arg, not non-literal (§1.9.6).
+        if input.is_empty() {
+            return Err(compile_error(
+                input.span(),
+                MACRO_NAME,
+                FailTag::MissingArg,
+                NON_LITERAL_DETAIL,
+            ));
+        }
         if !input.peek(LitStr) {
             return Err(compile_error(
                 input.span(),

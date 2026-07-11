@@ -8,6 +8,7 @@
 #[derive(Clone, Copy)]
 pub(crate) enum FailTag {
     NonLiteral,
+    MissingArg,
     ReadFailure,
     Unset,
     UnicodeFailure,
@@ -28,6 +29,7 @@ impl FailTag {
     fn slug(self) -> &'static str {
         match self {
             Self::NonLiteral => "non-literal",
+            Self::MissingArg => "missing-arg",
             Self::ReadFailure => "read-failure",
             Self::Unset => "unset",
             Self::UnicodeFailure => "unicode-failure",
