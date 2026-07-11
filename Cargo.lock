@@ -590,7 +590,6 @@ dependencies = [
 name = "litmask-macros"
 version = "0.20.0"
 dependencies = [
- "blake3",
  "litmask-internal",
  "proc-macro2",
  "quote",
