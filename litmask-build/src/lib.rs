@@ -221,6 +221,16 @@ struct BuildArtifacts {
 fn machine_seal_id(env_value: &str) -> MachineId<'_> {
     let trimmed = strip_trailing_newline(env_value.as_bytes());
     let token = core::str::from_utf8(trimmed).expect("LITMASK_MACHINE_ID is UTF-8");
+    // An unpopulated env var expands to "" (the same footgun the External
+    // channel names); diagnose it as such rather than as a generic
+    // "no check group" malformed token, so both build channels give the
+    // operator the same actionable unpopulated-secret guidance.
+    assert!(
+        !token.is_empty(),
+        "LITMASK_MACHINE_ID is set but empty — an unpopulated secret often expands to an \
+         empty string; unset it to seal the keyless Embedded tier, or supply a token from \
+         `litmask show-machine-id` on the target host"
+    );
     MachineId::from_token(token).unwrap_or_else(|e| {
         panic!(
             "LITMASK_MACHINE_ID is not a valid `litmask show-machine-id` token ({e}); \
@@ -550,6 +560,24 @@ mod tests {
         // A raw id with no check group must be rejected at build time,
         // not silently sealed and surfaced as a runtime decrypt failure.
         let _ = machine_seal_id("host-id-abc");
+    }
+
+    /// An unpopulated `LITMASK_MACHINE_ID` expands to `""` — the same
+    /// footgun the External channel names explicitly (§2.9.3.3). The empty
+    /// value must not be lumped in with a mistyped token: it gets the
+    /// "set but empty" guidance naming the unpopulated-secret cause.
+    #[test]
+    #[should_panic(expected = "LITMASK_MACHINE_ID is set but empty")]
+    fn machine_seal_id_rejects_empty_value() {
+        let _ = machine_seal_id("");
+    }
+
+    /// "Empty" means what validation sees: a lone trailing newline trims
+    /// to nothing, so a newline-only value is the empty case too.
+    #[test]
+    #[should_panic(expected = "LITMASK_MACHINE_ID is set but empty")]
+    fn machine_seal_id_rejects_newline_only_value() {
+        let _ = machine_seal_id("\n");
     }
 
     /// An unpopulated CI secret expands to an empty string; sealing the
