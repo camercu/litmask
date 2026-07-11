@@ -569,6 +569,18 @@ mod tests {
         let _ = BuildArtifacts::derive(&[0u8; KEY_LEN], &external("\n"));
     }
 
+    /// Positive bound on the rejection above, pinning a considered-and-
+    /// declined extension (2026-07-10): whitespace-only material is
+    /// LEGAL. §1.6.3 rejects only material empty after the single-
+    /// trailing-newline trim; material is otherwise arbitrary bytes, and
+    /// extending the unpopulated-secret rationale to whitespace would
+    /// start a reject-list with no principled stop ("  ", "null",
+    /// an unexpanded "$KEY", …).
+    #[test]
+    fn external_seal_accepts_whitespace_only_material() {
+        let _ = BuildArtifacts::derive(&[0u8; KEY_LEN], &external("  "));
+    }
+
     /// The two-factor tier's external factor takes the same material
     /// channel, so it must apply the same non-empty guard.
     #[test]
