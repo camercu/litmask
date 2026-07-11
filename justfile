@@ -383,7 +383,7 @@ bench-doc:
 # (the no_std + alloc configuration). `test-no-default` runs unit tests under
 # the same feature set; this recipe is a faster compile-only gate.
 check-no-default:
-    cargo check -p litmask --no-default-features --features alloc
+    RUSTFLAGS="{{warnings}}" cargo check -p litmask --no-default-features --features alloc
 
 # Cross-compile the runtime crate to a bare-metal embedded target
 # (§2.10.1–§2.10.6). The `thumbv7m-none-eabi` triple has no `std`
@@ -497,8 +497,15 @@ pre-commit: fmt-check lint-typos lint-taplo lint-markdown
 # check-cross, all-features tests) to keep push latency down, so those can
 # still go red in CI after a green push. Catches the common regressions
 # (lint, default-feature tests, examples, check-no-default, doc).
+# No blanket `RUSTFLAGS="-D warnings"` here on purpose: it forced every
+# step to recompile under a cache key the interactive `cargo build`/`test`
+# never uses, so the gate rebuilt the workspace from scratch instead of
+# reusing dev artifacts. rustc-warning denial is preserved by `lint`
+# (clippy runs `-D warnings` over `--all-targets` and `--all-features`) and
+# by `check-no-default` (which carries the flag for the one feature set
+# clippy does not cover). `RUSTDOCFLAGS` stays for doc/doctest warnings.
 pre-push:
-    RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just lint test test-examples check-no-default doc
+    RUSTDOCFLAGS="{{warnings}}" just lint test test-examples check-no-default doc
 
 # ── CI ──────────────────────────────────────────────────────
 
