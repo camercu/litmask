@@ -29,6 +29,10 @@ const MACHINE_ID_GUIDANCE_MSG: &str =
 /// the build seed derivation consume.
 const KEYGEN_BYTES: usize = 32;
 
+/// Readable diagnostic for a failed randomness draw. Named so the message
+/// text and the exit-code contract are pinned by a unit test.
+const KEYGEN_UNAVAILABLE_MSG: &str = "OS randomness unavailable (getrandom failed)";
+
 /// `litmask` companion tool.
 #[derive(Parser, Debug)]
 #[command(name = "litmask", version, about, long_about = None)]
@@ -55,6 +59,7 @@ enum Command {
     ///
     /// Exit codes:
     /// - 0 on success (prints the key to stdout, newline-terminated)
+    /// - 69 if OS randomness is unavailable (diagnostic to stderr)
     Keygen,
     /// Print this host's machine ID as a self-checking token — the bytes
     /// a machine-tier build feeds into its key derivation, plus an
@@ -105,15 +110,50 @@ fn encode_key(bytes: &[u8]) -> String {
     base64url::encode(bytes)
 }
 
+/// Where a `keygen` result should be written and with which exit code.
+/// Pure so both branches — the success key and the `getrandom` failure
+/// (exit 69) — are unit-testable without consuming OS randomness or
+/// inducing a randomness failure.
+struct KeygenReport {
+    stdout: Option<String>,
+    stderr: Option<String>,
+    code: u8,
+}
+
+/// Map a randomness draw to its presentation. On success the key is the
+/// only thing on stdout (pipeable); a failed draw is an error on stderr
+/// with exit 69, leaving stdout empty so `litmask keygen | …` never
+/// captures the diagnostic text.
+// Takes the outcome by value to mirror `report_machine_id`'s decision-core
+// shape; the Copy byte payload means nothing is moved, which pedantic
+// clippy would otherwise flag.
+#[allow(clippy::needless_pass_by_value)]
+fn keygen_report<E>(randomness: Result<[u8; KEYGEN_BYTES], E>) -> KeygenReport {
+    match randomness {
+        Ok(bytes) => KeygenReport {
+            stdout: Some(encode_key(&bytes)),
+            stderr: None,
+            code: exit::OK,
+        },
+        Err(_) => KeygenReport {
+            stdout: None,
+            stderr: Some(KEYGEN_UNAVAILABLE_MSG.to_string()),
+            code: exit::UNAVAILABLE,
+        },
+    }
+}
+
 fn dispatch_keygen() -> ExitCode {
     let mut bytes = [0u8; KEYGEN_BYTES];
-    if getrandom::fill(&mut bytes).is_err() {
-        eprintln!("litmask: OS randomness unavailable (getrandom failed)");
-        return ExitCode::from(exit::UNAVAILABLE);
+    let report = keygen_report(getrandom::fill(&mut bytes).map(|()| bytes));
+    if let Some(key) = report.stdout {
+        // Pipeable: the key is the only thing on stdout, newline-terminated.
+        println!("{key}");
     }
-    // Pipeable: the key is the only thing on stdout, newline-terminated.
-    println!("{}", encode_key(&bytes));
-    ExitCode::from(exit::OK)
+    if let Some(msg) = report.stderr {
+        eprintln!("litmask: {msg}");
+    }
+    ExitCode::from(report.code)
 }
 
 /// Where a `show-machine-id` result should be written and with which
@@ -206,6 +246,27 @@ mod tests {
         let r = report_machine_id(Err(std::io::Error::other("boom")));
         assert_eq!(r.stdout, None);
         assert_eq!(r.stderr.as_deref(), Some(MACHINE_ID_UNAVAILABLE_MSG));
+        assert_eq!(r.code, exit::UNAVAILABLE);
+    }
+
+    #[test]
+    fn keygen_report_success_emits_key_to_stdout_only() {
+        let r = keygen_report(Ok::<_, std::io::Error>([0xABu8; KEYGEN_BYTES]));
+        let key = r.stdout.expect("success emits a key on stdout");
+        assert_eq!(key.len(), 43, "32 bytes → 43 base64url chars: {key}");
+        // Nothing on stderr: keygen is a clean, pipeable generator.
+        assert_eq!(r.stderr, None);
+        assert_eq!(r.code, exit::OK);
+    }
+
+    /// The `getrandom` failure branch documented in `keygen --help` (exit
+    /// 69). Pinned through the pure core so the exit-code contract is
+    /// executable without inducing an OS randomness failure.
+    #[test]
+    fn keygen_report_randomness_failure_is_unavailable() {
+        let r = keygen_report(Err(std::io::Error::other("boom")));
+        assert_eq!(r.stdout, None);
+        assert_eq!(r.stderr.as_deref(), Some(KEYGEN_UNAVAILABLE_MSG));
         assert_eq!(r.code, exit::UNAVAILABLE);
     }
 
