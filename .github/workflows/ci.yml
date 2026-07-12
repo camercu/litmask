@@ -404,9 +404,11 @@ jobs:
 
             cargo build -p litmask-cli
 
-            sh scripts/platform-smoke.sh \
-              target/debug/litmask \
-              ${{ matrix.os.smoke_flags }}
+            # One line, no `\` continuations: cross-platform-actions feeds
+            # this block to the VM such that a trailing continuation before
+            # an empty smoke_flags value (freebsd) leaks the literal `\` as
+            # an argument. Kept flat so the empty case passes no stray arg.
+            sh scripts/platform-smoke.sh target/debug/litmask ${{ matrix.os.smoke_flags }}
 
   commitlint:
     # Runs on both pull_request and push so direct-to-main commits
