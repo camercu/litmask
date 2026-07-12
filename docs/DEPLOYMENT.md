@@ -131,8 +131,8 @@ above (env var, file, or custom provider).
 
 ### Custom provider
 
-Implement `KeyProvider` for any key source (vault, HSM, network
-service):
+Implement `KeyProvider` for any key source that hands the material bytes
+back to the process (vault, secrets manager, KMS):
 
 ```rust
 use litmask::{KeyProvider, UnlockKey, UnlockMaterial, KeyError};
@@ -152,6 +152,15 @@ A runnable version of this provider is
 [`litmask/examples/custom_provider.rs`](../litmask/examples/custom_provider.rs)
 (built and run by `just test-examples`), so the snippet above stays in step
 with the API.
+
+For an HSM, the provider embeds a _wrapped_ copy of the material in the binary
+and has the HSM unwrap it at runtime (DEK/KEK envelope) — see
+[`litmask/examples/envelope_provider.rs`](../litmask/examples/envelope_provider.rs).
+The HSM protects the wrapping key and enforces access control, audit, and
+revocation on every unwrap; it does not keep the material out of process
+memory, because litmask's AEAD runs in-process. The provider must reach the
+plaintext material to derive the `unlock_key`, so a pure HSM that never
+exports key material cannot serve as the source directly.
 
 ## Recommended release profile
 

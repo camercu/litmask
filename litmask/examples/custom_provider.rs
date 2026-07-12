@@ -1,6 +1,8 @@
-//! Custom `KeyProvider` end-to-end example: source the `unlock_key` from
-//! your own secrets backend (vault, HSM, network KMS) by implementing the
-//! trait by hand on the typed edge, instead of using a built-in provider.
+//! Custom `KeyProvider` end-to-end example: source the `unlock_key` from a
+//! secrets backend that returns the material bytes to the process (vault,
+//! secrets manager, network KMS) by implementing the trait by hand on the
+//! typed edge, instead of using a built-in provider. For an HSM that keeps
+//! its wrapping key in hardware, see `envelope_provider.rs`.
 //!
 //! This is the runnable form of the custom-provider snippet in
 //! `docs/DEPLOYMENT.md`: `UnlockMaterial::new` validates and normalizes the
@@ -40,7 +42,7 @@
 use litmask::{KeyError, KeyProvider, UnlockKey, UnlockMaterial, init, mask};
 
 /// Stand-in for a real secrets backend: holds the sealed unlock material
-/// fetched from your vault / HSM / KMS. Any non-empty bytes work; empty
+/// fetched from your vault / secrets manager / KMS. Any non-empty bytes work; empty
 /// material surfaces as `KeyError::InvalidFormat` through the `?` in
 /// `unlock_key` (the `From<EmptyMaterial>` conversion), so an unpopulated
 /// secret fails closed rather than deriving a bogus key.

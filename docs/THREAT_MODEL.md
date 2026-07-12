@@ -66,7 +66,7 @@ decryption runs, any observer with runtime access sees plaintext.
 | `FileProvider` + filesystem permissions | Above with OS-enforced access control |
 | Machine tier (`init!(bind_to_machine)`) | Above + binary moved to a different machine |
 | Two-factor tier (`init!(bind_to_machine + <provider>)`) | Above + the external factor (env/file/vault) the binary alone never carries |
-| Custom `KeyProvider` (vault, HSM) | Above + offline attackers |
+| Custom `KeyProvider` (remote vault, or HSM-unwrapped embedded key) | Above + offline attackers who copy the binary but cannot reach the key service |
 
 "Zero-config" means no project configuration beyond `build.rs` and no
 runtime key provisioning — the keyless Embedded default recomputes

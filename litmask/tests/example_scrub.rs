@@ -367,7 +367,8 @@ fn quote_fixtures_absent_from_canonical_examples() {
 
 /// `custom_provider` demonstrates a hand-written `KeyProvider` built on the
 /// typed edge (`UnlockMaterial::new` + `UnlockKey::derive`) — the exact
-/// pattern `docs/DEPLOYMENT.md` shows for a vault / HSM / KMS source, made
+/// pattern `docs/DEPLOYMENT.md` shows for a vault / secrets-manager / KMS
+/// source (the HSM-unwrap variant is `envelope_provider`), made
 /// executable so the doc snippet cannot silently rot. Its masked quote must
 /// be absent from the binary, so a `mask!` regression on the custom-provider
 /// path can't leak unnoticed. Fixture-scrubbed only, like `file_provider`:

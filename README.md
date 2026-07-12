@@ -265,8 +265,8 @@ the sealed host _and_ with the sealed material.
 Protection scales with how the key is supplied. The keyless **Embedded**
 default gives `strings(1)` resistance only (the key is recoverable from the
 artifact); sourcing the key at runtime — `EnvVarProvider`, `FileProvider`,
-`init!(bind_to_machine)`, or a custom vault/HSM provider — keeps it out of the
-binary and raises the bar accordingly. The full
+`init!(bind_to_machine)`, or a custom vault/HSM/KMS provider — keeps it out of
+the binary and raises the bar accordingly. The full
 configuration-to-resistance ladder lives in
 [THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
