@@ -2464,7 +2464,7 @@ distinguishing malformed data (65) from an absent resource. The test SHALL
 assert this failure mode rather than treating it as a test failure. This
 validates §1.6.5's documented portability behavior.
 
-§2.13.2.6 — Platform smoke tests SHALL be written in a CI-portable shell
+§2.13.2.5 — Platform smoke tests SHALL be written in a CI-portable shell
 script invocable from the GitHub Actions YAML for native platforms and from
 the `cross-platform-actions/action` `run:` block for VM platforms.
 
@@ -2630,7 +2630,7 @@ the spec:
 - Specific argument syntax of `litmask-cli` beyond the requirements in §2.9
 - Exact wording of `Display` tag strings (§1.9.3 specifies form
   `category:variant` but not the precise strings)
-- Specific shell scripting language and structure for §2.13.2.6 smoke
+- Specific shell scripting language and structure for §2.13.2.5 smoke
   tests; portability across platform shells is the only constraint
 
 ## Appendix B — Deferred to v2
