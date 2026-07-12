@@ -39,6 +39,18 @@ for src in litmask/examples/*.rs; do
         found=$((found + 1))
         continue
     fi
+    # `envelope_provider` embeds a *wrapped* copy of its unlock material and
+    # unwraps it at runtime through a stub HSM (no env read at run time). The
+    # embedded blob decrypts to a FIXED plaintext, so the build must seal
+    # under that same plaintext — not the freshly-minted `keygen` value the
+    # generic External branch below would use. Its masking property is
+    # scrubbed by `tests/example_scrub.rs::envelope_provider_*`.
+    if [ "$name" = "envelope_provider" ]; then
+        LITMASK_UNLOCK_KEY="envelope-demo-unlock-material-do-not-reuse" \
+            cargo run --quiet --features provider-examples --example "$name"
+        found=$((found + 1))
+        continue
+    fi
     # Seal-tier hinges on env presence: setting LITMASK_UNLOCK_KEY at
     # build selects the External tier and reseals the shared wrapper.
     # So only the runtime-sourced examples (those passing a provider to

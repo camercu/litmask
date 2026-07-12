@@ -66,6 +66,12 @@ const EXCEPTIONS: &[&str] = &[
     // `LITMASK_UNLOCK_KEY` in plaintext, so the identifier scrub can't run).
     "custom_provider",
     "weak_mask_demo",
+    // HSM-envelope pattern: hand-written `KeyProvider` that unwraps a
+    // binary-embedded wrapped blob; `required-features =
+    // ["provider-examples"]` and fixture-scrubbed by
+    // `envelope_provider_masked_quote_absent_from_binary` (it names
+    // `LITMASK_UNLOCK_KEY` in plaintext, so the identifier scrub can't run).
+    "envelope_provider",
     "machine_id_provider",
     "mask_serde_demo",
     // `required-features = ["unstable-stack"]`; scrubbed by
@@ -380,6 +386,33 @@ fn custom_provider_masked_quote_absent_from_binary() {
     let path = common::example_path("custom_provider", Profile::Release);
     assert!(path.exists(), "example binary missing: {}", path.display());
     common::assert_substring_absent(&path, "rarely pure and never simple");
+}
+
+/// `envelope_provider` demonstrates the DEK/KEK envelope pattern: an
+/// HSM-wrapped unlock-material blob is embedded in the binary and unwrapped
+/// at runtime through a (stubbed) HSM, then fed to `UnlockKey::derive` — the
+/// exact "encrypted unlock key stored in the binary, decrypted by the HSM"
+/// flow. Its masked quote must be absent from the binary so a `mask!`
+/// regression on this provider path can't leak unnoticed. Fixture-scrubbed
+/// only, like `custom_provider`: it names the `LITMASK_UNLOCK_KEY` env var in
+/// plaintext (a `litmask*` identifier), so the full dirty-word scrub would
+/// false-positive.
+#[test]
+fn envelope_provider_masked_quote_absent_from_binary() {
+    // `init!(provider)` compiles only against an External seal, so build
+    // with the `provider-examples` feature and `LITMASK_UNLOCK_KEY` set. The
+    // scrub inspects bytes and never runs the binary, so the build key need
+    // not match the embedded blob's plaintext — any non-empty value seals
+    // External.
+    common::build_example_with_features_and_env(
+        "envelope_provider",
+        Profile::Release,
+        &["provider-examples"],
+        &[("LITMASK_UNLOCK_KEY", SCRUB_EXTERNAL_KEY)],
+    );
+    let path = common::example_path("envelope_provider", Profile::Release);
+    assert!(path.exists(), "example binary missing: {}", path.display());
+    common::assert_substring_absent(&path, "parents of security");
 }
 
 /// `machine_id_provider` is gated behind `--features machine-id` (per its

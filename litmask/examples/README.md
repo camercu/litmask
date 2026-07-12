@@ -58,7 +58,8 @@ LITMASK_UNLOCK_KEY=$(cargo run -q -p litmask-cli -- keygen) \
 | Example | Shows |
 |---|---|
 | `file_provider` | Source the `unlock_key` from a filesystem path instead of an env var. |
-| `custom_provider` | Hand-implement `KeyProvider` for your own secrets backend (vault/HSM/KMS) via the typed edge (`UnlockMaterial::new` + `UnlockKey::derive`). Runnable form of the `docs/DEPLOYMENT.md` snippet. |
+| `custom_provider` | Hand-implement `KeyProvider` for a secrets backend that hands back the material bytes (vault / secrets manager / KMS) via the typed edge (`UnlockMaterial::new` + `UnlockKey::derive`). Runnable form of the `docs/DEPLOYMENT.md` snippet. |
+| `envelope_provider` | DEK/KEK envelope: a _wrapped_ unlock key is stored in the binary and unwrapped at runtime by a (stubbed) HSM before `UnlockKey::derive`. Shows what an HSM does and does not buy you — no plaintext secret at rest, but the key still transits process memory. |
 | `weak_mask_demo` | `weak_mask!` hides a custom env-var name from `strings(1)`, then bootstraps AEAD-strength masking via `init!(provider)`. (Reads `MYAPP_SECRET_KEY`.) |
 
 ## Machine tier (`machine-id`)
