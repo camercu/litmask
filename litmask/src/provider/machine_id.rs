@@ -61,11 +61,8 @@ impl KeyProvider for MachineIdProvider {
         // `Send + Sync` wrapper that carries the upstream `Display`
         // message verbatim — the `source()` chain on the original
         // box is not preserved (see `MachineUidError`'s docstring).
-        let machine_id = machine_uid::get().map_err(|e| {
-            KeyError::Provider(alloc::boxed::Box::new(MachineUidError(alloc::format!(
-                "{e}"
-            ))))
-        })?;
+        let machine_id = machine_uid::get()
+            .map_err(|e| MachineUidError::into_key_error(alloc::format!("{e}")))?;
         // Wrap the machine id in Zeroizing so the heap copy of the
         // identifier wipes when the derivation returns — without it,
         // a stable host identifier would linger in the allocator
@@ -103,11 +100,9 @@ fn derive_from_machine_id(
     // `MachineId::new` rejects empty so the footgun is unrepresentable at
     // `derive_machine_id_key`.
     let machine_id = MachineId::new(&machine_id).map_err(|_| {
-        KeyError::Provider(alloc::boxed::Box::new(MachineUidError(
-            alloc::string::String::from(
-                "machine id is empty (unprovisioned host; see machine-id(5))",
-            ),
-        )))
+        MachineUidError::into_key_error(alloc::string::String::from(
+            "machine id is empty (unprovisioned host; see machine-id(5))",
+        ))
     })?;
     Ok(UnlockKey::from_raw(derive_machine_id_key(
         crate::weak_mask!("litmask-machine-id-v1"),
@@ -142,6 +137,16 @@ impl core::fmt::Display for MachineUidError {
 }
 
 impl core::error::Error for MachineUidError {}
+
+impl MachineUidError {
+    /// Lift a message into the single `KeyError::Provider` →
+    /// `EX_UNAVAILABLE` (69) contract shared by both unusable-machine-factor
+    /// sites (upstream `machine_uid::get()` failure, empty read), owning the
+    /// `Send + Sync` box so neither call site spells the boxing out.
+    fn into_key_error(message: alloc::string::String) -> KeyError {
+        KeyError::Provider(alloc::boxed::Box::new(Self(message)))
+    }
+}
 
 #[cfg(test)]
 mod tests {
