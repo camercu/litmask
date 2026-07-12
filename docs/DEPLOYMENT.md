@@ -148,6 +148,11 @@ impl KeyProvider for VaultProvider {
 }
 ```
 
+A runnable version of this provider is
+[`litmask/examples/custom_provider.rs`](../litmask/examples/custom_provider.rs)
+(built and run by `just test-examples`), so the snippet above stays in step
+with the API.
+
 ## Recommended release profile
 
 ```toml

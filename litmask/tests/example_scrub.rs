@@ -60,6 +60,11 @@ const EXAMPLES: &[&str] = &[
 
 const EXCEPTIONS: &[&str] = &[
     "file_provider",
+    // Hand-written `KeyProvider` on the typed edge; `required-features =
+    // ["provider-examples"]` and fixture-scrubbed by
+    // `custom_provider_masked_quote_absent_from_binary` (it names
+    // `LITMASK_UNLOCK_KEY` in plaintext, so the identifier scrub can't run).
+    "custom_provider",
     "weak_mask_demo",
     "machine_id_provider",
     "mask_serde_demo",
@@ -352,6 +357,29 @@ fn quote_fixtures_absent_from_canonical_examples() {
         assert!(path.exists(), "example binary missing: {}", path.display());
         common::assert_substring_absent(&path, probe);
     }
+}
+
+/// `custom_provider` demonstrates a hand-written `KeyProvider` built on the
+/// typed edge (`UnlockMaterial::new` + `UnlockKey::derive`) — the exact
+/// pattern `docs/DEPLOYMENT.md` shows for a vault / HSM / KMS source, made
+/// executable so the doc snippet cannot silently rot. Its masked quote must
+/// be absent from the binary, so a `mask!` regression on the custom-provider
+/// path can't leak unnoticed. Fixture-scrubbed only, like `file_provider`:
+/// it names the `LITMASK_UNLOCK_KEY` env var in plaintext (a `litmask*`
+/// identifier), so the full dirty-word scrub would false-positive.
+#[test]
+fn custom_provider_masked_quote_absent_from_binary() {
+    // `init!(provider)` compiles only against an External seal, so build
+    // with the `provider-examples` feature and `LITMASK_UNLOCK_KEY` set.
+    common::build_example_with_features_and_env(
+        "custom_provider",
+        Profile::Release,
+        &["provider-examples"],
+        &[("LITMASK_UNLOCK_KEY", SCRUB_EXTERNAL_KEY)],
+    );
+    let path = common::example_path("custom_provider", Profile::Release);
+    assert!(path.exists(), "example binary missing: {}", path.display());
+    common::assert_substring_absent(&path, "rarely pure and never simple");
 }
 
 /// `machine_id_provider` is gated behind `--features machine-id` (per its

@@ -58,6 +58,7 @@ LITMASK_UNLOCK_KEY=$(cargo run -q -p litmask-cli -- keygen) \
 | Example | Shows |
 |---|---|
 | `file_provider` | Source the `unlock_key` from a filesystem path instead of an env var. |
+| `custom_provider` | Hand-implement `KeyProvider` for your own secrets backend (vault/HSM/KMS) via the typed edge (`UnlockMaterial::new` + `UnlockKey::derive`). Runnable form of the `docs/DEPLOYMENT.md` snippet. |
 | `weak_mask_demo` | `weak_mask!` hides a custom env-var name from `strings(1)`, then bootstraps AEAD-strength masking via `init!(provider)`. (Reads `MYAPP_SECRET_KEY`.) |
 
 ## Machine tier (`machine-id`)
