@@ -110,10 +110,11 @@ write.
 `litmask` composes across a dependency graph. The rule for **library
 authors** is one line:
 
-> **If your crate uses `litmask` internally, never call `init!()` — only
-> `mask!()`.** Unlocking is the _host binary's_ job, not the library's.
+> **If your crate uses `litmask` internally, never call `init!()` — just
+> mask your strings (`mask!`, `mask_env!`, …).** Unlocking is the _host
+> binary's_ job, not the library's.
 
-A library just `mask!()`s its own strings. Whoever links the final binary
+A library just masks its own strings. Whoever links the final binary
 decides how the whole graph is unlocked:
 
 - **Transparent masking** (default): the host does nothing. Every masking
