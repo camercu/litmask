@@ -134,34 +134,27 @@ rationale and the [Deployment Guide](docs/DEPLOYMENT.md) for host setup.
 
 ## Macros
 
-| Macro                         | Returns          | Replaces                                |
-| ----------------------------- | ---------------- | --------------------------------------- |
-| `mask!("...")`                | `String`         | string literals                         |
-| `mask!(b"...")`               | `Vec<u8>`        | byte string literals                    |
-| `mask!(c"...")`               | `CString`        | C string literals (`std`)               |
-| `mask_format!("{}", x)`       | `String`         | `format!`                               |
-| `mask_print!("{}", x)`        | `()`             | `print!` (`std`)                        |
-| `mask_println!("{}", x)`      | `()`             | `println!` (`std`)                      |
-| `mask_eprint!("{}", x)`       | `()`             | `eprint!` (`std`)                       |
-| `mask_eprintln!("{}", x)`     | `()`             | `eprintln!` (`std`)                     |
-| `mask_write!(dst, "{}", x)`   | `Result`         | `write!`                                |
-| `mask_writeln!(dst, "{}", x)` | `Result`         | `writeln!`                              |
-| `mask_panic!("{}", x)`        | `!`              | `panic!`                                |
-| `mask_todo!("{}", x)`         | `!`              | `todo!`                                 |
-| `mask_unimplemented!("{}",x)` | `!`              | `unimplemented!`                        |
-| `mask_unreachable!("{}", x)`  | `!`              | `unreachable!`                          |
-| `mask_concat!(a, b)`          | `String`         | `concat!`                               |
-| `mask_env!("VAR")`            | `String`         | `env!`                                  |
-| `mask_option_env!("VAR")`     | `Option<String>` | `option_env!`                           |
-| `mask_include_str!("path")`   | `String`         | `include_str!`                          |
-| `mask_include_bytes!("path")` | `Vec<u8>`        | `include_bytes!`                        |
-| `mask_file!()`                | `String`         | `file!`                                 |
-| `weak_mask!("...")`           | `&'static str`   | pre-`init!` bootstrap strings           |
-| `weak_mask!(b"...")`          | `&'static [u8]`  | pre-`init!` bootstrap bytes             |
-| `weak_mask!(c"...")`          | `&'static CStr`  | pre-`init!` bootstrap C strings (`std`) |
-| `unmasked!("...")`            | `&'static str`   | opt out of `#[mask_all]`                |
-| `#[mask_all]`                 | --               | rewrites all literals in a module       |
-| `#[derive(MaskDebug)]`        | --               | masks `Debug` type/field/variant names  |
+| Macro                                                                      | Returns          | Replaces                                                |
+| -------------------------------------------------------------------------- | ---------------- | ------------------------------------------------------- |
+| `mask!("...")`                                                             | `String`         | string literals                                         |
+| `mask!(b"...")`                                                            | `Vec<u8>`        | byte string literals                                    |
+| `mask!(c"...")`                                                            | `CString`        | C string literals (`std`)                               |
+| `mask_format!("{}", x)`                                                    | `String`         | `format!`                                               |
+| `mask_print!` / `mask_println!` / `mask_eprint!` / `mask_eprintln!`        | `()`             | `print!` / `println!` / `eprint!` / `eprintln!` (`std`) |
+| `mask_write!` / `mask_writeln!`                                            | `Result`         | `write!` / `writeln!`                                   |
+| `mask_panic!` / `mask_todo!` / `mask_unimplemented!` / `mask_unreachable!` | `!`              | `panic!` / `todo!` / `unimplemented!` / `unreachable!`  |
+| `mask_concat!(a, b)`                                                       | `String`         | `concat!`                                               |
+| `mask_env!("VAR")`                                                         | `String`         | `env!`                                                  |
+| `mask_option_env!("VAR")`                                                  | `Option<String>` | `option_env!`                                           |
+| `mask_include_str!("path")`                                                | `String`         | `include_str!`                                          |
+| `mask_include_bytes!("path")`                                              | `Vec<u8>`        | `include_bytes!`                                        |
+| `mask_file!()`                                                             | `String`         | `file!`                                                 |
+| `weak_mask!("...")`                                                        | `&'static str`   | pre-`init!` bootstrap strings                           |
+| `weak_mask!(b"...")`                                                       | `&'static [u8]`  | pre-`init!` bootstrap bytes                             |
+| `weak_mask!(c"...")`                                                       | `&'static CStr`  | pre-`init!` bootstrap C strings (`std`)                 |
+| `unmasked!("...")`                                                         | `&'static str`   | opt out of `#[mask_all]`                                |
+| `#[mask_all]`                                                              | --               | rewrites all literals in a module                       |
+| `#[derive(MaskDebug)]`                                                     | --               | masks `Debug` type/field/variant names                  |
 
 `mask!` returns owned types because decryption happens at runtime. For `&str`,
 bind: `let s: &str = &mask!("...");`. If you absolutely need `&'static str`,
