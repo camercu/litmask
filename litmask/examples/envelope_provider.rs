@@ -49,8 +49,9 @@ use litmask::{KeyError, KeyProvider, UnlockKey, UnlockMaterial, init, mask};
 /// `ENC_kek(material)` — a wrapped copy of the unlock material, embedded in
 /// the binary. Inert on its own: only the HSM holding the KEK can turn these
 /// bytes back into the material. Its correctness is pinned executably by
-/// `scripts/test-examples.sh`, which runs this binary and checks it prints
-/// the decrypted quote — a wrong blob would fail to unlock.
+/// `scripts/test-examples.sh`: a wrong blob unwraps to the wrong material, so
+/// `init!(provider)` fails to open the wrapper and the binary exits non-zero,
+/// failing the script's `set -e` run.
 const WRAPPED_UNLOCK_MATERIAL: &[u8] = &[
     0x68, 0x7a, 0x6d, 0x47, 0x45, 0x5f, 0x47, 0x5b, 0x68, 0x28, 0x36, 0x37, 0x0e, 0x45, 0x1a, 0x18,
     0x11, 0xeb, 0xe8, 0xf9, 0xb4, 0xcd, 0xc6, 0xda, 0xd0, 0xce, 0xaa, 0xab, 0xbd, 0xf5, 0xbb, 0x89,
