@@ -1,13 +1,22 @@
 #!/bin/sh
 # Machine-tier platform smoke test for litmask CI (§2.13.2).
 #
-# Usage: platform-smoke.sh <cli> [--expect-unavailable]
+# Usage: platform-smoke.sh <cli> [--expect-unavailable | --expect-empty-id]
 #
 #   <cli>                 path to the built `litmask` CLI binary
-#   --expect-unavailable  this host has no stable machine-uid (stock
+#   --expect-unavailable  this host has no machine-uid mechanism (stock
 #                         OpenBSD): assert show-machine-id exits 69 and the
 #                         sealed binary's init!(machine_id) fails at runtime
-#                         (§2.13.2.4), instead of treating it as a failure.
+#                         with EX_UNAVAILABLE (69) (§2.13.2.4), instead of
+#                         treating it as a failure.
+#   --expect-empty-id     this host has the mechanism but an empty
+#                         machine-id (a bare systemd container, e.g.
+#                         almalinux:9, where systemd-machine-id-setup has not
+#                         run at boot): assert show-machine-id exits 69 and
+#                         the sealed binary rejects the empty read as
+#                         malformed key material, exiting EX_DATAERR (65)
+#                         (§1.6.3) — distinct from the no-mechanism
+#                         EX_UNAVAILABLE path above.
 #
 # Machine-tier keying is established at BUILD time: the example is built
 # with LITMASK_MACHINE_ID set to this host's id (from `show-machine-id`),
@@ -21,10 +30,16 @@ set -eu
 MARKER="distort them as you please"
 
 CLI="$1"
-EXPECT_UNAVAILABLE=false
-if [ "${2:-}" = "--expect-unavailable" ]; then
-    EXPECT_UNAVAILABLE=true
-fi
+MODE=normal
+case "${2:-}" in
+    --expect-unavailable) MODE=unavailable ;;
+    --expect-empty-id) MODE=empty-id ;;
+    "") ;;
+    *)
+        echo "FAIL: unknown option: $2" >&2
+        exit 2
+        ;;
+esac
 
 EXE=""
 case "$(uname -s)" in
@@ -60,7 +75,11 @@ assert_marker_absent() {
 id_exit=0
 MACHINE_ID="$("$CLI" show-machine-id 2>/dev/null)" || id_exit=$?
 
-if [ "$EXPECT_UNAVAILABLE" = "true" ]; then
+if [ "$MODE" != "normal" ]; then
+    # Both a no-mechanism host (OpenBSD) and a present-but-empty host
+    # (bare systemd container) report EX_UNAVAILABLE (69) here: the CLI
+    # treats an empty `machine_uid` read as "no usable id" (§2.9.3). The
+    # runtime paths then diverge, checked after the run below.
     if [ "$id_exit" -ne 69 ]; then
         echo "FAIL: expected show-machine-id EX_UNAVAILABLE (69), got $id_exit"
         exit 1
@@ -68,8 +87,9 @@ if [ "$EXPECT_UNAVAILABLE" = "true" ]; then
     echo "  ok: show-machine-id reported EX_UNAVAILABLE (69)"
     # No host id, but `emit()` requires the self-checking token form
     # (§4.1.1). Seal under a well-formed placeholder token so the build
-    # still succeeds; the runtime `machine_uid::get()` then fails on this
-    # host, exercising the init failure path (§2.13.2.4). Value is
+    # still succeeds; the runtime `machine_uid::get()` on this host then
+    # either fails (unavailable) or returns empty (empty-id), exercising
+    # the corresponding init failure path. Value is
     # `litmask show-machine-id`'s token form for the id below
     # (raw_id ‖ "." ‖ base64url(BLAKE3(raw_id)[..5])).
     MACHINE_ID="unavailable-host-placeholder.9E6M3pc"
@@ -91,19 +111,24 @@ assert_marker_absent "$BIN"
 run_exit=0
 run_out="$("$BIN" 2>/dev/null)" || run_exit=$?
 
-if [ "$EXPECT_UNAVAILABLE" = "true" ]; then
-    # §2.13.2.4 — init!(machine_id) must fail at runtime with
-    # EX_UNAVAILABLE (69) (machine-uid lookup failed) and the marker
-    # must never appear.
-    if [ "$run_exit" -ne 69 ]; then
-        echo "FAIL: expected EX_UNAVAILABLE (69) on a host without a stable machine id, got $run_exit"
+if [ "$MODE" != "normal" ]; then
+    # A host that cannot supply a usable machine factor must fail init
+    # cleanly and never leak the marker. The exact code names the cause:
+    # a failed lookup is EX_UNAVAILABLE (69) (§2.13.2.4); an empty read is
+    # malformed key material, EX_DATAERR (65) (§1.6.3).
+    case "$MODE" in
+        unavailable) want=69; why="machine-uid lookup failed" ;;
+        empty-id) want=65; why="empty machine-uid rejected as malformed material" ;;
+    esac
+    if [ "$run_exit" -ne "$want" ]; then
+        echo "FAIL: expected exit $want ($why), got $run_exit"
         exit 1
     fi
     if printf '%s' "$run_out" | grep -q "$MARKER"; then
-        echo "FAIL: marker leaked despite machine-id lookup failure"
+        echo "FAIL: marker leaked despite machine binding failure"
         exit 1
     fi
-    echo "PASS: machine-tier init failed cleanly (EX_UNAVAILABLE) on unavailable host"
+    echo "PASS: machine-tier init failed cleanly (exit $want) — $why"
     exit 0
 fi
 
