@@ -173,9 +173,11 @@ struct MachineIdReport {
 /// 69), keeping stdout clean for callers piping the token.
 fn report_machine_id<E>(lookup: Result<String, E>) -> MachineIdReport {
     match lookup {
-        // An empty read is a broken read: minting a token for it would
-        // let a build seal an empty machine factor (emit() rejects that
-        // token too, but the mint is the earliest failure point).
+        // An empty read is an unprovisioned host, not a usable id
+        // (machine-id(5): an empty /etc/machine-id is a valid "not yet
+        // initialized" state): minting a token for it would let a build
+        // seal an empty machine factor (emit() rejects that token too,
+        // but the mint is the earliest failure point).
         Ok(id) if id.is_empty() => MachineIdReport {
             stdout: None,
             stderr: Some(MACHINE_ID_UNAVAILABLE_MSG.to_string()),
@@ -226,10 +228,10 @@ mod tests {
         assert_eq!(r.code, exit::OK);
     }
 
-    /// An empty id from `machine_uid` is a broken read, not a usable
-    /// machine id — minting a token for it would let a build seal an
-    /// empty machine factor (rejected there too, but fail at the
-    /// earliest point: the mint).
+    /// An empty id from `machine_uid` is an unprovisioned host
+    /// (machine-id(5)), not a usable machine id — minting a token for it
+    /// would let a build seal an empty machine factor (rejected there too,
+    /// but fail at the earliest point: the mint).
     #[test]
     fn report_machine_id_empty_read_is_unavailable() {
         let r = report_machine_id(Ok::<_, std::io::Error>(String::new()));

@@ -569,15 +569,18 @@ to clear their contents from memory when dropped.
 The machine factor is recomputed on the **target** host at runtime (via the
 `init!(bind_to_machine)` seam), not on the build host. `machine-uid` supports all
 standard `std` targets (Linux, macOS, Windows). On constrained or unusual
-targets where `machine-uid` cannot read a stable machine identifier (some
-container runtimes, certain embedded Linux variants without `/etc/machine-id`,
-OpenBSD by default), the seam's `unlock_key()` returns
-`Err(KeyError::Provider(...))` and `init!(bind_to_machine)` fails. Builds targeting
+targets where `machine-uid` cannot supply a stable machine identifier — the
+lookup fails (certain embedded Linux variants without `/etc/machine-id`,
+OpenBSD by default) or succeeds but returns an empty, unprovisioned id (a bare
+systemd container whose `/etc/machine-id` is empty until boot, machine-id(5))
+— the seam's `unlock_key()` returns `Err(KeyError::Provider(...))` and
+`init!(bind_to_machine)` fails with EX_UNAVAILABLE (69). Builds targeting
 such environments MUST verify behavior on the target before relying on the
 machine tier. The same constraint applies at **build** time: sealing reads the
 host id from `LITMASK_MACHINE_ID` (typically captured via `litmask
 show-machine-id`, §2.9.3), which the CLI cannot produce on those hosts. The
-platform CI matrix (§1.10.5) explicitly exercises this failure path on OpenBSD.
+platform CI matrix (§1.10.5) explicitly exercises this failure path on OpenBSD
+(absent mechanism) and a bare almalinux container (empty, unprovisioned id).
 
 ### §1.7 Binary Format and Build-Time Sealing
 
@@ -1246,16 +1249,16 @@ to that platform's machine ID mechanism.
 | Platform | Mechanism | Coverage |
 |---|---|---|
 | ubuntu-latest | GitHub Actions native | Debian/Ubuntu glibc family, `/etc/machine-id` |
-| almalinux:9 | GitHub Actions Docker job | RHEL-family; bare container has an empty `/etc/machine-id`, tests the empty-id failure path (EX_DATAERR) |
+| almalinux:9 | GitHub Actions Docker job | RHEL-family; bare container has an empty `/etc/machine-id`, tests the unprovisioned-id failure path (EX_UNAVAILABLE) |
 | macos-latest | GitHub Actions native | Darwin, IOPlatformSerialNumber |
 | windows-latest | GitHub Actions native | Windows registry MachineGuid, NTFS atomic rename |
 | FreeBSD 14.2 | `cross-platform-actions/action` (QEMU VM) | BSD-family, `kern.hostuuid` |
 | OpenBSD 7.8 | `cross-platform-actions/action` (QEMU VM) | OpenBSD specifically (no `/etc/machine-id` by default; tests the machine-tier failure path) |
 
 The smoke test sequence and per-platform requirements (including the
-intentional failure-path validations — EX_UNAVAILABLE on stock OpenBSD,
-EX_DATAERR on a bare almalinux container's empty machine id) are specified
-in §2.13.
+intentional EX_UNAVAILABLE failure-path validation on hosts that cannot bind
+— stock OpenBSD's absent mechanism and a bare almalinux container's empty,
+unprovisioned machine id alike) are specified in §2.13.
 
 OpenBSD installations that have provisioned a machine ID via third-party
 means may pass the full smoke test sequence; the job tolerates either
@@ -2321,8 +2324,8 @@ only, keeping a piped capture limited to the token itself.
 §2.9.3.3 — `litmask-build::emit()` SHALL accept the token form on
 `LITMASK_MACHINE_ID`, validating the check group and recovering the raw id
 before deriving the machine key. A value whose check group does not match,
-that carries no check group, or whose id half is empty (a broken
-`machine_uid` read — an empty machine factor must never seal) SHALL be
+that carries no check group, or whose id half is empty (an unprovisioned
+host per machine-id(5) — an empty machine factor must never seal) SHALL be
 rejected at build time — turning a mistyped id into an actionable build
 error rather than an opaque runtime `init` failure on the deploy host. A
 single trailing newline is stripped before validation, so a token sourced
@@ -2447,25 +2450,19 @@ machine ID), a machine-tier binary (built with `LITMASK_MACHINE_ID` equal to
 the host's `show-machine-id` and initialized via `init!(bind_to_machine)`)
 SHALL execute correctly with output matching expected plaintext.
 
-§2.13.2.4 — On platforms where `machine-uid` does NOT produce a stable
-identifier (stock OpenBSD without provisioned machine ID), `show-machine-id`
-SHALL exit EX_UNAVAILABLE (69), and a machine-tier binary's
-`init!(bind_to_machine)` SHALL fail at runtime with EX_UNAVAILABLE (69) — the
-`KeyProvider(Provider(_))` → 69 mapping of §1.9.7 — with the marker absent
-from output. The test SHALL assert this failure mode rather than treating it
-as a test failure. This validates §1.6.5's documented portability behavior.
-
-§2.13.2.5 — On platforms where `machine-uid` reads successfully but returns
-an empty identifier (a bare systemd container such as `almalinux:9`, whose
-`/etc/machine-id` is unpopulated until `systemd-machine-id-setup` runs at
-boot), `show-machine-id` SHALL exit EX_UNAVAILABLE (69) — the CLI reports an
-empty read as no usable id — while a machine-tier binary's
-`init!(bind_to_machine)` SHALL fail at runtime with EX_DATAERR (65): the
-empty read is rejected as malformed key material (§1.6.3), the
-`KeyProvider(InvalidFormat)` → 65 mapping of §1.9.7, distinct from §2.13.2.4's
-no-mechanism EX_UNAVAILABLE path. The marker SHALL be absent from output, and
-the test SHALL assert this failure mode rather than treating it as a test
-failure.
+§2.13.2.4 — On platforms where `machine-uid` cannot supply a usable machine
+factor, `show-machine-id` SHALL exit EX_UNAVAILABLE (69), and a machine-tier
+binary's `init!(bind_to_machine)` SHALL fail at runtime with EX_UNAVAILABLE
+(69) — the `KeyProvider(Provider(_))` → 69 mapping of §1.9.7 — with the marker
+absent from output. This covers two host conditions treated identically: a
+lookup that fails outright (stock OpenBSD without a provisioned machine ID),
+and a lookup that succeeds but returns an empty, unprovisioned id (a bare
+systemd container such as `almalinux:9`, whose `/etc/machine-id` is empty
+until boot — a valid "not yet initialized" state per machine-id(5)). Both mean
+"this host cannot bind", so the runtime surfaces one code rather than
+distinguishing malformed data (65) from an absent resource. The test SHALL
+assert this failure mode rather than treating it as a test failure. This
+validates §1.6.5's documented portability behavior.
 
 §2.13.2.6 — Platform smoke tests SHALL be written in a CI-portable shell
 script invocable from the GitHub Actions YAML for native platforms and from

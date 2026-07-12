@@ -48,10 +48,10 @@ pub enum MachineTokenError {
     /// The check group does not match the id it accompanies: the token
     /// was corrupted in transit (or never was a valid token).
     CheckMismatch,
-    /// The id half is empty — a broken `machine_uid` read minted the
-    /// token. An empty machine factor must never seal: the "host
-    /// binding" would hold on any machine with the same broken read
-    /// (the same class as empty `LITMASK_UNLOCK_KEY` material, §1.6.3).
+    /// The id half is empty — an unprovisioned host minted the token
+    /// (machine-id(5): an empty `/etc/machine-id` is a valid "not yet
+    /// initialized" state). An empty machine factor must never seal: the
+    /// "host binding" would hold on any machine with the same empty read.
     EmptyId,
 }
 
@@ -87,8 +87,8 @@ pub fn encode_machine_id_token(raw_id: &str) -> String {
 
 /// A validated, non-empty host machine id — the raw identifier the
 /// machine tier derives its key from. Guaranteed non-empty at
-/// construction, so the empty-id footgun (a broken `machine_uid` read,
-/// an unpopulated token) is unrepresentable where the key is derived
+/// construction, so the empty-id footgun (an unprovisioned host per
+/// machine-id(5), an unpopulated token) is unrepresentable where the key is derived
 /// ([`derive_machine_id_key`](crate::derive_machine_id_key)) instead of
 /// re-checked at each build / runtime / CLI site.
 ///
@@ -100,7 +100,8 @@ pub struct MachineId<'a>(&'a str);
 
 impl<'a> MachineId<'a> {
     /// Validate a raw host id (e.g. `machine_uid::get()`'s output),
-    /// rejecting empty — a broken read that no seal can match.
+    /// rejecting empty — an unprovisioned host (machine-id(5)) that no
+    /// seal can match.
     ///
     /// # Errors
     ///
@@ -213,10 +214,9 @@ mod tests {
     }
 
     /// A token whose id half is empty carries no machine id to seal —
-    /// a broken `machine_uid` read minted it. It must not decode: an
-    /// empty machine factor would seal a binary whose "host binding"
-    /// holds on any machine with the same broken read (the same class
-    /// as sealing under empty `LITMASK_UNLOCK_KEY` material, §1.6.3).
+    /// an unprovisioned host (machine-id(5)) minted it. It must not
+    /// decode: an empty machine factor would seal a binary whose "host
+    /// binding" holds on any machine with the same empty read.
     #[test]
     fn rejects_an_empty_raw_id_even_with_a_valid_check_group() {
         let token = encode_machine_id_token("");

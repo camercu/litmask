@@ -315,11 +315,11 @@ jobs:
 
       # The almalinux:9 image ships an empty /etc/machine-id and no dbus
       # machine-id; systemd-machine-id-setup only runs at boot, not in a
-      # container. So machine_uid reads an empty id, which the runtime
-      # rejects as malformed material (EX_DATAERR, not the OpenBSD
-      # no-mechanism EX_UNAVAILABLE): assert that empty-id failure path.
+      # container. So machine_uid reads an empty, unprovisioned id
+      # (machine-id(5)) — no usable machine factor, EX_UNAVAILABLE (69),
+      # same as stock OpenBSD: assert that failure path.
       - name: Smoke test
-        run: sh scripts/platform-smoke.sh target/debug/litmask --expect-empty-id
+        run: sh scripts/platform-smoke.sh target/debug/litmask --expect-unavailable
 
   smoke-windows:
     name: smoke (windows)

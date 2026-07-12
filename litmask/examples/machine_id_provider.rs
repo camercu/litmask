@@ -32,9 +32,11 @@ use litmask::{init, mask};
 
 fn main() -> ExitCode {
     // Surface the sysexits-aligned code instead of the `?`/`Termination`
-    // default of 1, so a machine-id lookup failure (no `/etc/machine-id`,
-    // stock OpenBSD) exits EX_UNAVAILABLE (69) and a wrong-host seal exits
-    // EX_DATAERR (65) — the contract a deployment script keys on.
+    // default of 1, so a host that cannot supply a machine factor — a
+    // lookup failure (stock OpenBSD) or an empty, unprovisioned id (a bare
+    // container, machine-id(5)) — exits EX_UNAVAILABLE (69), and a
+    // wrong-host seal exits EX_DATAERR (65): the contract a deployment
+    // script keys on.
     if let Err(e) = init!(bind_to_machine) {
         eprintln!("init!(bind_to_machine) failed: {e}");
         // sysexits codes are 0..=78; the fallback is unreachable.

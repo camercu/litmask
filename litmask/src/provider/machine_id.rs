@@ -26,11 +26,13 @@ use crate::provider::KeyProvider;
 ///
 /// # Failure mode
 ///
-/// `machine-uid::get()` can fail on container runtimes,
-/// `/etc/machine-id`-less embedded Linux variants, and OpenBSD by
-/// default. The failure surfaces as [`KeyError::Provider`] carrying the
-/// upstream error. Cross-compilation users targeting such environments
-/// MUST verify behavior on the target before relying on this provider.
+/// `machine-uid::get()` can fail outright (OpenBSD by default,
+/// `/etc/machine-id`-less embedded Linux), or read an empty,
+/// unprovisioned id (a bare systemd container, whose `/etc/machine-id` is
+/// empty until boot — machine-id(5)). Both surface as
+/// [`KeyError::Provider`] → `EX_UNAVAILABLE` (69). Cross-compilation users
+/// targeting such environments MUST verify behavior on the target before
+/// relying on this provider.
 #[derive(Debug)]
 pub(crate) struct MachineIdProvider {
     // Non-secret: the wrapper nonce is public and ships in cleartext, so
@@ -73,11 +75,11 @@ impl KeyProvider for MachineIdProvider {
 }
 
 /// Pure derivation core of [`KeyProvider::unlock_key`]: rejects an
-/// empty machine id — a broken `machine_uid` read that no valid seal
-/// can match, since `emit()` refuses a token with an empty id
+/// empty machine id — an unprovisioned host (machine-id(5)) that no valid
+/// seal can match, since `emit()` refuses a token with an empty id
 /// (§2.9.3.3) — then derives under the canonical contexts. Extracted so
 /// the empty guard is unit-testable without a host whose `machine_uid`
-/// read is actually broken.
+/// read is actually empty.
 ///
 /// `weak_mask!()` keeps both BLAKE3 context literals out of
 /// `strings(1)` output for user binaries. Each literal MUST match its
@@ -92,9 +94,21 @@ fn derive_from_machine_id(
     machine_id: Zeroizing<alloc::string::String>,
     nonce: &[u8; NONCE_LEN],
 ) -> Result<UnlockKey, KeyError> {
-    // An empty read is a broken read; `MachineId::new` rejects it so the
-    // empty-id footgun is unrepresentable at `derive_machine_id_key`.
-    let machine_id = MachineId::new(&machine_id).map_err(|_| KeyError::InvalidFormat)?;
+    // An empty read is an unprovisioned host (machine-id(5) documents an
+    // empty `/etc/machine-id` as a valid "not yet initialized" state), not
+    // malformed key data: no machine factor is available to bind to. Map
+    // it to `Provider` → EX_UNAVAILABLE (69), matching the CLI's
+    // `show-machine-id` and the `machine_uid::get()` lookup-failure path,
+    // so a deploy script sees one code for "this host cannot bind".
+    // `MachineId::new` rejects empty so the footgun is unrepresentable at
+    // `derive_machine_id_key`.
+    let machine_id = MachineId::new(&machine_id).map_err(|_| {
+        KeyError::Provider(alloc::boxed::Box::new(MachineUidError(
+            alloc::string::String::from(
+                "machine id is empty (unprovisioned host; see machine-id(5))",
+            ),
+        )))
+    })?;
     Ok(UnlockKey::from_raw(derive_machine_id_key(
         crate::weak_mask!("litmask-machine-id-v1"),
         crate::weak_mask!("litmask-machine-id-salt-v1"),
@@ -103,12 +117,15 @@ fn derive_from_machine_id(
     )))
 }
 
-/// Send + Sync wrapper around an upstream `machine-uid` failure.
+/// Send + Sync error for an unusable machine factor: either an upstream
+/// `machine-uid::get()` failure or a successful read that returned an
+/// empty (unprovisioned) id. Both mean "this host cannot supply a machine
+/// binding" and surface as [`KeyError::Provider`] → `EX_UNAVAILABLE` (69).
 ///
 /// `machine-uid::get()`'s native error is `Box<dyn Error>` without
 /// the `Send + Sync` bound that [`KeyError::Provider`] requires.
-/// This shim captures the upstream's `Display` rendering into an
-/// owned `String` and re-impls `Error` to satisfy the bound.
+/// This shim captures a `Display` message into an owned `String` and
+/// re-impls `Error` to satisfy the bound.
 ///
 /// Limitation: only the `Display` text survives — a non-empty
 /// `source()` chain is dropped at this lift point. Today
@@ -168,17 +185,23 @@ mod tests {
         assert_eq!(provider.nonce, nonce);
     }
 
-    /// An empty `machine_uid` read can never open a valid seal —
-    /// `emit()` rejects a token with an empty id (§2.9.3.3) — so name
-    /// the broken read instead of failing later with a generic
-    /// wrapper-decrypt error.
+    /// An empty `machine_uid` read is an unprovisioned host, not a usable
+    /// machine factor: machine-id(5) documents an empty `/etc/machine-id`
+    /// as a valid "not yet initialized" state (generic images / bare
+    /// containers), so no seal can match it. It surfaces as
+    /// [`KeyError::Provider`] → `EX_UNAVAILABLE` (69), consistent with the
+    /// CLI's `show-machine-id` and the `machine_uid::get()` lookup-failure
+    /// path — a deploy script keys on one code for "this host cannot bind".
     #[test]
-    fn empty_machine_id_yields_invalid_format() {
+    fn empty_machine_id_is_unavailable() {
+        use crate::InitError;
         let result = derive_from_machine_id(
             Zeroizing::new(alloc::string::String::new()),
             &[0u8; NONCE_LEN],
         );
-        assert!(matches!(result, Err(KeyError::InvalidFormat)));
+        let err = result.expect_err("empty machine id must not derive a key");
+        assert!(matches!(err, KeyError::Provider(_)));
+        assert_eq!(InitError::from(err).sysexit_code(), 69);
     }
 
     /// The runtime derivation must use the host's own machine id and the
