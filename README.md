@@ -172,15 +172,16 @@ use `weak_mask!`, but its key is recoverable statically from the binary.
 ## Debug derive
 
 `#[derive(Debug)]` embeds the type name, every field name, and every enum
-variant name as cleartext in the binary. `#[derive(MaskDebug)]` masks the
-names through the same AEAD pipeline as `mask!` while keeping `{:?}` and
-`{:#?}` output byte-identical to the plain derive:
+variant name as cleartext in the binary. `#[derive(MaskDebug)]` masks all
+three — the type name included, not only the fields/variants — through the
+same AEAD pipeline as `mask!` while keeping `{:?}` and `{:#?}` output
+byte-identical to the plain derive:
 
 ```rust
 use litmask::MaskDebug;
 
 #[derive(MaskDebug)]
-struct LicenseManifest {
+struct LicenseManifest {          // type name absent from the binary
     license_server_url: String,   // field name absent from the binary
     activation_token: String,
 }
@@ -197,28 +198,31 @@ See `examples/mask_debug_demo.rs` and SPECIFICATION.md §2.14.
 
 ## Serde integration (experimental)
 
-The plain `serde` derives embed every field name and the struct name as
+The plain `serde` derives embed every field name and the type name as
 cleartext in the binary — `strings(1)` reveals your schema vocabulary even
 when every field value is masked (`Deserialize` is the larger leak: `FIELDS`
-arrays, field-matching arms, and `missing field` diagnostics all carry the
-names). The `unstable-serde` feature adds `#[derive(MaskSerialize)]` and
-`#[derive(MaskDeserialize)]`, which mask the names through the same AEAD
-pipeline as `mask!` while keeping behavior identical to the plain derives —
-byte-identical serialized output, same accepted inputs, same error messages:
+arrays, field-matching arms, `expecting()` text like `"struct Config"`, and
+`missing field` diagnostics all carry the names). The `unstable-serde`
+feature adds `#[derive(MaskSerialize)]` and `#[derive(MaskDeserialize)]`,
+which mask all of them — the type name included, not only the
+fields/variants — through the same AEAD pipeline as `mask!` while keeping
+behavior identical to the plain derives — byte-identical serialized output,
+same accepted inputs, same error messages:
 
 ```rust
 use litmask::{MaskDeserialize, MaskSerialize};
 
 #[derive(MaskSerialize, MaskDeserialize)]
-struct LicenseManifest {
+struct LicenseManifest {          // type name absent from the binary
     license_server_url: String,   // field name absent from the binary
     activation_token: String,
 }
 ```
 
 Every struct shape (named-field, tuple, newtype, unit) and enums are
-supported, including the variant names self-describing formats print and
-match on. A documented subset of `#[serde(...)]` is honored and stays wire-identical
+supported. For an enum the type name is masked too (unlike `MaskDebug`,
+where the plain `Debug` derive never emits the enum's own name), along with
+the variant names self-describing formats print and match on. A documented subset of `#[serde(...)]` is honored and stays wire-identical
 to the plain derive — `rename`/`rename_all`, `skip*`, `default`, `alias`,
 `with`, `deny_unknown_fields`, `transparent`, and more; SPECIFICATION.md
 Appendix E lists the full set.

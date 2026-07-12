@@ -384,24 +384,35 @@ pub use litmask_macros::unmasked_derive;
 /// ```
 pub use litmask_macros::init;
 
+/// Masks the type name **and** every field name (and, for enums, every
+/// variant name) — the same three name kinds `#[derive(Debug)]` embeds
+/// as cleartext. The `Creds` type name below is masked as well as the
+/// `user` field; neither survives in `.rodata`.
+///
 /// # Examples
 ///
 /// ```
 /// #[derive(litmask::MaskDebug)]
-/// struct Creds {
-///     user: String,
+/// struct Creds {          // `Creds` type name absent from .rodata
+///     user: String,       // `user` field name absent from .rodata
 /// }
 /// // renders like `#[derive(Debug)]`, but the names are absent from .rodata:
 /// assert_eq!(format!("{:?}", Creds { user: "bob".into() }), "Creds { user: \"bob\" }");
 /// ```
 pub use litmask_macros::MaskDebug;
 
+/// Masks the type name **and** every field name (and, for enums, every
+/// variant name) — the same names the plain `serde::Serialize` derive
+/// passes to `serialize_struct` / `serialize_*_variant`. The `Config`
+/// type name below is masked as well as the `host` / `port` fields;
+/// none survive in `.rodata`.
+///
 /// # Examples
 ///
 /// ```
 /// #[derive(litmask::MaskSerialize)]
-/// struct Config {
-///     host: String,
+/// struct Config {         // `Config` type name absent from .rodata
+///     host: String,       // `host` / `port` field names absent from .rodata
 ///     port: u16,
 /// }
 /// // wire output is byte-identical to `#[derive(Serialize)]`; names masked:
@@ -411,12 +422,19 @@ pub use litmask_macros::MaskDebug;
 #[cfg(feature = "unstable-serde")]
 pub use litmask_macros::MaskSerialize;
 
+/// Masks the type name **and** every field name (and, for enums, every
+/// variant name) — the names the plain `serde::Deserialize` derive
+/// embeds in its `FIELDS` arrays, field-matching arms, `expecting()`
+/// text (`"struct Config"`), and `missing field` diagnostics. The
+/// `Config` type name below is masked as well as the `host` / `port`
+/// fields; none survive in `.rodata`.
+///
 /// # Examples
 ///
 /// ```
 /// #[derive(litmask::MaskDeserialize)]
-/// struct Config {
-///     host: String,
+/// struct Config {         // `Config` type name absent from .rodata
+///     host: String,       // `host` / `port` field names absent from .rodata
 ///     port: u16,
 /// }
 /// // accepts the same input as `#[derive(Deserialize)]`; names masked:
