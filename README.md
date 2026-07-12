@@ -48,8 +48,6 @@ strings target/release/my_app | grep "pricing oracle"   # no output
 
 ## Quick start
 
-Requires Rust 1.88+.
-
 ```sh
 cargo add litmask
 cargo add --build litmask-build
@@ -350,6 +348,10 @@ LITMASK_UNLOCK_KEY="$(litmask keygen)" cargo build --release
 - [Deployment guide](docs/DEPLOYMENT.md)
 - [Specification](docs/SPECIFICATION.md)
 - [Benchmarks](docs/BENCHMARKS.md) — build-time and runtime overhead (regenerate with `just bench-doc`)
+
+## Minimum supported Rust version
+
+Requires Rust 1.88+.
 
 ## License
 
