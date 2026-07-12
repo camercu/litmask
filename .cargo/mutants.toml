@@ -21,13 +21,23 @@
 #      mutated, so an equivalent mutant already in the tree never
 #      re-surfaces; new noise is bounded to newly-changed code.
 #
-# Equivalent mutants are the only real "false positive": a mutation that
-# cannot change observable behaviour, so no test can kill it (e.g.
-# `x % 8` -> `x + 8` where a following `u8::rotate_left` already reduces
-# mod 8). Triage each ONCE: a real gap gets a test; a provably-equivalent
-# mutant is recorded in `exclude_re` below with its reason. After triage
-# every remaining survivor is a real, actionable gap — that is what earns
-# the lane trust.
+# Two classes of true "false positive" survive no matter the tests, so
+# neither is a gap:
+#
+#   a. Equivalent mutants — a mutation that cannot change observable
+#      behaviour, so no test can kill it (e.g. `x % 8` -> `x + 8` where a
+#      following `u8::rotate_left` already reduces mod 8).
+#   b. Build-script-only effects — `litmask-build::emit` runs solely as a
+#      consumer's `build.rs`; no *test* (even at `test_workspace = true`)
+#      invokes it, only a real downstream BUILD does, so its stub survives
+#      the whole test suite. `test_workspace` fixes the cross-crate *test*
+#      blind spot (proc-macro output observed by a consumer's tests); it
+#      does not run build scripts.
+#
+# Triage each ONCE: a real gap gets a test; a class-(a)/(b) mutant is
+# recorded in `exclude_re` below with its reason. After triage every
+# remaining survivor is a real, actionable gap — that is what earns the
+# lane trust.
 #
 # `exclude_re` over `#[mutants::skip]`, deliberately: the attribute must
 # resolve at compile time, which would add the `mutants` proc-macro crate
@@ -48,6 +58,20 @@
 # explicit `--lib`) does not error on a bin-only crate such as
 # `litmask-cli` that has no library target.
 additional_cargo_args = ["--tests"]
+
+# Run the WHOLE workspace's tests for every mutant, not just the mutated
+# crate's own tests (cargo-mutants' package-scoped default). Required for
+# trustworthy signal: `litmask-macros` is a proc-macro crate whose output
+# is only observable once a CONSUMER crate compiles the expansion, so its
+# behavior-changing mutants are killed only by the `litmask` crate's
+# integration tests (`tests/mask_all*.rs`) and trybuild compile-fail tests
+# (`tests/compile/*_strict_*.rs`) — never by litmask-macros' own unit
+# tests. Under the package-scoped default those mutants (e.g. stubbing
+# `mask_all::expand` to an empty `TokenStream`, or deleting the `strict`
+# field) SURVIVE as false gaps even though `just ci` catches the same
+# regression as a compile error. With the lane fail-closed, that would
+# fail CI on a PR touching those lines. `true` closes the blind spot.
+test_workspace = true
 
 # Anti-flake timeouts. The suite runs in well under a second, so the
 # auto-derived timeout would be tiny and a momentarily-slow runner could
