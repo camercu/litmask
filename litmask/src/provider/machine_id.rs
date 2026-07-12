@@ -266,6 +266,22 @@ mod tests {
         assert_send_sync::<MachineUidError>();
     }
 
+    /// The shared lift routes an unusable-machine-factor message to the
+    /// same `EX_UNAVAILABLE` (69) contract regardless of source. The
+    /// empty-read call site is covered by `empty_machine_id_is_unavailable`;
+    /// this pins the sibling `machine_uid::get()` lookup-failure branch,
+    /// which is otherwise only reachable on a host where the read actually
+    /// fails (OpenBSD) — untestable in-crate without going through the lift.
+    #[test]
+    fn into_key_error_maps_a_lookup_failure_to_unavailable() {
+        use crate::InitError;
+        let err = MachineUidError::into_key_error(alloc::string::String::from(
+            "simulated machine_uid::get() failure",
+        ));
+        assert!(matches!(err, KeyError::Provider(_)));
+        assert_eq!(InitError::from(err).sysexit_code(), 69);
+    }
+
     /// Pin the literal-vs-const drift: the runtime call site inlines
     /// `weak_mask!()` for both the key context and the salt context so
     /// the BLAKE3 context bytes are obfuscated in user binaries, while
