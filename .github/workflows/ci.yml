@@ -47,7 +47,7 @@ jobs:
       # `just lint` shells out to markdownlint-cli2, an npm tool the
       # cargo-centric install-action above can't provide. Locally it
       # comes from nix-shell; here npm -g, pinned via .tool-versions.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .tool-versions
 
@@ -421,7 +421,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .tool-versions
           cache: npm
