@@ -86,7 +86,8 @@ mod weak_mask;
 ///
 /// # Panics
 ///
-/// Panics during macro expansion (not at the user's runtime) if:
+/// **At macro expansion** (the caller's build, never the shipped
+/// binary) if:
 ///
 /// - `OUT_DIR` is unset (the caller's crate is missing a `build.rs`
 ///   that invokes `litmask_build::emit()`).
@@ -94,6 +95,22 @@ mod weak_mask;
 ///   `OUT_DIR`, or have the wrong length.
 /// - ChaCha20-Poly1305 encryption fails for the literal value
 ///   (cryptographically extraordinary; never observed in practice).
+///
+/// **At the user's runtime** — the expansion decrypts on each call and
+/// diverges (fail-closed, never a silent wrong value) when no plaintext
+/// can be produced:
+///
+/// - the build sealed a tier above Embedded and the matching
+///   `init!(...)` form has not run before this `mask!()`
+///   (init-ordering bug);
+/// - the blob or its wrapper fails AEAD authentication (governed key
+///   material disagrees with the seal, or the binary was tampered), or
+///   a `mask!("...")` blob decrypts to invalid UTF-8.
+///
+/// The panic message is profile-split (SPECIFICATION §1.9.5): a debug
+/// build names the cause and the fix; a release build panics with no
+/// message, so no litmask-identifying string reaches the artifact.
+/// Reproduce a release-binary failure in a debug build to diagnose it.
 #[proc_macro]
 pub fn mask(input: TokenStream) -> TokenStream {
     mask::expand(input)
@@ -194,8 +211,9 @@ pub fn init(input: TokenStream) -> TokenStream {
 ///
 /// # Panics
 ///
-/// Same proc-macro-time panic conditions as [`mask!`] for missing
-/// `OUT_DIR`, key/seed files, etc.
+/// Same panic contract as [`mask!`] — the expansion-time conditions
+/// (missing `OUT_DIR`, key/seed files, etc.) and the runtime
+/// fail-closed panics with their profile-split message.
 #[proc_macro]
 pub fn mask_include_str(input: TokenStream) -> TokenStream {
     mask_include_str::expand(input)
@@ -221,8 +239,9 @@ pub fn mask_include_str(input: TokenStream) -> TokenStream {
 ///
 /// # Panics
 ///
-/// Same proc-macro-time panic conditions as [`mask!`] for missing
-/// `OUT_DIR`, key/seed files, etc.
+/// Same panic contract as [`mask!`] — the expansion-time conditions
+/// (missing `OUT_DIR`, key/seed files, etc.) and the runtime
+/// fail-closed panics with their profile-split message.
 #[proc_macro]
 pub fn mask_include_bytes(input: TokenStream) -> TokenStream {
     mask_include_bytes::expand(input)
@@ -246,8 +265,9 @@ pub fn mask_include_bytes(input: TokenStream) -> TokenStream {
 ///
 /// # Panics
 ///
-/// Same proc-macro-time panic conditions as [`mask!`] for missing
-/// `OUT_DIR`, key/seed files, etc.
+/// Same panic contract as [`mask!`] — the expansion-time conditions
+/// (missing `OUT_DIR`, key/seed files, etc.) and the runtime
+/// fail-closed panics with their profile-split message.
 #[proc_macro]
 pub fn mask_concat(input: TokenStream) -> TokenStream {
     mask_concat::expand(input)
@@ -265,8 +285,9 @@ pub fn mask_concat(input: TokenStream) -> TokenStream {
 ///
 /// # Panics
 ///
-/// Same proc-macro-time panic conditions as [`mask!`] for missing
-/// `OUT_DIR`, key/seed files, etc.
+/// Same panic contract as [`mask!`] — the expansion-time conditions
+/// (missing `OUT_DIR`, key/seed files, etc.) and the runtime
+/// fail-closed panics with their profile-split message.
 #[proc_macro]
 pub fn mask_env(input: TokenStream) -> TokenStream {
     mask_env::expand(input)
@@ -288,8 +309,9 @@ pub fn mask_env(input: TokenStream) -> TokenStream {
 ///
 /// # Panics
 ///
-/// Same proc-macro-time panic conditions as [`mask!`] for missing
-/// `OUT_DIR`, key/seed files, etc.
+/// Same panic contract as [`mask!`] — the expansion-time conditions
+/// (missing `OUT_DIR`, key/seed files, etc.) and the runtime
+/// fail-closed panics with their profile-split message.
 #[proc_macro]
 pub fn mask_option_env(input: TokenStream) -> TokenStream {
     mask_option_env::expand(input)
@@ -318,8 +340,9 @@ pub fn mask_option_env(input: TokenStream) -> TokenStream {
 ///
 /// # Panics
 ///
-/// Same proc-macro-time panic conditions as [`mask!`] for missing
-/// `OUT_DIR`, key/seed files, etc.
+/// Same panic contract as [`mask!`] — the expansion-time conditions
+/// (missing `OUT_DIR`, key/seed files, etc.) and the runtime
+/// fail-closed panics with their profile-split message.
 #[proc_macro]
 pub fn mask_file(input: TokenStream) -> TokenStream {
     mask_file::expand(input)
@@ -363,7 +386,9 @@ pub fn unmasked(input: TokenStream) -> TokenStream {
 /// # Panics
 ///
 /// Inherits [`mask!`]'s expansion-time panic policy (missing
-/// `OUT_DIR`, unreadable build artifact, AEAD failure).
+/// `OUT_DIR`, unreadable build artifact, AEAD failure) and its runtime
+/// fail-closed panics — the template decrypts on each call, so run
+/// `init!` before formatting on tiers above Embedded.
 #[proc_macro]
 pub fn mask_format(input: TokenStream) -> TokenStream {
     mask_format::expand(input)
@@ -391,6 +416,12 @@ pub fn mask_format(input: TokenStream) -> TokenStream {
 /// Panics at proc-macro expansion time if `OUT_DIR` is unset or
 /// `litmask_wrapper.bin` cannot be read; these indicate a missing
 /// `build.rs` invoking `litmask_build::emit()`.
+///
+/// At the user's runtime the decode panics only when the obfuscated
+/// bytes or the in-process wrapper copy were tampered (invalid UTF-8 /
+/// interior NUL) — no `init!` is required. The message follows the
+/// same profile split as [`mask!`]: actionable in debug, bare in
+/// release.
 #[proc_macro]
 pub fn weak_mask(input: TokenStream) -> TokenStream {
     weak_mask::expand(input)
@@ -502,7 +533,9 @@ pub fn weak_mask(input: TokenStream) -> TokenStream {
 ///
 /// Panics during macro expansion if applied to anything other than a
 /// module item — `syn` reports the parse error at the attribute's
-/// call site.
+/// call site. The rewritten literals expand to the masking macros
+/// above, so at runtime they carry [`mask!`]'s fail-closed panic
+/// contract.
 #[proc_macro_attribute]
 pub fn mask_all(attr: TokenStream, item: TokenStream) -> TokenStream {
     mask_all::expand(attr, item)
