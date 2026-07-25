@@ -12,6 +12,16 @@ pub(crate) type ProviderError = alloc::boxed::Box<dyn core::error::Error + Send 
 
 /// Errors surfaced by [`crate::init!`].
 ///
+/// `Display` (here and on [`KeyError`]) deliberately renders terse,
+/// stable tokens — `key_provider:not_found`, `decryption_failed` —
+/// rather than prose: whatever a consumer prints lands in its release
+/// binary's string table, so the tokens keep that embedded surface
+/// small and free of litmask-identifying text. Wrapping them in
+/// verbose prose re-expands that surface; prefer logging the token (or
+/// exiting with [`InitError::sysexit_code`]) as-is. A debug build
+/// already prints an actionable diagnosis via the profile-split panic
+/// path (SPECIFICATION §1.9.5).
+///
 /// # Examples
 ///
 /// ```
