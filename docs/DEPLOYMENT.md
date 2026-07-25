@@ -301,6 +301,37 @@ without litmask-specific knowledge:
 echo $?   # 78 → missing configuration
 ```
 
+## Diagnosing runtime failures
+
+Failure diagnostics are profile-split (SPECIFICATION §1.9.5). When a
+**release** binary cannot produce plaintext — governed `init!` not run
+before the first `mask!()`, wrong or missing key material, tampered
+binary — it fails closed with a bare, message-less panic:
+
+```text
+thread 'main' panicked at ...: explicit panic
+```
+
+That is deliberate: an actionable message would embed a
+litmask-identifying string in the artifact. To diagnose, reproduce the
+failure in a **debug** build (`cargo build`, or `cargo run`) on a
+development machine — debug binaries print a diagnostic naming the
+likely cause and fix, e.g.:
+
+```text
+litmask: a mask!() reached the runtime before init!() — this build is
+sealed `external` (above the Embedded floor), so it must call the
+matching init!(...) form before the first mask!()
+```
+
+Never distribute a debug binary (SPECIFICATION §D.2.1): it is
+self-decrypting at the Embedded floor _and_ carries these diagnostic
+strings.
+
+Failures inside `init!` itself are the exception — they surface as a
+`Result` (see the exit-code table above), not a panic, in both
+profiles.
+
 ## What litmask does NOT protect against
 
 litmask does not defend against runtime memory inspection, debugger

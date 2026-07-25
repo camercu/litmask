@@ -275,6 +275,14 @@ This shrinks the window a dropped secret survives in a core dump, swap, or
 hibernation image; it does not change the memory-inspection limits above.
 See [THREAT_MODEL.md](docs/THREAT_MODEL.md) for the per-macro coverage.
 
+Runtime failures are profile-split: a release binary that cannot decrypt
+(key missing or wrong, governed `init!` not run, tamper) fails closed
+with a bare, message-less panic — deliberate, so no litmask-identifying
+string reaches the artifact. Rebuild in debug to see an actionable
+diagnosis; never distribute a debug binary (it is self-decrypting and
+carries the diagnostic strings). See
+[Diagnosing runtime failures](docs/DEPLOYMENT.md#diagnosing-runtime-failures).
+
 ## Machine-ID binding
 
 The `machine-id` feature — enabled on the `litmask` dependency
