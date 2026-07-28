@@ -44,7 +44,8 @@ regardless.
 | `just test-examples`    | Builds and runs every example under `litmask/examples/`.                  |
 | `just check-no-default` | Verifies `--no-default-features --features alloc` (no_std + alloc) build. |
 | `just doc`              | Rustdoc with `-D warnings`.                                               |
-| `just ci`               | The exact set canonical-gate runs in CI.                                  |
+| `just ci`               | The canonical gate, minus the non-gating coverage summary.                |
+| `just ci-full`          | `just ci` plus `just ci-coverage` (the full CI step set).                 |
 
 Adding a new example file under `litmask/examples/` is enough to wire
 it into `just test-examples` and the strings-scrub test — both
