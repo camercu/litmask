@@ -44,12 +44,23 @@ regardless.
 | `just test-examples`    | Builds and runs every example under `litmask/examples/`.                  |
 | `just check-no-default` | Verifies `--no-default-features --features alloc` (no_std + alloc) build. |
 | `just doc`              | Rustdoc with `-D warnings`.                                               |
-| `just ci`               | The canonical gate, minus the non-gating coverage summary.                |
-| `just ci-full`          | `just ci` plus `just ci-coverage` (the full CI step set).                 |
+| `just ci`               | The local gate. Overlaps CI heavily but is not identical — see below.     |
+| `just ci-full`          | `just ci` plus the non-gating `just ci-coverage` summary.                 |
 
-Adding a new example file under `litmask/examples/` is enough to wire
-it into `just test-examples` and the strings-scrub test — both
-discover examples by glob.
+`just ci` and the GitHub canonical gate are not the same step list.
+CI runs `test-unit` (workspace tests on **default** features, so
+ChaCha20-Poly1305); `just ci` does not, and its only workspace-wide
+lane, `test-all-features`, resolves to AES. `just ci` in turn runs
+`test-all-features` and `test-machine-id`, which CI does not. A green
+`just ci` is strong evidence, not a guarantee CI passes.
+
+Adding a new example file under `litmask/examples/` wires it into
+`just test-examples`, which discovers by glob. The strings-scrub test
+does **not** discover by glob: `litmask/tests/example_scrub.rs` keeps
+hand-maintained `EXAMPLES` / `EXCEPTIONS` arrays, and a sync test in
+that file fails if they drift from the directory — so a new example
+needs an entry there too, and you will get a red test rather than
+silence if you forget.
 
 ## Git hooks
 
