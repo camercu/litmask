@@ -22,6 +22,12 @@ pub(crate) type ProviderError = alloc::boxed::Box<dyn core::error::Error + Send 
 /// already prints an actionable diagnosis via the profile-split panic
 /// path (SPECIFICATION §1.9.5).
 ///
+/// One deliberate exception: [`KeyError::Provider`] renders
+/// `provider:{inner}`, delegating to the boxed error a custom
+/// [`crate::KeyProvider`] returned. That text is the provider author's,
+/// not litmask's — unbounded, not a stable token, and worth an audit if
+/// the surrounding binary is meant to stay unbranded.
+///
 /// # Examples
 ///
 /// ```
