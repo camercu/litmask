@@ -38,7 +38,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: ". -> target"
+          # `check-no-default` builds into its own target dir (it is the one
+          # recipe carrying a RUSTFLAGS override, which would otherwise
+          # invalidate `test-no-default`'s artifacts on every run). It needs
+          # declaring here too, or that dep graph rebuilds cold every CI run.
+          workspaces: |
+            . -> target
+            . -> target/check-no-default
 
       - uses: taiki-e/install-action@v2
         with:
