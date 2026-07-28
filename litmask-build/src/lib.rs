@@ -439,9 +439,10 @@ impl Profile {
 /// is never baked into the shipped binary (§1.3.2), and carries no secret.
 fn embedded_floor_warning(tier: &SealTier, profile: Profile) -> Option<String> {
     (profile == Profile::Release && tier.tag_kind() == SealTierTag::Embedded).then(|| {
-        "cargo:warning=litmask: Embedded obfuscation floor in a release build — the wrapper \
-         key is recoverable from the artifact. Set LITMASK_UNLOCK_KEY or LITMASK_MACHINE_ID \
-         to seal a stronger tier."
+        "cargo:warning=litmask: this crate sealed at the Embedded obfuscation floor in a \
+         release build — its wrapper key is recoverable from the artifact. Set \
+         LITMASK_UNLOCK_KEY or LITMASK_MACHINE_ID in the build environment to seal a \
+         stronger tier. Each masking crate warns once, so a graph repeats this per crate."
             .to_string()
     })
 }
@@ -1026,6 +1027,25 @@ mod tests {
         assert!(
             warning.starts_with("cargo:warning="),
             "floor warning must ride the cargo:warning= channel; got {warning:?}",
+        );
+    }
+
+    /// Every masking crate's build.rs emits the floor warning
+    /// independently, so a graph with N masking crates prints it N
+    /// times. The message must scope itself to the sealing crate and
+    /// name the repetition, so the copies read as one-per-crate
+    /// statements rather than a stutter.
+    #[test]
+    fn floor_warning_reads_as_per_crate_statement() {
+        let warning = embedded_floor_warning(&SealTier::Embedded, Profile::Release)
+            .expect("embedded release build must warn");
+        assert!(
+            warning.contains("this crate"),
+            "floor warning must scope itself to the sealing crate; got {warning:?}",
+        );
+        assert!(
+            warning.contains("warns once"),
+            "floor warning must explain the per-crate repetition; got {warning:?}",
         );
     }
 
