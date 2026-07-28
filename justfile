@@ -157,10 +157,15 @@ test-serde-chacha:
     {{cargo}} nextest run -p litmask -p litmask-internal --no-default-features --features std,chacha20-poly1305,unstable-serde
     cargo test -p litmask -p litmask-internal --doc --no-default-features --features std,chacha20-poly1305,unstable-serde
 
-# Run tests with --all-features so dual-cipher (chacha + aes-gcm)
-# code paths are exercised. Catches bugs like encrypt-with-one-cipher /
-# decrypt-with-another when CURRENT_CIPHER resolves differently than
-# the hardcoded cipher in a test helper.
+# Run tests with both cipher features compiled in. Note what this does
+# and does not cover: `CURRENT_CIPHER` resolves to `Aes256Gcm` whenever
+# aes-gcm is active, so every seal/unseal, blob and serde path here runs
+# AES only — the chacha arms of `with_cipher!` are compiled but reached
+# solely by `litmask-internal/tests/cipher_selection.rs`, which names
+# `CipherId::ChaCha20Poly1305` explicitly. The higher-level chacha paths
+# are covered by `test-machine-id` and `test-serde-chacha` instead. What
+# this lane does catch is a test helper hardcoding a cipher that
+# disagrees with the resolved `CURRENT_CIPHER`.
 #
 # Examples are excluded (`--lib --tests --bins`) by necessity, not
 # oversight: the seal tier is fixed per-build from env presence and
