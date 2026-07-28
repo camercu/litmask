@@ -138,12 +138,8 @@ test-machine-id:
 # the single-cipher property this recipe exists to test — with both on,
 # `CURRENT_CIPHER` is `Aes256Gcm` (aes-gcm wins; see
 # litmask-internal/src/aead.rs), so the chacha-only paths never compile.
-# `unstable-serde` is folded in so the masked-name decrypt path (a
-# cipher-specific blob) is covered here too; `test-serde-chacha` is its
-# mirror under the default cipher.
-test-aes-gcm:
-    {{cargo}} nextest run -p litmask -p litmask-internal --no-default-features --features std,aes-gcm,unstable-serde
-    cargo test -p litmask -p litmask-internal --doc --no-default-features --features std,aes-gcm,unstable-serde
+# `test-serde-chacha` is its mirror under the default cipher.
+test-aes-gcm: (_test-single-cipher "aes-gcm")
 
 # Mirror of `test-aes-gcm` under the DEFAULT cipher. Both feature sets
 # that enable `unstable-serde` elsewhere (`test-aes-gcm` and
@@ -151,11 +147,16 @@ test-aes-gcm:
 # both cipher features are active — so without this recipe the serde
 # derives, and their doctests, are never exercised under
 # ChaCha20-Poly1305, the cipher a default `cargo add litmask` gets.
-# Same litmask + litmask-internal scoping as `test-aes-gcm`, for the same
-# feature-unification reason.
-test-serde-chacha:
-    {{cargo}} nextest run -p litmask -p litmask-internal --no-default-features --features std,chacha20-poly1305,unstable-serde
-    cargo test -p litmask -p litmask-internal --doc --no-default-features --features std,chacha20-poly1305,unstable-serde
+test-serde-chacha: (_test-single-cipher "chacha20-poly1305")
+
+# Shared body of the two single-cipher lanes: exactly one cipher, plus
+# `unstable-serde` so the masked-name blob (which is cipher-specific) is
+# decrypted under it. Private (`_` prefix hides it from `just --list`) —
+# the two named recipes above are the interface, and each documents why
+# its cipher needs its own lane.
+_test-single-cipher cipher:
+    {{cargo}} nextest run -p litmask -p litmask-internal --no-default-features --features std,{{cipher}},unstable-serde
+    cargo test -p litmask -p litmask-internal --doc --no-default-features --features std,{{cipher}},unstable-serde
 
 # Run tests with both cipher features compiled in. Note what this does
 # and does not cover: `CURRENT_CIPHER` resolves to `Aes256Gcm` whenever
