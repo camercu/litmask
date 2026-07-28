@@ -393,8 +393,14 @@ bench-doc:
 # Verify the runtime crate compiles with `--no-default-features --features alloc`
 # (the no_std + alloc configuration). `test-no-default` runs unit tests under
 # the same feature set; this recipe is a faster compile-only gate.
+#
+# Own target dir because this is the one recipe carrying a `RUSTFLAGS`
+# override: sharing `target/` with the unflagged `test-no-default` (same
+# feature set) made each run invalidate the other's artifacts, so both
+# rebuilt from scratch every time. Separate dirs let both caches persist.
 check-no-default:
-    RUSTFLAGS="{{warnings}}" cargo check -p litmask --no-default-features --features alloc
+    RUSTFLAGS="{{warnings}}" CARGO_TARGET_DIR=target/check-no-default \
+        cargo check -p litmask --no-default-features --features alloc
 
 # Cross-compile the runtime crate to a bare-metal embedded target
 # (§2.10.1–§2.10.6). The `thumbv7m-none-eabi` triple has no `std`
