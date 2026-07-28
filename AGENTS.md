@@ -12,7 +12,7 @@ show-machine-id).
 
 ```sh
 nix-shell --run 'just setup'   # one-time
-just ci                         # full CI gate
+just ci                         # CI gate (add `just ci-full` for the coverage summary)
 just test                       # fast test loop
 just lint                       # fmt + clippy + typos + taplo + markdown + deny
 ```
