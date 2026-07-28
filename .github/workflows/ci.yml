@@ -83,6 +83,9 @@ jobs:
       - name: Test (aes-gcm)
         run: just test-aes-gcm
 
+      - name: Test (serde under chacha)
+        run: just test-serde-chacha
+
       - name: Test (examples)
         run: just test-examples
 

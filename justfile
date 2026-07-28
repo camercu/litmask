@@ -116,6 +116,14 @@ test-doc:
 test-no-default:
     {{cargo}} nextest run -p litmask -p litmask-internal --no-default-features --features alloc --lib
 
+# Carries a second, non-obvious job beyond its name: because it runs on
+# DEFAULT features plus machine-id, it is the lane that exercises
+# litmask's integration suite under ChaCha20-Poly1305. `test-all-features`
+# runs the same test names but resolves `CURRENT_CIPHER` to `Aes256Gcm`
+# (aes-gcm wins when both cipher features are active), so this recipe is
+# NOT redundant with it despite the name-level overlap — deleting it
+# would drop chacha coverage of the integration tests from `just ci`.
+#
 # Examples are excluded (`--lib --tests --bins`) for the seal-tier
 # reason documented on `test-all-features`: the machine_id_provider
 # example's `init!(bind_to_machine)` only compiles against a `machine`
@@ -127,13 +135,27 @@ test-machine-id:
 
 # Scoped to litmask + litmask-internal: `--workspace` would unify
 # features with litmask-cli (which activates both ciphers), defeating
-# the single-cipher property this recipe exists to test. `unstable-serde`
-# is folded in so the masked-name decrypt path (a cipher-specific blob)
-# runs under aes-gcm; `--all-features` only ever exercises it under
-# chacha, which wins feature unification (litmask-internal/src/aead.rs).
+# the single-cipher property this recipe exists to test — with both on,
+# `CURRENT_CIPHER` is `Aes256Gcm` (aes-gcm wins; see
+# litmask-internal/src/aead.rs), so the chacha-only paths never compile.
+# `unstable-serde` is folded in so the masked-name decrypt path (a
+# cipher-specific blob) is covered here too; `test-serde-chacha` is its
+# mirror under the default cipher.
 test-aes-gcm:
     {{cargo}} nextest run -p litmask -p litmask-internal --no-default-features --features std,aes-gcm,unstable-serde
     cargo test -p litmask -p litmask-internal --doc --no-default-features --features std,aes-gcm,unstable-serde
+
+# Mirror of `test-aes-gcm` under the DEFAULT cipher. Both feature sets
+# that enable `unstable-serde` elsewhere (`test-aes-gcm` and
+# `--all-features`) resolve to `Aes256Gcm`, because aes-gcm wins whenever
+# both cipher features are active — so without this recipe the serde
+# derives, and their doctests, are never exercised under
+# ChaCha20-Poly1305, the cipher a default `cargo add litmask` gets.
+# Same litmask + litmask-internal scoping as `test-aes-gcm`, for the same
+# feature-unification reason.
+test-serde-chacha:
+    {{cargo}} nextest run -p litmask -p litmask-internal --no-default-features --features std,chacha20-poly1305,unstable-serde
+    cargo test -p litmask -p litmask-internal --doc --no-default-features --features std,chacha20-poly1305,unstable-serde
 
 # Run tests with --all-features so dual-cipher (chacha + aes-gcm)
 # code paths are exercised. Catches bugs like encrypt-with-one-cipher /
@@ -570,6 +592,7 @@ ci mode="":
     step test-no-default
     step check-no-default
     step test-aes-gcm
+    step test-serde-chacha
     step test-machine-id
     step check-no-std
     step check-cross
