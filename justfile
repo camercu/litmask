@@ -527,14 +527,28 @@ pre-push:
 
 # ── CI ──────────────────────────────────────────────────────
 
-# Pass `timed` (see `ci-timed`) to print per-step wall-clock timings.
-# The step list lives here once; `ci-timed` reuses it via dependency.
 # Agent-facing CI: same steps as `ci`, but routes the compile-heavy recipes
 # (clippy/nextest/test/build/check) through rtk for token-compressed output.
 # Prefer this over `ci` when an agent runs the suite. Same pass/fail semantics.
 ci-rtk:
     RTK_CARGO="rtk cargo" just ci
 
+# `just ci` plus the non-gating coverage summary, for when the coverage
+# number is actually wanted.
+ci-full: ci ci-coverage
+
+# Pass `timed` (see `ci-timed`) to print per-step wall-clock timings.
+# The step list lives here once; `ci-timed` reuses it via dependency.
+#
+# Coverage is deliberately NOT part of this gate. `ci-coverage` is
+# best-effort and non-gating (no threshold — see its own comment), but
+# instrumenting the workspace cost ~122s and, even backgrounded at half
+# jobs, stole enough cores to add ~71s of wall time to the foreground
+# lanes (134s with it, 63s without, measured on a 14-core M4 Pro). The
+# uninstrumented `test-all-features` step covers the same test set — it
+# is the only lane exercising litmask-build / litmask-macros /
+# litmask-cli, which coverage had been carrying. Run `just ci-coverage`
+# on demand, or `just ci-full` for both; GitHub CI runs it as its own step.
 ci mode="":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -548,12 +562,7 @@ ci mode="":
     ci_start=$(date +%s)
     step fmt-check
     step lint
-    cov_log=$(mktemp)
-    trap 'rm -f "$cov_log"' EXIT
-    cov_start=$(date +%s)
-    { CARGO_BUILD_JOBS=$(($(nproc 2>/dev/null || sysctl -n hw.ncpu) / 2)) \
-        just ci-coverage; } >"$cov_log" 2>&1 &
-    pid_cov=$!
+    step test-all-features
     step test-doc
     step test-examples
     step build
@@ -564,19 +573,11 @@ ci mode="":
     step test-machine-id
     step check-no-std
     step check-cross
-    printf '\n══ ci-coverage (background) ══\n'
-    if wait "$pid_cov"; then
-        tail -1 "$cov_log"
-    else
-        cat "$cov_log"
-        exit 1
-    fi
     if [ -n "$timed" ]; then
-        printf '%4ds  ci-coverage\n' "$(( $(date +%s) - cov_start ))"
         printf '\nTotal: %ds\n' "$(( $(date +%s) - ci_start ))"
     fi
 
-# `ci` with per-step wall-clock timings (foreground steps + coverage + total).
+# `ci` with per-step wall-clock timings (per step + total).
 ci-timed: (ci "timed")
 
 # Best-effort coverage summary. Prints to stdout but does not fail CI
