@@ -30,8 +30,8 @@ tests cover it"). Paths are relative to the repo root.
 
 | Sub-item | Status | Evidence / gap |
 |---|---|---|
-| `chacha20-poly1305` (default) | ✅ | Serde tests run under `--all-features` (`justfile:122` `test-all-features`); chacha wins whenever enabled (`litmask-internal/src/aead.rs:33`), so this is the cipher actually exercised |
-| `aes-gcm` | ✅ | `test-aes-gcm` (`justfile`) now folds in `unstable-serde`, running the serde twin tests under `--no-default-features --features std,aes-gcm` (106 serde tests green). The masked-name blob is cipher-specific, so this is a distinct decrypt path from chacha |
+| `chacha20-poly1305` (default) | ✅ | `test-serde-chacha` (`justfile`) runs the serde twin tests and doctests under `--no-default-features --features std,chacha20-poly1305,unstable-serde` (541 tests green). This row previously cited `--all-features`, which is wrong: `aes-gcm` wins whenever both cipher features are active (`CURRENT_CIPHER`, `litmask-internal/src/aead.rs:52-53`), so every all-features lane exercises AES — the default cipher had no serde coverage until this lane was added |
+| `aes-gcm` | ✅ | `test-aes-gcm` (`justfile`) folds in `unstable-serde`, running the serde twin tests under `--no-default-features --features std,aes-gcm` (106 serde tests green). The masked-name blob is cipher-specific, so this is a distinct decrypt path from chacha — `test-serde-chacha` is its mirror |
 | `std` claimed; `no_std` not claimed | ✅ | §E.2.3 requires `std` (names leaked into `OnceLock<&'static str>`); no no_std obligation to test |
 | Ecosystem interop | ✅ | Wire/behavior identity pinned against real serde + `serde_json` twins across the matrix (e.g. `litmask/tests/mask_serde_rename.rs`); §E.2.1 documents the non-self-describing-format (bincode/postcard) shape contract |
 | Binary scrub proves the property | ✅ | `litmask/tests/example_scrub.rs::mask_serde_demo_names_and_fixtures_absent_from_binary` |
