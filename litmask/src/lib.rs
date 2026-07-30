@@ -486,6 +486,12 @@ pub mod __serde_support;
 ///
 /// Available in `no_std` + `alloc` builds.
 ///
+/// # Panics
+///
+/// Inherits [`mask_format!`]'s runtime fail-closed panic: the template
+/// decrypts on each call, so `init!` must have run first on tiers above
+/// Embedded.
+///
 /// # Examples
 ///
 /// ```
@@ -515,6 +521,12 @@ macro_rules! mask_write {
 ///
 /// Available in `no_std` + `alloc` builds.
 ///
+/// # Panics
+///
+/// Inherits [`mask_format!`]'s runtime fail-closed panic: the template
+/// decrypts on each call, so `init!` must have run first on tiers above
+/// Embedded. The no-argument form masks nothing and is unaffected.
+///
 /// # Examples
 ///
 /// ```
@@ -542,6 +554,12 @@ macro_rules! mask_writeln {
 /// stdout. litmask protects literals at rest in the binary; once
 /// printed, the output is unprotected.
 ///
+/// # Panics
+///
+/// Inherits [`mask_format!`]'s runtime fail-closed panic: the template
+/// decrypts on each call, so `init!` must have run first on tiers above
+/// Embedded.
+///
 /// # Examples
 ///
 /// ```
@@ -565,6 +583,12 @@ macro_rules! mask_print {
 /// **Security note:** the decrypted text is printed in the clear to
 /// stdout. litmask protects literals at rest in the binary; once
 /// printed, the output is unprotected.
+///
+/// # Panics
+///
+/// Inherits [`mask_format!`]'s runtime fail-closed panic: the template
+/// decrypts on each call, so `init!` must have run first on tiers above
+/// Embedded. The no-argument form masks nothing and is unaffected.
 ///
 /// # Examples
 ///
@@ -592,6 +616,12 @@ macro_rules! mask_println {
 /// stderr. litmask protects literals at rest in the binary; once
 /// printed, the output is unprotected.
 ///
+/// # Panics
+///
+/// Inherits [`mask_format!`]'s runtime fail-closed panic: the template
+/// decrypts on each call, so `init!` must have run first on tiers above
+/// Embedded.
+///
 /// # Examples
 ///
 /// ```
@@ -615,6 +645,12 @@ macro_rules! mask_eprint {
 /// **Security note:** the decrypted text is printed in the clear to
 /// stderr. litmask protects literals at rest in the binary; once
 /// printed, the output is unprotected.
+///
+/// # Panics
+///
+/// Inherits [`mask_format!`]'s runtime fail-closed panic: the template
+/// decrypts on each call, so `init!` must have run first on tiers above
+/// Embedded. The no-argument form masks nothing and is unaffected.
 ///
 /// # Examples
 ///
@@ -651,6 +687,14 @@ macro_rules! mask_eprintln {
 ///
 /// Available in `no_std` + `alloc` builds.
 ///
+/// # Panics
+///
+/// Always — that is the point. Beyond that, the message inherits
+/// [`mask_format!`]'s runtime fail-closed panic, which fires *first*:
+/// called before `init!` on tiers above Embedded, the decrypt panic
+/// pre-empts the intended message. The no-argument form masks nothing
+/// and is unaffected.
+///
 /// # Examples
 ///
 /// ```should_panic
@@ -678,6 +722,11 @@ macro_rules! mask_panic {
 /// emitted in the clear when the panic fires.
 ///
 /// Available in `no_std` + `alloc` builds.
+///
+/// # Panics
+///
+/// Always. See [`mask_panic!`] — a pre-`init!` decrypt failure panics
+/// before the intended message is reached.
 ///
 /// # Examples
 ///
@@ -707,6 +756,11 @@ macro_rules! mask_todo {
 ///
 /// Available in `no_std` + `alloc` builds.
 ///
+/// # Panics
+///
+/// Always. See [`mask_panic!`] — a pre-`init!` decrypt failure panics
+/// before the intended message is reached.
+///
 /// # Examples
 ///
 /// ```should_panic
@@ -734,6 +788,11 @@ macro_rules! mask_unimplemented {
 /// emitted in the clear when the panic fires.
 ///
 /// Available in `no_std` + `alloc` builds.
+///
+/// # Panics
+///
+/// Always. See [`mask_panic!`] — a pre-`init!` decrypt failure panics
+/// before the intended message is reached.
 ///
 /// # Examples
 ///
