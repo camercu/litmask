@@ -158,11 +158,16 @@ _test-single-cipher cipher:
     {{cargo}} nextest run -p litmask -p litmask-internal --no-default-features --features std,{{cipher}},unstable-serde
     cargo test -p litmask -p litmask-internal --doc --no-default-features --features std,{{cipher}},unstable-serde
 
-# Run tests with both cipher features compiled in. Note what this does
-# and does not cover: `CURRENT_CIPHER` resolves to `Aes256Gcm` whenever
-# aes-gcm is active, so every seal/unseal, blob and serde path here runs
-# AES only — the chacha arms of `with_cipher!` are compiled but reached
-# solely by `litmask-internal/tests/cipher_selection.rs`, which names
+# The workspace lane: the only recipe in `just ci` running `--workspace`,
+# so it is what covers litmask-build, litmask-macros and litmask-cli at
+# all. That, not the cipher matrix, is why it must stay in the gate.
+#
+# The name says both cipher features are compiled in, and they are, but
+# do not read that as dual-cipher coverage: `CURRENT_CIPHER` resolves to
+# `Aes256Gcm` whenever aes-gcm is active, so every seal/unseal, blob and
+# serde path here runs AES only — the chacha arms of `with_cipher!` are
+# compiled but reached solely by
+# `litmask-internal/tests/cipher_selection.rs`, which names
 # `CipherId::ChaCha20Poly1305` explicitly. The higher-level chacha paths
 # are covered by `test-machine-id` and `test-serde-chacha` instead. What
 # this lane does catch is a test helper hardcoding a cipher that
