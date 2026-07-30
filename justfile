@@ -431,6 +431,12 @@ bench-doc:
 # override: sharing `target/` with the unflagged `test-no-default` (same
 # feature set) made each run invalidate the other's artifacts, so both
 # rebuilt from scratch every time. Separate dirs let both caches persist.
+#
+# Not folded into `test-no-default` by moving `RUSTFLAGS` onto it, though
+# a `cargo check` is otherwise subsumed by a `cargo test` on the same
+# feature set: this recipe is in `pre-push` and `test-no-default` is not,
+# so the merge would trade a compile-only push gate for a test-running
+# one. Considered and declined 2026-07-29.
 check-no-default:
     RUSTFLAGS="{{warnings}}" CARGO_TARGET_DIR=target/check-no-default \
         cargo check -p litmask --no-default-features --features alloc
