@@ -71,47 +71,13 @@ jobs:
             | tar -xz -C "$HOME/.local/bin" actionlint
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Format check
-        run: just fmt-check
-
-      - name: Lint
-        run: just lint
-
-      - name: Test (unit)
-        run: just test-unit
-
-      - name: Test (doc)
-        run: just test-doc
-
-      - name: Test (no default features)
-        run: just test-no-default
-
-      - name: Test (aes-gcm)
-        run: just test-aes-gcm
-
-      - name: Test (serde under chacha)
-        run: just test-serde-chacha
-
-      - name: Test (examples)
-        run: just test-examples
-
-      - name: Build
-        run: just build
-
-      - name: Check (no default features)
-        run: just check-no-default
-
-      - name: Check (no_std)
-        run: just check-no-std
-
-      - name: Check (cross)
-        run: just check-cross
-
-      - name: Doc
-        run: just doc
-
-      - name: Coverage
-        run: just ci-coverage
+      # One step on purpose. The lane list lives in the `ci-github`
+      # recipe, next to `ci`, so the local and canonical gates cannot
+      # drift apart without a reader seeing both. Naming the lanes here
+      # too would recreate the second hand-maintained list this replaced.
+      # Which lane failed is in the log (`error: Recipe `X` failed`).
+      - name: Canonical gate
+        run: just ci-github
 
   stable-advisory:
     # Latest-stable rustc / clippy run against the workspace. Failures

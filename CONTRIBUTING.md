@@ -47,21 +47,11 @@ regardless.
 | `just ci`               | The local gate. Overlaps CI heavily but is not identical — see below.     |
 | `just ci-full`          | `just ci` plus the non-gating `just ci-coverage` summary.                 |
 
-`just ci` and the GitHub canonical gate are not the same step list. CI
-runs `test-unit` (workspace tests on **default** features, so
-ChaCha20-Poly1305) and `ci-coverage`; `just ci` runs neither, and
-`test-all-features` — the lane that runs the other crates' test
-suites — resolves to AES.
-`just ci` in turn runs `test-all-features` and `test-machine-id`, which
-CI does not. A green `just ci` is strong evidence, not a guarantee CI
-passes.
-
-That divergence is enforced rather than promised:
-`litmask-build/tests/ci_gate_matches_workflow.rs` diffs the two step
-lists and fails on any lane not declared there with a reason, on a
-declared exception that has stopped diverging, and on a gate step made
-conditional or soft-failing. The declarations in that test, not this
-paragraph, are the authoritative list.
+`just ci` and the GitHub canonical gate are not the same step list, so
+a green `just ci` is strong evidence, not a guarantee CI passes. The
+canonical gate is the `ci-github` recipe, which sits next to `ci` in the
+justfile with the deltas and their reasons on it — read those two
+recipes rather than a copy of them here.
 
 Adding a new example file under `litmask/examples/` wires it into
 `just test-examples`, which discovers by glob. The strings-scrub test
@@ -82,10 +72,9 @@ Three tiers, wired into the local clone by `just setup`:
 | `commit-msg` | every commit | `commitlint` against Conventional Commits                       |
 
 Push hooks are deliberately a fast subset, not a mirror: `pre-push`
-skips the cross/no_std/single-cipher/all-features lanes to keep push
-latency down (see the comment on the `pre-push` recipe in the
-justfile). Those lanes can still go red in CI after a green push; run
-`just ci` when that matters.
+trades lanes for push latency, and its recipe body is the list of what
+it does run. Anything it skips can still go red in CI after a green
+push; run `just ci` when that matters.
 
 If a hook fails because tool versions drifted (e.g., after a
 `.tool-versions` bump), re-run `just setup`.

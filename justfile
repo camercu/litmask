@@ -552,11 +552,11 @@ pre-commit: fmt-check lint-typos lint-taplo lint-markdown
     {{cargo}} check --all-targets --workspace --quiet
 
 # Slower checks run on every git push via pre-commit. A fast subset of
-# `just ci`, not a full mirror: it skips the cross/no_std/single-cipher/
-# all-features lanes (test-no-default, test-aes-gcm, check-no-std,
-# check-cross, all-features tests) to keep push latency down, so those can
-# still go red in CI after a green push. Catches the common regressions
-# (lint, default-feature tests, examples, check-no-default, doc).
+# `just ci`, not a full mirror: it trades the cross, no_std,
+# single-cipher and workspace lanes for push latency, so those can still
+# go red in CI after a green push. The recipe body below is the list of
+# what it does run — enumerating the skipped ones here as well only
+# created a second list to keep in sync, and it drifted.
 # No blanket `RUSTFLAGS="-D warnings"` here on purpose: it forced every
 # step to recompile under a cache key the interactive `cargo build`/`test`
 # never uses, so the gate rebuilt the workspace from scratch instead of
@@ -622,6 +622,37 @@ ci mode="":
 
 # `ci` with per-step wall-clock timings (per step + total).
 ci-timed: (ci "timed")
+
+# The GitHub canonical gate. The workflow invokes this one recipe rather
+# than listing lanes itself, so the two gates cannot silently drift: both
+# lists live here, adjacent, where a reader changing one sees the other.
+#
+# It is deliberately NOT the same list as `ci`, and the deltas are small:
+#   - `test-unit` (here, not in `ci`) runs the workspace on DEFAULT
+#     features, so ChaCha20-Poly1305. Locally that role falls to
+#     `test-all-features`, which resolves to AES.
+#   - `ci-coverage` (here, not in `ci`) is too slow to gate locally:
+#     instrumenting the workspace stole enough cores to add ~71s of wall
+#     time even backgrounded. Run `just ci-full` on demand.
+#   - `test-all-features` and `test-machine-id` (in `ci`, not here) have
+#     never run on the runners; `test-machine-id` depends on a host
+#     machine-id token, so adding it is a change to verify, not assume.
+# A green `just ci` is therefore strong evidence, not a guarantee.
+ci-github:
+    just fmt-check
+    just lint
+    just test-unit
+    just test-doc
+    just test-no-default
+    just test-aes-gcm
+    just test-serde-chacha
+    just test-examples
+    just build
+    just check-no-default
+    just check-no-std
+    just check-cross
+    just doc
+    just ci-coverage
 
 # Best-effort coverage summary. Prints to stdout but does not fail CI
 # pre-1.0 (no minimum threshold set).
