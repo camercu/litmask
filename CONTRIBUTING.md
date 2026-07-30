@@ -49,8 +49,9 @@ regardless.
 
 `just ci` and the GitHub canonical gate are not the same step list. CI
 runs `test-unit` (workspace tests on **default** features, so
-ChaCha20-Poly1305) and `ci-coverage`; `just ci` runs neither, and its
-only workspace-wide test lane, `test-all-features`, resolves to AES.
+ChaCha20-Poly1305) and `ci-coverage`; `just ci` runs neither, and
+`test-all-features` — the lane that runs the other crates' test
+suites — resolves to AES.
 `just ci` in turn runs `test-all-features` and `test-machine-id`, which
 CI does not. A green `just ci` is strong evidence, not a guarantee CI
 passes.
