@@ -315,14 +315,14 @@ thread 'main' panicked at ...: explicit panic
 That is deliberate: an actionable message would embed a
 litmask-identifying string in the artifact. To diagnose, reproduce the
 failure in a **debug** build (`cargo build`, or `cargo run`) on a
-development machine — debug binaries print a diagnostic naming the
-likely cause and fix, e.g.:
+development machine — debug binaries panic with a message naming the
+likely cause and the fix: init ordering and the offending seal tier, a
+decryption hint, a UTF-8 hint, and so on.
 
-```text
-litmask: a mask!() reached the runtime before init!() — this build is
-sealed `external` (above the Embedded floor), so it must call the
-matching init!(...) form before the first mask!()
-```
+Those message texts are owned by `litmask/src/diagnostics.rs` and are
+compiled only under `cfg(debug_assertions)`. Read them there rather than
+from a copy in this document; a copy here would be prose that rots the
+next time one is reworded.
 
 Never distribute a debug binary (SPECIFICATION §D.2.1): it is
 self-decrypting at the Embedded floor _and_ carries these diagnostic
