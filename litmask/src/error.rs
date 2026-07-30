@@ -111,6 +111,10 @@ impl core::error::Error for InitError {
 
 /// Errors surfaced by [`crate::KeyProvider::unlock_key`].
 ///
+/// `Display` renders the same terse, stable tokens as [`InitError`], for
+/// the reason recorded there — including why [`KeyError::Provider`] is
+/// the one unbounded-text exception.
+///
 /// # Examples
 ///
 /// ```
