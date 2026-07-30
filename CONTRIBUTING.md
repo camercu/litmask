@@ -69,11 +69,13 @@ Three tiers, wired into the local clone by `just setup`:
 | Hook         | Stage      | What runs (recipe)                                              |
 | ------------ | ---------- | --------------------------------------------------------------- |
 | `pre-commit` | every commit | `just pre-commit` — fmt-check, lint-typos, lint-taplo, lint-markdown, `cargo check` |
-| `pre-push`   | every push   | `just pre-push` — `just lint test test-examples check-no-default doc` (mirrors `just ci`) |
+| `pre-push`   | every push   | `just pre-push` — `just lint test test-examples check-no-default doc` (a subset of `just ci`) |
 | `commit-msg` | every commit | `commitlint` against Conventional Commits                       |
 
-Push hooks are intentionally heavy: they mirror CI exactly so a green
-local push implies a green canonical-gate.
+Push hooks are deliberately a fast subset, not a mirror: `pre-push`
+skips the cross/no_std/single-cipher/all-features lanes to keep push
+latency down (`justfile:540-545`). Those lanes can still go red in CI
+after a green push; run `just ci` when that matters.
 
 If a hook fails because tool versions drifted (e.g., after a
 `.tool-versions` bump), re-run `just setup`.
