@@ -726,7 +726,8 @@ macro_rules! mask_panic {
 /// # Panics
 ///
 /// Always. See [`mask_panic!`] — a pre-`init!` decrypt failure panics
-/// before the intended message is reached.
+/// before the intended message is reached. The no-argument form masks
+/// nothing and is unaffected.
 ///
 /// # Examples
 ///
@@ -759,7 +760,8 @@ macro_rules! mask_todo {
 /// # Panics
 ///
 /// Always. See [`mask_panic!`] — a pre-`init!` decrypt failure panics
-/// before the intended message is reached.
+/// before the intended message is reached. The no-argument form masks
+/// nothing and is unaffected.
 ///
 /// # Examples
 ///
@@ -792,7 +794,8 @@ macro_rules! mask_unimplemented {
 /// # Panics
 ///
 /// Always. See [`mask_panic!`] — a pre-`init!` decrypt failure panics
-/// before the intended message is reached.
+/// before the intended message is reached. The no-argument form masks
+/// nothing and is unaffected.
 ///
 /// # Examples
 ///
