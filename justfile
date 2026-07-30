@@ -158,9 +158,12 @@ _test-single-cipher cipher:
     {{cargo}} nextest run -p litmask -p litmask-internal --no-default-features --features std,{{cipher}},unstable-serde
     cargo test -p litmask -p litmask-internal --doc --no-default-features --features std,{{cipher}},unstable-serde
 
-# The workspace lane: the only recipe in `just ci` running `--workspace`,
-# so it is what covers litmask-build, litmask-macros and litmask-cli at
-# all. That, not the cipher matrix, is why it must stay in the gate.
+# The workspace test lane: the only recipe in `just ci` that runs the
+# test suites of litmask-build, litmask-macros and litmask-cli. Other
+# steps do reach those crates — `lint`, `build` and `doc` compile them
+# workspace-wide, `test-doc` runs their doctests — but this is the only
+# one executing their unit and integration tests. That, not the cipher
+# matrix, is why it must stay in the gate.
 #
 # The name says both cipher features are compiled in, and they are, but
 # do not read that as dual-cipher coverage: `CURRENT_CIPHER` resolves to
