@@ -54,6 +54,11 @@ lane, `test-all-features`, resolves to AES. `just ci` in turn runs
 `test-all-features` and `test-machine-id`, which CI does not. A green
 `just ci` is strong evidence, not a guarantee CI passes.
 
+That divergence is the complete list, and it is enforced rather than
+promised: `litmask-build/tests/ci_gate_matches_workflow.rs` diffs the
+two step lists and fails on any lane not declared there with a reason,
+including a declared exception that has stopped diverging.
+
 Adding a new example file under `litmask/examples/` wires it into
 `just test-examples`, which discovers by glob. The strings-scrub test
 does **not** discover by glob: `litmask/tests/example_scrub.rs` keeps
