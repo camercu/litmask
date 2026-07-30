@@ -10,16 +10,11 @@
 //! A new artifact const with no writer or no reader fails here, loudly,
 //! with a pointer to the fix.
 
-use std::fs;
-use std::path::{Path, PathBuf};
+mod common;
 
-fn workspace_root() -> PathBuf {
-    // CARGO_MANIFEST_DIR = <root>/litmask-build
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("workspace root")
-        .to_path_buf()
-}
+use common::workspace_root;
+use std::fs;
+use std::path::Path;
 
 /// The `*_ARTIFACT` const names declared in litmask-internal's wire
 /// module — the single source of truth for the on-disk filenames.

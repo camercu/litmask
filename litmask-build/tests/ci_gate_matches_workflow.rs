@@ -12,23 +12,29 @@
 //! gate, and this is where the repo's other mechanical anti-rot guard
 //! (`artifacts_have_consumers.rs`) already lives.
 
+mod common;
+
+use common::workspace_root;
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
-
-fn workspace_root() -> PathBuf {
-    // CARGO_MANIFEST_DIR = <root>/litmask-build
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("workspace root")
-        .to_path_buf()
-}
+use std::path::Path;
 
 /// Recipe names invoked as `step <name>` by the `ci` recipe in the
 /// justfile. The recipe body is the indented block following the
 /// `ci mode="":` header.
 fn just_ci_steps(root: &Path) -> BTreeSet<String> {
     let src = fs::read_to_string(root.join("justfile")).expect("read justfile");
+    let steps = ci_steps_from(&src);
+    assert!(
+        !steps.is_empty(),
+        "parsed no `step` lines from the ci recipe"
+    );
+    steps
+}
+
+/// Pure core of [`just_ci_steps`], so the parsing rules are testable
+/// against synthetic input rather than only the live justfile.
+fn ci_steps_from(src: &str) -> BTreeSet<String> {
     let mut steps = BTreeSet::new();
     let mut in_ci = false;
     for line in src.lines() {
@@ -46,10 +52,6 @@ fn just_ci_steps(root: &Path) -> BTreeSet<String> {
             }
         }
     }
-    assert!(
-        !steps.is_empty(),
-        "parsed no `step` lines from the ci recipe"
-    );
     steps
 }
 
@@ -59,36 +61,111 @@ fn just_ci_steps(root: &Path) -> BTreeSet<String> {
 /// part of the gate.
 fn workflow_gate_steps(root: &Path) -> BTreeSet<String> {
     let src = fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("read ci.yml");
-    let mut steps = BTreeSet::new();
+    let steps = gate_steps_from(&src);
+    assert!(
+        !steps.is_empty(),
+        "parsed no `just` steps from the canonical-gate job"
+    );
+    steps
+}
+
+/// Pure core of [`workflow_gate_steps`], testable against synthetic
+/// input.
+fn gate_steps_from(src: &str) -> BTreeSet<String> {
+    gate_job_lines(src)
+        .iter()
+        .filter_map(|line| just_recipe(line))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Lines belonging to the `canonical-gate` job, up to the next job.
+fn gate_job_lines(src: &str) -> Vec<&str> {
+    let mut lines = Vec::new();
     let mut in_job = false;
     for line in src.lines() {
         if line == "  canonical-gate:" {
             in_job = true;
             continue;
         }
-        if in_job {
-            // The next job header (two-space indent, non-space after) ends this job.
-            let is_job_header = line.starts_with("  ")
-                && !line.starts_with("   ")
-                && line.trim_end().ends_with(':')
-                && !line.trim().is_empty();
-            if is_job_header {
-                break;
-            }
-            if let Some((_, rest)) = line.split_once("run: just ") {
-                let name = rest.trim();
-                // Skip composite invocations; the gate uses bare recipe names.
-                if !name.is_empty() && !name.contains(' ') {
-                    steps.insert(name.to_string());
-                }
+        if !in_job {
+            continue;
+        }
+        if is_job_header(line) {
+            break;
+        }
+        lines.push(line);
+    }
+    lines
+}
+
+/// A sibling job header: a key at two-space indent. Comments are
+/// excluded deliberately — a `# ...:` line at that indentation would
+/// otherwise end the job early and report every later lane as missing.
+fn is_job_header(line: &str) -> bool {
+    let trimmed = line.trim_end();
+    trimmed.starts_with("  ")
+        && !trimmed.starts_with("   ")
+        && !trimmed.trim_start().starts_with('#')
+        && trimmed.ends_with(':')
+}
+
+/// The recipe name a `run: just <name>` line invokes.
+///
+/// Anchored at the start of the (trimmed) line rather than matched
+/// anywhere in it: an unanchored match counts a commented-out step as
+/// still running, which is the most plausible way a lane silently
+/// leaves the gate.
+fn just_recipe(line: &str) -> Option<&str> {
+    let name = line.trim().strip_prefix("run: just ")?.trim();
+    // Composite invocations are not bare lanes; the gate uses bare names.
+    (!name.is_empty() && !name.contains(' ')).then_some(name)
+}
+
+/// Step blocks within the job, each starting at its `- name:` line.
+fn gate_step_blocks(src: &str) -> Vec<Vec<&str>> {
+    let mut blocks: Vec<Vec<&str>> = Vec::new();
+    for line in gate_job_lines(src) {
+        if line.trim_start().starts_with("- ") {
+            blocks.push(Vec::new());
+        }
+        if let Some(block) = blocks.last_mut() {
+            block.push(line);
+        }
+    }
+    blocks
+}
+
+/// Gate steps that parse as present but do not unconditionally gate.
+///
+/// Name presence cannot distinguish "runs" from "runs on Tuesdays" or
+/// "runs and its failure is ignored", so those modifiers are refused on
+/// a lane rather than tolerated and measured wrongly.
+fn gate_step_violations(src: &str) -> Vec<String> {
+    const SOFTENERS: [&str; 2] = ["if:", "continue-on-error:"];
+    let mut violations = Vec::new();
+    for block in gate_step_blocks(src) {
+        let Some(recipe) = block.iter().find_map(|line| just_recipe(line)) else {
+            continue;
+        };
+        for key in SOFTENERS {
+            if block.iter().any(|line| line.trim_start().starts_with(key)) {
+                violations.push(format!(
+                    "gate step `just {recipe}` carries `{key}`, so it no longer \
+                     unconditionally gates"
+                ));
             }
         }
     }
-    assert!(
-        !steps.is_empty(),
-        "parsed no `just` steps from the canonical-gate job"
-    );
-    steps
+    violations
+}
+
+/// Strip the leading newline from a raw-string YAML fixture. Raw
+/// strings keep the indentation that `\`-continuation would eat, which
+/// matters here because every parsing rule under test is
+/// indentation-sensitive.
+fn indented(fixture: &str) -> String {
+    fixture.strip_prefix('\n').unwrap_or(fixture).to_string()
 }
 
 /// Lanes `just ci` runs that the canonical gate deliberately does not.
@@ -150,6 +227,96 @@ fn ci_gate_and_workflow_run_the_same_lanes() {
          only in canonical-gate (.github/workflows/ci.yml): {remote_only:?}\n\
          Add the lane to the other side, or declare it in INTENTIONAL_* \
          in this test with the reason."
+    );
+}
+
+#[test]
+fn no_gate_step_is_conditional_or_soft_failing() {
+    let root = workspace_root();
+    let src = fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("read ci.yml");
+    let violations = gate_step_violations(&src);
+    assert!(
+        violations.is_empty(),
+        "the canonical gate must gate unconditionally:\n{}",
+        violations.join("\n")
+    );
+}
+
+/// A step that is commented out is a step CI no longer runs. Matching
+/// the token anywhere in the line would keep counting it, letting the
+/// most plausible de-gating edit there is slip past silently.
+#[test]
+fn commented_out_workflow_step_is_not_counted() {
+    let yaml = indented(
+        r"
+  canonical-gate:
+    steps:
+      - name: Doc
+        run: just doc
+      # TODO: re-enable once the cross toolchain is fixed
+      # - name: Check (cross)
+      #   run: just check-cross
+  next-job:
+",
+    );
+    let steps = gate_steps_from(&yaml);
+    assert!(steps.contains("doc"), "live step should parse: {steps:?}");
+    assert!(
+        !steps.contains("check-cross"),
+        "commented-out step must not count as present: {steps:?}"
+    );
+}
+
+/// A gate step carrying `if:` or `continue-on-error:` still parses as
+/// present but no longer unconditionally gates. Name-presence alone
+/// cannot see that, so it is rejected outright.
+#[test]
+fn conditional_or_soft_failing_gate_steps_are_rejected() {
+    let yaml = indented(
+        r"
+  canonical-gate:
+    steps:
+      - name: Check (cross)
+        if: github.event_name == 'push'
+        run: just check-cross
+      - name: Doc
+        continue-on-error: true
+        run: just doc
+  next-job:
+",
+    );
+    let violations = gate_step_violations(&yaml);
+    assert!(
+        violations.iter().any(|v| v.contains("if:")),
+        "should reject a conditional gate step: {violations:?}"
+    );
+    assert!(
+        violations.iter().any(|v| v.contains("continue-on-error:")),
+        "should reject a soft-failing gate step: {violations:?}"
+    );
+}
+
+/// The end-of-job detector keys on indentation, so a comment that
+/// happens to end in a colon must not read as the next job header and
+/// silently truncate the step list.
+#[test]
+fn comment_inside_job_does_not_end_it() {
+    let yaml = indented(
+        r"
+  canonical-gate:
+    steps:
+      - name: Lint
+        run: just lint
+  # Everything below is the heavy half of the gate:
+      - name: Doc
+        run: just doc
+  next-job:
+",
+    );
+    let steps = gate_steps_from(&yaml);
+    assert!(
+        steps.contains("lint") && steps.contains("doc"),
+        "comment must not truncate the job: {steps:?}"
     );
 }
 
