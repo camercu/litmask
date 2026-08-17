@@ -279,7 +279,11 @@ mutants-verify:
         return p.stdout
 
     def mutant_list(*flags):
-        out = run("cargo", "mutants", "--list", *flags)
+        # `--colors=never` (not the ambient default): CI exports
+        # CARGO_TERM_COLOR=always, and colored `--list` output buries ANSI
+        # escapes *inside* each mutant description, so every `exclude_re`
+        # silently matched nothing and the whole lane failed closed.
+        out = run("cargo", "mutants", "--list", "--colors=never", *flags)
         return [line for line in out.splitlines() if line.strip()]
 
     failures = []
