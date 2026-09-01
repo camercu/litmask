@@ -151,8 +151,21 @@ jobs:
         run: just check-msrv
 
   semver-check:
-    # Pre-1.0: no crates.io baseline exists, so this job will fail
-    # until the first publish. continue-on-error keeps it advisory.
+    # Compares the workspace API against the newest crates.io release.
+    # A baseline has existed since the first publish (2026-06-15), so a
+    # failure here is no longer the "no baseline yet" case the previous
+    # comment described. Still `continue-on-error` until a run on stable
+    # has been observed green — pre-1.0 minor bumps are allowed to break
+    # API, so this gating merges is a separate decision.
+    #
+    # Runs on stable, deliberately not on the pinned MSRV toolchain.
+    # cargo-semver-checks builds the "current" rustdoc in a generated
+    # scratch package that declares no `rust-version`, so MSRV-aware
+    # resolution has nothing to filter on and it picks the newest deps;
+    # under the MSRV toolchain that turns any dependency raising its own
+    # MSRV into a red "Semver check" (aes 0.9.3 did exactly this). API
+    # compatibility and MSRV are separate claims — `check-msrv` owns the
+    # second one.
     name: Semver check
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -168,7 +181,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{ steps.tools.outputs.rust }}
+          toolchain: stable
 
       - uses: Swatinem/rust-cache@v2
         with:
