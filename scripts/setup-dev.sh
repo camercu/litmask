@@ -57,6 +57,28 @@ nix-shell --run '
     echo "litmask: setup-dev — installing Node devDependencies for commitlint…"
     npm ci --no-audit --no-fund
 
+    # pre-commit refuses to install while core.hooksPath is set, even
+    # when it points at the default location — which leaves `just setup`
+    # failing on its last step and, worse, silently not refreshing hooks
+    # after a .pre-commit-config.yaml change. A value equal to the
+    # default is redundant and safe to drop; one pointing anywhere else
+    # is a deliberate setup this script must not silently override.
+    hooks_path=$(git config --local --get core.hooksPath || true)
+    if [ -n "$hooks_path" ]; then
+        default_hooks=$(git rev-parse --git-path hooks)
+        resolved=$(cd "$hooks_path" 2>/dev/null && pwd -P) || resolved=""
+        default_resolved=$(cd "$default_hooks" 2>/dev/null && pwd -P) || default_resolved=""
+        if [ -n "$resolved" ] && [ "$resolved" = "$default_resolved" ]; then
+            echo "litmask: setup-dev — clearing redundant core.hooksPath…"
+            git config --local --unset core.hooksPath
+        else
+            echo "litmask: setup-dev — core.hooksPath is set to $hooks_path" >&2
+            echo "  pre-commit cannot manage hooks while it is set." >&2
+            echo "  hint: git config --unset core.hooksPath" >&2
+            exit 1
+        fi
+    fi
+
     echo "litmask: setup-dev — installing git hooks via pre-commit…"
     pre-commit install --install-hooks \
         --hook-type pre-commit \
