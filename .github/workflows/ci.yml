@@ -153,10 +153,16 @@ jobs:
   semver-check:
     # Compares the workspace API against the newest crates.io release.
     # A baseline has existed since the first publish (2026-06-15), so a
-    # failure here is no longer the "no baseline yet" case the previous
-    # comment described. Still `continue-on-error` until a run on stable
-    # has been observed green — pre-1.0 minor bumps are allowed to break
-    # API, so this gating merges is a separate decision.
+    # failure here is no longer the "no baseline yet" case an earlier
+    # version of this comment described; the job has been green on stable
+    # since 0.21.3.
+    #
+    # Still `continue-on-error`, now for a different reason: running on
+    # stable ties this job to the rustc release train. cargo-semver-checks
+    # only reads rustdoc JSON versions it has shipped support for, so a
+    # new stable can turn it red with nothing wrong in this repository
+    # (rustc 1.98's format v60 needed the 0.49.0 bump). Gating merges on
+    # that would hand the merge queue to someone else's release schedule.
     #
     # Runs on stable, deliberately not on the pinned MSRV toolchain.
     # cargo-semver-checks builds the "current" rustdoc in a generated
