@@ -6,6 +6,12 @@
 # yanked `chacha20 0.10.1` did exactly this to a Dependabot lockfile PR).
 # This job re-runs the dependency gate against unchanged sources so the
 # failure arrives attributed to the clock, not to a contributor.
+#
+# Dependabot does not cover this. Its cargo updates only bump crates
+# named in a Cargo.toml, so a transitive-only dependency (chacha20 is
+# reached through chacha20poly1305) is never proposed; and a yank is not
+# an advisory, so no security update fires for it either. Noticing is
+# manual, which makes it a job.
 name: Audit
 
 on:
