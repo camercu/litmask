@@ -1,5 +1,13 @@
 [workspace]
-resolver = "2"
+# Resolver 3 (not the edition-2024 default here, because an explicit
+# `resolver` key overrides the edition's implied one) makes dependency
+# selection MSRV-aware: cargo refuses to lock a version whose
+# `rust-version` exceeds `workspace.package.rust-version` below. Without
+# it the declared MSRV is decorative — a routine `cargo update` or a
+# Dependabot lock bump can pull a dep that no longer builds on the
+# toolchain CI is pinned to (aes 0.9.3 raising its own MSRV to 1.89 is
+# the case that prompted this).
+resolver = "3"
 members = [
   "litmask",
   "litmask-build",
