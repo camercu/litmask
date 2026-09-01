@@ -165,7 +165,8 @@ jobs:
     # under the MSRV toolchain that turns any dependency raising its own
     # MSRV into a red "Semver check" (aes 0.9.3 did exactly this). API
     # compatibility and MSRV are separate claims — `check-msrv` owns the
-    # second one.
+    # second one. Installing stable here only makes it available; the
+    # recipe's `+stable` is what overrides `rust-toolchain.toml`.
     name: Semver check
     runs-on: ubuntu-latest
     continue-on-error: true

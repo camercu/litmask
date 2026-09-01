@@ -512,8 +512,12 @@ check-msrv:
     echo "checking workspace on MSRV ${msrv} (rustc ${active})"
     {{cargo}} check --workspace --all-features --locked
 
+# `+stable`, not a bare `cargo`: `rust-toolchain.toml` pins this directory
+# to the MSRV, and that pin wins over whatever toolchain CI installed as
+# default. The `+` form sets RUSTUP_TOOLCHAIN, which also reaches the
+# nested rustdoc builds cargo-semver-checks spawns for itself.
 semver-check:
-    cargo semver-checks check-release --workspace
+    cargo {{stable_toolchain}} semver-checks check-release --workspace
 
 # Nightly dependency-fingerprint scrub. Verifies the docs/DEPLOYMENT.md
 # hardening recipe still strips dep / litmask source-path strings from
