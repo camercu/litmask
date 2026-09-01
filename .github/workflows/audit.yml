@@ -1,0 +1,53 @@
+# Advisory drift is the one CI failure mode that is not caused by a
+# change to this repo: the RustSec database and crates.io yank state
+# move on their own, so an untouched `Cargo.lock` that passed yesterday
+# can fail today. With CI bound to push/pull_request only, that lands on
+# whichever unrelated PR runs next and reads as *that PR's* fault (a
+# yanked `chacha20 0.10.1` did exactly this to a Dependabot lockfile PR).
+# This job re-runs the dependency gate against unchanged sources so the
+# failure arrives attributed to the clock, not to a contributor.
+name: Audit
+
+on:
+  schedule:
+    # Off the hour: GitHub delays cron jobs scheduled at peak times.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  advisories:
+    name: Dependency advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Parse .tool-versions
+        id: tools
+        run: |
+          while read -r name version; do
+            # GitHub output names use underscores; tool names use hyphens.
+            echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
+          done < <(grep -v '^#' .tool-versions | grep -v '^$')
+
+      # cargo-deny builds its dependency graph from `cargo metadata`, so
+      # it needs a toolchain even though it never compiles the workspace.
+      # Pinned rather than taken from the runner image, for the same
+      # reason every other job pins: image drift must not move the gate.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.tools.outputs.rust }}
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }}
+
+      # Same recipe the canonical gate runs, so `deny.toml` stays the
+      # single source of truth for what "acceptable dependency" means.
+      - name: just lint-deny
+        run: just lint-deny

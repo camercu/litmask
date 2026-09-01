@@ -114,9 +114,17 @@ the convention silently drops your commit from the next release.
 | Semver check          | `.tool-versions`  | Advisory (`continue-on-error`) until first crates.io publish. |
 | Fuzz (10s budget)     | nightly           | Blocks PR merge.                                          |
 | Commitlint            | n/a              | Blocks PR merge / push.                                   |
+| Dependency advisories | `.tool-versions`  | Scheduled daily, not on PRs — see below.                  |
 
 Dependabot opens weekly PRs against cargo, GitHub Actions, npm, and
 pre-commit hook dependencies.
+
+`.github/workflows/audit.yml` re-runs `just lint-deny` on a daily cron
+(and on `workflow_dispatch`). It exists because the RustSec database and
+crates.io yank state change without any commit here: an unchanged
+`Cargo.lock` that passed yesterday can fail today. Push/PR triggers alone
+surface that on whichever unrelated PR runs next, misattributing the
+failure to it.
 
 ## Release
 
