@@ -20,6 +20,86 @@ let
     sha256 = "0darpyzxsfi4zcvg327dj4j4hr3rzr1ah05msspcakkz1cg8cnxm";
   };
   pkgs = import pinned_nixpkgs { overlays = [ (import rust_overlay) ]; };
+
+  # Upstream prebuilt binaries for the two tools the pinned nixpkgs ships
+  # at the wrong version (it has cargo-llvm-cov 0.8.5 and
+  # cargo-semver-checks 0.47.0; `.tool-versions` pins 0.8.7 and 0.50.0).
+  #
+  # Prebuilt rather than built from source: this nixpkgs revision's
+  # `fetchCargoVendor` downloads crates through crates.io's API endpoint,
+  # which now answers 403, so any from-source override fails to vendor.
+  # These are the same release artifacts CI's `taiki-e/install-action`
+  # installs, so the dev shell and CI run identical binaries.
+  #
+  # Bumping either version means replacing every hash below — get them
+  # with `nix-prefetch-url <url>` piped through `nix hash to-sri`.
+  releaseBinary =
+    {
+      pname,
+      version,
+      url,
+      hashes,
+      binaries,
+    }:
+    let
+      system = pkgs.stdenv.hostPlatform.system;
+      target =
+        {
+          aarch64-darwin = "aarch64-apple-darwin";
+          x86_64-darwin = "x86_64-apple-darwin";
+          aarch64-linux = "aarch64-unknown-linux-gnu";
+          x86_64-linux = "x86_64-unknown-linux-gnu";
+        }
+        .${system}
+          or (throw "${pname}: no prebuilt binary wired up for ${system}; add its target and hash in shell.nix");
+    in
+    pkgs.stdenv.mkDerivation {
+      inherit pname version;
+      src = pkgs.fetchurl {
+        url = url target;
+        hash = hashes.${target};
+      };
+      sourceRoot = ".";
+      # The tarballs hold bare executables that need no build step and no
+      # interpreter patching on Darwin.
+      dontBuild = true;
+      installPhase = ''
+        runHook preInstall
+        mkdir -p "$out/bin"
+        for b in ${builtins.concatStringsSep " " binaries}; do
+          install -m755 "$b" "$out/bin/$b"
+        done
+        runHook postInstall
+      '';
+    };
+
+  cargo_llvm_cov = releaseBinary {
+    pname = "cargo-llvm-cov";
+    version = "0.8.7";
+    url =
+      target: "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.8.7/cargo-llvm-cov-${target}.tar.gz";
+    binaries = [ "cargo-llvm-cov" ];
+    hashes = {
+      aarch64-apple-darwin = "sha256-Pv7nMu1+mmU+INlskw4Ox5mQEonM6Q9GuyD2J+LA0uk=";
+      x86_64-apple-darwin = "sha256-KIzgy5diB6mhrVr01+yaBsmvEWcnBm+yKH342dECa+k=";
+      aarch64-unknown-linux-gnu = "sha256-jzmdhJk9E5mLY/vhCEN3cTxxmwBlXH2I1bVsjCkQXZA=";
+      x86_64-unknown-linux-gnu = "sha256-mnX+KVONOACz2lf29u+2TLpccgole/DLi1HznUlakWg=";
+    };
+  };
+
+  cargo_semver_checks = releaseBinary {
+    pname = "cargo-semver-checks";
+    version = "0.50.0";
+    url =
+      target: "https://github.com/obi1kenobi/cargo-semver-checks/releases/download/v0.50.0/cargo-semver-checks-${target}.tar.gz";
+    binaries = [ "cargo-semver-checks" ];
+    hashes = {
+      aarch64-apple-darwin = "sha256-+Z+SjWdQHCnoQQAm8npUz3mfsTYRw7SmpY8ncs9+N5k=";
+      x86_64-apple-darwin = "sha256-4yD3Noo9N6ltZQnA1d0dab3k6O9fy3bWC1paCuS3Vb4=";
+      aarch64-unknown-linux-gnu = "sha256-419DXqMiZZOB9S5wNLtPBHAQj1smfSnxPPCBUvpK8ps=";
+      x86_64-unknown-linux-gnu = "sha256-UqZdyI3FP6i1fWCHlU61LNoUnKA7z8p4zj/ezSP4k8Q=";
+    };
+  };
   # Reads channel/profile/components/targets straight from the same
   # `rust-toolchain.toml` that `.tool-versions` generates and that
   # `just check-tool-versions` validates.
@@ -39,15 +119,11 @@ pkgs.mkShell {
     markdownlint-cli2
     actionlint
     nodejs_22
-    # cargo-llvm-cov is omitted: the nixpkgs derivation is marked broken
-    # (depends on a Rust nightly feature gate). Install locally via
-    # `cargo install cargo-llvm-cov` or rely on CI's taiki-e/install-action.
-    # cargo-semver-checks is omitted: pinned nixpkgs ships 0.41.0 but
-    # .tool-versions pins 0.44.0. Install locally via
-    # `cargo install cargo-semver-checks` or rely on CI's taiki-e/install-action.
-    # hyperfine is omitted: it is only needed by the on-demand `just
-    # bench-build` (not `just ci`), and pinning it here would risk the
-    # nixpkgs version drifting from `.tool-versions`. Install via your
-    # package manager (e.g. `cargo install hyperfine`).
+    # The pinned nixpkgs revision already ships this at the pinned
+    # version, so it needs no override.
+    hyperfine
+    # Pinned-version prebuilt binaries; see the derivations above.
+    cargo_llvm_cov
+    cargo_semver_checks
   ];
 }

@@ -83,10 +83,14 @@ If a hook fails because tool versions drifted (e.g., after a
 
 `.tool-versions` is the single source of truth:
 
-- `shell.nix` pins a `nixpkgs` revision whose ports match every tool
-  version in `.tool-versions`. Bumping a tool means bumping
-  `.tool-versions` AND finding a `nixpkgs` revision that ships the
-  new version.
+- `shell.nix` supplies every pinned tool, by one of two routes. Most come
+  from a `nixpkgs` revision whose ports match `.tool-versions`; bumping
+  one of those means bumping `.tool-versions` AND finding a `nixpkgs`
+  revision that ships the new version. `cargo-llvm-cov` and
+  `cargo-semver-checks` instead come from upstream release binaries
+  declared in `shell.nix`, because the pinned revision ships older
+  versions than `.tool-versions` needs; bumping one of those means
+  replacing its per-platform hashes there. Nothing is `cargo install`ed.
 - `rust-toolchain.toml` is **auto-generated** from `.tool-versions`
   by `just setup`. Do not edit it by hand; edit `.tool-versions` and
   re-run setup.

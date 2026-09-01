@@ -393,8 +393,8 @@ bench:
 # compiling the litmask dep tree (total adoption cost); incremental
 # touches only the leaf source (isolates build.rs + proc-macro). Embedded
 # tier, so no key is needed — the fixtures are only compiled, never run.
-# Not part of `just ci` — run on demand. Requires hyperfine (pinned in
-# .tool-versions; install via your package manager).
+# Not part of `just ci` — run on demand. Requires hyperfine, which the
+# nix shell provides at the `.tool-versions` pin.
 bench-build:
     #!/usr/bin/env bash
     set -euo pipefail

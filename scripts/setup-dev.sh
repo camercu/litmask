@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # scripts/setup-dev.sh — bootstrap the local development environment.
 #
-# Most tools live in `shell.nix`; tools whose nix derivations are
-# broken or version-mismatched are installed via `cargo install`
-# below. Safe to re-run; each install step is idempotent.
+# Every pinned tool comes from `shell.nix`; this script only generates
+# `rust-toolchain.toml`, verifies the pins, and installs the things nix
+# does not own (npm devDependencies, git hooks). Safe to re-run.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -44,22 +44,10 @@ nix-shell --run '
     # shell (see shell.nix); entering the shell already materializes the
     # pinned channel from rust-toolchain.toml, so no rustup step here.
 
-    # Tools whose nix derivations are broken or version-mismatched.
-    install_cargo_tool() {
-        local pkg="$1" ver="$2" actual
-        actual=$(cargo "${pkg#cargo-}" --version 2>/dev/null | awk "{print \$2}") || true
-        if [ "$actual" = "$ver" ]; then
-            return
-        fi
-        echo "litmask: setup-dev — installing $pkg@$ver via cargo…"
-        cargo install "$pkg" --version "$ver" --locked
-    }
-
-    llvm_cov_ver=$(awk "/^cargo-llvm-cov / {print \$2}" .tool-versions)
-    install_cargo_tool cargo-llvm-cov "$llvm_cov_ver"
-
-    semver_ver=$(awk "/^cargo-semver-checks / {print \$2}" .tool-versions)
-    install_cargo_tool cargo-semver-checks "$semver_ver"
+    # cargo-llvm-cov and cargo-semver-checks used to be `cargo install`ed
+    # here because the pinned nixpkgs shipped the wrong versions.
+    # shell.nix now pins both to upstream release binaries, so nix owns
+    # every tool in `.tool-versions` and there is nothing to install.
 
     # Authoritative match against `.tool-versions`; aborts on drift
     # so a misaligned nix-shell surfaces here instead of in CI.
