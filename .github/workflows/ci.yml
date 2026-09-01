@@ -106,6 +106,50 @@ jobs:
       - name: just ci-stable
         run: just ci-stable
 
+  check-msrv:
+    # Installs the toolchain named by `rust-version` in Cargo.toml — not
+    # the one in `.tool-versions` — so the published MSRV is verified by
+    # something that does not move when the pinned dev toolchain does.
+    name: MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Parse .tool-versions
+        id: tools
+        run: |
+          while read -r name version; do
+            echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
+          done < <(grep -v '^#' .tool-versions | grep -v '^$')
+
+      # Read from the manifest with the stock toolchain the runner image
+      # ships; the MSRV toolchain is installed in the next step.
+      - name: Read declared MSRV
+        id: msrv
+        run: |
+          msrv=$(cargo metadata --format-version 1 --no-deps \
+            | grep -o '"rust_version":"[^"]*"' | head -1 | cut -d'"' -f4)
+          if [ -z "${msrv}" ]; then
+            echo "no rust-version declared in Cargo.toml" >&2
+            exit 1
+          fi
+          echo "msrv=${msrv}" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.msrv }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just@${{ steps.tools.outputs.just }}
+
+      - name: just check-msrv
+        run: just check-msrv
+
   semver-check:
     # Pre-1.0: no crates.io baseline exists, so this job will fail
     # until the first publish. continue-on-error keeps it advisory.

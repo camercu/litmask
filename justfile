@@ -465,6 +465,53 @@ check-cross:
     cargo check --target x86_64-pc-windows-gnu -p litmask -p litmask-internal
     cargo check --target aarch64-apple-darwin -p litmask -p litmask-internal
 
+# Proves `rust-version` in Cargo.toml is not a claim nobody tests.
+#
+# Takes the MSRV from cargo metadata, never from `.tool-versions`: the
+# point is to catch those two drifting apart. While they agree, the
+# canonical gate already compiles everything on the MSRV and this adds
+# nothing; the day someone raises the pinned toolchain for a newer lint
+# or language feature, this is what still holds the published floor.
+#
+# Selecting the toolchain is the caller's job (CI installs the MSRV one;
+# the nix shell pins it via `.tool-versions`), so this refuses to run
+# under any other rustc rather than silently checking the wrong version
+# and reporting it as an MSRV pass. Plain `cargo` for the metadata read
+# — {{cargo}} may route through rtk, which reshapes the output.
+#
+# `--locked` because MSRV is a property of the committed lockfile: a
+# resolution that only works after cargo picks newer deps is not a floor
+# consumers can rely on. `--all-features` because the dep that raises its
+# own MSRV is usually behind an optional feature — `aes` arrives only
+# through `aes-gcm`, so a default-feature check compiles right past it.
+#
+# No `--all-targets`: the examples each `init!` a specific seal tier, and
+# an all-features build seals one that most of them reject at compile
+# time. Their MSRV is covered by the canonical gate, which builds them on
+# the pinned toolchain under realistic feature sets.
+check-msrv:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Every crate inherits `rust-version.workspace = true`, so the first
+    # match is the workspace value.
+    msrv=$(cargo metadata --format-version 1 --no-deps \
+        | grep -o '"rust_version":"[^"]*"' | head -1 | cut -d'"' -f4)
+    if [ -z "${msrv}" ]; then
+        echo "error: no rust-version declared in Cargo.toml" >&2
+        exit 1
+    fi
+    active=$(rustc --version | awk '{print $2}')
+    case "${active}" in
+        "${msrv}"|"${msrv}".*) ;;
+        *)
+            echo "error: active rustc ${active} is not the declared MSRV ${msrv}" >&2
+            echo "       install it and re-run under that toolchain" >&2
+            exit 1
+            ;;
+    esac
+    echo "checking workspace on MSRV ${msrv} (rustc ${active})"
+    {{cargo}} check --workspace --all-features --locked
+
 semver-check:
     cargo semver-checks check-release --workspace
 
