@@ -125,7 +125,12 @@ let
       throw "shell.nix: .tool-versions has no `rust-nightly <date>` line"
     else
       pkgs.lib.removePrefix "rust-nightly " line;
-  rust_nightly = pkgs.rust-bin.nightly.${nightly_date}.default;
+  # `minimal`, not `default`: cargo-fuzz needs only cargo and rustc (the
+  # sanitizer runtimes ship with rustc itself). Taking the default
+  # profile would add a second rustfmt, clippy and rust-docs that no
+  # recipe uses, for 764 MB of closure every shell entry pays whether
+  # or not anyone fuzzes.
+  rust_nightly = pkgs.rust-bin.nightly.${nightly_date}.minimal;
 in
 pkgs.mkShell {
   packages = with pkgs; [
