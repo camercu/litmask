@@ -119,8 +119,9 @@ pkgs.mkShell {
     markdownlint-cli2
     actionlint
     nodejs_22
-    # The pinned nixpkgs revision already ships this at the pinned
-    # version, so it needs no override.
+    # The pinned nixpkgs revision already ships these at the pinned
+    # versions, so they need no override.
+    cargo-fuzz
     hyperfine
     # Pinned-version prebuilt binaries; see the derivations above.
     cargo_llvm_cov
