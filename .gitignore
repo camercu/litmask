@@ -26,6 +26,16 @@ Thumbs.db
 *.profraw
 *.profdata
 
+# Fuzzing output (cargo-fuzz). Every `just fuzz` run writes newly
+# discovered inputs into the corpus and any reproducer into artifacts/.
+# The seed corpus committed under corpus/ stays tracked — .gitignore does
+# not apply to files already in the index — so this only hides generated
+# ones, which otherwise flood `git status` and, because `typos` skips
+# ignored paths, made `just fuzz` break the next `just ci` on their
+# gibberish contents.
+/litmask/fuzz/corpus/
+/litmask/fuzz/artifacts/
+
 # Mutation testing output (cargo-mutants)
 /mutants.out/
 /mutants.out.old/
