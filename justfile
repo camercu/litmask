@@ -558,6 +558,14 @@ check-tool-versions:
             cargo-mutants) actual=$(cargo mutants --version | awk '{print $2}') ;;
             cargo-semver-checks) actual=$(cargo semver-checks --version | awk '{print $2}') ;;
             cargo-fuzz) actual=$(cargo fuzz --version 2>/dev/null | awk '{print $2}') ;;
+            # Matched on the store path, not `rustc --version`: rust-overlay
+            # names a nightly by its publish date while rustc reports the
+            # commit date a day earlier. Empty when the variable is unset,
+            # which reports as drift — the intended answer for a shell
+            # entered before the pin existed.
+            rust-nightly)
+                actual=$(basename "$(dirname "${RUST_NIGHTLY_BIN:-/nonexistent}")" \
+                    | sed -n 's/.*nightly-\([0-9][0-9-]*\)$/\1/p') ;;
             hyperfine) actual=$(hyperfine --version | awk '{print $2}') ;;
             nodejs)        actual=$(node --version | sed 's/^v//') ;;
             *)
@@ -726,9 +734,24 @@ ci-stable: lint-clippy-stable test-stable
 
 # ── Fuzz ───────────────────────────────────────────────────
 
-# Run cargo-fuzz targets (requires nightly). Default 10s per target.
+# Run cargo-fuzz targets. Default 10s per target.
+#
+# cargo-fuzz needs a nightly rustc for its `-Z` sanitizer flags, but the
+# shell keeps the MSRV-pinned stable toolchain on PATH so every other
+# recipe builds at the floor litmask publishes. shell.nix installs both
+# and points `RUST_NIGHTLY_BIN` at the nightly one; putting it in front
+# of PATH here switches toolchains for this command only. No `+nightly`:
+# that spelling needs rustup, which the nix shell deliberately omits.
 fuzz duration="10":
-    cd litmask && cargo +nightly fuzz run parse_format_template -- -max_total_time={{duration}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "${RUST_NIGHTLY_BIN:-}" ]; then
+        echo "just fuzz: RUST_NIGHTLY_BIN is unset — run inside the nix shell" >&2
+        exit 1
+    fi
+    export PATH="${RUST_NIGHTLY_BIN}:${PATH}"
+    cd litmask
+    cargo fuzz run parse_format_template -- -max_total_time={{duration}}
 
 # ── Release ─────────────────────────────────────────────────
 

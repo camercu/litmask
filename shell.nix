@@ -104,6 +104,28 @@ let
   # `rust-toolchain.toml` that `.tool-versions` generates and that
   # `just check-tool-versions` validates.
   rust_toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+
+  # A second toolchain, for `just fuzz` only: cargo-fuzz needs a nightly
+  # rustc for its `-Z` sanitizer flags. It is deliberately NOT in
+  # `packages` — two toolchains cannot share PATH, since both ship
+  # `cargo` and `rustc`, and the pinned stable one has to stay primary so
+  # every other recipe builds at the MSRV. `RUST_NIGHTLY_BIN` below hands
+  # `just fuzz` its path so it can put nightly in front for that one
+  # command, which is also why no `+nightly` (a rustup-only spelling)
+  # appears anywhere: there is no rustup in this shell.
+  #
+  # Date read from `.tool-versions` rather than written here, so the pin
+  # has one home and `just check-tool-versions` can hold this shell to it.
+  nightly_date =
+    let
+      lines = pkgs.lib.splitString "\n" (builtins.readFile ./.tool-versions);
+      line = pkgs.lib.findFirst (l: pkgs.lib.hasPrefix "rust-nightly " l) null lines;
+    in
+    if line == null then
+      throw "shell.nix: .tool-versions has no `rust-nightly <date>` line"
+    else
+      pkgs.lib.removePrefix "rust-nightly " line;
+  rust_nightly = pkgs.rust-bin.nightly.${nightly_date}.default;
 in
 pkgs.mkShell {
   packages = with pkgs; [
@@ -127,4 +149,8 @@ pkgs.mkShell {
     cargo_llvm_cov
     cargo_semver_checks
   ];
+
+  # Not a package: see `rust_nightly` above for why nightly stays off
+  # PATH and is reached by path instead.
+  RUST_NIGHTLY_BIN = "${rust_nightly}/bin";
 }

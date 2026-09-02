@@ -91,6 +91,12 @@ If a hook fails because tool versions drifted (e.g., after a
   declared in `shell.nix`, because the pinned revision ships older
   versions than `.tool-versions` needs; bumping one of those means
   replacing its per-platform hashes there. Nothing is `cargo install`ed.
+- The shell carries two Rust toolchains. The `.tool-versions` `rust` pin
+  is primary and on `PATH`, so everything builds at the MSRV. The
+  `rust-nightly` pin is off `PATH` — two toolchains cannot share it,
+  both ship `cargo` and `rustc` — and is reached through
+  `$RUST_NIGHTLY_BIN`, which `just fuzz` puts in front for its own
+  command. There is no rustup here, so `cargo +nightly` will not work.
 - `rust-toolchain.toml` is **auto-generated** from `.tool-versions`
   by `just setup`. Do not edit it by hand; edit `.tool-versions` and
   re-run setup.
