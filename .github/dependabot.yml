@@ -1,7 +1,14 @@
-# Dependabot keeps every dependency surface (cargo, GitHub Actions,
-# npm devDependencies, pre-commit hooks) at supported versions
-# without manual cargo update / npm update / pre-commit autoupdate
-# chores. Weekly schedule trades freshness for review-fatigue floor.
+# Dependabot keeps the cargo, GitHub Actions and pre-commit dependency
+# surfaces at supported versions without manual cargo update /
+# pre-commit autoupdate chores. Weekly schedule trades freshness for
+# review-fatigue floor.
+#
+# npm is deliberately absent. Dependabot regenerates package-lock.json
+# without the peer-resolved conventional-commits-parser subtree under
+# @commitlint/read (nor its argue-cli dependency), so `npm ci` reports
+# both missing and the Commitlint job fails on every npm PR it opens.
+# GitHub security alerts still cover the npm tree; bump the lock in
+# place with `npm update --package-lock-only <pkg>` when one fires.
 #
 # Conventional Commit type set to `chore(deps)` so semantic-release's
 # commit-analyzer skips them (the `chore` type has no release rule in
@@ -29,17 +36,6 @@ updates:
       include: scope
     groups:
       actions-deps:
-        patterns: ["*"]
-
-  - package-ecosystem: npm
-    directory: /
-    schedule:
-      interval: weekly
-    commit-message:
-      prefix: chore
-      include: scope
-    groups:
-      npm-deps:
         patterns: ["*"]
 
   - package-ecosystem: pre-commit
