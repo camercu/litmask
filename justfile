@@ -48,7 +48,24 @@ clean: _profraw-purge
 # (typos/taplo/markdown/actions/machete, then the index-backed deny) run
 # before the two-pass clippy compile, so a typo or lockfile issue fails in
 # ~1s instead of after a full workspace clippy build.
-lint: fmt-check lint-typos lint-taplo lint-markdown lint-actions lint-machete lint-deny lint-clippy
+lint: fmt-check lint-typos lint-taplo lint-markdown lint-actions lint-machete lint-deny lint-clippy lint-tracked-ignored
+
+# A file that is both tracked and matched by .gitignore reads as two
+# different things at once: git keeps serving the committed copy, while
+# every tool that consults .gitignore (typos, cargo package, release
+# tooling) skips it or refuses to run. Both answers are defensible, so
+# the disagreement surfaces as a tool-specific surprise rather than an
+# error. This makes it an error.
+lint-tracked-ignored:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    offenders=$(git ls-files -ci --exclude-standard)
+    if [ -n "$offenders" ]; then
+        echo "tracked files matched by .gitignore:" >&2
+        echo "$offenders" | sed 's/^/  /' >&2
+        echo "Move them where no rule matches, or stop tracking them." >&2
+        exit 1
+    fi
 
 lint-clippy:
     {{cargo}} clippy --all-targets --workspace -- {{warnings}}
