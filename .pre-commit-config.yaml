@@ -9,9 +9,9 @@ repos:
       # Bench fixtures are fixed-size payloads (16/256/4096 bytes); a
       # normalizing newline would change their byte length, so exempt them.
       - id: end-of-file-fixer
-        exclude: '^benches/litmask-bench/fixtures/'
+        exclude: '^(benches/litmask-bench/fixtures/|litmask/fuzz/seeds/)'
       - id: trailing-whitespace
-        exclude: '^benches/litmask-bench/fixtures/'
+        exclude: '^(benches/litmask-bench/fixtures/|litmask/fuzz/seeds/)'
       - id: check-added-large-files
 
   - repo: local

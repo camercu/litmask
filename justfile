@@ -742,6 +742,11 @@ ci-stable: lint-clippy-stable test-stable
 # and points `RUST_NIGHTLY_BIN` at the nightly one; putting it in front
 # of PATH here switches toolchains for this command only. No `+nightly`:
 # that spelling needs rustup, which the nix shell deliberately omits.
+#
+# Two corpus directories: libFuzzer writes newly discovered inputs into
+# the first and only reads the rest, so the tracked seeds under
+# fuzz/seeds/ stay byte-exact while fuzz/corpus/ absorbs the generated
+# ones. fuzz/corpus/ is gitignored; fuzz/seeds/ is not.
 fuzz duration="10":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -751,7 +756,10 @@ fuzz duration="10":
     fi
     export PATH="${RUST_NIGHTLY_BIN}:${PATH}"
     cd litmask
-    cargo fuzz run parse_format_template -- -max_total_time={{duration}}
+    cargo fuzz run parse_format_template \
+        fuzz/corpus/parse_format_template \
+        fuzz/seeds/parse_format_template \
+        -- -max_total_time={{duration}}
 
 # ── Release ─────────────────────────────────────────────────
 
