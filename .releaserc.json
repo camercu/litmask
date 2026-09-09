@@ -98,6 +98,12 @@
         "publishArgs": ["--workspace"]
       }
     ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "cargo update --manifest-path litmask/fuzz/Cargo.toml --workspace"
+      }
+    ],
     "@semantic-release/changelog",
     [
       "@semantic-release/git",
@@ -105,7 +111,8 @@
         "assets": [
           "Cargo.toml",
           "Cargo.lock",
-          "CHANGELOG.md"
+          "CHANGELOG.md",
+          "litmask/fuzz/Cargo.lock"
         ],
         "message": "chore(release): ${nextRelease.version}"
       }
