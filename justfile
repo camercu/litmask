@@ -48,7 +48,17 @@ clean: _profraw-purge
 # (typos/taplo/markdown/actions/machete, then the index-backed deny) run
 # before the two-pass clippy compile, so a typo or lockfile issue fails in
 # ~1s instead of after a full workspace clippy build.
-lint: fmt-check lint-typos lint-taplo lint-markdown lint-actions lint-machete lint-deny lint-clippy lint-tracked-ignored
+lint: fmt-check lint-typos lint-taplo lint-markdown lint-actions lint-machete lint-deny lint-clippy lint-tracked-ignored lint-fuzz-lock
+
+# The fuzz workspace carries its own lockfile and depends on
+# litmask-internal by path, so the version recorded there follows the
+# workspace version and goes stale on every release bump. `--locked`
+# reports that drift as an error here, rather than leaving it for the
+# next `just fuzz` to rewrite under whoever runs it. `cargo metadata`
+# resolves without building. Plain `cargo`, not {{cargo}}: rtk masks
+# the exit code this check is made of.
+lint-fuzz-lock:
+    cargo metadata --manifest-path litmask/fuzz/Cargo.toml --locked --format-version 1 > /dev/null
 
 # A file that is both tracked and matched by .gitignore reads as two
 # different things at once: git keeps serving the committed copy, while
