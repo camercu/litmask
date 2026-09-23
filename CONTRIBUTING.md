@@ -124,6 +124,7 @@ the convention silently drops your commit from the next release.
 | Semver check          | latest stable     | Advisory (`continue-on-error`); stable, not the MSRV pin.  |
 | Fuzz (10s budget)     | nightly           | Blocks PR merge.                                          |
 | Commitlint            | n/a              | Blocks PR merge / push.                                   |
+| Release notes         | n/a              | Blocks PR merge; a red run on `main` also blocks the release. |
 | MSRV                  | `rust-version`    | Blocks PR merge — builds on the declared MSRV toolchain.  |
 | Dependency advisories | `.tool-versions`  | Scheduled daily, not on PRs — see below.                  |
 
