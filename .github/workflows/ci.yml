@@ -485,3 +485,21 @@ jobs:
           else
             npx --no-install commitlint --from "$PUSH_BEFORE" --to "$PUSH_AFTER" --verbose
           fi
+
+  release-notes:
+    # Renders release notes through the real .releaserc.json config. A
+    # changelog preset/writer mismatch renders empty notes without any
+    # error, so only a rendered-output check catches it before release.
+    name: Release notes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - run: node scripts/check-release-notes.mjs
