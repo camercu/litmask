@@ -1,14 +1,71 @@
 ## [0.21.5](https://github.com/camercu/litmask/compare/v0.21.4...v0.21.5) (2026-09-02)
 
+No change to the published crates. This release has only maintainer tooling changes.
+
 ## [0.21.4](https://github.com/camercu/litmask/compare/v0.21.3...v0.21.4) (2026-09-01)
+
+No change to the published crates. This release has only maintainer tooling changes.
 
 ## [0.21.3](https://github.com/camercu/litmask/compare/v0.21.2...v0.21.3) (2026-09-01)
 
+### Dependencies
+
+* **litmask-macros:** bump `syn` from 2 to 3 ([01930b6](https://github.com/camercu/litmask/commit/01930b6e34b43181fcf66c72dd39aa3a1421c1f5))
+
+No other change to the published crates.
+
 ## [0.21.2](https://github.com/camercu/litmask/compare/v0.21.1...v0.21.2) (2026-08-18)
+
+No code change to the published crates. Documentation only: the `mask_write!` / `mask_print!` wrapper macros document their inherited `# Panics` contract, and `KeyError` links the rationale for its terse `Display` ([4be1eca](https://github.com/camercu/litmask/commit/4be1eca6ee16db55528b5e9041aef2dcb0390cf7)) ([61251c3](https://github.com/camercu/litmask/commit/61251c36fd94494cbce48c5f87d655d552dbfae5)) ([6130120](https://github.com/camercu/litmask/commit/6130120f383779cf28e6805283fd2026f2397860)).
 
 ## [0.21.1](https://github.com/camercu/litmask/compare/v0.21.0...v0.21.1) (2026-07-29)
 
+### Bug Fixes
+
+* **litmask-build:** scope the Embedded-floor warning to the sealing crate ([e6f504f](https://github.com/camercu/litmask/commit/e6f504fa3640611336c6db66a6ecd7d0f033abb1))
+
 ## [0.21.0](https://github.com/camercu/litmask/compare/v0.20.0...v0.21.0) (2026-07-12)
+
+### ⚠ BREAKING CHANGES
+
+* **litmask:** empty machine id at init!(bind_to_machine) now exits 69 (EX_UNAVAILABLE), was 65.
+* **litmask-internal:** derive_machine_id_key takes &MachineId instead of
+&[u8]. Pre-1.0 minor bump.
+* **litmask:** UnlockKey::derive takes UnlockMaterial instead of
+&[u8]; construct it with UnlockMaterial::new(bytes)?. Pre-1.0 minor bump.
+* **litmask-internal:** MachineTokenError gains the EmptyId variant
+(non_exhaustive, so matches with a wildcard arm are unaffected);
+spec §2.9.3.3 / §2.9.3.4 amended.
+* **litmask:** EnvVarProvider and FileProvider return
+KeyError::InvalidFormat for material that is empty after the
+trailing-newline trim (previously Ok, failing later at decrypt);
+spec §2.5.2.3 / §2.5.3.2 amended accordingly.
+* **litmask-build:** a build with LITMASK_UNLOCK_KEY set but empty
+(after the trailing-newline trim) now fails instead of sealing;
+spec §1.6.3 amended to require non-empty material.
+
+### Features
+
+* **examples:** add envelope_provider HSM-unwrap example ([ce7f2f1](https://github.com/camercu/litmask/commit/ce7f2f1e8c03f5898a868701849b2b21beba8c00))
+* **litmask-macros:** distinguish a missing argument from a non-literal one ([4b06613](https://github.com/camercu/litmask/commit/4b0661364941942ef1bf8939aa2e75661e543cbc))
+* **litmask-macros:** name the mask_*! counterpart in non-literal errors ([edc4e30](https://github.com/camercu/litmask/commit/edc4e30e31ca35122b50d3edb4049bb04569d374))
+* **litmask:** own the EmptyMaterial->InvalidFormat mapping in From ([9ad1ea7](https://github.com/camercu/litmask/commit/9ad1ea7cf84a6d0db93b475f3ded1dfebe885878))
+
+### Bug Fixes
+
+* **litmask-build:** name the unpopulated-secret cause for an empty machine id ([bc468d5](https://github.com/camercu/litmask/commit/bc468d5b6eb64dff75da43791d61af32053af22d))
+* **litmask-build:** reject empty unlock material at seal time ([10ea628](https://github.com/camercu/litmask/commit/10ea62868612d557beafba77dd1df403d21c41c5))
+* **litmask-cli:** document and pin keygen's randomness-failure exit code ([c402994](https://github.com/camercu/litmask/commit/c402994fbfeb04a85a82f7e8ad568be96bc332c8))
+* **litmask-cli:** name both subcommands in the about line ([7f8f6fe](https://github.com/camercu/litmask/commit/7f8f6fe66c171fef9de2ee8fbc5677ef5a221a29))
+* **litmask-internal:** reject empty machine id in token decode and mint ([5398cf3](https://github.com/camercu/litmask/commit/5398cf3b0612b851e09d7f587d60cbeb65ea4e24))
+* **litmask:** map an empty machine id to EX_UNAVAILABLE (69) ([ff5fe19](https://github.com/camercu/litmask/commit/ff5fe19fe94fa05e3deecfd9d8d4561b90d73d76))
+* **litmask:** reject empty machine id in MachineIdProvider ([50bbf93](https://github.com/camercu/litmask/commit/50bbf930ee266a0633095574697d16100e7a57b1))
+* **litmask:** reject empty provider material as InvalidFormat ([7627284](https://github.com/camercu/litmask/commit/76272847a3df7c8b9241f7c016407fc848a097a6))
+
+### Dependencies
+
+* **litmask-internal:** bump `aes-gcm` and `chacha20poly1305` from 0.10 to 0.11 ([9df9d67](https://github.com/camercu/litmask/commit/9df9d677096c592149554f3ff9fa11b77528912c))
+* **litmask-macros:** drop the unused `blake3` dependency ([023497d](https://github.com/camercu/litmask/commit/023497d85bf3199f4b3b9b36354ad5653a252620))
 
 ## [0.20.0](https://github.com/camercu/litmask/compare/v0.19.0...v0.20.0) (2026-06-26)
 
