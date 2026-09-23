@@ -803,7 +803,8 @@ release:
 
 # Renders release notes for synthetic commits through .releaserc.json and
 # fails if a section is missing (see the script header for the failure it
-# guards). CI runs it on every push; run after touching npm deps.
+# guards). CI's `release-notes` job runs the same script on every push
+# and PR; run it after touching npm deps.
 release-notes-check:
     npm ci --no-audit --no-fund
     node scripts/check-release-notes.mjs
