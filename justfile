@@ -801,10 +801,10 @@ release:
     npm ci
     npx semantic-release
 
-# Renders release notes for synthetic commits through .releaserc.json and
-# fails if a section is missing (see the script header for the failure it
-# guards). CI's `release-notes` job runs the same script on every push
-# and PR; run it after touching npm deps.
-release-notes-check:
+# Tests the release pipeline's commit filter (scripts/release/) against
+# real tagged history, and the release config through the stock plugins.
+# CI's `release-notes` job runs the same tests on every push and PR; run
+# this after touching npm deps, .releaserc.json or scripts/release/.
+release-check:
     npm ci --no-audit --no-fund
-    node scripts/check-release-notes.mjs
+    node --test scripts/release/*.test.mjs
