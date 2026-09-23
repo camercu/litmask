@@ -32,6 +32,11 @@ const commits = [
     hash: "c".repeat(40),
     message: "feat(litmask)!: change a probe API\n\nBREAKING CHANGE: probe migration note",
   },
+  {
+    hash: "d".repeat(40),
+    message: "refactor(litmask)!: reshape a probe type\n\nBREAKING CHANGE: probe refactor note",
+  },
+  { hash: "e".repeat(40), message: "refactor(litmask): tidy a probe internal" },
 ];
 
 const notes = await generateNotes(plugin[1], {
@@ -50,10 +55,19 @@ const expected = [
   "repair a probe bug",
   "BREAKING CHANGES",
   "probe migration note",
+  // A breaking refactor must sit under its own heading, not as a
+  // headingless list tacked onto BREAKING CHANGES.
+  "### Code Refactoring\n\n* **litmask:** reshape a probe type",
+  "probe refactor note",
 ];
+// Non-breaking internal work stays out of consumer notes.
+const unexpected = ["tidy a probe internal"];
 const missing = expected.filter((s) => !notes.includes(s));
-if (missing.length > 0) {
-  console.error(`release notes are missing: ${missing.join(", ")}\n--- rendered:\n${notes}`);
+const leaked = unexpected.filter((s) => notes.includes(s));
+if (missing.length > 0 || leaked.length > 0) {
+  console.error(
+    `release notes are missing: [${missing.join(", ")}]; leak: [${leaked.join(", ")}]\n--- rendered:\n${notes}`,
+  );
   process.exit(1);
 }
 console.log("release notes render all sections");
