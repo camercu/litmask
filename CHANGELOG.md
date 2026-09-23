@@ -11,18 +11,31 @@ No change to the published crates. This release has only maintainer tooling chan
 ### Dependencies
 
 * **litmask-macros:** bump `syn` from 2 to 3 ([01930b6](https://github.com/camercu/litmask/commit/01930b6e34b43181fcf66c72dd39aa3a1421c1f5))
+* **litmask-cli:** refresh the bundled `Cargo.lock`: `clap` 4.6.6, `chacha20` 0.10.2, `blake3` 1.8.6, `syn` 3.0.3, `proc-macro2` 1.0.107, `quote` 1.0.47 ([01930b6](https://github.com/camercu/litmask/commit/01930b6e34b43181fcf66c72dd39aa3a1421c1f5)) ([e774717](https://github.com/camercu/litmask/commit/e7747171d3dd643b2ad00f44f2bec96f1b9b77c4))
 
 No other change to the published crates.
 
 ## [0.21.2](https://github.com/camercu/litmask/compare/v0.21.1...v0.21.2) (2026-08-18)
 
-No code change to the published crates. Documentation only: the `mask_write!` / `mask_print!` wrapper macros document their inherited `# Panics` contract, and `KeyError` links the rationale for its terse `Display` ([4be1eca](https://github.com/camercu/litmask/commit/4be1eca6ee16db55528b5e9041aef2dcb0390cf7)) ([61251c3](https://github.com/camercu/litmask/commit/61251c36fd94494cbce48c5f87d655d552dbfae5)) ([6130120](https://github.com/camercu/litmask/commit/6130120f383779cf28e6805283fd2026f2397860)).
+No code change to the published crates.
+
+### Documentation
+
+* **litmask:** document the inherited `# Panics` contract of the `macro_rules!` masking wrappers (`mask_write!`, `mask_println!`, the panic family, and others), and exclude the no-argument forms of `mask_todo!`, `mask_unimplemented!` and `mask_unreachable!` ([4be1eca](https://github.com/camercu/litmask/commit/4be1eca6ee16db55528b5e9041aef2dcb0390cf7)) ([61251c3](https://github.com/camercu/litmask/commit/61251c36fd94494cbce48c5f87d655d552dbfae5))
+* **litmask:** link `KeyError`'s `Display` rationale ([6130120](https://github.com/camercu/litmask/commit/6130120f383779cf28e6805283fd2026f2397860))
+* **readme:** limit the debug self-decrypt claim to the Embedded tier ([1fc308c](https://github.com/camercu/litmask/commit/1fc308ce9fe036b6d50beb94f533e50d273ba86e))
 
 ## [0.21.1](https://github.com/camercu/litmask/compare/v0.21.0...v0.21.1) (2026-07-29)
 
 ### Bug Fixes
 
 * **litmask-build:** scope the Embedded-floor warning to the sealing crate ([e6f504f](https://github.com/camercu/litmask/commit/e6f504fa3640611336c6db66a6ecd7d0f033abb1))
+
+### Documentation
+
+* **litmask:** state why `InitError`/`KeyError` `Display` output stays terse ([541a584](https://github.com/camercu/litmask/commit/541a58452f33a66e0b81c3e14bf0ccbb18e073d0)) ([5a7a83a](https://github.com/camercu/litmask/commit/5a7a83ab3a5d73c1cc1a76e9b9926bd9ba81b0c2))
+* **litmask-macros:** document the masking macros' runtime panic contract ([ded4ca4](https://github.com/camercu/litmask/commit/ded4ca4cbcbd57de7a6fdf53f9a1ee8a0cd034f9))
+* **readme:** describe the release-build bare-panic contract ([e187bca](https://github.com/camercu/litmask/commit/e187bcacc765da1c4333d8a88c5a1ee7ea5dff6e))
 
 ## [0.21.0](https://github.com/camercu/litmask/compare/v0.20.0...v0.21.0) (2026-07-12)
 
@@ -62,10 +75,16 @@ spec §1.6.3 amended to require non-empty material.
 * **litmask:** reject empty machine id in MachineIdProvider ([50bbf93](https://github.com/camercu/litmask/commit/50bbf930ee266a0633095574697d16100e7a57b1))
 * **litmask:** reject empty provider material as InvalidFormat ([7627284](https://github.com/camercu/litmask/commit/76272847a3df7c8b9241f7c016407fc848a097a6))
 
+### Code Refactoring
+
+* **litmask-internal:** fold empty-id rejection into a MachineId type ([3c0b381](https://github.com/camercu/litmask/commit/3c0b381bfb3a9ad3c462f28174ece66cdb605811))
+* **litmask:** validate external material at a typed edge (UnlockMaterial) ([0a05290](https://github.com/camercu/litmask/commit/0a05290baf575f6135157778cda81466883e359b))
+
 ### Dependencies
 
 * **litmask-internal:** bump `aes-gcm` and `chacha20poly1305` from 0.10 to 0.11 ([9df9d67](https://github.com/camercu/litmask/commit/9df9d677096c592149554f3ff9fa11b77528912c))
 * **litmask-macros:** drop the unused `blake3` dependency ([023497d](https://github.com/camercu/litmask/commit/023497d85bf3199f4b3b9b36354ad5653a252620))
+* **litmask-cli:** refresh the bundled `Cargo.lock` (used by `cargo install --locked`) to follow the bumps above ([9df9d67](https://github.com/camercu/litmask/commit/9df9d677096c592149554f3ff9fa11b77528912c))
 
 ## [0.20.0](https://github.com/camercu/litmask/compare/v0.19.0...v0.20.0) (2026-06-26)
 
