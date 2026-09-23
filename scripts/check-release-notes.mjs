@@ -66,7 +66,10 @@ const missing = expected.filter((s) => !notes.includes(s));
 const leaked = unexpected.filter((s) => notes.includes(s));
 if (missing.length > 0 || leaked.length > 0) {
   console.error(
-    `release notes are missing: [${missing.join(", ")}]; leak: [${leaked.join(", ")}]\n--- rendered:\n${notes}`,
+    `release notes are missing: [${missing.join(", ")}]; leak: [${leaked.join(", ")}]\n` +
+      "Empty notes usually mean the conventional-changelog-conventionalcommits major no longer " +
+      "matches the writer that release-notes-generator bundles; see this script's header.\n" +
+      `--- rendered:\n${notes}`,
   );
   process.exit(1);
 }
