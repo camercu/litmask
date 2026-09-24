@@ -4,11 +4,18 @@
 
 import { posix } from "node:path";
 
-export function partitionCommits(commits, filesOf, shipped) {
+const isDependencyFile = (path) => /(^|\/)Cargo\.(toml|lock)$/.test(path);
+
+// A commit ships if it touches a shipped file. When every such file is a
+// manifest or lock, it ships only if `viewChanged(hash)` says the
+// dependencies consumers resolve changed (a dev-dependency bump does not).
+export function partitionCommits(commits, filesOf, shipped, viewChanged = () => true) {
   const kept = [];
   const dropped = [];
   for (const commit of commits) {
-    (filesOf(commit.hash).some((f) => shipped.has(f)) ? kept : dropped).push(commit);
+    const touched = filesOf(commit.hash).filter((f) => shipped.has(f));
+    const ships = touched.length > 0 && (!touched.every(isDependencyFile) || viewChanged(commit.hash));
+    (ships ? kept : dropped).push(commit);
   }
   return { kept, dropped };
 }
@@ -53,4 +60,47 @@ export function assertPackageSources(dir, paths) {
   if (!paths.some((p) => p.startsWith(`${dir}/`) && p !== `${dir}/Cargo.toml`)) {
     throw new Error(`package ${dir}: no source file maps under the package directory`);
   }
+}
+
+const isPublished = (pkg) => pkg.publish === null || pkg.publish.length > 0;
+const notDev = (dep) => dep.kind !== "dev";
+
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((k) => [k, canonical(value[k])]));
+  }
+  return value;
+}
+
+// What consumers of the published crates resolve, as a comparable string:
+// each published package's metadata without dev-dependencies or checkout
+// paths, plus, for a package with a binary, the locked non-dev dependency
+// closure (`cargo install --locked` builds from the packaged lock).
+// `meta` is full `cargo metadata` output, resolve graph included.
+export function consumerView(meta) {
+  const label = new Map(meta.packages.map((p) => [p.id, `${p.name}@${p.version}`]));
+  const nodes = new Map(meta.resolve.nodes.map((n) => [n.id, n]));
+  const lockedClosure = (root) => {
+    const seen = new Set();
+    const todo = [root];
+    while (todo.length > 0) {
+      for (const dep of nodes.get(todo.pop())?.deps ?? []) {
+        if (!dep.dep_kinds.some(notDev) || seen.has(dep.pkg)) continue;
+        seen.add(dep.pkg);
+        todo.push(dep.pkg);
+      }
+    }
+    return [...seen].map((id) => label.get(id) ?? id).sort();
+  };
+  const view = meta.packages
+    .filter(isPublished)
+    .map(({ id, manifest_path, source, dependencies, targets, ...rest }) => ({
+      ...rest,
+      dependencies: dependencies.filter(notDev).map(({ path, ...dep }) => dep),
+      targets: targets.map(({ src_path, ...target }) => target),
+      locked: targets.some((t) => t.kind.includes("bin")) ? lockedClosure(id) : null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return JSON.stringify(canonical(view));
 }

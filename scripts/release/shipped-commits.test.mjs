@@ -47,20 +47,24 @@ function releasedWorkspace() {
   git("init", "-q", "-b", "main");
   write(
     "Cargo.toml",
-    '[workspace]\nmembers = ["a", "tools"]\nresolver = "3"\n\n' +
+    '[workspace]\nmembers = ["a", "h", "tools"]\nresolver = "3"\n\n' +
       '[workspace.package]\nversion = "0.1.0"\nedition = "2021"\nlicense = "MIT"\n',
   );
   write(
     "a/Cargo.toml",
     '[package]\nname = "a"\ndescription = "fixture"\nreadme = "../README.md"\n' +
-      "version.workspace = true\nedition.workspace = true\nlicense.workspace = true\n",
+      "version.workspace = true\nedition.workspace = true\nlicense.workspace = true\n\n" +
+      '[dependencies]\nh = { path = "../h", version = "0.1.0" }\n\n' +
+      '[dev-dependencies]\ntools = { path = "../tools" }\n',
   );
   write("a/src/lib.rs", "pub fn a() {}\n");
+  write("h/Cargo.toml", '[package]\nname = "h"\nversion = "0.1.0"\ndescription = "fixture"\nedition = "2021"\nlicense = "MIT"\n');
+  write("h/src/lib.rs", "\n");
   write("a/src/old.rs", "// removed after the release\n");
   write("a/src/f.rs", "// renamed after the release\n");
   write(
     "tools/Cargo.toml",
-    '[package]\nname = "tools"\npublish = false\nversion.workspace = true\nedition.workspace = true\n',
+    '[package]\nname = "tools"\npublish = false\nversion = "0.1.0"\nedition.workspace = true\n',
   );
   write("tools/src/main.rs", "fn main() {}\n");
   write("README.md", "fixture\n");
@@ -111,6 +115,20 @@ before(() => {
   commit("fix(a): repair h");
   git("mv", "a/src/h.rs", "a/src/i.rs");
   commit("refactor(a): rename h to i");
+  const lock = () => execFileSync("cargo", ["update", "--offline", "--workspace"], { cwd: f.repo, stdio: "ignore" });
+  write("tools/Cargo.toml", '[package]\nname = "tools"\npublish = false\nversion = "0.2.0"\nedition.workspace = true\n');
+  lock();
+  commit("fix(deps): bump a dev-dependency");
+  write("h/Cargo.toml", '[package]\nname = "h"\nversion = "0.2.0"\ndescription = "fixture"\nedition = "2021"\nlicense = "MIT"\n');
+  write(
+    "a/Cargo.toml",
+    '[package]\nname = "a"\ndescription = "fixture"\nreadme = "../README.md"\n' +
+      "version.workspace = true\nedition.workspace = true\nlicense.workspace = true\n\n" +
+      '[dependencies]\nh = { path = "../h", version = "0.2.0" }\n\n' +
+      '[dev-dependencies]\ntools = { path = "../tools" }\n',
+  );
+  lock();
+  commit("fix(deps): bump a normal dependency");
   git("switch", "-q", "-c", "topic");
   write("a/src/lib.rs", "pub fn a() { /* fixed on a branch */ }\n");
   commit("wip");
@@ -156,6 +174,14 @@ test("GIVEN a fix to a new file renamed later WHEN filtered THEN kept", () => {
 test("GIVEN a merge whose title carries the fix WHEN filtered THEN kept", () => {
   // A clean merge has an empty combined diff; its first-parent diff is what it brings to main.
   assert.ok(subjects(kept).includes("fix(a): merged fix (#1)"));
+});
+
+test("GIVEN a bump that changes only a dev-dependency WHEN filtered THEN dropped", () => {
+  assert.ok(subjects(dropped).includes("fix(deps): bump a dev-dependency"));
+});
+
+test("GIVEN a bump of a published crate's normal dependency WHEN filtered THEN kept", () => {
+  assert.ok(subjects(kept).includes("fix(deps): bump a normal dependency"));
 });
 
 const PRESET = { preset: "conventionalcommits" };

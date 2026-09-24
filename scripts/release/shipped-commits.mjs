@@ -12,7 +12,7 @@ import { dirname, join, relative } from "node:path";
 import * as commitAnalyzer from "@semantic-release/commit-analyzer";
 import * as notesGenerator from "@semantic-release/release-notes-generator";
 
-import { assertPackageSources, followRenames, partitionCommits, sourcePaths } from "./shipped.mjs";
+import { assertPackageSources, consumerView, followRenames, partitionCommits, sourcePaths } from "./shipped.mjs";
 
 const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 1 << 26 });
 const lines = (text) => text.split("\n").filter(Boolean);
@@ -32,14 +32,24 @@ function packageSources(root) {
   return shipped;
 }
 
-function packageSourcesAt(cwd, rev) {
+function atRevision(cwd, rev, fn) {
   const tree = mkdtempSync(join(tmpdir(), "litmask-release-"));
   run("git", ["worktree", "add", "--quiet", "--detach", tree, rev], cwd);
   try {
-    return packageSources(tree);
+    return fn(tree);
   } finally {
     run("git", ["worktree", "remove", "--force", tree], cwd);
   }
+}
+
+const packageSourcesAt = (cwd, rev) => atRevision(cwd, rev, packageSources);
+
+// Only dependency-only commits need this, so it runs a handful of times per
+// release, not once per commit.
+function viewAt(cwd, rev) {
+  return atRevision(cwd, rev, (tree) =>
+    consumerView(JSON.parse(run("cargo", ["metadata", "--format-version", "1", "--locked"], tree))),
+  );
 }
 
 // A path counts if consumers had it at the last release or get it now, or
@@ -73,7 +83,8 @@ export function selectShipped(context) {
         context.cwd,
       ),
     );
-  return partitionCommits(context.commits, filesOf, shippedCache.get(key));
+  const viewChanged = (hash) => viewAt(context.cwd, `${hash}^`) !== viewAt(context.cwd, hash);
+  return partitionCommits(context.commits, filesOf, shippedCache.get(key), viewChanged);
 }
 
 function shippedOnly(context) {

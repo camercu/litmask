@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { assertPackageSources, followRenames, partitionCommits, sourcePaths } from "./shipped.mjs";
+import { assertPackageSources, consumerView, followRenames, partitionCommits, sourcePaths } from "./shipped.mjs";
 
 test("GIVEN a commit touching a shipped file WHEN partitioned THEN it is kept", () => {
   const commit = { hash: "a", message: "fix(litmask): x" };
@@ -79,4 +79,93 @@ test("GIVEN an absolute source path WHEN checked THEN it throws", () => {
 test("GIVEN a package with no source file of its own WHEN checked THEN it throws", () => {
   // e.g. cargo's list layout changed and nothing maps under the package dir.
   assert.throws(() => assertPackageSources("a", ["a/Cargo.toml", "Cargo.toml"]), /no source file/);
+});
+
+const SHIPPED = new Set(["a/Cargo.toml", "Cargo.toml", "Cargo.lock", "a/src/lib.rs"]);
+
+test("GIVEN a dependency-only commit that changes no consumer view WHEN partitioned THEN dropped", () => {
+  const commit = { hash: "a", message: "fix(deps): bump a dev-dependency" };
+  const { dropped } = partitionCommits([commit], () => ["a/Cargo.toml", "Cargo.lock"], SHIPPED, () => false);
+  assert.deepEqual(dropped, [commit]);
+});
+
+test("GIVEN a dependency-only commit that changes the consumer view WHEN partitioned THEN kept", () => {
+  const commit = { hash: "a", message: "fix(deps): bump a dependency" };
+  const { kept } = partitionCommits([commit], () => ["Cargo.lock"], SHIPPED, () => true);
+  assert.deepEqual(kept, [commit]);
+});
+
+test("GIVEN a commit touching shipped source too WHEN partitioned THEN kept without a view check", () => {
+  const commit = { hash: "a", message: "fix(a): x" };
+  const { kept } = partitionCommits([commit], () => ["a/src/lib.rs", "Cargo.lock"], SHIPPED, () => {
+    throw new Error("view check must not run");
+  });
+  assert.deepEqual(kept, [commit]);
+});
+
+// Minimal `cargo metadata` (with resolve) for one workspace, rooted at `root`
+// so two checkouts of the same tree differ only in paths.
+function metadata({ root = "/w", devReq = "1", normReq = "1", normVersion = "1.0.0", devVersion = "1.0.0", toolsVersion = "0.1.0" } = {}) {
+  const pkg = (name, extra) => ({
+    name,
+    version: "0.1.0",
+    id: `path+file://${root}/${name}#0.1.0`,
+    manifest_path: `${root}/${name}/Cargo.toml`,
+    publish: null,
+    features: {},
+    dependencies: [],
+    targets: [{ name, kind: ["lib"], src_path: `${root}/${name}/src/lib.rs` }],
+    ...extra,
+  });
+  return {
+    workspace_root: root,
+    packages: [
+      pkg("app", {
+        dependencies: [
+          { name: "norm", req: normReq, kind: null, optional: false, path: `${root}/norm` },
+          { name: "dev", req: devReq, kind: "dev", optional: false },
+        ],
+        targets: [{ name: "app", kind: ["bin"], src_path: `${root}/app/src/main.rs` }],
+      }),
+      pkg("tools", { publish: [], version: toolsVersion }),
+    ],
+    resolve: {
+      nodes: [
+        {
+          id: `path+file://${root}/app#0.1.0`,
+          deps: [
+            { name: "norm", pkg: `registry+x#norm@${normVersion}`, dep_kinds: [{ kind: null }] },
+            { name: "dev", pkg: `registry+x#dev@${devVersion}`, dep_kinds: [{ kind: "dev" }] },
+          ],
+        },
+        { id: `registry+x#norm@${normVersion}`, deps: [] },
+        { id: `registry+x#dev@${devVersion}`, deps: [] },
+      ],
+    },
+  };
+}
+
+test("GIVEN two checkouts of one tree WHEN viewed THEN the views are equal", () => {
+  assert.equal(consumerView(metadata({ root: "/w1" })), consumerView(metadata({ root: "/w2" })));
+});
+
+test("GIVEN a dev-dependency requirement change WHEN viewed THEN the view is unchanged", () => {
+  assert.equal(consumerView(metadata()), consumerView(metadata({ devReq: "2" })));
+});
+
+test("GIVEN a normal dependency requirement change WHEN viewed THEN the view changes", () => {
+  assert.notEqual(consumerView(metadata()), consumerView(metadata({ normReq: "2" })));
+});
+
+test("GIVEN a locked normal dependency bump in a crate with a binary WHEN viewed THEN the view changes", () => {
+  // `cargo install --locked` builds the binary from the packaged lock.
+  assert.notEqual(consumerView(metadata()), consumerView(metadata({ normVersion: "1.0.1" })));
+});
+
+test("GIVEN a locked dev-dependency bump WHEN viewed THEN the view is unchanged", () => {
+  assert.equal(consumerView(metadata()), consumerView(metadata({ devVersion: "1.0.1" })));
+});
+
+test("GIVEN a change to an unpublished package WHEN viewed THEN the view is unchanged", () => {
+  assert.equal(consumerView(metadata()), consumerView(metadata({ toolsVersion: "0.2.0" })));
 });
