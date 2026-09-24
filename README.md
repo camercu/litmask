@@ -246,7 +246,7 @@ A runtime provider is sourced explicitly with `init!(provider)`:
 
 ```rust
 // weak_mask! keeps the variable name out of strings(1) output. It is
-// readable before init!, which mask! is not.
+// readable before init!, while mask! is not.
 let provider = litmask::EnvVarProvider::new(litmask::weak_mask!("SUPER_SECRET_UNLOCK_KEY"));
 litmask::init!(provider)?;
 ```
