@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { partitionCommits, sourcePaths } from "./shipped.mjs";
+import { followRenames, partitionCommits, sourcePaths } from "./shipped.mjs";
 
 test("GIVEN a commit touching a shipped file WHEN partitioned THEN it is kept", () => {
   const commit = { hash: "a", message: "fix(litmask): x" };
@@ -46,4 +46,19 @@ test("GIVEN a packaged Cargo.lock WHEN mapped THEN the workspace lock feeds it",
 test("GIVEN a readme outside the package WHEN mapped THEN the packaged copy maps to it", () => {
   const pkg = { dir: "litmask-cli", readme: "../README.md", entries: ["README.md"] };
   assert.deepEqual(sourcePaths(pkg, identity), ["README.md"]);
+});
+
+test("GIVEN a chain of renames ending at a shipped path WHEN followed THEN every earlier name ships", () => {
+  // Renames arrive newest first, as `git log` lists them.
+  const renames = [
+    ["a/src/h2.rs", "a/src/i.rs"],
+    ["a/src/h.rs", "a/src/h2.rs"],
+  ];
+  const shipped = followRenames(new Set(["a/src/i.rs"]), renames);
+  assert.deepEqual([...shipped].sort(), ["a/src/h.rs", "a/src/h2.rs", "a/src/i.rs"]);
+});
+
+test("GIVEN a rename ending at an unshipped path WHEN followed THEN the old name stays out", () => {
+  const shipped = followRenames(new Set(["a/src/lib.rs"]), [["a/src/x.rs", "scripts/x.rs"]]);
+  assert.deepEqual([...shipped], ["a/src/lib.rs"]);
 });

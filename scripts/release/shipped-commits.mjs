@@ -5,39 +5,66 @@
 // Takes the same config as the two plugins it wraps.
 
 import { execFileSync } from "node:child_process";
-import { realpathSync } from "node:fs";
-import { relative } from "node:path";
+import { mkdtempSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative } from "node:path";
 
 import * as commitAnalyzer from "@semantic-release/commit-analyzer";
 import * as notesGenerator from "@semantic-release/release-notes-generator";
 
-import { partitionCommits, sourcePaths } from "./shipped.mjs";
+import { followRenames, partitionCommits, sourcePaths } from "./shipped.mjs";
 
 const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 1 << 26 });
 const lines = (text) => text.split("\n").filter(Boolean);
 
-function shippedFiles(cwd) {
-  const meta = JSON.parse(run("cargo", ["metadata", "--no-deps", "--format-version", "1"], cwd));
-  const root = meta.workspace_root;
-  const resolve = (p) => relative(root, realpathSync(`${root}/${p}`));
+function packageSources(root) {
+  const meta = JSON.parse(run("cargo", ["metadata", "--no-deps", "--format-version", "1"], root));
+  const resolve = (p) => relative(meta.workspace_root, realpathSync(`${meta.workspace_root}/${p}`));
   const shipped = new Set();
   // `publish: null` means any registry; `[]` (publish = false) means none.
   for (const pkg of meta.packages.filter((p) => p.publish === null || p.publish.length > 0)) {
     const entries = lines(run("cargo", ["package", "--list", "--allow-dirty", "-p", pkg.name], root));
-    const dir = relative(root, pkg.manifest_path.replace(/\/Cargo\.toml$/, ""));
+    const dir = relative(meta.workspace_root, dirname(pkg.manifest_path));
     for (const path of sourcePaths({ dir, readme: pkg.readme, entries }, resolve)) shipped.add(path);
   }
   return shipped;
 }
 
+function packageSourcesAt(cwd, rev) {
+  const tree = mkdtempSync(join(tmpdir(), "litmask-release-"));
+  run("git", ["worktree", "add", "--quiet", "--detach", tree, rev], cwd);
+  try {
+    return packageSources(tree);
+  } finally {
+    run("git", ["worktree", "remove", "--force", tree], cwd);
+  }
+}
+
+// A path counts if consumers had it at the last release or get it now, or
+// if a rename in between carries it to one of those.
+function shippedFiles(cwd, lastHead) {
+  const shipped = packageSources(cwd);
+  if (!lastHead) return shipped;
+  for (const path of packageSourcesAt(cwd, lastHead)) shipped.add(path);
+  const renames = lines(
+    run("git", ["log", "--diff-filter=R", "--name-status", "--format=", `${lastHead}..HEAD`], cwd),
+  ).map((l) => l.split("\t").slice(1));
+  return followRenames(shipped, renames);
+}
+
 // analyzeCommits and generateNotes run in one semantic-release process;
-// package the workspace once.
-let shippedCache;
+// package the workspace once per repo and release window.
+const shippedCache = new Map();
 
 export function selectShipped(context) {
-  shippedCache ??= shippedFiles(context.cwd);
-  const filesOf = (hash) => lines(run("git", ["show", "--name-only", "--format=", hash], context.cwd));
-  return partitionCommits(context.commits, filesOf, shippedCache);
+  const lastHead = context.lastRelease?.gitHead;
+  const key = `${context.cwd}\0${lastHead ?? ""}`;
+  if (!shippedCache.has(key)) shippedCache.set(key, shippedFiles(context.cwd, lastHead));
+  // --no-renames lists a rename's old path too, so moving a file out of a
+  // package still counts as touching it.
+  const filesOf = (hash) =>
+    lines(run("git", ["show", "--no-renames", "--name-only", "--format=", hash], context.cwd));
+  return partitionCommits(context.commits, filesOf, shippedCache.get(key));
 }
 
 function shippedOnly(context) {

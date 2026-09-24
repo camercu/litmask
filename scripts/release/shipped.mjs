@@ -32,3 +32,13 @@ export function sourcePaths(pkg, resolve) {
     return [resolve(`${pkg.dir}/${e}`)];
   });
 }
+
+// A file added and renamed within one release window exists at neither end,
+// so a commit that edited it under its old name must inherit the new name's
+// shipped status. `renames` is [old, new] pairs, newest first (git log
+// order), so one pass walks each chain back from its shipped end.
+export function followRenames(shipped, renames) {
+  const out = new Set(shipped);
+  for (const [from, to] of renames) if (out.has(to)) out.add(from);
+  return out;
+}

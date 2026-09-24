@@ -68,6 +68,8 @@ before(() => {
       "version.workspace = true\nedition.workspace = true\nlicense.workspace = true\n",
   );
   write("a/src/lib.rs", "pub fn a() {}\n");
+  write("a/src/old.rs", "// removed after the release\n");
+  write("a/src/f.rs", "// renamed after the release\n");
   write(
     "tools/Cargo.toml",
     '[package]\nname = "tools"\npublish = false\nversion.workspace = true\nedition.workspace = true\n',
@@ -91,6 +93,18 @@ before(() => {
   commit("docs: reword the crate readme");
   write("LICENSE-MIT", "MIT License\n");
   commit("chore: reword the license");
+  git("rm", "-q", "a/src/old.rs");
+  commit("fix(a)!: remove old module");
+  write("a/src/f.rs", "// renamed after the release, fixed\n");
+  commit("fix(a): repair f");
+  git("mv", "a/src/f.rs", "a/src/g.rs");
+  commit("refactor(a): rename f to g");
+  write("a/src/h.rs", "// added after the release\n");
+  commit("feat(a): add h");
+  write("a/src/h.rs", "// added after the release, fixed\n");
+  commit("fix(a): repair h");
+  git("mv", "a/src/h.rs", "a/src/i.rs");
+  commit("refactor(a): rename h to i");
 
   ({ kept, dropped } = selectShipped(context()));
 });
@@ -117,19 +131,32 @@ test("GIVEN a change to a symlinked packaged file's target WHEN filtered THEN ke
   assert.ok(subjects(kept).includes("chore: reword the license"));
 });
 
+test("GIVEN a commit deleting a published file WHEN filtered THEN kept", () => {
+  assert.ok(subjects(kept).includes("fix(a)!: remove old module"));
+});
+
+test("GIVEN a fix to a published file renamed later WHEN filtered THEN kept", () => {
+  assert.ok(subjects(kept).includes("fix(a): repair f"));
+});
+
+test("GIVEN a fix to a new file renamed later WHEN filtered THEN kept", () => {
+  // h.rs exists at neither the last release nor HEAD; only the rename links it to i.rs.
+  assert.ok(subjects(kept).includes("fix(a): repair h"));
+});
+
 const PRESET = { preset: "conventionalcommits" };
-const only = (pattern) => {
+const only = (...wanted) => {
   const ctx = context();
-  ctx.commits = ctx.commits.filter((c) => pattern.test(c.message));
+  ctx.commits = ctx.commits.filter((c) => wanted.includes(c.message.split("\n")[0]));
   return ctx;
 };
 
 test("GIVEN tooling-only fixes WHEN analyzed THEN no release", async () => {
-  assert.equal(await analyzeCommits(PRESET, only(/^fix\((ci|tools)\)/)), null);
+  assert.equal(await analyzeCommits(PRESET, only("fix(ci): tweak ci", "fix(tools): tweak unpublished tool")), null);
 });
 
 test("GIVEN a published fix among tooling fixes WHEN analyzed THEN patch", async () => {
-  assert.equal(await analyzeCommits(PRESET, only(/^fix\(/)), "patch");
+  assert.equal(await analyzeCommits(PRESET, only("fix(a): repair lib", "fix(ci): tweak ci", "fix(tools): tweak unpublished tool")), "patch");
 });
 
 test("GIVEN a published fix WHEN notes render THEN it is listed", async () => {
