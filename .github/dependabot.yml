@@ -10,9 +10,12 @@
 # GitHub security alerts still cover the npm tree; bump the lock in
 # place with `npm update --package-lock-only <pkg>` when one fires.
 #
-# Conventional Commit type set to `chore(deps)` so semantic-release's
-# commit-analyzer skips them (the `chore` type has no release rule in
-# .releaserc.json, so Dependabot updates do not trigger releases).
+# Cargo updates commit as `fix(deps)` so a bump that reaches consumers cuts
+# a release and appears in its notes. Cargo has no `prefix-development`, so
+# dev-dependency bumps carry the same prefix; the release filter
+# (scripts/release/) drops a bump that leaves every published crate's
+# non-dev dependencies unchanged. Other ecosystems never reach consumers
+# and keep non-releasing types.
 version: 2
 
 updates:
@@ -21,8 +24,8 @@ updates:
     schedule:
       interval: weekly
     commit-message:
-      prefix: chore
-      include: scope
+      # Dependabot appends the colon: "fix(deps): bump ...".
+      prefix: fix(deps)
     groups:
       cargo-deps:
         patterns: ["*"]
