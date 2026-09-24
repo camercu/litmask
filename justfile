@@ -802,7 +802,7 @@ release:
     npx semantic-release
 
 # Tests the release pipeline's commit filter (scripts/release/) against
-# real tagged history, and the release config through the stock plugins.
+# throwaway fixture repos, and the release config through the stock plugins.
 # CI's `release-notes` job runs the same tests on every push and PR; run
 # this after touching npm deps, .releaserc.json or scripts/release/.
 release-check:
