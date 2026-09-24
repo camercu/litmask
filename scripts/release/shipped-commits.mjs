@@ -90,7 +90,7 @@ export function selectShipped(context) {
 function shippedOnly(context) {
   const { kept, dropped } = selectShipped(context);
   for (const c of dropped) {
-    context.logger.log("Skip %s (touches no published file): %s", c.hash.slice(0, 7), c.message.split("\n")[0]);
+    context.logger.log("Skip %s (changes nothing a published crate ships or resolves): %s", c.hash.slice(0, 7), c.message.split("\n")[0]);
   }
   return { ...context, commits: kept };
 }
