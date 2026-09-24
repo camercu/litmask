@@ -117,9 +117,24 @@ function metadata({ root = "/w", devReq = "1", normReq = "1", normVersion = "1.0
     targets: [{ name, kind: ["lib"], src_path: `${root}/${name}/src/lib.rs` }],
     ...extra,
   });
+  // Full metadata also lists every resolved registry package; they have
+  // `publish: null` too but are not ours.
+  const registry = (name, version) => ({
+    name,
+    version,
+    id: `registry+x#${name}@${version}`,
+    manifest_path: `/cargo/registry/${name}-${version}/Cargo.toml`,
+    publish: null,
+    features: {},
+    dependencies: [],
+    targets: [{ name, kind: ["lib"], src_path: `/cargo/registry/${name}-${version}/src/lib.rs` }],
+  });
   return {
     workspace_root: root,
+    workspace_members: [`path+file://${root}/app#0.1.0`, `path+file://${root}/tools#0.1.0`],
     packages: [
+      registry("norm", normVersion),
+      registry("dev", devVersion),
       pkg("app", {
         dependencies: [
           { name: "norm", req: normReq, kind: null, optional: false, path: `${root}/norm` },

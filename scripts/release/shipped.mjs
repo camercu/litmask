@@ -93,8 +93,11 @@ export function consumerView(meta) {
     }
     return [...seen].map((id) => label.get(id) ?? id).sort();
   };
+  // Full metadata lists every resolved registry package as well, each with
+  // `publish: null`; only workspace members are ours to publish.
+  const members = new Set(meta.workspace_members);
   const view = meta.packages
-    .filter(isPublished)
+    .filter((p) => members.has(p.id) && isPublished(p))
     .map(({ id, manifest_path, source, dependencies, targets, ...rest }) => ({
       ...rest,
       dependencies: dependencies.filter(notDev).map(({ path, ...dep }) => dep),
