@@ -34,10 +34,14 @@ function shippedFiles(cwd) {
 // package the workspace once.
 let shippedCache;
 
-function shippedOnly(context) {
+export function selectShipped(context) {
   shippedCache ??= shippedFiles(context.cwd);
   const filesOf = (hash) => lines(run("git", ["show", "--name-only", "--format=", hash], context.cwd));
-  const { kept, dropped } = partitionCommits(context.commits, filesOf, shippedCache);
+  return partitionCommits(context.commits, filesOf, shippedCache);
+}
+
+function shippedOnly(context) {
+  const { kept, dropped } = selectShipped(context);
   for (const c of dropped) {
     context.logger.log("Skip %s (touches no published file): %s", c.hash.slice(0, 7), c.message.split("\n")[0]);
   }

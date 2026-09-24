@@ -1,22 +1,34 @@
-// Acceptance tests: run the release plugin over real tagged history, so
-// they exercise git, `cargo package --list` and the delegated
-// semantic-release plugins together. Needs full history (tags) and cargo.
+// Runs the release filter against a throwaway git repo holding a tiny cargo
+// workspace (no registry deps, so cargo works offline). Each scenario commit
+// lands after the `v0.1.0` tag; the tests assert which ones the filter keeps.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { test } from "node:test";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { after, before, test } from "node:test";
 
-import { analyzeCommits, generateNotes } from "./shipped-commits.mjs";
+import { analyzeCommits, generateNotes, selectShipped } from "./shipped-commits.mjs";
 
-const config = {
-  preset: "conventionalcommits",
-  releaseRules: [{ breaking: true, release: "minor" }],
+let repo;
+const git = (...args) =>
+  execFileSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@invalid", ...args], {
+    cwd: repo,
+    encoding: "utf8",
+  }).trim();
+const write = (path, text) => {
+  mkdirSync(dirname(join(repo, path)), { recursive: true });
+  writeFileSync(join(repo, path), text);
+};
+const commit = (message) => {
+  git("add", "-A");
+  git("commit", "-q", "--allow-empty", "-m", message);
+  return git("rev-parse", "HEAD");
 };
 
-function commitsBetween(from, to) {
-  const out = execFileSync("git", ["log", "--no-merges", "--format=%H%x1f%B%x1e", `${from}..${to}`], {
-    encoding: "utf8",
-  });
+function commitsSince(tag) {
+  const out = git("log", "--format=%H%x1f%B%x1e", `${tag}..HEAD`);
   return out
     .split("\x1e")
     .map((r) => r.trim())
@@ -27,33 +39,103 @@ function commitsBetween(from, to) {
     });
 }
 
-function context(from, to) {
+function context() {
   return {
-    cwd: process.cwd(),
-    options: { repositoryUrl: "https://github.com/camercu/litmask.git" },
-    commits: commitsBetween(from, to),
-    lastRelease: { gitTag: from, version: from.slice(1) },
-    nextRelease: { gitTag: to, version: to.slice(1) },
+    cwd: repo,
+    options: { repositoryUrl: "https://example.invalid/fixture.git" },
+    commits: commitsSince("v0.1.0"),
+    lastRelease: { gitTag: "v0.1.0", gitHead: git("rev-parse", "v0.1.0^{commit}"), version: "0.1.0" },
+    nextRelease: { gitTag: "v0.1.1", version: "0.1.1" },
     logger: { log() {}, error() {} },
   };
 }
 
-test("GIVEN only maintainer-tooling fixes WHEN analyzed THEN no release", async () => {
-  // v0.21.4 was cut only by `fix(setup)`, which touches no published file.
-  assert.equal(await analyzeCommits(config, context("v0.21.3", "v0.21.4")), null);
+let kept;
+let dropped;
+const subjects = (commits) => commits.map((c) => c.message.split("\n")[0]);
+
+before(() => {
+  repo = mkdtempSync(join(tmpdir(), "litmask-release-"));
+  git("init", "-q", "-b", "main");
+  write(
+    "Cargo.toml",
+    '[workspace]\nmembers = ["a", "tools"]\nresolver = "3"\n\n' +
+      '[workspace.package]\nversion = "0.1.0"\nedition = "2021"\nlicense = "MIT"\n',
+  );
+  write(
+    "a/Cargo.toml",
+    '[package]\nname = "a"\ndescription = "fixture"\nreadme = "../README.md"\n' +
+      "version.workspace = true\nedition.workspace = true\nlicense.workspace = true\n",
+  );
+  write("a/src/lib.rs", "pub fn a() {}\n");
+  write(
+    "tools/Cargo.toml",
+    '[package]\nname = "tools"\npublish = false\nversion.workspace = true\nedition.workspace = true\n',
+  );
+  write("tools/src/main.rs", "fn main() {}\n");
+  write("README.md", "fixture\n");
+  write("LICENSE-MIT", "MIT\n");
+  symlinkSync("../LICENSE-MIT", join(repo, "a/LICENSE-MIT"));
+  write(".github/ci.yml", "on: push\n");
+  execFileSync("cargo", ["generate-lockfile", "--offline"], { cwd: repo, stdio: "ignore" });
+  commit("chore: initial");
+  git("tag", "v0.1.0");
+
+  write("a/src/lib.rs", "pub fn a() { /* fixed */ }\n");
+  commit("fix(a): repair lib");
+  write(".github/ci.yml", "on: [push, pull_request]\n");
+  commit("fix(ci): tweak ci");
+  write("tools/src/main.rs", "fn main() { /* fixed */ }\n");
+  commit("fix(tools): tweak unpublished tool");
+  write("README.md", "fixture, clearer\n");
+  commit("docs: reword the crate readme");
+  write("LICENSE-MIT", "MIT License\n");
+  commit("chore: reword the license");
+
+  ({ kept, dropped } = selectShipped(context()));
 });
 
-test("GIVEN a published-crate fix WHEN analyzed THEN patch", async () => {
-  assert.equal(await analyzeCommits(config, context("v0.21.0", "v0.21.1")), "patch");
+after(() => rmSync(repo, { recursive: true, force: true }));
+
+test("GIVEN a fix to a published source WHEN filtered THEN kept", () => {
+  assert.ok(subjects(kept).includes("fix(a): repair lib"));
 });
 
-test("GIVEN a published-crate fix WHEN notes render THEN it is listed", async () => {
-  const notes = await generateNotes(config, context("v0.21.0", "v0.21.1"));
-  assert.match(notes, /scope the Embedded-floor warning to the sealing crate/);
+test("GIVEN a fix to CI only WHEN filtered THEN dropped", () => {
+  assert.ok(subjects(dropped).includes("fix(ci): tweak ci"));
 });
 
-test("GIVEN a tooling-only fix beside it WHEN notes render THEN it is left out", async () => {
-  // 8525223 fix(examples) changed only scripts/test-examples.sh.
-  const notes = await generateNotes(config, context("v0.21.0", "v0.21.1"));
-  assert.doesNotMatch(notes, /glob expansion/);
+test("GIVEN a fix to an unpublished crate WHEN filtered THEN dropped", () => {
+  assert.ok(subjects(dropped).includes("fix(tools): tweak unpublished tool"));
+});
+
+test("GIVEN a change to a readme packaged from outside the crate WHEN filtered THEN kept", () => {
+  assert.ok(subjects(kept).includes("docs: reword the crate readme"));
+});
+
+test("GIVEN a change to a symlinked packaged file's target WHEN filtered THEN kept", () => {
+  assert.ok(subjects(kept).includes("chore: reword the license"));
+});
+
+const PRESET = { preset: "conventionalcommits" };
+const only = (pattern) => {
+  const ctx = context();
+  ctx.commits = ctx.commits.filter((c) => pattern.test(c.message));
+  return ctx;
+};
+
+test("GIVEN tooling-only fixes WHEN analyzed THEN no release", async () => {
+  assert.equal(await analyzeCommits(PRESET, only(/^fix\((ci|tools)\)/)), null);
+});
+
+test("GIVEN a published fix among tooling fixes WHEN analyzed THEN patch", async () => {
+  assert.equal(await analyzeCommits(PRESET, only(/^fix\(/)), "patch");
+});
+
+test("GIVEN a published fix WHEN notes render THEN it is listed", async () => {
+  assert.match(await generateNotes(PRESET, context()), /repair lib/);
+});
+
+test("GIVEN a tooling fix WHEN notes render THEN it is left out", async () => {
+  assert.doesNotMatch(await generateNotes(PRESET, context()), /tweak ci/);
 });
