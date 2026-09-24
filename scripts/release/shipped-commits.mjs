@@ -23,7 +23,7 @@ function packageSources(root) {
   const shipped = new Set();
   // `publish: null` means any registry; `[]` (publish = false) means none.
   for (const pkg of meta.packages.filter((p) => p.publish === null || p.publish.length > 0)) {
-    const entries = lines(run("cargo", ["package", "--list", "--allow-dirty", "-p", pkg.name], root));
+    const entries = lines(run("cargo", ["package", "--list", "--locked", "--allow-dirty", "-p", pkg.name], root));
     const dir = relative(meta.workspace_root, dirname(pkg.manifest_path));
     const paths = sourcePaths({ dir, readme: pkg.readme, entries }, resolve);
     assertPackageSources(dir, paths);

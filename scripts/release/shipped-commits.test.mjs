@@ -11,51 +11,39 @@ import { after, before, test } from "node:test";
 
 import { analyzeCommits, generateNotes, selectShipped } from "./shipped-commits.mjs";
 
-let repo;
-const git = (...args) =>
-  execFileSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@invalid", ...args], {
-    cwd: repo,
-    encoding: "utf8",
-  }).trim();
-const write = (path, text) => {
-  mkdirSync(dirname(join(repo, path)), { recursive: true });
-  writeFileSync(join(repo, path), text);
-};
-const commit = (message) => {
-  git("add", "-A");
-  git("commit", "-q", "--allow-empty", "-m", message);
-  return git("rev-parse", "HEAD");
-};
-
-function commitsSince(tag) {
-  const out = git("log", "--format=%H%x1f%B%x1e", `${tag}..HEAD`);
-  return out
-    .split("\x1e")
-    .map((r) => r.trim())
-    .filter(Boolean)
-    .map((r) => {
-      const [hash, message] = r.split("\x1f");
-      return { hash, message: message.trim() };
-    });
-}
-
-function context() {
-  return {
+// A released fixture: a workspace with publishable crate `a` (readme from
+// the root, symlinked license) and unpublished `tools`, tagged `v0.1.0`.
+function releasedWorkspace() {
+  const repo = mkdtempSync(join(tmpdir(), "litmask-release-"));
+  const git = (...args) =>
+    execFileSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@invalid", ...args], {
+      cwd: repo,
+      encoding: "utf8",
+    }).trim();
+  const write = (path, text) => {
+    mkdirSync(dirname(join(repo, path)), { recursive: true });
+    writeFileSync(join(repo, path), text);
+  };
+  const commit = (message) => {
+    git("add", "-A");
+    git("commit", "-q", "--allow-empty", "-m", message);
+  };
+  const context = () => ({
     cwd: repo,
     options: { repositoryUrl: "https://example.invalid/fixture.git" },
-    commits: commitsSince("v0.1.0"),
+    commits: git("log", "--format=%H%x1f%B%x1e", "v0.1.0..HEAD")
+      .split("\x1e")
+      .map((r) => r.trim())
+      .filter(Boolean)
+      .map((r) => {
+        const [hash, message] = r.split("\x1f");
+        return { hash, message: message.trim() };
+      }),
     lastRelease: { gitTag: "v0.1.0", gitHead: git("rev-parse", "v0.1.0^{commit}"), version: "0.1.0" },
     nextRelease: { gitTag: "v0.1.1", version: "0.1.1" },
     logger: { log() {}, error() {} },
-  };
-}
+  });
 
-let kept;
-let dropped;
-const subjects = (commits) => commits.map((c) => c.message.split("\n")[0]);
-
-before(() => {
-  repo = mkdtempSync(join(tmpdir(), "litmask-release-"));
   git("init", "-q", "-b", "main");
   write(
     "Cargo.toml",
@@ -82,6 +70,24 @@ before(() => {
   execFileSync("cargo", ["generate-lockfile", "--offline"], { cwd: repo, stdio: "ignore" });
   commit("chore: initial");
   git("tag", "v0.1.0");
+  return { repo, git, write, commit, context };
+}
+
+const fixtures = [];
+after(() => {
+  for (const f of fixtures) rmSync(f.repo, { recursive: true, force: true });
+});
+
+let context;
+let kept;
+let dropped;
+const subjects = (commits) => commits.map((c) => c.message.split("\n")[0]);
+
+before(() => {
+  const f = releasedWorkspace();
+  fixtures.push(f);
+  const { git, write, commit } = f;
+  context = f.context;
 
   write("a/src/lib.rs", "pub fn a() { /* fixed */ }\n");
   commit("fix(a): repair lib");
@@ -113,8 +119,6 @@ before(() => {
 
   ({ kept, dropped } = selectShipped(context()));
 });
-
-after(() => rmSync(repo, { recursive: true, force: true }));
 
 test("GIVEN a fix to a published source WHEN filtered THEN kept", () => {
   assert.ok(subjects(kept).includes("fix(a): repair lib"));
@@ -175,4 +179,17 @@ test("GIVEN a published fix WHEN notes render THEN it is listed", async () => {
 
 test("GIVEN a tooling fix WHEN notes render THEN it is left out", async () => {
   assert.doesNotMatch(await generateNotes(PRESET, context()), /tweak ci/);
+});
+
+test("GIVEN a committed Cargo.lock that is stale WHEN filtered THEN it fails instead of rewriting the lock", () => {
+  // The release commit ships the lock, so a quiet rewrite would publish an unreviewed lock.
+  const f = releasedWorkspace();
+  fixtures.push(f);
+  f.write("Cargo.toml", '[workspace]\nmembers = ["a", "tools", "b"]\nresolver = "3"\n\n' +
+    '[workspace.package]\nversion = "0.1.0"\nedition = "2021"\nlicense = "MIT"\n');
+  f.write("b/Cargo.toml", '[package]\nname = "b"\ndescription = "fixture"\n' +
+    "version.workspace = true\nedition.workspace = true\nlicense.workspace = true\n");
+  f.write("b/src/lib.rs", "\n");
+  f.commit("feat(b): add crate b without updating the lock");
+  assert.throws(() => selectShipped(f.context()), /lock/i);
 });
