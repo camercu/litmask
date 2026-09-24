@@ -487,28 +487,20 @@ jobs:
           fi
 
   release-notes:
-    # Runs scripts/release/ tests: the shipped-commit filter over real
-    # tagged history (needs tags + cargo) and the release config through the
-    # stock plugins. A preset/writer mismatch renders empty notes without
-    # any error, so only rendered output catches it before a release.
+    # Runs scripts/release/ tests: the shipped-commit filter against
+    # throwaway fixture repos, and the release config through the stock
+    # plugins. A preset/writer mismatch renders empty notes without any
+    # error, so only rendered output catches it before a release.
     name: Release notes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
-      - name: Parse .tool-versions
-        id: tools
-        run: |
-          while read -r name version; do
-            # GitHub output names use underscores; tool names use hyphens.
-            echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
-          done < <(grep -v '^#' .tool-versions | grep -v '^$')
-
+      # Same toolchain as release.yml's semantic-release step, so a change
+      # in stable cargo's `package --list` output shows up here first.
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{ steps.tools.outputs.rust }}
+          toolchain: stable
 
       - uses: actions/setup-node@v7
         with:
@@ -518,3 +510,5 @@ jobs:
       - run: npm ci --no-audit --no-fund
 
       - run: node --test scripts/release/*.test.mjs
+        env:
+          RUSTUP_TOOLCHAIN: stable
