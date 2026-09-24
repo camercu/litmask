@@ -245,9 +245,14 @@ one governing `init!(...)` at startup.
 A runtime provider is sourced explicitly with `init!(provider)`:
 
 ```rust
-let provider = litmask::EnvVarProvider::new("LITMASK_UNLOCK_KEY");
+// weak_mask! keeps the variable name out of strings(1) output. It is
+// readable before init!, which mask! is not.
+let provider = litmask::EnvVarProvider::new(litmask::weak_mask!("SUPER_SECRET_UNLOCK_KEY"));
 litmask::init!(provider)?;
 ```
+
+At run time, set that variable to the same material the build sealed with
+`LITMASK_UNLOCK_KEY`.
 
 The machine tier is sealed at build time instead — see
 [Machine-ID binding](#machine-id-binding) below. Sealing with **both**
