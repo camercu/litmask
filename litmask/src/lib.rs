@@ -110,25 +110,27 @@
 //! ```ignore
 //! // src/main.rs — sealed External tier (compile-checked against the seal).
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let provider = litmask::EnvVarProvider::new("LITMASK_UNLOCK_KEY");
+//!     // weak_mask! keeps the variable name out of strings(1) output. It is
+//!     // readable before init!, while mask! is not.
+//!     let provider = litmask::EnvVarProvider::new(litmask::weak_mask!("SUPER_SECRET_UNLOCK_KEY"));
 //!     litmask::init!(provider)?; // one call unlocks the whole graph
 //!     println!("{}", litmask::mask!("now backed by a runtime key"));
 //!     Ok(())
 //! }
 //! ```
 //!
-//! `EnvVarProvider` re-sources the key at *run* time, so the same
-//! `LITMASK_UNLOCK_KEY` must be in the binary's environment when it starts,
-//! not only at build:
+//! `EnvVarProvider` re-sources the key at *run* time, so the binary's
+//! environment must hold the same key when it starts, under the name the
+//! provider reads:
 //!
 //! ```sh
-//! LITMASK_UNLOCK_KEY="$key" ./target/release/my_app
+//! SUPER_SECRET_UNLOCK_KEY="$key" ./target/release/my_app
 //! ```
 //!
 //! The Rust snippet is `ignore`d because `init!(provider)` only compiles
 //! once the build environment has sealed a key-bearing tier; the
 //! executable, test-exercised version lives in
-//! [`examples/file_provider.rs`](https://github.com/camercu/litmask/blob/main/litmask/examples/file_provider.rs).
+//! [`examples/weak_mask_demo.rs`](https://github.com/camercu/litmask/blob/main/litmask/examples/weak_mask_demo.rs).
 //!
 //! ## Return types
 //!
@@ -379,7 +381,9 @@ pub use litmask_macros::unmasked_derive;
 /// Embedded tier this crate's doctests build under:
 ///
 /// ```ignore
-/// let provider = litmask::EnvVarProvider::new("LITMASK_UNLOCK_KEY");
+/// // weak_mask! keeps the variable name out of strings(1) output. It is
+/// // readable before init!, while mask! is not.
+/// let provider = litmask::EnvVarProvider::new(litmask::weak_mask!("SUPER_SECRET_UNLOCK_KEY"));
 /// litmask::init!(provider)?; // host binary, External tier
 /// ```
 pub use litmask_macros::init;
