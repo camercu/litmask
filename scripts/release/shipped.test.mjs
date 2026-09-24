@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { followRenames, partitionCommits, sourcePaths } from "./shipped.mjs";
+import { assertPackageSources, followRenames, partitionCommits, sourcePaths } from "./shipped.mjs";
 
 test("GIVEN a commit touching a shipped file WHEN partitioned THEN it is kept", () => {
   const commit = { hash: "a", message: "fix(litmask): x" };
@@ -61,4 +61,22 @@ test("GIVEN a chain of renames ending at a shipped path WHEN followed THEN every
 test("GIVEN a rename ending at an unshipped path WHEN followed THEN the old name stays out", () => {
   const shipped = followRenames(new Set(["a/src/lib.rs"]), [["a/src/x.rs", "scripts/x.rs"]]);
   assert.deepEqual([...shipped], ["a/src/lib.rs"]);
+});
+
+test("GIVEN sources inside the repo and the package WHEN checked THEN accepted", () => {
+  assert.doesNotThrow(() => assertPackageSources("a", ["a/Cargo.toml", "Cargo.toml", "a/src/lib.rs", "LICENSE-MIT"]));
+});
+
+test("GIVEN a source resolved outside the repo WHEN checked THEN it throws", () => {
+  // A path that can never match `git show` output would silently drop every commit.
+  assert.throws(() => assertPackageSources("a", ["a/src/lib.rs", "../elsewhere/LICENSE"]), /outside the repository/);
+});
+
+test("GIVEN an absolute source path WHEN checked THEN it throws", () => {
+  assert.throws(() => assertPackageSources("a", ["a/src/lib.rs", "/tmp/x"]), /outside the repository/);
+});
+
+test("GIVEN a package with no source file of its own WHEN checked THEN it throws", () => {
+  // e.g. cargo's list layout changed and nothing maps under the package dir.
+  assert.throws(() => assertPackageSources("a", ["a/Cargo.toml", "Cargo.toml"]), /no source file/);
 });

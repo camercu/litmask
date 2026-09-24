@@ -12,7 +12,7 @@ import { dirname, join, relative } from "node:path";
 import * as commitAnalyzer from "@semantic-release/commit-analyzer";
 import * as notesGenerator from "@semantic-release/release-notes-generator";
 
-import { followRenames, partitionCommits, sourcePaths } from "./shipped.mjs";
+import { assertPackageSources, followRenames, partitionCommits, sourcePaths } from "./shipped.mjs";
 
 const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 1 << 26 });
 const lines = (text) => text.split("\n").filter(Boolean);
@@ -25,7 +25,9 @@ function packageSources(root) {
   for (const pkg of meta.packages.filter((p) => p.publish === null || p.publish.length > 0)) {
     const entries = lines(run("cargo", ["package", "--list", "--allow-dirty", "-p", pkg.name], root));
     const dir = relative(meta.workspace_root, dirname(pkg.manifest_path));
-    for (const path of sourcePaths({ dir, readme: pkg.readme, entries }, resolve)) shipped.add(path);
+    const paths = sourcePaths({ dir, readme: pkg.readme, entries }, resolve);
+    assertPackageSources(dir, paths);
+    for (const path of paths) shipped.add(path);
   }
   return shipped;
 }

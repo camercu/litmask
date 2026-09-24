@@ -42,3 +42,15 @@ export function followRenames(shipped, renames) {
   for (const [from, to] of renames) if (out.has(to)) out.add(from);
   return out;
 }
+
+// A wrong mapping fails quietly: paths that never match `git show` output
+// drop every commit, so the release just stops. Refuse such a set instead.
+export function assertPackageSources(dir, paths) {
+  const outside = paths.filter((p) => posix.isAbsolute(p) || p === ".." || p.startsWith("../"));
+  if (outside.length > 0) {
+    throw new Error(`package ${dir}: sources outside the repository: ${outside.join(", ")}`);
+  }
+  if (!paths.some((p) => p.startsWith(`${dir}/`) && p !== `${dir}/Cargo.toml`)) {
+    throw new Error(`package ${dir}: no source file maps under the package directory`);
+  }
+}
