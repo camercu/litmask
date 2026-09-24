@@ -105,6 +105,11 @@ before(() => {
   commit("fix(a): repair h");
   git("mv", "a/src/h.rs", "a/src/i.rs");
   commit("refactor(a): rename h to i");
+  git("switch", "-q", "-c", "topic");
+  write("a/src/lib.rs", "pub fn a() { /* fixed on a branch */ }\n");
+  commit("wip");
+  git("switch", "-q", "main");
+  git("merge", "-q", "--no-ff", "-m", "fix(a): merged fix (#1)", "topic");
 
   ({ kept, dropped } = selectShipped(context()));
 });
@@ -142,6 +147,11 @@ test("GIVEN a fix to a published file renamed later WHEN filtered THEN kept", ()
 test("GIVEN a fix to a new file renamed later WHEN filtered THEN kept", () => {
   // h.rs exists at neither the last release nor HEAD; only the rename links it to i.rs.
   assert.ok(subjects(kept).includes("fix(a): repair h"));
+});
+
+test("GIVEN a merge whose title carries the fix WHEN filtered THEN kept", () => {
+  // A clean merge has an empty combined diff; its first-parent diff is what it brings to main.
+  assert.ok(subjects(kept).includes("fix(a): merged fix (#1)"));
 });
 
 const PRESET = { preset: "conventionalcommits" };

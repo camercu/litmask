@@ -61,9 +61,16 @@ export function selectShipped(context) {
   const key = `${context.cwd}\0${lastHead ?? ""}`;
   if (!shippedCache.has(key)) shippedCache.set(key, shippedFiles(context.cwd, lastHead));
   // --no-renames lists a rename's old path too, so moving a file out of a
-  // package still counts as touching it.
+  // package still counts as touching it. A clean merge's combined diff is
+  // empty; its first-parent diff is what it brings to the release branch.
   const filesOf = (hash) =>
-    lines(run("git", ["show", "--no-renames", "--name-only", "--format=", hash], context.cwd));
+    lines(
+      run(
+        "git",
+        ["show", "--no-renames", "--diff-merges=first-parent", "--name-only", "--format=", hash],
+        context.cwd,
+      ),
+    );
   return partitionCommits(context.commits, filesOf, shippedCache.get(key));
 }
 
