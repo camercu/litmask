@@ -83,6 +83,9 @@ function canonical(value) {
 export function consumerView(meta, packageLists = {}) {
   const label = new Map(meta.packages.map((p) => [p.id, `${p.name}@${p.version}`]));
   const nodes = new Map(meta.resolve.nodes.map((n) => [n.id, n]));
+  // cargo resolves one graph for the whole workspace, so a dev-dependency
+  // bump that turns on a feature of a shared crate can add an edge here and
+  // keep the commit. That errs toward releasing, which is the safe side.
   const lockedClosure = (root) => {
     const seen = new Set();
     const todo = [root];
