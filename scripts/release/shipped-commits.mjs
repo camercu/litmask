@@ -83,7 +83,17 @@ export function selectShipped(context) {
         context.cwd,
       ),
     );
-  const viewChanged = (hash) => viewAt(context.cwd, `${hash}^`) !== viewAt(context.cwd, hash);
+  // History cannot be repaired, so a commit whose metadata will not resolve
+  // (a stale lock, a yanked crate, no network) is kept, as before this check
+  // existed, rather than failing every later release.
+  const viewChanged = (hash) => {
+    try {
+      return viewAt(context.cwd, `${hash}^`) !== viewAt(context.cwd, hash);
+    } catch (error) {
+      context.logger.log("Keep %s: cannot compare its dependencies (%s)", hash.slice(0, 7), error.message.split("\n")[0]);
+      return true;
+    }
+  };
   return partitionCommits(context.commits, filesOf, shippedCache.get(key), viewChanged);
 }
 

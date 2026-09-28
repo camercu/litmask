@@ -222,3 +222,22 @@ test("GIVEN a committed Cargo.lock that is stale WHEN filtered THEN it fails ins
   f.commit("feat(b): add crate b without updating the lock");
   assert.throws(() => selectShipped(f.context()), /lock/i);
 });
+
+test("GIVEN an old dependency commit whose lock cannot resolve WHEN filtered THEN kept, not fatal", () => {
+  // History cannot be fixed, so failing here would block every later release.
+  const f = releasedWorkspace();
+  fixtures.push(f);
+  f.write("h/Cargo.toml", '[package]\nname = "h"\nversion = "0.2.0"\ndescription = "fixture"\nedition = "2021"\nlicense = "MIT"\n');
+  f.write(
+    "a/Cargo.toml",
+    '[package]\nname = "a"\ndescription = "fixture"\nreadme = "../README.md"\n' +
+      "version.workspace = true\nedition.workspace = true\nlicense.workspace = true\n\n" +
+      '[dependencies]\nh = { path = "../h", version = "0.2.0" }\n\n' +
+      '[dev-dependencies]\ntools = { path = "../tools", version = "0.1.0" }\n',
+  );
+  f.commit("fix(deps): bump h without refreshing the lock");
+  execFileSync("cargo", ["update", "--offline", "--workspace"], { cwd: f.repo, stdio: "ignore" });
+  f.commit("chore(deps): refresh the lock");
+  const { kept } = selectShipped(f.context());
+  assert.ok(subjects(kept).includes("fix(deps): bump h without refreshing the lock"));
+});
