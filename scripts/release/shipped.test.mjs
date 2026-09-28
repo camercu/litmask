@@ -105,7 +105,17 @@ test("GIVEN a commit touching shipped source too WHEN partitioned THEN kept with
 
 // Minimal `cargo metadata` (with resolve) for one workspace, rooted at `root`
 // so two checkouts of the same tree differ only in paths.
-function metadata({ root = "/w", devReq = "1", normReq = "1", normVersion = "1.0.0", devVersion = "1.0.0", toolsVersion = "0.1.0" } = {}) {
+function metadata({
+  root = "/w",
+  devReq = "1",
+  normReq = "1",
+  buildReq = "1",
+  normVersion = "1.0.0",
+  deepVersion = "1.0.0",
+  devVersion = "1.0.0",
+  toolsVersion = "0.1.0",
+  appKind = "bin",
+} = {}) {
   const pkg = (name, extra) => ({
     name,
     version: "0.1.0",
@@ -134,13 +144,15 @@ function metadata({ root = "/w", devReq = "1", normReq = "1", normVersion = "1.0
     workspace_members: [`path+file://${root}/app#0.1.0`, `path+file://${root}/tools#0.1.0`],
     packages: [
       registry("norm", normVersion),
+      registry("deep", deepVersion),
       registry("dev", devVersion),
       pkg("app", {
         dependencies: [
           { name: "norm", req: normReq, kind: null, optional: false, path: `${root}/norm` },
           { name: "dev", req: devReq, kind: "dev", optional: false },
+          { name: "bld", req: buildReq, kind: "build", optional: false },
         ],
-        targets: [{ name: "app", kind: ["bin"], src_path: `${root}/app/src/main.rs` }],
+        targets: [{ name: "app", kind: [appKind], src_path: `${root}/app/src/main.rs` }],
       }),
       pkg("tools", { publish: [], version: toolsVersion }),
     ],
@@ -153,7 +165,12 @@ function metadata({ root = "/w", devReq = "1", normReq = "1", normVersion = "1.0
             { name: "dev", pkg: `registry+x#dev@${devVersion}`, dep_kinds: [{ kind: "dev" }] },
           ],
         },
-        { id: `registry+x#norm@${normVersion}`, deps: [] },
+        {
+          // norm -> deep: the closure must walk past direct dependencies.
+          id: `registry+x#norm@${normVersion}`,
+          deps: [{ name: "deep", pkg: `registry+x#deep@${deepVersion}`, dep_kinds: [{ kind: null }] }],
+        },
+        { id: `registry+x#deep@${deepVersion}`, deps: [] },
         { id: `registry+x#dev@${devVersion}`, deps: [] },
       ],
     },
@@ -194,4 +211,17 @@ test("GIVEN a change to a published crate's packaged file list WHEN viewed THEN 
 
 test("GIVEN a change to an unpublished crate's file list WHEN viewed THEN the view is unchanged", () => {
   assert.equal(consumerView(metadata(), { tools: ["a"] }), consumerView(metadata(), { tools: ["a", "b"] }));
+});
+
+test("GIVEN a locked transitive dependency bump in a crate with a binary WHEN viewed THEN the view changes", () => {
+  assert.notEqual(consumerView(metadata()), consumerView(metadata({ deepVersion: "1.0.1" })));
+});
+
+test("GIVEN a locked dependency bump in a library-only crate WHEN viewed THEN the view is unchanged", () => {
+  // Dependents resolve a library's dependencies themselves; its lock is unused.
+  assert.equal(consumerView(metadata({ appKind: "lib" })), consumerView(metadata({ appKind: "lib", normVersion: "1.0.1" })));
+});
+
+test("GIVEN a build-dependency requirement change WHEN viewed THEN the view changes", () => {
+  assert.notEqual(consumerView(metadata()), consumerView(metadata({ buildReq: "2" })));
 });
