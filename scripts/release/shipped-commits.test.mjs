@@ -55,7 +55,7 @@ function releasedWorkspace() {
     '[package]\nname = "a"\ndescription = "fixture"\nreadme = "../README.md"\n' +
       "version.workspace = true\nedition.workspace = true\nlicense.workspace = true\n\n" +
       '[dependencies]\nh = { path = "../h", version = "0.1.0" }\n\n' +
-      '[dev-dependencies]\ntools = { path = "../tools" }\n',
+      '[dev-dependencies]\ntools = { path = "../tools", version = "0.1.0" }\n',
   );
   write("a/src/lib.rs", "pub fn a() {}\n");
   write("h/Cargo.toml", '[package]\nname = "h"\nversion = "0.1.0"\ndescription = "fixture"\nedition = "2021"\nlicense = "MIT"\n');
@@ -116,19 +116,22 @@ before(() => {
   git("mv", "a/src/h.rs", "a/src/i.rs");
   commit("refactor(a): rename h to i");
   const lock = () => execFileSync("cargo", ["update", "--offline", "--workspace"], { cwd: f.repo, stdio: "ignore" });
+  const manifestA = (hReq, toolsReq) =>
+    write(
+      "a/Cargo.toml",
+      '[package]\nname = "a"\ndescription = "fixture"\nreadme = "../README.md"\n' +
+        "version.workspace = true\nedition.workspace = true\nlicense.workspace = true\n\n" +
+        `[dependencies]\nh = { path = "../h", version = "${hReq}" }\n\n` +
+        `[dev-dependencies]\ntools = { path = "../tools", version = "${toolsReq}" }\n`,
+    );
+  // Changes a's published manifest and the lock, but only a dev-dependency.
   write("tools/Cargo.toml", '[package]\nname = "tools"\npublish = false\nversion = "0.2.0"\nedition.workspace = true\n');
+  manifestA("0.1.0", "0.2.0");
   lock();
   commit("fix(deps): bump a dev-dependency");
-  write("h/Cargo.toml", '[package]\nname = "h"\nversion = "0.2.0"\ndescription = "fixture"\nedition = "2021"\nlicense = "MIT"\n');
-  write(
-    "a/Cargo.toml",
-    '[package]\nname = "a"\ndescription = "fixture"\nreadme = "../README.md"\n' +
-      "version.workspace = true\nedition.workspace = true\nlicense.workspace = true\n\n" +
-      '[dependencies]\nh = { path = "../h", version = "0.2.0" }\n\n' +
-      '[dev-dependencies]\ntools = { path = "../tools" }\n',
-  );
-  lock();
-  commit("fix(deps): bump a normal dependency");
+  // Changes only a's requirement on h; h itself and the lock stay put.
+  manifestA("0.1", "0.2.0");
+  commit("fix(deps): widen a normal dependency requirement");
   git("switch", "-q", "-c", "topic");
   write("a/src/lib.rs", "pub fn a() { /* fixed on a branch */ }\n");
   commit("wip");
@@ -180,8 +183,8 @@ test("GIVEN a bump that changes only a dev-dependency WHEN filtered THEN dropped
   assert.ok(subjects(dropped).includes("fix(deps): bump a dev-dependency"));
 });
 
-test("GIVEN a bump of a published crate's normal dependency WHEN filtered THEN kept", () => {
-  assert.ok(subjects(kept).includes("fix(deps): bump a normal dependency"));
+test("GIVEN a change to a published crate's normal dependency requirement WHEN filtered THEN kept", () => {
+  assert.ok(subjects(kept).includes("fix(deps): widen a normal dependency requirement"));
 });
 
 const PRESET = { preset: "conventionalcommits" };
