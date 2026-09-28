@@ -12,7 +12,14 @@ import { dirname, join, relative } from "node:path";
 import * as commitAnalyzer from "@semantic-release/commit-analyzer";
 import * as notesGenerator from "@semantic-release/release-notes-generator";
 
-import { assertPackageSources, consumerView, followRenames, partitionCommits, sourcePaths } from "./shipped.mjs";
+import {
+  assertPackageSources,
+  consumerView,
+  followRenames,
+  partitionCommits,
+  publishedMembers,
+  sourcePaths,
+} from "./shipped.mjs";
 
 const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 1 << 26 });
 const lines = (text) => text.split("\n").filter(Boolean);
@@ -24,8 +31,7 @@ function packageSources(root) {
   const meta = JSON.parse(run("cargo", ["metadata", "--no-deps", "--format-version", "1"], root));
   const resolve = (p) => relative(meta.workspace_root, realpathSync(`${meta.workspace_root}/${p}`));
   const shipped = new Set();
-  // `publish: null` means any registry; `[]` (publish = false) means none.
-  for (const pkg of meta.packages.filter((p) => p.publish === null || p.publish.length > 0)) {
+  for (const pkg of publishedMembers(meta)) {
     const entries = packageList(root, pkg.name);
     const dir = relative(meta.workspace_root, dirname(pkg.manifest_path));
     const paths = sourcePaths({ dir, readme: pkg.readme, entries }, resolve);
@@ -62,11 +68,7 @@ function viewAt(cwd, rev) {
 function buildView(cwd, rev) {
   return atRevision(cwd, rev, (tree) => {
     const meta = JSON.parse(run("cargo", ["metadata", "--format-version", "1", "--locked"], tree));
-    const packageLists = Object.fromEntries(
-      meta.packages
-        .filter((p) => meta.workspace_members.includes(p.id) && (p.publish === null || p.publish.length > 0))
-        .map((p) => [p.name, packageList(tree, p.name)]),
-    );
+    const packageLists = Object.fromEntries(publishedMembers(meta).map((p) => [p.name, packageList(tree, p.name)]));
     return consumerView(meta, packageLists);
   });
 }

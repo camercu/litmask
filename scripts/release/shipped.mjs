@@ -62,7 +62,13 @@ export function assertPackageSources(dir, paths) {
   }
 }
 
-const isPublished = (pkg) => pkg.publish === null || pkg.publish.length > 0;
+// The workspace's own packages that go to a registry. Full metadata also
+// lists every resolved registry package, each with `publish: null`, so
+// membership is checked first; `publish = false` reads as `[]`.
+export function publishedMembers(meta) {
+  const members = new Set(meta.workspace_members);
+  return meta.packages.filter((p) => members.has(p.id) && (p.publish === null || p.publish.length > 0));
+}
 const notDev = (dep) => dep.kind !== "dev";
 
 function canonical(value) {
@@ -98,11 +104,7 @@ export function consumerView(meta, packageLists = {}) {
     }
     return [...seen].map((id) => label.get(id) ?? id).sort();
   };
-  // Full metadata lists every resolved registry package as well, each with
-  // `publish: null`; only workspace members are ours to publish.
-  const members = new Set(meta.workspace_members);
-  const view = meta.packages
-    .filter((p) => members.has(p.id) && isPublished(p))
+  const view = publishedMembers(meta)
     .map(({ id, manifest_path, source, dependencies, targets, ...rest }) => ({
       ...rest,
       dependencies: dependencies.filter(notDev).map(({ path, ...dep }) => dep),
