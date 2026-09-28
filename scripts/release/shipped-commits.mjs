@@ -49,7 +49,17 @@ const packageSourcesAt = (cwd, rev) => atRevision(cwd, rev, packageSources);
 
 // Only dependency-only commits need this, so it runs a handful of times per
 // release, not once per commit.
+// Consecutive dependency commits share parents, and analyzeCommits and
+// generateNotes both filter, so each revision's view is built once.
+const viewCache = new Map();
+
 function viewAt(cwd, rev) {
+  const key = `${cwd}\0${run("git", ["rev-parse", "--verify", `${rev}^{commit}`], cwd).trim()}`;
+  if (!viewCache.has(key)) viewCache.set(key, buildView(cwd, rev));
+  return viewCache.get(key);
+}
+
+function buildView(cwd, rev) {
   return atRevision(cwd, rev, (tree) => {
     const meta = JSON.parse(run("cargo", ["metadata", "--format-version", "1", "--locked"], tree));
     const packageLists = Object.fromEntries(
