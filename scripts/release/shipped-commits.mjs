@@ -17,13 +17,16 @@ import { assertPackageSources, consumerView, followRenames, partitionCommits, so
 const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 1 << 26 });
 const lines = (text) => text.split("\n").filter(Boolean);
 
+const packageList = (root, name) =>
+  lines(run("cargo", ["package", "--list", "--locked", "--allow-dirty", "-p", name], root));
+
 function packageSources(root) {
   const meta = JSON.parse(run("cargo", ["metadata", "--no-deps", "--format-version", "1"], root));
   const resolve = (p) => relative(meta.workspace_root, realpathSync(`${meta.workspace_root}/${p}`));
   const shipped = new Set();
   // `publish: null` means any registry; `[]` (publish = false) means none.
   for (const pkg of meta.packages.filter((p) => p.publish === null || p.publish.length > 0)) {
-    const entries = lines(run("cargo", ["package", "--list", "--locked", "--allow-dirty", "-p", pkg.name], root));
+    const entries = packageList(root, pkg.name);
     const dir = relative(meta.workspace_root, dirname(pkg.manifest_path));
     const paths = sourcePaths({ dir, readme: pkg.readme, entries }, resolve);
     assertPackageSources(dir, paths);
@@ -47,9 +50,15 @@ const packageSourcesAt = (cwd, rev) => atRevision(cwd, rev, packageSources);
 // Only dependency-only commits need this, so it runs a handful of times per
 // release, not once per commit.
 function viewAt(cwd, rev) {
-  return atRevision(cwd, rev, (tree) =>
-    consumerView(JSON.parse(run("cargo", ["metadata", "--format-version", "1", "--locked"], tree))),
-  );
+  return atRevision(cwd, rev, (tree) => {
+    const meta = JSON.parse(run("cargo", ["metadata", "--format-version", "1", "--locked"], tree));
+    const packageLists = Object.fromEntries(
+      meta.packages
+        .filter((p) => meta.workspace_members.includes(p.id) && (p.publish === null || p.publish.length > 0))
+        .map((p) => [p.name, packageList(tree, p.name)]),
+    );
+    return consumerView(meta, packageLists);
+  });
 }
 
 // A path counts if consumers had it at the last release or get it now, or

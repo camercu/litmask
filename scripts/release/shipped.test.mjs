@@ -184,3 +184,14 @@ test("GIVEN a locked dev-dependency bump WHEN viewed THEN the view is unchanged"
 test("GIVEN a change to an unpublished package WHEN viewed THEN the view is unchanged", () => {
   assert.equal(consumerView(metadata()), consumerView(metadata({ toolsVersion: "0.2.0" })));
 });
+
+test("GIVEN a change to a published crate's packaged file list WHEN viewed THEN the view changes", () => {
+  // include/exclude live only in the manifest; metadata does not carry them.
+  const before = consumerView(metadata(), { app: ["Cargo.toml", "src/main.rs"] });
+  const after = consumerView(metadata(), { app: ["Cargo.toml", "src/main.rs", "src/extra.rs"] });
+  assert.notEqual(before, after);
+});
+
+test("GIVEN a change to an unpublished crate's file list WHEN viewed THEN the view is unchanged", () => {
+  assert.equal(consumerView(metadata(), { tools: ["a"] }), consumerView(metadata(), { tools: ["a", "b"] }));
+});

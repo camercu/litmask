@@ -132,6 +132,15 @@ before(() => {
   // Changes only a's requirement on h; h itself and the lock stay put.
   manifestA("0.1", "0.2.0");
   commit("fix(deps): widen a normal dependency requirement");
+  // Metadata has no include/exclude, yet this changes what the .crate holds.
+  write(
+    "a/Cargo.toml",
+    '[package]\nname = "a"\ndescription = "fixture"\nreadme = "../README.md"\nexclude = ["src/g.rs"]\n' +
+      "version.workspace = true\nedition.workspace = true\nlicense.workspace = true\n\n" +
+      '[dependencies]\nh = { path = "../h", version = "0.1" }\n\n' +
+      '[dev-dependencies]\ntools = { path = "../tools", version = "0.2.0" }\n',
+  );
+  commit("fix(a): stop shipping g.rs");
   git("switch", "-q", "-c", "topic");
   write("a/src/lib.rs", "pub fn a() { /* fixed on a branch */ }\n");
   commit("wip");
@@ -185,6 +194,10 @@ test("GIVEN a bump that changes only a dev-dependency WHEN filtered THEN dropped
 
 test("GIVEN a change to a published crate's normal dependency requirement WHEN filtered THEN kept", () => {
   assert.ok(subjects(kept).includes("fix(deps): widen a normal dependency requirement"));
+});
+
+test("GIVEN a manifest edit that changes only the packaged file list WHEN filtered THEN kept", () => {
+  assert.ok(subjects(kept).includes("fix(a): stop shipping g.rs"));
 });
 
 const PRESET = { preset: "conventionalcommits" };

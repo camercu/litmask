@@ -76,9 +76,11 @@ function canonical(value) {
 // What consumers of the published crates resolve, as a comparable string:
 // each published package's metadata without dev-dependencies or checkout
 // paths, plus, for a package with a binary, the locked non-dev dependency
-// closure (`cargo install --locked` builds from the packaged lock).
-// `meta` is full `cargo metadata` output, resolve graph included.
-export function consumerView(meta) {
+// closure (`cargo install --locked` builds from the packaged lock), plus
+// its packaged file list, since include/exclude never reach metadata.
+// `meta` is full `cargo metadata` output, resolve graph included;
+// `packageLists` maps a package name to its `cargo package --list` lines.
+export function consumerView(meta, packageLists = {}) {
   const label = new Map(meta.packages.map((p) => [p.id, `${p.name}@${p.version}`]));
   const nodes = new Map(meta.resolve.nodes.map((n) => [n.id, n]));
   const lockedClosure = (root) => {
@@ -103,6 +105,7 @@ export function consumerView(meta) {
       dependencies: dependencies.filter(notDev).map(({ path, ...dep }) => dep),
       targets: targets.map(({ src_path, ...target }) => target),
       locked: targets.some((t) => t.kind.includes("bin")) ? lockedClosure(id) : null,
+      files: [...(packageLists[rest.name] ?? [])].sort(),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
   return JSON.stringify(canonical(view));
