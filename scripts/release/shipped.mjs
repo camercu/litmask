@@ -9,7 +9,7 @@ const isDependencyFile = (path) => /(^|\/)Cargo\.(toml|lock)$/.test(path);
 // A commit ships if it touches a shipped file. When every such file is a
 // manifest or lock, it ships only if `viewChanged(hash)` says the
 // dependencies consumers resolve changed (a dev-dependency bump does not).
-export function partitionCommits(commits, filesOf, shipped, viewChanged = () => true) {
+export function partitionCommits(commits, filesOf, shipped, viewChanged) {
   const kept = [];
   const dropped = [];
   for (const commit of commits) {

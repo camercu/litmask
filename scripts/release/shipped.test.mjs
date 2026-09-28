@@ -3,15 +3,20 @@ import { test } from "node:test";
 
 import { assertPackageSources, consumerView, followRenames, partitionCommits, sourcePaths } from "./shipped.mjs";
 
+// For commits that touch a non-dependency file, the view is never consulted.
+const neverAsked = () => {
+  throw new Error("view check must not run");
+};
+
 test("GIVEN a commit touching a shipped file WHEN partitioned THEN it is kept", () => {
   const commit = { hash: "a", message: "fix(litmask): x" };
-  const { kept } = partitionCommits([commit], () => ["litmask/src/lib.rs"], new Set(["litmask/src/lib.rs"]));
+  const { kept } = partitionCommits([commit], () => ["litmask/src/lib.rs"], new Set(["litmask/src/lib.rs"]), neverAsked);
   assert.deepEqual(kept, [commit]);
 });
 
 test("GIVEN a commit touching only unshipped files WHEN partitioned THEN it is dropped", () => {
   const commit = { hash: "a", message: "fix(ci): x" };
-  const { dropped } = partitionCommits([commit], () => [".github/workflows/ci.yml"], new Set(["litmask/src/lib.rs"]));
+  const { dropped } = partitionCommits([commit], () => [".github/workflows/ci.yml"], new Set(["litmask/src/lib.rs"]), neverAsked);
   assert.deepEqual(dropped, [commit]);
 });
 
@@ -97,9 +102,7 @@ test("GIVEN a dependency-only commit that changes the consumer view WHEN partiti
 
 test("GIVEN a commit touching shipped source too WHEN partitioned THEN kept without a view check", () => {
   const commit = { hash: "a", message: "fix(a): x" };
-  const { kept } = partitionCommits([commit], () => ["a/src/lib.rs", "Cargo.lock"], SHIPPED, () => {
-    throw new Error("view check must not run");
-  });
+  const { kept } = partitionCommits([commit], () => ["a/src/lib.rs", "Cargo.lock"], SHIPPED, neverAsked);
   assert.deepEqual(kept, [commit]);
 });
 
