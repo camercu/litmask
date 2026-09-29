@@ -19,6 +19,10 @@
 //!   unwraps `mask_key`, and `mask!` round-trips the canary plaintext.
 //! - run with `Y` → a different `unlock_key`, the AEAD tag check on the
 //!   wrapper fails, `init!` returns `Err`, and the canary never prints.
+//!
+//! The fixture builds in the debug profile, so this test is also the
+//! evidence SPECIFICATION §D.2.1 cites: seal-tier selection ignores the
+//! profile, and a keyed debug binary is not self-decrypting.
 
 mod common;
 
