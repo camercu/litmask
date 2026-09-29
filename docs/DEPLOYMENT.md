@@ -324,9 +324,12 @@ compiled only under `cfg(debug_assertions)`. Read them there rather than
 from a copy in this document; a copy here would be prose that rots the
 next time one is reworded.
 
-Never distribute a debug binary (SPECIFICATION §D.2.1): it is
-self-decrypting at the Embedded floor _and_ carries these diagnostic
-strings.
+Never distribute a debug binary (SPECIFICATION §D.2.1): it carries these
+diagnostic strings. The build profile does not pick the seal tier, the key
+channels do. A debug build with no key channel set seals at the Embedded
+floor and decrypts itself, the same as a keyless release build. Set
+`LITMASK_UNLOCK_KEY` or `LITMASK_MACHINE_ID` for a debug build to exercise
+the keyed tiers during development.
 
 Failures inside `init!` itself are the exception — they surface as a
 `Result` (see the exit-code table above), not a panic, in both

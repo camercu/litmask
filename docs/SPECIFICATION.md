@@ -1027,8 +1027,8 @@ MUST-NOTs below apply under `cfg(not(debug_assertions))` (release). Under
 `#[cfg(debug_assertions)]`-gated `litmask::diagnostics` module, which panics
 with loud, actionable, litmask-identifying text so the developer sees the
 failure on their own machine. That module is never compiled into a release
-artifact, and a debug binary is self-decrypting at the Embedded floor — so
-it MUST NOT be distributed (§D.2.1). The cfg-split lives at each failure arm
+artifact. A debug binary carries it and so MUST NOT be distributed
+(§D.2.1). The cfg-split lives at each failure arm
 (`#[cfg(debug_assertions)] Err(..) => diagnostics::…` vs
 `#[cfg(not(debug_assertions))] Err(_) => panic!()`).
 
@@ -2679,11 +2679,15 @@ requirements live in Parts I and II.
 `THREAT_MODEL.md` is canonical for the trust boundaries; this records the
 deltas the build-sealed model introduced.
 
-- **§D.2.1 — Debug self-decrypts _and_ diagnoses.** Debug builds seal like
+- **§D.2.1 — Debug seals like release but diagnoses.** Debug builds seal like
   release (no pass-through plaintext) but **fail loud**: init failures carry
-  identifying, actionable messages (§1.9.5). A debug binary is self-decrypting at
-  the Embedded floor _and_ prints litmask-identifying diagnostics, so it **MUST
-  NOT be distributed**.
+  identifying, actionable messages (§1.9.5). Seal-tier selection ignores the
+  profile: a debug build with no key channel set seals at the Embedded floor and
+  decrypts itself, exactly like a keyless release build, while a keyed debug
+  build needs its key at runtime (pinned by `litmask/tests/external_tier_e2e.rs`,
+  which seals a debug build External and rejects the wrong key). Either way it
+  prints litmask-identifying diagnostics, so a debug binary **MUST NOT be
+  distributed**.
 - **§D.2.2 — Opacity unchanged or improved.** The model stores no derived locator
   in the artifact; the wrapper is indistinguishable `.rodata`, still gated by the
   §1.9 dirty-word scrub.

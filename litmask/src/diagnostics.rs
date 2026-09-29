@@ -14,8 +14,8 @@
 //! per-site `cfg` branching and guarantees the two profiles cannot drift
 //! apart. The actionable message literals live behind
 //! `cfg(debug_assertions)`, so they are never compiled into a release
-//! artifact. A debug binary is self-decrypting at the Embedded floor
-//! *and* prints these diagnostics, so it MUST NOT be distributed (§D.2.1).
+//! artifact. A debug binary prints these diagnostics, so it MUST NOT be
+//! distributed (§D.2.1).
 
 use crate::error::InitError;
 

@@ -284,8 +284,10 @@ Runtime failures are profile-split: a release binary that cannot decrypt
 (key missing or wrong, governed `init!` not run, tamper) fails closed
 with a bare, message-less panic — deliberate, so no litmask-identifying
 string reaches the artifact. Rebuild in debug to see an actionable
-diagnosis; never distribute a debug binary (it is self-decrypting at the
-Embedded floor and carries the diagnostic strings). See
+diagnosis. Never distribute a debug binary: it carries the diagnostic
+strings. The profile does not change the seal tier. A debug build reads the
+same key channels as release, so a keyless debug build decrypts itself like
+any Embedded build, and a keyed one needs its key at runtime. See
 [Diagnosing runtime failures](docs/DEPLOYMENT.md#diagnosing-runtime-failures).
 
 ## Machine-ID binding
