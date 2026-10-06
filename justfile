@@ -10,6 +10,10 @@ stable_toolchain := "+stable"
 # tool-version parsing) stay on plain cargo.
 cargo := env("RTK_CARGO", "cargo")
 
+unexport GIT_DIR
+unexport GIT_WORK_TREE
+unexport GIT_INDEX_FILE
+
 default:
     @just --list
 
@@ -48,7 +52,7 @@ clean: _profraw-purge
 # (typos/taplo/markdown/actions/machete, then the index-backed deny) run
 # before the two-pass clippy compile, so a typo or lockfile issue fails in
 # ~1s instead of after a full workspace clippy build.
-lint: fmt-check lint-typos lint-taplo lint-markdown lint-actions lint-machete lint-deny lint-clippy lint-tracked-ignored lint-fuzz-lock
+lint: fmt-check lint-typos lint-taplo lint-markdown lint-actions lint-machete lint-deny lint-clippy lint-tracked-ignored lint-fuzz-lock lint-hook-env
 
 # The fuzz workspace carries its own lockfile and depends on
 # litmask-internal by path, so the version recorded there follows the
@@ -113,6 +117,18 @@ lint-markdown:
 # only surface on a pushed CI run.
 lint-actions:
     actionlint
+
+# Git hooks export GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE. `cargo deny`
+# refreshes its advisory DB with `git -C <db> reset --hard` + `fetch`; with
+# those vars set the commands hit this repo instead, resetting HEAD to the
+# advisory DB's FETCH_HEAD and discarding unpushed commits mid-push. The
+# `unexport` lines at the top scrub them; this proves they stay scrubbed.
+lint-hook-env:
+    GIT_DIR=/nonexistent GIT_WORK_TREE=/nonexistent GIT_INDEX_FILE=/nonexistent just _probe-git-env
+
+[private]
+_probe-git-env:
+    test -z "${GIT_DIR:-}${GIT_WORK_TREE:-}${GIT_INDEX_FILE:-}"
 
 lint-deny:
     cargo deny check advisories licenses bans sources
