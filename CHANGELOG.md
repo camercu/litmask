@@ -1,3 +1,9 @@
+## [0.21.6](https://github.com/camercu/litmask/compare/v0.21.5...v0.21.6) (2026-10-18)
+
+### Bug Fixes
+
+* **deps:** bump the cargo-deps group with 5 updates ([#41](https://github.com/camercu/litmask/issues/41)) ([1f1e7ae](https://github.com/camercu/litmask/commit/1f1e7ae78b06c837f5033d1d35f0623881962df8))
+
 ## [0.21.5](https://github.com/camercu/litmask/compare/v0.21.4...v0.21.5) (2026-09-02)
 
 No change to the published crates. This release has only maintainer tooling changes.
