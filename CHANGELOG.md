@@ -1,3 +1,9 @@
+## [0.21.7](https://github.com/camercu/litmask/compare/v0.21.6...v0.21.7) (2026-10-25)
+
+### Bug Fixes
+
+* **deps:** bump rstest from 0.27.0 to 0.28.0 in the cargo-deps group ([#43](https://github.com/camercu/litmask/issues/43)) ([9370f25](https://github.com/camercu/litmask/commit/9370f25c135685b6dc73c5426654dab67356b41b))
+
 ## [0.21.6](https://github.com/camercu/litmask/compare/v0.21.5...v0.21.6) (2026-10-18)
 
 ### Bug Fixes

@@ -531,7 +531,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "litmask"
-version = "0.21.6"
+version = "0.21.7"
 dependencies = [
  "litmask-build",
  "litmask-internal",
@@ -550,7 +550,7 @@ dependencies = [
 
 [[package]]
 name = "litmask-build"
-version = "0.21.6"
+version = "0.21.7"
 dependencies = [
  "getrandom",
  "litmask-internal",
@@ -562,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "litmask-cli"
-version = "0.21.6"
+version = "0.21.7"
 dependencies = [
  "clap",
  "getrandom",
@@ -572,7 +572,7 @@ dependencies = [
 
 [[package]]
 name = "litmask-internal"
-version = "0.21.6"
+version = "0.21.7"
 dependencies = [
  "aes-gcm",
  "base64ct",
@@ -584,7 +584,7 @@ dependencies = [
 
 [[package]]
 name = "litmask-macros"
-version = "0.21.6"
+version = "0.21.7"
 dependencies = [
  "litmask-internal",
  "proc-macro2",
