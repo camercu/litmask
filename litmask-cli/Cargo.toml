@@ -30,6 +30,11 @@ machine-uid = "0.6"
 [[bin]]
 name = "litmask"
 path = "src/main.rs"
+# The bin shares the name `litmask` with the library crate, so both
+# write target/doc/litmask/. The two rustdoc jobs race to clear that
+# directory, and `just doc` fails intermittently (cargo#6313). An explicit
+# `cargo doc --bin litmask` still documents it, which is how docs.rs does.
+doc = false
 
 [lints]
 workspace = true
